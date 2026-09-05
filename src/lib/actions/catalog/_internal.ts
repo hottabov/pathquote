@@ -14,9 +14,12 @@
  * fact that types are erased before that check runs.
  *
  * A helper used by only one module in this directory stays private there
- * (`sanitizeProductDescription` in products.ts, `parseImageUrl` in
- * images.ts); only what crosses a module boundary — or crosses out to a
- * component, as `PriceTarget` does — earns a place here. Nothing outside
+ * (`sanitizeProductDescription` in products.ts); only what crosses a module
+ * boundary — or crosses out to a component, as `PriceTarget` does — earns a
+ * place here. A helper whose callers reach past this directory altogether,
+ * as the image-URL validator images.ts once kept privately does, belongs one
+ * level up in `_shared.ts` instead, since this file is off-limits outside
+ * `src/lib/actions/catalog/`. Nothing outside
  * `src/lib/actions/catalog/` should import from this file, the underscore
  * prefix marking it internal to this split the same way `_shared.ts` marks
  * itself internal to the action layer as a whole.

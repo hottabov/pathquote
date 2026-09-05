@@ -52,10 +52,24 @@ export async function createDraft(): Promise<void> {
   redirect(`/documents/${created.id}`);
 }
 
-/** Deletes a DRAFT document (items/lines cascade — see schema). Scoped to
+/**
+ * Deletes a DRAFT document (items/lines cascade — see schema). Scoped to
  * the caller and restricted to DRAFT status: a FINAL document is never
- * deletable through this action. */
-export async function deleteDraft(documentId: string): Promise<ActionResult> {
+ * deletable through this action.
+ *
+ * Returns only the failure half of `ActionResult`. A successful delete ends
+ * in `redirect`, which does not return — it throws a redirect error Next
+ * catches at the action boundary and turns into a navigation — so the `{}`
+ * an `ActionResult` promises on success is a value no caller can ever
+ * observe. Narrowing the type to `{ error: string }` says so, while leaving
+ * the handled-failure returns above reaching the caller exactly as before;
+ * `redirect`'s own `never` return is what lets an async function declared
+ * this way end without a `return`. The one call site, `DeleteDraftButton`,
+ * already reads the result as `result?.error` and renders nothing on the
+ * success path, so it needs no change — it simply stops branching on a shape
+ * that could not arrive.
+ */
+export async function deleteDraft(documentId: string): Promise<{ error: string }> {
   const session = await requireSession();
 
   const parsedId = idSchema.safeParse(documentId);

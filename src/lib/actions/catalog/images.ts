@@ -8,18 +8,7 @@ import {
 } from "@/lib/revalidate";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/authz";
-import { IMAGE_URL_PATTERN } from "@/lib/uploads";
-import type { ActionResult } from "../_shared";
-
-/** Validates that a submitted image URL is either `null` (clear the image)
- * or exactly the `/api/files/<uuid>.<ext>` shape `saveUpload` produces —
- * never an arbitrary string, which would let an admin point `imageUrl` at
- * an unrelated path or external host. */
-function parseImageUrl(url: string | null): { ok: true; value: string | null } | { ok: false } {
-  if (url === null) return { ok: true, value: null };
-  if (!IMAGE_URL_PATTERN.test(url)) return { ok: false };
-  return { ok: true, value: url };
-}
+import { parseImageUrl, type ActionResult } from "../_shared";
 
 export async function updateProductImage(productId: string, url: string | null): Promise<ActionResult> {
   await requireAdmin();

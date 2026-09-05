@@ -8,8 +8,13 @@ import { requireAdmin } from "@/lib/authz";
 import { idSchema } from "@/lib/validation/documents";
 import { createRegionSchema, updateRegionSchema } from "@/lib/validation/regions";
 import { countActiveUsersInRegion } from "@/lib/queries/regions";
-import { IMAGE_URL_PATTERN } from "@/lib/uploads";
-import { CODE_EXISTS_ERROR, NOT_FOUND_ERROR, flattenZodError, type ActionResult } from "./_shared";
+import {
+  CODE_EXISTS_ERROR,
+  NOT_FOUND_ERROR,
+  flattenZodError,
+  parseImageUrl,
+  type ActionResult,
+} from "./_shared";
 
 export type { ActionResult };
 
@@ -149,15 +154,9 @@ export async function updateRegion(regionId: string, formData: FormData): Promis
   return {};
 }
 
-/** Validates that a submitted logo URL is either `null` (clear the logo) or
- * exactly the `/api/files/<uuid>.<ext>` shape `saveUpload` produces — mirrors
- * `parseImageUrl` in src/lib/actions/catalog.ts. */
-function parseImageUrl(url: string | null): { ok: true; value: string | null } | { ok: false } {
-  if (url === null) return { ok: true, value: null };
-  if (!IMAGE_URL_PATTERN.test(url)) return { ok: false };
-  return { ok: true, value: url };
-}
-
+/** A region's logo is stored and validated exactly like a catalogue image —
+ * `parseImageUrl` (src/lib/actions/_shared.ts) is shared with every other
+ * image write for that reason. */
 export async function updateRegionLogo(regionId: string, url: string | null): Promise<ActionResult> {
   await requireAdmin();
 

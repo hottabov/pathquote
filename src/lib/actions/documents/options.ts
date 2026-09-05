@@ -27,7 +27,12 @@ import {
 } from "@/lib/production-forms/table-sections";
 import { idSchema, optionSelectionSchema, type OptionSelectionInput } from "@/lib/validation/documents";
 import { NOT_FOUND_ERROR, flattenZodError } from "../_shared";
-import { assertStillDraft, mapDraftWriteError, type ActionResult } from "./_internal";
+import {
+  abortDraftWrite,
+  assertStillDraft,
+  mapDraftWriteError,
+  type ActionResult,
+} from "./_internal";
 
 const MAX_OPTION_SELECTIONS = 100;
 
@@ -75,11 +80,21 @@ export async function setItemOptions(
  * pricing, conflicts, the delete/create/recalc transaction -- applied to
  * them. Split out rather than duplicated so a derived selection can never be
  * written under looser rules than a hand-picked one.
+ *
+ * `alsoWrite`, when given, runs against the same `tx` as the option lines
+ * and therefore commits or rolls back with them. It exists for
+ * `setEasyLoaderLayout`, whose table layout and option lines are two
+ * descriptions of one machine: committing either without the other prices a
+ * table nobody asked for, or builds one nobody paid for. It must abort
+ * through `abortDraftWrite` (or another sentinel `mapDraftWriteError` knows)
+ * rather than returning a failure, since by the time it runs the deletes and
+ * creates around it are already staged.
  */
 async function writeItemOptions(
   user: ScopeUser,
   itemId: string,
-  selections: OptionSelectionInput[]
+  selections: OptionSelectionInput[],
+  alsoWrite?: (tx: Prisma.TransactionClient) => Promise<void>
 ): Promise<ActionResult> {
   const parsedItemId = idSchema.safeParse(itemId);
   if (!parsedItemId.success) return { error: NOT_FOUND_ERROR };
@@ -111,6 +126,7 @@ async function writeItemOptions(
       await db.$transaction(async (tx) => {
         await assertStillDraft(tx, item.documentId);
         await tx.documentLine.deleteMany({ where: { itemId: item.id, kind: "OPTION" } });
+        await alsoWrite?.(tx);
         concessionWarning = (await recalcAndEnforce(item.documentId, tx, user.role)).warning;
       });
     } catch (error) {
@@ -186,7 +202,8 @@ async function writeItemOptions(
   // recalc in means a failed create *or* a resulting negative subtotal both
   // roll back the whole thing, never leaving an item with no options where
   // it had some a moment ago, or a set of options committed that the
-  // negative-subtotal guard should have rejected).
+  // negative-subtotal guard should have rejected). A caller's `alsoWrite`
+  // joins the same transaction for the same reason.
   let concessionWarning: string | undefined;
   try {
     await db.$transaction(async (tx) => {
@@ -222,6 +239,7 @@ async function writeItemOptions(
           };
         }),
       });
+      await alsoWrite?.(tx);
       concessionWarning = (await recalcAndEnforce(item.documentId, tx, user.role)).warning;
     });
   } catch (error) {
@@ -302,18 +320,29 @@ export async function setEasyLoaderLayout(itemId: string, spec: unknown): Promis
       attributes: (line.attributes ?? undefined) as Record<string, unknown> | undefined,
     }));
 
-  const written = await writeItemOptions(session.user, item.id, [...kept, ...derived]);
-  // The options are the price, so a layout that cannot be priced is not
-  // saved at all -- writing the spec anyway would leave the builder showing
-  // a table the quote does not charge for.
-  if (written.error) return written;
-
-  const specWritten = await db.documentItem.updateMany({
-    where: { id: item.id, document: { status: "DRAFT" } },
-    data: { productionSpec: parsed.data as object },
+  // The spec and the option lines describe the same table -- the drawing the
+  // workshop builds from and the rows the customer is charged for -- so they
+  // are written as one transaction rather than one after the other. A
+  // rejected pricing check still stops the spec from being saved (that much
+  // the old two-step ordering already got right, and `writeItemOptions`
+  // returns before opening its transaction in every one of those cases), but
+  // the reverse gap is what this closes: a failure between the two writes
+  // used to leave priced option lines standing against the previous layout,
+  // so the quote charged for one table and the builder drew another, with
+  // nothing on either side to reveal the mismatch.
+  const written = await writeItemOptions(session.user, item.id, [...kept, ...derived], async (tx) => {
+    const specWritten = await tx.documentItem.updateMany({
+      where: { id: item.id, document: { status: "DRAFT" } },
+      data: { productionSpec: parsed.data as object },
+    });
+    // `assertStillDraft` already holds the document row by now, so a miss
+    // here means the item itself is gone -- the same "not found" the
+    // caller's own pre-read would have given, but it has to be raised rather
+    // than returned to take the option lines down with it.
+    if (specWritten.count !== 1) abortDraftWrite();
   });
-  if (specWritten.count !== 1) return { error: NOT_FOUND_ERROR };
 
-  revalidateDocument(item.documentId);
+  // `writeItemOptions` has already revalidated on success; on failure there
+  // is nothing to revalidate, since the whole transaction rolled back.
   return written;
 }

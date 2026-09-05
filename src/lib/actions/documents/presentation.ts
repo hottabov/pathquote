@@ -15,7 +15,6 @@ import { requireSession } from "@/lib/authz";
 import { documentWhereForUser } from "@/lib/scope";
 import { recalcAndEnforce } from "@/lib/documents/recalc";
 import { isHtmlContent, sanitizeRichText } from "@/lib/rich-text";
-import { IMAGE_URL_PATTERN } from "@/lib/uploads";
 import {
   deliveryTermsSchema,
   idSchema,
@@ -24,7 +23,7 @@ import {
   serialNumberSchema,
   validityDaysSchema,
 } from "@/lib/validation/documents";
-import { NOT_FOUND_ERROR, flattenZodError } from "../_shared";
+import { NOT_FOUND_ERROR, flattenZodError, parseImageUrl } from "../_shared";
 import { assertStillDraft, mapDraftWriteError, type ActionResult } from "./_internal";
 
 /**
@@ -177,16 +176,6 @@ export async function setDocumentNotes(documentId: string, formData: FormData): 
   return {};
 }
 
-/** Validates a submitted hero-image URL is either `null` (clear it) or
- * exactly the `/api/files/<uuid>.<ext>` shape `saveUpload` produces — mirrors
- * `parseImageUrl` in src/lib/actions/catalog.ts/regions.ts, duplicated
- * locally rather than shared since none of those modules export it. */
-function parseHeroImageUrl(url: string | null): { ok: true; value: string | null } | { ok: false } {
-  if (url === null) return { ok: true, value: null };
-  if (!IMAGE_URL_PATTERN.test(url)) return { ok: false };
-  return { ok: true, value: url };
-}
-
 /**
  * Sets (or, given `null`, clears) the quotation's setup image
  * (`Document.heroImageUrl` — see that column's doc comment in schema.prisma)
@@ -203,7 +192,7 @@ export async function setDocumentHeroImage(documentId: string, url: string | nul
   const parsedDocumentId = idSchema.safeParse(documentId);
   if (!parsedDocumentId.success) return { error: NOT_FOUND_ERROR };
 
-  const parsedUrl = parseHeroImageUrl(url);
+  const parsedUrl = parseImageUrl(url);
   if (!parsedUrl.ok) return { error: "Invalid image URL" };
 
   const document = await db.document.findFirst({

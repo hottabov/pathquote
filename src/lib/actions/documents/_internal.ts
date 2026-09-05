@@ -76,6 +76,21 @@ export async function assertStillDraft(tx: DraftGuardClient, documentId: string)
   if (guarded.count !== 1) throw new NotDraftError();
 }
 
+/**
+ * Aborts and rolls back the caller's transaction with the same answer
+ * `assertStillDraft` raises: the row this write was aimed at is gone, or is
+ * no longer a draft, so `mapDraftWriteError` turns it into `NOT_FOUND_ERROR`.
+ *
+ * Needed by a write that rides *inside* another action's transaction and so
+ * cannot simply `return { error }` the way a top-level action does — a bare
+ * return there would commit the surrounding writes and report failure.
+ * `setEasyLoaderLayout`'s production-spec `updateMany` is the case that
+ * introduced it: its `count !== 1` has to take the option lines down with it.
+ */
+export function abortDraftWrite(): never {
+  throw new NotDraftError();
+}
+
 /* An action whose entire write is a single statement needs neither the helper
  * above nor a transaction to hold: it folds the same `status: "DRAFT"` check
  * into that one statement's own `where` (as an `updateMany`/`deleteMany`,

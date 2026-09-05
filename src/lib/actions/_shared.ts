@@ -13,6 +13,7 @@
  */
 
 import type { z } from "zod";
+import { IMAGE_URL_PATTERN } from "@/lib/uploads";
 
 /**
  * What every server action hands back: `{}` on success, `{ error }` on a
@@ -56,4 +57,33 @@ export function flattenZodError(error: z.ZodError): string {
     (m): m is string => Boolean(m)
   );
   return messages.length > 0 ? messages.join(" ") : "Invalid input";
+}
+
+/**
+ * Validates a submitted image URL: either `null` — every caller reads that
+ * as "clear the image" — or exactly the `/api/files/<uuid>.<ext>` shape
+ * `saveUpload` produces. An arbitrary string is rejected rather than stored,
+ * which is what stops an admin (or anything posting on their behalf) from
+ * pointing an `imageUrl`/`logoUrl` column at an unrelated app path or an
+ * external host that would then be rendered, and printed into PDFs, as if it
+ * were ours.
+ *
+ * The `{ ok }` shape rather than a thrown error or a bare `string | null`
+ * exists because `null` is a legitimate *value* here, so a nullable return
+ * could not distinguish "clear it" from "rejected".
+ *
+ * Every image write in the action layer — catalogue product/option/series
+ * art, a region's logo, a document's hero photo, a spec diagram — validated
+ * against the same pattern through four byte-identical private copies of
+ * this function. They were identical because they must be: the URL they
+ * accept is the one `saveUpload` writes and `/api/files` serves, and a copy
+ * that drifted would either reject a real upload or widen what one column
+ * will store. It lives here, rather than in one directory's `_internal.ts`,
+ * because its callers span catalog/, documents/ and the top level, and each
+ * `_internal.ts` is by its own doc comment off-limits outside its directory.
+ */
+export function parseImageUrl(url: string | null): { ok: true; value: string | null } | { ok: false } {
+  if (url === null) return { ok: true, value: null };
+  if (!IMAGE_URL_PATTERN.test(url)) return { ok: false };
+  return { ok: true, value: url };
 }
