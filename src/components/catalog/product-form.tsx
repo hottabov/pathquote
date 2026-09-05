@@ -3,8 +3,8 @@
 import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FieldRow, fieldInputClass } from "@/components/ui-kit";
-import { RichTextEditor } from "@/components/ui-kit/rich-text-editor";
-import { toEditorHtml } from "@/lib/rich-text";
+import { RichTextEditor } from "@/components/ui-kit/rich-text-editor-lazy";
+import { toEditorHtml } from "@/lib/rich-text-core";
 import type { ActionResult } from "@/lib/actions/catalog";
 
 export type ProductFormValues = {

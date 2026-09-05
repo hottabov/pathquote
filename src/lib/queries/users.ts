@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { db } from "@/lib/db";
 
 export type UserListItem = {
@@ -60,8 +61,13 @@ export type UserDetail = {
  * own id) any screen that needs a fresh read of their own avatar — the
  * session JWT only revalidates every few minutes (see src/auth.ts), so
  * reading straight from the database here shows an avatar change
- * immediately rather than after that window. */
-export async function getUser(userId: string): Promise<UserDetail | null> {
+ * immediately rather than after that window.
+ *
+ * Request-memoized, which doesn't weaken that freshness guarantee: the memo
+ * only ever collapses reads made while rendering one page (the user editor
+ * reads it in `generateMetadata` and again in the page body) into the single
+ * fresh read the first of them already made. */
+export const getUser = cache(async function getUser(userId: string): Promise<UserDetail | null> {
   const user = await db.user.findUnique({ where: { id: userId }, include: { region: true } });
   if (!user) return null;
 
@@ -76,7 +82,7 @@ export async function getUser(userId: string): Promise<UserDetail | null> {
     magicLinkOnly: !user.passwordHash,
     image: user.image,
   };
-}
+});
 
 /** Count of currently active users with admin rights (ADMIN or DEVELOPER —
  * see `isAdminRole`) — feeds the last-active-admin safeguard in

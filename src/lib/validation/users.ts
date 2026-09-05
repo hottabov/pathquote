@@ -6,6 +6,7 @@
 // src/lib/validation/clients.ts and src/lib/validation/content.ts.
 import { z } from "zod";
 import { isAdminRole } from "@/lib/roles";
+import { userRegionCodeSchema } from "./region-code";
 
 // --- field pieces ----------------------------------------------------------
 
@@ -51,23 +52,10 @@ export const userPhoneSchema = z.preprocess(
 export const userRoleSchema = z.enum(["ADMIN", "MANAGER", "DEVELOPER"]);
 export type UserRoleInput = z.infer<typeof userRoleSchema>;
 
-/** A region code, or `null`/absent for "no region assigned" — a User's
- * `regionId` is optional in the schema, unlike Company's mandatory region.
- * Missing/blank/the sentinel empty-option value all collapse to `null`. */
-export const userRegionCodeSchema = z.preprocess(
-  (value) =>
-    value === null || value === undefined || (typeof value === "string" && value.trim() === "")
-      ? null
-      : value,
-  z
-    .string()
-    .trim()
-    .transform((value) => value.toUpperCase())
-    .refine((value) => /^[A-Z]{2,3}$/.test(value), {
-      message: "Region code must be 2-3 letters",
-    })
-    .nullable()
-);
+/** A region code, or `null` for "no region assigned" — the nullable variant
+ * of the shared rule, re-exported from ./region-code (where its doc comment
+ * lives) so src/lib/actions/users.ts keeps importing it from here. */
+export { userRegionCodeSchema };
 
 /** Optional initial/replacement password: missing/blank means "leave the
  * user on magic-link-only sign-in" (create) or "don't change it" (set new

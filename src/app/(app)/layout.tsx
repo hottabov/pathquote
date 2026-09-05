@@ -1,6 +1,6 @@
 import { requireSession } from "@/lib/authz";
 import { AppShell } from "@/components/app-shell";
-import { ConfirmProvider, ToastProvider } from "@/components/ui-kit";
+import { ConfirmProvider, ToastProvider } from "@/components/ui-kit/client";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();

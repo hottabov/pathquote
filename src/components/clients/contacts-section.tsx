@@ -10,9 +10,8 @@ import {
   tableHeadRowClassName,
   tableRowClassName,
   EmptyState,
-  useConfirm,
-  useToast,
 } from "@/components/ui-kit";
+import { useConfirm, useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 import type { ActionResult, createContact, updateContact, deleteContact } from "@/lib/actions/clients";
 import type { ContactDetail } from "@/lib/queries/clients";

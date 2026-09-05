@@ -3,8 +3,9 @@
 import { useActionState, useEffect, useRef, useState, type ChangeEvent } from "react";
 import { ImageIcon, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { FieldRow, fieldInputClass, useToast } from "@/components/ui-kit";
-import type { ActionResult } from "@/lib/actions/documents";
+import { FieldRow, fieldInputClass } from "@/components/ui-kit";
+import { useToast } from "@/components/ui-kit/client";
+import { addCustomLine, type ActionResult } from "@/lib/actions/documents";
 
 const initialState: ActionResult = {};
 
@@ -26,15 +27,9 @@ const ACCEPTED_TYPES = "image/jpeg,image/png,image/webp";
  * onDone pattern in components/clients/contact-form.tsx) so it's ready for
  * the next line without the manager clearing fields by hand.
  */
-export function AddCustomLineForm({
-  documentId,
-  addCustomLineAction,
-}: {
-  documentId: string;
-  addCustomLineAction: (documentId: string, formData: FormData) => Promise<ActionResult>;
-}) {
+export function AddCustomLineForm({ documentId }: { documentId: string }) {
   const [state, formAction, pending] = useActionState(
-    (_prevState: ActionResult, formData: FormData) => addCustomLineAction(documentId, formData),
+    (_prevState: ActionResult, formData: FormData) => addCustomLine(documentId, formData),
     initialState
   );
   const formRef = useRef<HTMLFormElement>(null);

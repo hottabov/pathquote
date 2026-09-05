@@ -33,8 +33,7 @@ import {
   type ToSheetItemInput,
   type ToSheetLineInput,
 } from "./sheet-data";
-
-const identityResolver: ImageResolver = (url) => url;
+import { identityResolver } from "./sheet-identity";
 
 // --- input shape -------------------------------------------------------------
 
@@ -418,8 +417,14 @@ export type QuotationMachineSection = {
    * that list, then what was added to it — finding the base price only in
    * the Investment Summary reads as if the options were the whole quote).
    * Priced by the same `showOptionPrices` toggle the option rows use, so
-   * the whole table hides or shows its money together. */
-  baseRow: QuotationBaseRow;
+   * the whole table hides or shows its money together.
+   *
+   * `null` for a product whose price is carried entirely by the option rows
+   * beneath it (`ItemBreakdown.assembledFromOptions` — an EasyLoader): the
+   * row would repeat the machine's own name back at the customer with a
+   * misleading "$0" beside it. The table is never left empty by this, because
+   * that flag is only ever set when there are option rows to carry it. */
+  baseRow: QuotationBaseRow | null;
   /** This item's own row from `DocSheetData.items` (name/price/lines/total)
    * — reused as-is for the investment-summary table rather than
    * recomputed. */
@@ -433,8 +438,11 @@ export type QuotationBaseRow = {
   code: string | null;
   name: string;
   qty: number;
-  /** Currency-formatted base price, or `null` when option prices are
-   * hidden. */
+  /** Currency-formatted base price; `null` when option prices are hidden, and
+   * also when the product has no price of its own to quote
+   * (`ItemBreakdown.basePriceUnquoted` — Service, or a not-yet-assembled
+   * EasyLoader). The renderer prints nothing in either case, so it never has
+   * to know which of the two silenced it. */
   price: string | null;
 };
 
@@ -696,14 +704,24 @@ export function buildQuotationData(
       });
     }
 
-    const baseRow: QuotationBaseRow = {
-      code: dedupeOptionCode(lineSummary.code, lineSummary.name),
-      name: lineSummary.name,
-      qty: lineSummary.breakdown.qty,
-      price: doc.showOptionPrices
-        ? formatMoney(lineSummary.breakdown.basePrice, sheet.totals.currency)
-        : null,
-    };
+    // The same two rules the Investment Summary's own base row follows (see
+    // `ItemBreakdownRows`), applied here too because this table shows the same
+    // machine at the same price: a base row with no price of its own prints no
+    // money, and one whose price is wholly carried by the option rows below it
+    // does not print at all. Letting the two tables disagree would put "$0"
+    // next to the EasyLoader on one page and nothing on the next.
+    const { assembledFromOptions, basePriceUnquoted } = lineSummary.breakdown;
+    const baseRow: QuotationBaseRow | null = assembledFromOptions
+      ? null
+      : {
+          code: dedupeOptionCode(lineSummary.code, lineSummary.name),
+          name: lineSummary.name,
+          qty: lineSummary.breakdown.qty,
+          price:
+            doc.showOptionPrices && !basePriceUnquoted
+              ? formatMoney(lineSummary.breakdown.basePrice, sheet.totals.currency)
+              : null,
+        };
 
     return {
       itemId: item.id,

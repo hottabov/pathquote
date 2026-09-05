@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/components/ui-kit";
+import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 import type { VisibilitySeriesRow } from "@/lib/queries/catalog-visibility-admin";
 

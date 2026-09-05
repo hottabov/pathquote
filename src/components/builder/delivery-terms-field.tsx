@@ -5,7 +5,7 @@ import { AutosaveIndicator } from "@/components/builder/autosave-indicator";
 import { fieldInputClass } from "@/components/ui-kit";
 import { useAutosave } from "@/lib/use-autosave";
 import { cn } from "@/lib/utils";
-import type { ActionResult } from "@/lib/actions/documents";
+import { setDeliveryTerms } from "@/lib/actions/documents";
 
 type DeliveryTerms = "DELIVERED" | "EX_WORKS";
 
@@ -20,7 +20,7 @@ const LABELS: Record<DeliveryTerms, string> = {
  * domestic taxable supply (the meeting question left unanswered: "What if
  * there's no GST? If it's Ex Works?"). Autosaved via `useAutosave`, same
  * pattern as `ValidityDaysField` (the closest neighbouring model): no Save
- * button, calls `setDeliveryTermsAction` 800ms after the selection settles.
+ * button, calls `setDeliveryTerms` 800ms after the selection settles.
  *
  * Unlike `ValidityDaysField`, this one changes what's owed — flipping to
  * EX_WORKS zeroes the document's tax (see `recalcDocument` in
@@ -31,12 +31,10 @@ const LABELS: Record<DeliveryTerms, string> = {
 export function DeliveryTermsField({
   documentId,
   deliveryTerms,
-  setDeliveryTermsAction,
   readOnly = false,
 }: {
   documentId: string;
   deliveryTerms: DeliveryTerms;
-  setDeliveryTermsAction: (documentId: string, formData: FormData) => Promise<ActionResult>;
   readOnly?: boolean;
 }) {
   const [value, setValue] = useState<DeliveryTerms>(deliveryTerms);
@@ -47,7 +45,7 @@ export function DeliveryTermsField({
     onSave: async (next) => {
       const formData = new FormData();
       formData.set("deliveryTerms", next);
-      return setDeliveryTermsAction(documentId, formData);
+      return setDeliveryTerms(documentId, formData);
     },
   });
 

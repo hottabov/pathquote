@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { formatMoney } from "../src/lib/format";
+import { formatDocNumber } from "../src/lib/numbering";
 
 // Expected values are derived from Intl.NumberFormat directly (an oracle
 // independent of formatMoney's implementation) rather than hardcoded
@@ -67,5 +68,19 @@ describe("formatMoney", () => {
 
   it("respects an explicit locale override", () => {
     expect(formatMoney(1234.5, "USD", "en-US")).toBe(expectedMoney(1234.5, "USD", "en-US"));
+  });
+});
+
+
+// --- was tests/numbering.test.ts: formatDocNumber (src/lib/numbering.ts) ------------------
+
+describe("formatDocNumber", () => {
+  it("formats a quote number", () => {
+    expect(formatDocNumber("AU", 2026, 1)).toBe("Q-AU-2026-001");
+  });
+
+  it("pads to three digits and grows past 999", () => {
+    expect(formatDocNumber("AU", 2026, 42)).toBe("Q-AU-2026-042");
+    expect(formatDocNumber("AU", 2026, 1234)).toBe("Q-AU-2026-1234");
   });
 });

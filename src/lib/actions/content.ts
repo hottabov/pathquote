@@ -1,24 +1,14 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidateContentBlock } from "@/lib/revalidate";
 import { Prisma } from "@prisma/client";
-import type { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/authz";
 import { isHtmlContent, sanitizeRichText } from "@/lib/rich-text";
 import { contentBlockSchema, regionCodeSchema, CONTENT_KEY_REGEX } from "@/lib/validation/content";
+import { flattenZodError, type ActionResult } from "./_shared";
 
-export type ActionResult = { error?: string };
-
-/** Join every zod issue message (form-level + field-level) into one string
- * for a plain `{ error }` result — mirrors src/lib/actions/catalog.ts. */
-function flattenZodError(error: z.ZodError): string {
-  const flat = error.flatten();
-  const messages = [...flat.formErrors, ...Object.values(flat.fieldErrors).flat()].filter(
-    (m): m is string => Boolean(m)
-  );
-  return messages.length > 0 ? messages.join(" ") : "Invalid input";
-}
+export type { ActionResult };
 
 function isUniqueConstraintError(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
@@ -30,11 +20,6 @@ function readContentBlockForm(formData: FormData) {
     body: formData.get("body"),
     sortOrder: formData.get("sortOrder"),
   };
-}
-
-function revalidateContentPaths(key: string) {
-  revalidatePath("/settings/content");
-  revalidatePath(`/settings/content/${encodeURIComponent(key)}`);
 }
 
 /** Resolves a region code to its id, or `null` for the default (regionId
@@ -108,7 +93,7 @@ export async function updateContentBlock(
     }
   }
 
-  revalidateContentPaths(parsed.data.key);
+  revalidateContentBlock(parsed.data.key);
   return {};
 }
 
@@ -158,7 +143,7 @@ export async function createRegionOverride(key: string, regionCode: string): Pro
     return { error: "An override already exists for this region" };
   }
 
-  revalidateContentPaths(key);
+  revalidateContentBlock(key);
   return {};
 }
 
@@ -185,6 +170,6 @@ export async function deleteRegionOverride(key: string, regionCode: string): Pro
 
   await db.contentBlock.delete({ where: { id: existing.id } });
 
-  revalidateContentPaths(key);
+  revalidateContentBlock(key);
   return {};
 }

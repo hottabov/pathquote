@@ -1,15 +1,15 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-import type { z } from "zod";
+import { revalidateDocument } from "@/lib/revalidate";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/authz";
 import { documentWhereForUser } from "@/lib/scope";
 import { idSchema } from "@/lib/validation/documents";
 import { screenSideSchema } from "@/lib/validation/production-spec";
 import { resolveForm, specSchemaForCode } from "@/lib/production-forms/resolve";
+import { NOT_FOUND_ERROR, flattenZodError, type ActionResult } from "./_shared";
 
-export type ActionResult = { error?: string };
+export type { ActionResult };
 
 export type ApplyScreenSideResult = ActionResult & {
   /**
@@ -22,21 +22,6 @@ export type ApplyScreenSideResult = ActionResult & {
    */
   appliedTo?: string[];
 };
-
-const NOT_FOUND_ERROR = "Not found";
-
-/** Join every zod issue message (form-level + field-level) into one string
- * for a plain `{ error }` result -- same helper as every other action
- * module (each keeps a private copy: a `"use server"` module may only
- * export async server actions, so this can't be shared via a named
- * export). */
-function flattenZodError(error: z.ZodError): string {
-  const flat = error.flatten();
-  const messages = [...flat.formErrors, ...Object.values(flat.fieldErrors).flat()].filter(
-    (m): m is string => Boolean(m)
-  );
-  return messages.length > 0 ? messages.join(" ") : "Invalid input";
-}
 
 /**
  * Writes an item's production spec.
@@ -77,7 +62,7 @@ export async function setProductionSpec(itemId: string, spec: unknown): Promise<
     data: { productionSpec: parsed.data as object },
   });
 
-  revalidatePath(`/documents/${item.documentId}`);
+  revalidateDocument(item.documentId);
   return {};
 }
 
@@ -132,6 +117,6 @@ export async function applyScreenSideToQuote(
     }
   });
 
-  revalidatePath(`/documents/${item.documentId}`);
+  revalidateDocument(item.documentId);
   return { appliedTo };
 }

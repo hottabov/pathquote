@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useConfirm, useToast } from "@/components/ui-kit";
+import { useConfirm, useToast } from "@/components/ui-kit/client";
 import { finalizeDocument } from "@/lib/actions/finalize";
 
 /**

@@ -14,155 +14,95 @@ import {
   canSetAvatar,
   type ModifiableUser,
 } from "../src/lib/validation/users";
+import { accepts, rejects } from "./helpers/schema";
 
 describe("userEmailSchema", () => {
-  it("trims and lowercases a valid email", () => {
-    const result = userEmailSchema.safeParse("  Foo@Bar.COM  ");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("foo@bar.com");
-  });
+  accepts(userEmailSchema, [["a valid email, trimmed and lowercased", "  Foo@Bar.COM  ", "foo@bar.com"]]);
 
-  it("rejects an invalid email", () => {
-    expect(userEmailSchema.safeParse("not-an-email").success).toBe(false);
-  });
-
-  it("rejects an email over 200 characters", () => {
-    const long = `${"a".repeat(195)}@x.com`; // > 200 chars total
-    expect(userEmailSchema.safeParse(long).success).toBe(false);
-  });
+  rejects(userEmailSchema, [
+    ["an invalid email", "not-an-email"],
+    // > 200 chars total
+    ["an email over 200 characters", `${"a".repeat(195)}@x.com`],
+  ]);
 });
 
 describe("userNameSchema", () => {
-  it("collapses a missing/blank name to undefined", () => {
-    for (const name of [undefined, null, "", "   "]) {
-      const result = userNameSchema.safeParse(name);
-      expect(result.success).toBe(true);
-      if (result.success) expect(result.data).toBeUndefined();
-    }
-  });
+  accepts(userNameSchema, [
+    ["a missing name, collapsed to undefined", undefined, undefined],
+    ["a null name, collapsed to undefined", null, undefined],
+    ["a blank name, collapsed to undefined", "", undefined],
+    ["a whitespace-only name, collapsed to undefined", "   ", undefined],
+    ["a normal name", "Jane Smith"],
+    ["a name at exactly the 120 character bound", "A".repeat(120)],
+  ]);
 
-  it("accepts a normal name", () => {
-    const result = userNameSchema.safeParse("Jane Smith");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("Jane Smith");
-  });
-
-  it("rejects a name over 120 characters", () => {
-    expect(userNameSchema.safeParse("A".repeat(121)).success).toBe(false);
-  });
-
-  it("accepts a name at exactly the 120 character bound", () => {
-    expect(userNameSchema.safeParse("A".repeat(120)).success).toBe(true);
-  });
+  rejects(userNameSchema, [["a name over 120 characters", "A".repeat(121)]]);
 });
 
 describe("userPhoneSchema", () => {
-  it("collapses a missing/blank phone to undefined", () => {
-    for (const phone of [undefined, null, "", "   "]) {
-      const result = userPhoneSchema.safeParse(phone);
-      expect(result.success).toBe(true);
-      if (result.success) expect(result.data).toBeUndefined();
-    }
-  });
+  accepts(userPhoneSchema, [
+    ["a missing phone, collapsed to undefined", undefined, undefined],
+    ["a null phone, collapsed to undefined", null, undefined],
+    ["a blank phone, collapsed to undefined", "", undefined],
+    ["a whitespace-only phone, collapsed to undefined", "   ", undefined],
+    ["a normal phone number, trimmed", "  0400 000 000  ", "0400 000 000"],
+    ["a phone at exactly the 40 character bound", "1".repeat(40)],
+  ]);
 
-  it("accepts and trims a normal phone number", () => {
-    const result = userPhoneSchema.safeParse("  0400 000 000  ");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("0400 000 000");
-  });
-
-  it("rejects a phone over 40 characters", () => {
-    expect(userPhoneSchema.safeParse("1".repeat(41)).success).toBe(false);
-  });
-
-  it("accepts a phone at exactly the 40 character bound", () => {
-    expect(userPhoneSchema.safeParse("1".repeat(40)).success).toBe(true);
-  });
+  rejects(userPhoneSchema, [["a phone over 40 characters", "1".repeat(41)]]);
 });
 
 describe("userRoleSchema", () => {
-  it("accepts ADMIN and MANAGER", () => {
-    expect(userRoleSchema.safeParse("ADMIN").success).toBe(true);
-    expect(userRoleSchema.safeParse("MANAGER").success).toBe(true);
-  });
+  accepts(userRoleSchema, [
+    ["ADMIN", "ADMIN"],
+    ["MANAGER", "MANAGER"],
+    ["DEVELOPER", "DEVELOPER"],
+  ]);
 
-  it("accepts DEVELOPER", () => {
-    expect(userRoleSchema.safeParse("DEVELOPER").success).toBe(true);
-  });
-
-  it("rejects any other value", () => {
-    expect(userRoleSchema.safeParse("SUPERADMIN").success).toBe(false);
-    expect(userRoleSchema.safeParse("").success).toBe(false);
-  });
+  rejects(userRoleSchema, [
+    ["a role that isn't one of the known ones", "SUPERADMIN"],
+    ["a blank role", ""],
+  ]);
 });
 
 describe("userRegionCodeSchema", () => {
-  it("collapses a missing/blank code to null", () => {
-    for (const code of [undefined, null, "", "   "]) {
-      const result = userRegionCodeSchema.safeParse(code);
-      expect(result.success).toBe(true);
-      if (result.success) expect(result.data).toBeNull();
-    }
-  });
+  accepts(userRegionCodeSchema, [
+    ["a missing code, collapsed to null", undefined, null],
+    ["a null code, collapsed to null", null, null],
+    ["a blank code, collapsed to null", "", null],
+    ["a whitespace-only code, collapsed to null", "   ", null],
+    ["a lowercase code, normalized to uppercase", "au", "AU"],
+    ["a 2-letter code", "AU"],
+    ["a 3-letter code", "USA"],
+  ]);
 
-  it("normalizes a lowercase code to uppercase", () => {
-    const result = userRegionCodeSchema.safeParse("au");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("AU");
-  });
-
-  it("accepts 2- and 3-letter codes", () => {
-    expect(userRegionCodeSchema.safeParse("AU").success).toBe(true);
-    expect(userRegionCodeSchema.safeParse("USA").success).toBe(true);
-  });
-
-  it("rejects a code with digits", () => {
-    expect(userRegionCodeSchema.safeParse("A1").success).toBe(false);
-  });
+  rejects(userRegionCodeSchema, [["a code with digits", "A1"]]);
 });
 
 describe("userPasswordSchema (optional)", () => {
-  it("collapses a missing/blank password to undefined", () => {
-    for (const password of [undefined, null, "", "   "]) {
-      const result = userPasswordSchema.safeParse(password);
-      expect(result.success).toBe(true);
-      if (result.success) expect(result.data).toBeUndefined();
-    }
-  });
+  accepts(userPasswordSchema, [
+    ["a missing password, collapsed to undefined", undefined, undefined],
+    ["a null password, collapsed to undefined", null, undefined],
+    ["a blank password, collapsed to undefined", "", undefined],
+    ["a whitespace-only password, collapsed to undefined", "   ", undefined],
+    ["a password at exactly 10 characters", "1234567890"],
+    ["a password at exactly 200 characters", "a".repeat(200)],
+  ]);
 
-  it("rejects a password shorter than 10 characters", () => {
-    expect(userPasswordSchema.safeParse("short1234").success).toBe(false);
-  });
-
-  it("accepts a password at exactly 10 characters", () => {
-    expect(userPasswordSchema.safeParse("1234567890").success).toBe(true);
-  });
-
-  it("rejects a password over 200 characters", () => {
-    expect(userPasswordSchema.safeParse("a".repeat(201)).success).toBe(false);
-  });
-
-  it("accepts a password at exactly 200 characters", () => {
-    expect(userPasswordSchema.safeParse("a".repeat(200)).success).toBe(true);
-  });
+  rejects(userPasswordSchema, [
+    ["a password shorter than 10 characters", "short1234"],
+    ["a password over 200 characters", "a".repeat(201)],
+  ]);
 });
 
 describe("requiredPasswordSchema", () => {
-  it("rejects a missing password", () => {
-    expect(requiredPasswordSchema.safeParse(undefined).success).toBe(false);
-  });
+  accepts(requiredPasswordSchema, [["a valid password", "a-long-enough-password"]]);
 
-  it("rejects a blank password", () => {
-    expect(requiredPasswordSchema.safeParse("").success).toBe(false);
-  });
-
-  it("rejects a password shorter than 10 characters", () => {
-    expect(requiredPasswordSchema.safeParse("short1234").success).toBe(false);
-  });
-
-  it("accepts a valid password", () => {
-    expect(requiredPasswordSchema.safeParse("a-long-enough-password").success).toBe(true);
-  });
+  rejects(requiredPasswordSchema, [
+    ["a missing password", undefined],
+    ["a blank password", ""],
+    ["a password shorter than 10 characters", "short1234"],
+  ]);
 });
 
 describe("createUserSchema", () => {
@@ -244,17 +184,12 @@ describe("updateUserSchema", () => {
 });
 
 describe("setUserPasswordSchema", () => {
-  it("accepts a valid password", () => {
-    expect(setUserPasswordSchema.safeParse({ password: "a-valid-password" }).success).toBe(true);
-  });
+  accepts(setUserPasswordSchema, [["a valid password", { password: "a-valid-password" }]]);
 
-  it("rejects a missing password", () => {
-    expect(setUserPasswordSchema.safeParse({}).success).toBe(false);
-  });
-
-  it("rejects a too-short password", () => {
-    expect(setUserPasswordSchema.safeParse({ password: "short" }).success).toBe(false);
-  });
+  rejects(setUserPasswordSchema, [
+    ["a missing password", {}],
+    ["a too-short password", { password: "short" }],
+  ]);
 });
 
 describe("canModifyUser", () => {

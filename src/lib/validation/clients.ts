@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { isValidCountryCode } from "@/lib/countries";
 import { validatePhone } from "@/lib/phone";
+import { regionCodeSchema } from "./region-code";
 
 // --- shared field pieces -----------------------------------------------
 
@@ -113,13 +114,8 @@ const websiteSchema = z.preprocess(
     .optional()
 );
 
-const regionCodeSchema = z
-  .string()
-  .trim()
-  .transform((value) => value.toUpperCase())
-  .refine((value) => /^[A-Z]{2,3}$/.test(value), {
-    message: "Region code must be 2-3 letters",
-  });
+// `regionCode` on a company is the shared rule verbatim; see ./region-code.
+
 
 // --- delivery address ------------------------------------------------------
 //

@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { db } from "@/lib/db";
 import { companyWhereForUser, type ScopeUser } from "@/lib/scope";
 
@@ -97,11 +98,29 @@ export type CompanyDetail = {
  * company doesn't exist and when it exists but is out of the caller's
  * scope (a MANAGER viewing another manager's company) — callers should
  * treat both the same way (404), never distinguishing them.
+ *
+ * The company editor reads this twice per render — once in
+ * `generateMetadata` for the tab title, once in the page body — so the work
+ * sits behind a request memo (`getCompanyDetailInScope` below).
  */
-export async function getCompanyDetail(
+export function getCompanyDetail(
   user: ScopeUser,
   companyId: string
 ): Promise<CompanyDetail | null> {
+  return getCompanyDetailInScope(user.id, user.role, companyId);
+}
+
+/** Takes the scope as its two primitive parts rather than the `ScopeUser`
+ * itself, for the reason `getDocumentForBuilderInScope`
+ * (src/lib/queries/documents.ts) spells out: React's `cache` matches object
+ * arguments by identity, and every `auth()` call hands back a fresh
+ * `session.user`, so a memo keyed on that object would never hit. */
+const getCompanyDetailInScope = cache(async function getCompanyDetailInScope(
+  userId: string,
+  role: string,
+  companyId: string
+): Promise<CompanyDetail | null> {
+  const user: ScopeUser = { id: userId, role };
   const company = await db.company.findFirst({
     where: { id: companyId, ...companyWhereForUser(user) },
     include: {
@@ -145,4 +164,4 @@ export async function getCompanyDetail(
       isPrimary: c.isPrimary,
     })),
   };
-}
+});

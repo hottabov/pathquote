@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidateDocument, revalidateDocumentList } from "@/lib/revalidate";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireAdmin, requireSession } from "@/lib/authz";
@@ -8,11 +8,20 @@ import { isAdminRole } from "@/lib/roles";
 import { documentWhereForUser } from "@/lib/scope";
 import { idSchema } from "@/lib/validation/documents";
 import { validateFinalizable, type FinalizableDocument } from "@/lib/validation/finalize";
-import { recalcDocument } from "@/lib/actions/documents";
+import { recalcDocument } from "@/lib/documents/recalc";
 import { allocateNumber, formatDocNumber } from "@/lib/numbering";
 import { getQuoteValidityDays } from "@/lib/queries/settings";
+import { NOT_FOUND_ERROR } from "./_shared";
 
-const NOT_FOUND_ERROR = "Not found";
+/** Thrown inside `finalizeDocument`'s `$transaction` to roll it back when
+ * `validateFinalizable` refuses the document, carrying that check's own
+ * message so the catch site can hand it straight back as `{ error }` — the
+ * same sentinel-error shape the mutating actions in
+ * src/lib/actions/documents.ts use to reject a save from inside a
+ * transaction, needed here for the same reason: the validation now runs
+ * against a recalc that happens *within* the transaction, so refusing it
+ * means unwinding work already done rather than simply returning. */
+class NotFinalizableError extends Error {}
 
 export type FinalizeResult = { ok: true; number: string } | { error: string };
 export type UnfinalizeResult = { ok: true } | { error: string };
@@ -55,50 +64,6 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
   });
   if (!document) return { error: NOT_FOUND_ERROR };
 
-  // Recompute totals first (a discount cap may have been lowered since this
-  // was last saved) and check the violations it reports before allowing the
-  // document to become FINAL. `negativeSubtotal` isn't consulted here — the
-  // mutating actions in documents.ts already refuse to save a change that
-  // would produce one (see NegativeSubtotalError there), so a DRAFT reaching
-  // this point should never carry one; rejecting finalize on it is a later
-  // task's concern (see the P0 plan's validity-fields task), not this one's.
-  // `commission` — the same `RecalcResult.commission` `getDocumentForBuilder`
-  // shows live for a draft — is what gets frozen onto the document below.
-  const { violations, documentConcession, commission } = await recalcDocument(document.id);
-
-  const validationError = validateFinalizable(
-    { companyId: document.companyId, items: document.items, lines: document.lines },
-    violations,
-    documentConcession,
-    session.user.role,
-    document.region.name,
-    document.currency
-  );
-  if (validationError) return { error: validationError };
-
-  // An ADMIN is allowed to finalize over a discount-cap violation (see
-  // validateFinalizable's header comment) — this is the "logged in report"
-  // half of that: a structured server-log line naming who overrode it and
-  // by how much, since there's no dedicated admin-activity report to write
-  // it into yet. Grep-able by the "[finalize] admin override" prefix.
-  if (violations.length > 0 && isAdminRole(session.user.role)) {
-    console.warn("[finalize] admin override: discount-cap violation(s) finalized anyway", {
-      documentId: document.id,
-      adminUserId: session.user.id,
-      violations,
-    });
-  }
-
-  // Same override-logging as above, for the whole-document concession cap
-  // (see `validateFinalizable`'s point 4).
-  if (documentConcession.exceedsCap && isAdminRole(session.user.role)) {
-    console.warn("[finalize] admin override: document concession cap exceeded, finalized anyway", {
-      documentId: document.id,
-      adminUserId: session.user.id,
-      documentConcession,
-    });
-  }
-
   // Every document carries a validity window. A draft may already carry its
   // own override (see `setValidityDays` in actions/documents.ts — a
   // salesperson giving one customer a longer capex-approval window); only
@@ -120,33 +85,107 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
     taxRate: document.taxRate.toString(),
   };
 
-  // Frozen alongside entitySnapshot above — see Document.commissionAmount's
-  // doc comment (schema.prisma) for the full reasoning. `null` across all
-  // three when `commission` itself is null (no commission-tier table
-  // configured at finalize time), preserving the "unconfigured, not $0.00"
-  // distinction rather than collapsing it. Re-finalizing (after
-  // unfinalizeDocument) reaches this same code path again and overwrites
-  // whatever was frozen before with a fresh computation — there is no
-  // "keep the old commission" option, the same as entitySnapshot itself.
-  const commissionFields = {
-    commissionAmount: commission ? new Prisma.Decimal(commission.amount) : null,
-    commissionRatePct: commission ? new Prisma.Decimal(commission.ratePct) : null,
-    commissionBase: commission ? new Prisma.Decimal(commission.base) : null,
-  };
-
-  // Number allocation and the FINAL update happen inside one interactive
-  // transaction: if the update ever fails (e.g. an extremely unlikely
-  // `number` unique-constraint collision, or the concurrent-finalize guard
-  // below tripping), the whole transaction — counter increment included —
-  // rolls back rather than leaving an allocated counter value that was
+  // Recalculation, validation, number allocation and the FINAL update all
+  // happen inside one interactive transaction: if any of it fails (e.g. the
+  // validation below refusing the document, an extremely unlikely `number`
+  // unique-constraint collision, or the concurrent-finalize guard tripping),
+  // the whole transaction — counter increment and recomputed totals included
+  // — rolls back rather than leaving an allocated counter value that was
   // never actually assigned to a document. The allocation must stay ordered
   // *before* the guarded update (both still inside this same interactive
   // txn): if the update's status guard fails and throws, the txn rolls back
   // and undoes the counter increment along with it, so a lost race never
   // burns a number.
+  //
+  // The recalc in particular has to be in here rather than ahead of the
+  // transaction, where it used to sit: an item mutation committing in the gap
+  // between a recalc outside and the write in here would have been finalized
+  // with the totals as they stood *before* it — a number issued against money
+  // the document no longer adds up to. Inside, the recalc's own write to the
+  // document row holds it for the rest of the transaction, and every mutating
+  // action's draft guard (`assertStillDraft`, src/lib/actions/documents.ts)
+  // meets that same lock and rolls back rather than editing a document this
+  // is in the middle of finalizing.
   let number: string;
   try {
     number = await db.$transaction(async (tx) => {
+      // Recompute totals first (a discount cap may have been lowered since
+      // this was last saved) and check the violations it reports before
+      // allowing the document to become FINAL. `negativeSubtotal` isn't
+      // consulted here — the mutating actions in documents.ts already refuse
+      // to save a change that would produce one (see NegativeSubtotalError
+      // there), so a DRAFT reaching this point should never carry one;
+      // rejecting finalize on it is a later task's concern (see the P0 plan's
+      // validity-fields task), not this one's. `commission` — the same
+      // `RecalcResult.commission` `getDocumentForBuilder` shows live for a
+      // draft — is what gets frozen onto the document below.
+      const { violations, documentConcession, commission } = await recalcDocument(document.id, tx);
+
+      // Eligibility is judged on the document as it stands *under* the lock
+      // the recalc above just took, not on the copy loaded before the
+      // transaction opened: an item removed, or a client cleared, in the gap
+      // between the two would otherwise be validated as though it were still
+      // there — the same staleness the recalc itself was moved in here to
+      // avoid. From this point nothing else can change either set (a mutating
+      // action's draft guard blocks on the row the recalc just wrote), so this
+      // read is the last word.
+      const current = await tx.document.findUnique({
+        where: { id: document.id },
+        select: {
+          companyId: true,
+          items: { select: { id: true } },
+          lines: { where: { itemId: null }, select: { itemId: true } },
+        },
+      });
+      if (!current) throw new NotFinalizableError(NOT_FOUND_ERROR);
+
+      const validationError = validateFinalizable(
+        { companyId: current.companyId, items: current.items, lines: current.lines },
+        violations,
+        documentConcession,
+        session.user.role,
+        document.region.name,
+        document.currency
+      );
+      if (validationError) throw new NotFinalizableError(validationError);
+
+      // An ADMIN is allowed to finalize over a discount-cap violation (see
+      // validateFinalizable's header comment) — this is the "logged in report"
+      // half of that: a structured server-log line naming who overrode it and
+      // by how much, since there's no dedicated admin-activity report to write
+      // it into yet. Grep-able by the "[finalize] admin override" prefix.
+      if (violations.length > 0 && isAdminRole(session.user.role)) {
+        console.warn("[finalize] admin override: discount-cap violation(s) finalized anyway", {
+          documentId: document.id,
+          adminUserId: session.user.id,
+          violations,
+        });
+      }
+
+      // Same override-logging as above, for the whole-document concession cap
+      // (see `validateFinalizable`'s point 4).
+      if (documentConcession.exceedsCap && isAdminRole(session.user.role)) {
+        console.warn("[finalize] admin override: document concession cap exceeded, finalized anyway", {
+          documentId: document.id,
+          adminUserId: session.user.id,
+          documentConcession,
+        });
+      }
+
+      // Frozen alongside entitySnapshot above — see Document.commissionAmount's
+      // doc comment (schema.prisma) for the full reasoning. `null` across all
+      // three when `commission` itself is null (no commission-tier table
+      // configured at finalize time), preserving the "unconfigured, not $0.00"
+      // distinction rather than collapsing it. Re-finalizing (after
+      // unfinalizeDocument) reaches this same code path again and overwrites
+      // whatever was frozen before with a fresh computation — there is no
+      // "keep the old commission" option, the same as entitySnapshot itself.
+      const commissionFields = {
+        commissionAmount: commission ? new Prisma.Decimal(commission.amount) : null,
+        commissionRatePct: commission ? new Prisma.Decimal(commission.ratePct) : null,
+        commissionBase: commission ? new Prisma.Decimal(commission.base) : null,
+      };
+
       // Re-finalizing a document that was unfinalized keeps its original
       // number (unfinalizeDocument never clears it) instead of burning a new
       // counter value.
@@ -183,14 +222,15 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
       return resolvedNumber;
     });
   } catch (err) {
+    if (err instanceof NotFinalizableError) return { error: err.message };
     if (err instanceof Error && err.message === "ALREADY_FINALIZED") {
       return { error: "Document was already finalized" };
     }
     throw err;
   }
 
-  revalidatePath("/documents");
-  revalidatePath(`/documents/${document.id}`);
+  revalidateDocumentList();
+  revalidateDocument(document.id);
 
   return { ok: true, number };
 }
@@ -228,8 +268,8 @@ export async function unfinalizeDocument(documentId: string): Promise<Unfinalize
     data: { status: "DRAFT" },
   });
 
-  revalidatePath("/documents");
-  revalidatePath(`/documents/${document.id}`);
+  revalidateDocumentList();
+  revalidateDocument(document.id);
 
   return { ok: true };
 }

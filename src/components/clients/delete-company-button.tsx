@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useConfirm } from "@/components/ui-kit";
+import { useConfirm } from "@/components/ui-kit/client";
 import type { ActionResult } from "@/lib/actions/clients";
 
 /**

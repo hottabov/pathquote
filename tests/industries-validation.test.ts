@@ -1,28 +1,18 @@
 import { describe, it, expect } from "vitest";
 import { industryNameSchema, normalizeIndustryName } from "../src/lib/validation/industries";
+import { accepts, rejects } from "./helpers/schema";
 
 describe("industryNameSchema", () => {
-  it("accepts a normal name", () => {
-    expect(industryNameSchema.safeParse("Automotive").success).toBe(true);
-  });
+  accepts(industryNameSchema, [
+    ["a normal name", "Automotive"],
+    ["surrounding whitespace, trimmed", "  Marine upholstery  ", "Marine upholstery"],
+  ]);
 
-  it("trims surrounding whitespace", () => {
-    const result = industryNameSchema.safeParse("  Marine upholstery  ");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("Marine upholstery");
-  });
-
-  it("rejects an empty string", () => {
-    expect(industryNameSchema.safeParse("").success).toBe(false);
-  });
-
-  it("rejects whitespace only", () => {
-    expect(industryNameSchema.safeParse("   ").success).toBe(false);
-  });
-
-  it("rejects a name longer than 80 characters", () => {
-    expect(industryNameSchema.safeParse("x".repeat(81)).success).toBe(false);
-  });
+  rejects(industryNameSchema, [
+    ["an empty string", ""],
+    ["whitespace only", "   "],
+    ["a name longer than 80 characters", "x".repeat(81)],
+  ]);
 });
 
 describe("normalizeIndustryName", () => {

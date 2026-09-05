@@ -2,7 +2,8 @@
 
 import { useState, useTransition, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
-import { FieldRow, fieldInputClass, useToast } from "@/components/ui-kit";
+import { FieldRow, fieldInputClass } from "@/components/ui-kit";
+import { useToast } from "@/components/ui-kit/client";
 import type { ActionResult } from "@/lib/actions/settings";
 
 /**

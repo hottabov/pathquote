@@ -4,97 +4,19 @@ import {
   dedupeDescription,
   formatBankDetails,
   toSheetData,
-  type ToSheetDataDoc,
-  type ToSheetItemInput,
-  type ToSheetCompanyInput,
 } from "../src/lib/sheet-data";
 import { formatMoney } from "../src/lib/format";
-
-function baseCompany(overrides: Partial<ToSheetCompanyInput> = {}): ToSheetCompanyInput {
-  return {
-    name: "Acme Pty Ltd",
-    street: null,
-    city: null,
-    state: null,
-    postcode: null,
-    country: null,
-    website: null,
-    hasDeliveryAddress: false,
-    deliveryStreet: null,
-    deliveryCity: null,
-    deliveryState: null,
-    deliveryPostcode: null,
-    deliveryCountry: null,
-    deliveryContactName: null,
-    deliveryPhone: null,
-    ...overrides,
-  };
-}
+import { sheetCompany, sheetDoc, sheetItem } from "./helpers/fixtures";
 
 // Pure mapper — this file imports nothing from src/lib/queries/documents.ts
 // or @/lib/db (see sheet-data.ts's header comment for why), so it never
-// needs DATABASE_URL set, same as tests/finalize-validation.test.ts.
-
-function baseItem(overrides: Partial<ToSheetItemInput> = {}): ToSheetItemInput {
-  return {
-    id: "item-1",
-    code: "EL-2020",
-    name: "EasyLoader 2020",
-    description: null,
-    unitPrice: "1000.00",
-    listPrice: "1000.00",
-    discountMode: "PERCENT",
-    discountValue: null,
-    discountAmount: "0.00",
-    total: "1000.00",
-    imageUrl: null,
-    showImage: false,
-    lines: [],
-    isCredit: false,
-    ...overrides,
-  };
-}
-
-function baseDoc(overrides: Partial<ToSheetDataDoc> = {}): ToSheetDataDoc {
-  return {
-    status: "DRAFT",
-    number: null,
-    issueDate: new Date("2026-08-30T00:00:00.000Z"),
-    validityDays: null,
-    defaultValidityDays: 7,
-    currency: "AUD",
-    taxName: "GST",
-    taxRate: "10",
-    deliveryTerms: "DELIVERED",
-    entitySnapshot: null,
-    entityName: "Live Region Entity",
-    entityLegalId: "ABN 111",
-    entityAddress: "1 Live St",
-    bankDetails: { bank: "Live Bank", bsb: "000 000", accountNo: "111 111" },
-    logoUrl: null,
-    footerText: "Live footer",
-    discountMode: "PERCENT",
-    discountValue: null,
-    subtotal: "1000.00",
-    discountAmount: "0.00",
-    taxAmount: "100.00",
-    total: "1100.00",
-    company: null,
-    contact: null,
-    items: [],
-    extraLines: [],
-    author: { name: "Jane Author", email: "jane@example.com", phone: null, avatar: null },
-    notes: null,
-    showItemPrices: true,
-    showOptionPrices: true,
-    heroImageUrl: null,
-    ...overrides,
-  };
-}
+// needs DATABASE_URL set, same as tests/finalize-validation.test.ts. The
+// document/item builders live in ./helpers/fixtures because the quotation
+// and catalog-visibility tests need the same ones.
 
 describe("toSheetData — FINAL vs DRAFT entity source", () => {
   it("uses live region fields for a DRAFT (no entitySnapshot yet)", () => {
-    const doc = baseDoc({ status: "DRAFT", entitySnapshot: null });
+    const doc = sheetDoc({ status: "DRAFT", entitySnapshot: null });
     const sheet = toSheetData(doc);
 
     expect(sheet.isDraft).toBe(true);
@@ -105,7 +27,7 @@ describe("toSheetData — FINAL vs DRAFT entity source", () => {
   });
 
   it("prefers the frozen entitySnapshot over live region fields for a FINAL document", () => {
-    const doc = baseDoc({
+    const doc = sheetDoc({
       status: "FINAL",
       number: "Q-AU-2026-001",
       // Deliberately different from the "live" entityName/entityAddress/etc.
@@ -135,14 +57,14 @@ describe("toSheetData — FINAL vs DRAFT entity source", () => {
     // Defensive case: `entitySnapshot` is an opaque Json column with no
     // compile-time shape guarantee — a hand-edited or corrupted row must
     // never crash the renderer.
-    const doc = baseDoc({ status: "FINAL", number: "Q-AU-2026-002", entitySnapshot: { garbage: true } });
+    const doc = sheetDoc({ status: "FINAL", number: "Q-AU-2026-002", entitySnapshot: { garbage: true } });
     const sheet = toSheetData(doc);
 
     expect(sheet.entity.name).toBe("Live Region Entity");
   });
 
   it("ignores entitySnapshot for a DRAFT even if one is somehow present", () => {
-    const doc = baseDoc({
+    const doc = sheetDoc({
       status: "DRAFT",
       entitySnapshot: { entityName: "Should Be Ignored", entityLegalId: null, entityAddress: null, bankDetails: null, logoUrl: null, footerText: null },
     });
@@ -154,7 +76,7 @@ describe("toSheetData — FINAL vs DRAFT entity source", () => {
 
 describe("toSheetData — validity date", () => {
   it("falls back to the org default validityDays for a quote with none of its own set (not yet finalized)", () => {
-    const doc = baseDoc({
+    const doc = sheetDoc({
       validityDays: null,
       defaultValidityDays: 7,
       issueDate: new Date("2026-08-30T00:00:00.000Z"),
@@ -163,7 +85,7 @@ describe("toSheetData — validity date", () => {
   });
 
   it("is issueDate + validityDays, formatted DD/MM/YYYY, for a finalized quote", () => {
-    const doc = baseDoc({
+    const doc = sheetDoc({
       status: "FINAL",
       number: "Q-AU-2026-001",
       issueDate: new Date("2026-08-30T00:00:00.000Z"),
@@ -176,24 +98,24 @@ describe("toSheetData — validity date", () => {
   });
 
   it("titles every document QUOTATION", () => {
-    const data = toSheetData(baseDoc());
+    const data = toSheetData(sheetDoc());
     expect(data.title).toBe("QUOTATION");
   });
 
   it("always shows the signature block", () => {
-    const data = toSheetData(baseDoc());
+    const data = toSheetData(sheetDoc());
     expect(data.showSignature).toBe(true);
   });
 });
 
 describe("toSheetData — client block", () => {
   it("is null when the document has no company yet", () => {
-    expect(toSheetData(baseDoc({ company: null })).client).toBeNull();
+    expect(toSheetData(sheetDoc({ company: null })).client).toBeNull();
   });
 
   it("builds address lines from the company's separate street/city/state/postcode/country fields", () => {
-    const doc = baseDoc({
-      company: baseCompany({
+    const doc = sheetDoc({
+      company: sheetCompany({
         name: "Acme Pty Ltd",
         street: "1 Example Rd",
         city: "Tullamarine",
@@ -216,15 +138,15 @@ describe("toSheetData — client block", () => {
   });
 
   it("renders a legacy free-text country verbatim when it can't be normalized", () => {
-    const doc = baseDoc({
-      company: baseCompany({ street: "1 Example Rd", country: "Narnia" }),
+    const doc = sheetDoc({
+      company: sheetCompany({ street: "1 Example Rd", country: "Narnia" }),
     });
     expect(toSheetData(doc).client?.addressLines).toEqual(["1 Example Rd", "Narnia"]);
   });
 
   it("omits missing address fields instead of rendering empty lines", () => {
-    const doc = baseDoc({
-      company: baseCompany({ name: "No Address Co" }),
+    const doc = sheetDoc({
+      company: sheetCompany({ name: "No Address Co" }),
     });
     expect(toSheetData(doc).client?.addressLines).toEqual([]);
   });
@@ -232,17 +154,17 @@ describe("toSheetData — client block", () => {
 
 describe("toSheetData — delivery address block", () => {
   it("is null when the document has no company yet", () => {
-    expect(toSheetData(baseDoc({ company: null })).delivery).toBeNull();
+    expect(toSheetData(sheetDoc({ company: null })).delivery).toBeNull();
   });
 
   it("is null when the company has no distinct delivery address", () => {
-    const doc = baseDoc({ company: baseCompany({ hasDeliveryAddress: false }) });
+    const doc = sheetDoc({ company: sheetCompany({ hasDeliveryAddress: false }) });
     expect(toSheetData(doc).delivery).toBeNull();
   });
 
   it("builds the delivery block from the company's delivery* fields, with country displayed by name", () => {
-    const doc = baseDoc({
-      company: baseCompany({
+    const doc = sheetDoc({
+      company: sheetCompany({
         hasDeliveryAddress: true,
         deliveryStreet: "2 Factory Rd",
         deliveryCity: "Melbourne",
@@ -265,18 +187,18 @@ describe("toSheetData — delivery address block", () => {
 describe("toSheetData — items and lines", () => {
   it("carries the item discount mode and value through untouched, null when unset", () => {
     const withDiscount = toSheetData(
-      baseDoc({ items: [baseItem({ discountMode: "PERCENT", discountValue: "15" })] })
+      sheetDoc({ items: [sheetItem({ discountMode: "PERCENT", discountValue: "15" })] })
     );
     expect(withDiscount.items[0].discountMode).toBe("PERCENT");
     expect(withDiscount.items[0].discountValue).toBe("15");
 
     const withAmount = toSheetData(
-      baseDoc({ items: [baseItem({ discountMode: "AMOUNT", discountValue: "20000.00" })] })
+      sheetDoc({ items: [sheetItem({ discountMode: "AMOUNT", discountValue: "20000.00" })] })
     );
     expect(withAmount.items[0].discountMode).toBe("AMOUNT");
     expect(withAmount.items[0].discountValue).toBe("20000.00");
 
-    const withoutDiscount = toSheetData(baseDoc({ items: [baseItem({ discountValue: null })] }));
+    const withoutDiscount = toSheetData(sheetDoc({ items: [sheetItem({ discountValue: null })] }));
     expect(withoutDiscount.items[0].discountValue).toBeNull();
   });
 
@@ -289,28 +211,28 @@ describe("toSheetData — items and lines", () => {
   // it does for "no discount set at all".
   it("an explicit 0 item discount renders no breakdown.discount row; a real discount still does", () => {
     const explicitZero = toSheetData(
-      baseDoc({ items: [baseItem({ discountMode: "PERCENT", discountValue: "0", discountAmount: "0.00" })] })
+      sheetDoc({ items: [sheetItem({ discountMode: "PERCENT", discountValue: "0", discountAmount: "0.00" })] })
     );
     expect(explicitZero.items[0].breakdown.discount).toBeNull();
 
     const explicitZeroAmount = toSheetData(
-      baseDoc({ items: [baseItem({ discountMode: "AMOUNT", discountValue: "0.00", discountAmount: "0.00" })] })
+      sheetDoc({ items: [sheetItem({ discountMode: "AMOUNT", discountValue: "0.00", discountAmount: "0.00" })] })
     );
     expect(explicitZeroAmount.items[0].breakdown.discount).toBeNull();
 
-    const noDiscountAtAll = toSheetData(baseDoc({ items: [baseItem({ discountValue: null })] }));
+    const noDiscountAtAll = toSheetData(sheetDoc({ items: [sheetItem({ discountValue: null })] }));
     expect(noDiscountAtAll.items[0].breakdown.discount).toBeNull();
 
     const realDiscount = toSheetData(
-      baseDoc({ items: [baseItem({ discountMode: "PERCENT", discountValue: "15", discountAmount: "150.00" })] })
+      sheetDoc({ items: [sheetItem({ discountMode: "PERCENT", discountValue: "15", discountAmount: "150.00" })] })
     );
     expect(realDiscount.items[0].breakdown.discount).toEqual({ mode: "PERCENT", value: "15", amount: "150.00" });
   });
 
   it("computes each option line's lineTotal as qty * unitPrice", () => {
-    const doc = baseDoc({
+    const doc = sheetDoc({
       items: [
-        baseItem({
+        sheetItem({
           lines: [
             { id: "line-1", code: "OPT-1", name: "Extra shelf", description: null, qty: 3, unitPrice: "25.50" },
           ],
@@ -322,38 +244,38 @@ describe("toSheetData — items and lines", () => {
   });
 
   it("computes extra (document-level) line totals the same way", () => {
-    const doc = baseDoc({
+    const doc = sheetDoc({
       extraLines: [{ id: "extra-1", code: null, name: "Delivery", description: null, qty: 2, unitPrice: "50" }],
     });
     expect(toSheetData(doc).extraLines[0].lineTotal).toBe("100.00");
   });
 
   it("only shows an item image when showImage is true AND an imageUrl is present", () => {
-    const noFlag = toSheetData(baseDoc({ items: [baseItem({ showImage: false, imageUrl: "/api/files/a.jpg" })] }));
+    const noFlag = toSheetData(sheetDoc({ items: [sheetItem({ showImage: false, imageUrl: "/api/files/a.jpg" })] }));
     expect(noFlag.items[0].image).toBeNull();
 
-    const noUrl = toSheetData(baseDoc({ items: [baseItem({ showImage: true, imageUrl: null })] }));
+    const noUrl = toSheetData(sheetDoc({ items: [sheetItem({ showImage: true, imageUrl: null })] }));
     expect(noUrl.items[0].image).toBeNull();
 
-    const both = toSheetData(baseDoc({ items: [baseItem({ showImage: true, imageUrl: "/api/files/a.jpg" })] }));
+    const both = toSheetData(sheetDoc({ items: [sheetItem({ showImage: true, imageUrl: "/api/files/a.jpg" })] }));
     expect(both.items[0].image).toBe("/api/files/a.jpg");
   });
 
   it("runs a shown image through the caller-supplied resolver", () => {
-    const doc = baseDoc({ items: [baseItem({ showImage: true, imageUrl: "/api/files/a.jpg" })] });
+    const doc = sheetDoc({ items: [sheetItem({ showImage: true, imageUrl: "/api/files/a.jpg" })] });
     const sheet = toSheetData(doc, (url) => `data:image/jpeg;base64,RESOLVED(${url})`);
     expect(sheet.items[0].image).toBe("data:image/jpeg;base64,RESOLVED(/api/files/a.jpg)");
   });
 
   it("hides the image when the resolver declines to produce one", () => {
-    const doc = baseDoc({ items: [baseItem({ showImage: true, imageUrl: "/api/files/missing.jpg" })] });
+    const doc = sheetDoc({ items: [sheetItem({ showImage: true, imageUrl: "/api/files/missing.jpg" })] });
     const sheet = toSheetData(doc, () => undefined);
     expect(sheet.items[0].image).toBeNull();
   });
 
   it("only shows an extra line's image when showImage is true AND an imageUrl is present", () => {
     const noFlag = toSheetData(
-      baseDoc({
+      sheetDoc({
         extraLines: [
           { id: "extra-1", code: null, name: "Trade-in", description: null, qty: 1, unitPrice: "-500", showImage: false, imageUrl: "/api/files/a.jpg" },
         ],
@@ -362,7 +284,7 @@ describe("toSheetData — items and lines", () => {
     expect(noFlag.extraLines[0].image).toBeNull();
 
     const noUrl = toSheetData(
-      baseDoc({
+      sheetDoc({
         extraLines: [
           { id: "extra-1", code: null, name: "Trade-in", description: null, qty: 1, unitPrice: "-500", showImage: true, imageUrl: null },
         ],
@@ -371,7 +293,7 @@ describe("toSheetData — items and lines", () => {
     expect(noUrl.extraLines[0].image).toBeNull();
 
     const both = toSheetData(
-      baseDoc({
+      sheetDoc({
         extraLines: [
           { id: "extra-1", code: null, name: "Trade-in", description: null, qty: 1, unitPrice: "-500", showImage: true, imageUrl: "/api/files/a.jpg" },
         ],
@@ -386,7 +308,7 @@ describe("toSheetData — a $0 manual price prints, it is not swallowed as absen
   // dollars" — the customer has to be able to see they did not pay for it,
   // which means a $0 line must render "$0", never nothing.
   it("carries a $0 item price through to unitPrice/total exactly, not null or omitted", () => {
-    const sheet = toSheetData(baseDoc({ items: [baseItem({ unitPrice: "0.00", total: "0.00" })] }));
+    const sheet = toSheetData(sheetDoc({ items: [sheetItem({ unitPrice: "0.00", total: "0.00" })] }));
     const item = sheet.items[0];
     expect(item.unitPrice).toBe("0.00");
     expect(item.total).toBe("0.00");
@@ -395,7 +317,7 @@ describe("toSheetData — a $0 manual price prints, it is not swallowed as absen
   });
 
   it("formats a $0 item total as the literal string \"$0\" (formatMoney is never gated by truthiness of the amount)", () => {
-    const sheet = toSheetData(baseDoc({ items: [baseItem({ unitPrice: "0.00", total: "0.00" })] }));
+    const sheet = toSheetData(sheetDoc({ items: [sheetItem({ unitPrice: "0.00", total: "0.00" })] }));
     const item = sheet.items[0];
     // Every renderer (document-sheet.tsx, quotation-sheet.tsx,
     // items-list.tsx) gates a price on an explicit boolean/null check
@@ -407,9 +329,9 @@ describe("toSheetData — a $0 manual price prints, it is not swallowed as absen
 
   it("formats a $0 option line the same way", () => {
     const sheet = toSheetData(
-      baseDoc({
+      sheetDoc({
         items: [
-          baseItem({
+          sheetItem({
             lines: [{ id: "line-1", code: "OPT-1", name: "Free upgrade", description: null, qty: 1, unitPrice: "0.00" }],
           }),
         ],
@@ -422,7 +344,7 @@ describe("toSheetData — a $0 manual price prints, it is not swallowed as absen
 
   it("buildItemBreakdown never treats a $0 basePrice/option lineTotal as absent (null)", () => {
     const breakdown = buildItemBreakdown(
-      baseItem({
+      sheetItem({
         unitPrice: "0.00",
         total: "0.00",
         lines: [{ id: "line-1", code: "OPT-1", name: "Free upgrade", description: null, qty: 1, unitPrice: "0.00" }],
@@ -437,7 +359,7 @@ describe("toSheetData — a $0 manual price prints, it is not swallowed as absen
 
   it("buildItemBreakdown negates basePrice (and option lineTotal) for a credit item -- unitPrice is stored/typed positive", () => {
     const breakdown = buildItemBreakdown(
-      baseItem({
+      sheetItem({
         unitPrice: "20000.00",
         total: "-20000.00", // already signed by the pricing engine
         isCredit: true,
@@ -453,7 +375,7 @@ describe("toSheetData — a $0 manual price prints, it is not swallowed as absen
   });
 
   it("buildItemBreakdown leaves an ordinary (isCredit: false) item's basePrice positive", () => {
-    const breakdown = buildItemBreakdown(baseItem({ unitPrice: "20000.00", isCredit: false }), true);
+    const breakdown = buildItemBreakdown(sheetItem({ unitPrice: "20000.00", isCredit: false }), true);
     expect(breakdown.basePrice).toBe("20000.00");
   });
 });
@@ -484,21 +406,21 @@ describe("dedupeDescription", () => {
 
 describe("toSheetData — item/line description dedupe", () => {
   it("omits the item description when it duplicates the item name", () => {
-    const doc = baseDoc({ items: [baseItem({ name: "EasyLoader 2020", description: "EasyLoader 2020" })] });
+    const doc = sheetDoc({ items: [sheetItem({ name: "EasyLoader 2020", description: "EasyLoader 2020" })] });
     expect(toSheetData(doc).items[0].description).toBeNull();
   });
 
   it("keeps a genuinely distinct item description", () => {
-    const doc = baseDoc({
-      items: [baseItem({ name: "EasyLoader 2020", description: "Ships with mounting bracket" })],
+    const doc = sheetDoc({
+      items: [sheetItem({ name: "EasyLoader 2020", description: "Ships with mounting bracket" })],
     });
     expect(toSheetData(doc).items[0].description).toBe("Ships with mounting bracket");
   });
 
   it("omits an option line description when it duplicates the line name", () => {
-    const doc = baseDoc({
+    const doc = sheetDoc({
       items: [
-        baseItem({
+        sheetItem({
           lines: [
             { id: "line-1", code: "OPT-1", name: "Extra shelf", description: "Extra shelf", qty: 1, unitPrice: "25" },
           ],
@@ -511,7 +433,7 @@ describe("toSheetData — item/line description dedupe", () => {
 
 describe("toSheetData — totals passthrough", () => {
   it("passes the document totals straight through", () => {
-    const doc = baseDoc({
+    const doc = sheetDoc({
       subtotal: "1000.00",
       discountMode: "PERCENT",
       discountValue: "10",
@@ -538,14 +460,14 @@ describe("toSheetData — totals passthrough", () => {
   });
 
   it("carries deliveryTerms straight through, DELIVERED or EX_WORKS", () => {
-    expect(toSheetData(baseDoc({ deliveryTerms: "DELIVERED" })).totals.deliveryTerms).toBe("DELIVERED");
-    expect(toSheetData(baseDoc({ deliveryTerms: "EX_WORKS" })).totals.deliveryTerms).toBe("EX_WORKS");
+    expect(toSheetData(sheetDoc({ deliveryTerms: "DELIVERED" })).totals.deliveryTerms).toBe("DELIVERED");
+    expect(toSheetData(sheetDoc({ deliveryTerms: "EX_WORKS" })).totals.deliveryTerms).toBe("EX_WORKS");
   });
 });
 
 describe("toSheetData — preparedBy / notes", () => {
   it("maps the document author straight through to preparedBy", () => {
-    const doc = baseDoc({
+    const doc = sheetDoc({
       author: { name: "Jane Author", email: "jane@example.com", phone: "0400 000 000", avatar: null },
     });
     const sheet = toSheetData(doc);
@@ -558,13 +480,13 @@ describe("toSheetData — preparedBy / notes", () => {
   });
 
   it("carries a null author name/phone through untouched", () => {
-    const doc = baseDoc({ author: { name: null, email: "noname@example.com", phone: null, avatar: null } });
+    const doc = sheetDoc({ author: { name: null, email: "noname@example.com", phone: null, avatar: null } });
     const sheet = toSheetData(doc);
     expect(sheet.preparedBy).toEqual({ name: null, email: "noname@example.com", phone: null, avatar: null });
   });
 
   it("resolves the author's avatar through resolveImage, like the logo", () => {
-    const doc = baseDoc({
+    const doc = sheetDoc({
       author: { name: "Jane Author", email: "jane@example.com", phone: null, avatar: "/api/files/a.jpg" },
     });
     const sheet = toSheetData(doc, (url) => `data:image/jpeg;base64,RESOLVED(${url})`);
@@ -572,32 +494,32 @@ describe("toSheetData — preparedBy / notes", () => {
   });
 
   it("renders no avatar when the author has none", () => {
-    const doc = baseDoc({ author: { name: "Jane Author", email: "jane@example.com", phone: null, avatar: null } });
+    const doc = sheetDoc({ author: { name: "Jane Author", email: "jane@example.com", phone: null, avatar: null } });
     const sheet = toSheetData(doc);
     expect(sheet.preparedBy.avatar).toBeNull();
   });
 
   it("resolves the document's hero image through resolveImage, like the logo and the avatar", () => {
-    const doc = baseDoc({ heroImageUrl: "/api/files/setup.jpg" });
+    const doc = sheetDoc({ heroImageUrl: "/api/files/setup.jpg" });
     const sheet = toSheetData(doc, (url) => `data:image/jpeg;base64,RESOLVED(${url})`);
     expect(sheet.heroImage).toBe("data:image/jpeg;base64,RESOLVED(/api/files/setup.jpg)");
   });
 
   it("renders no hero image when the document has none", () => {
-    const doc = baseDoc({ heroImageUrl: null });
+    const doc = sheetDoc({ heroImageUrl: null });
     const sheet = toSheetData(doc);
     expect(sheet.heroImage).toBeNull();
   });
 
   it("passes notes through untouched, null when unset", () => {
-    expect(toSheetData(baseDoc({ notes: "Freeform remarks" })).notes).toBe("Freeform remarks");
-    expect(toSheetData(baseDoc({ notes: null })).notes).toBeNull();
+    expect(toSheetData(sheetDoc({ notes: "Freeform remarks" })).notes).toBe("Freeform remarks");
+    expect(toSheetData(sheetDoc({ notes: null })).notes).toBeNull();
   });
 });
 
 describe("toSheetData — validityDate default fallback", () => {
   it("uses the org default when validityDays is null", () => {
-    const doc = baseDoc({
+    const doc = sheetDoc({
       status: "DRAFT",
       validityDays: null,
       defaultValidityDays: 7,
@@ -607,7 +529,7 @@ describe("toSheetData — validityDate default fallback", () => {
   });
 
   it("uses the document's own validityDays when set, ignoring the default", () => {
-    const doc = baseDoc({
+    const doc = sheetDoc({
       status: "DRAFT",
       validityDays: 30,
       defaultValidityDays: 7,
@@ -618,10 +540,10 @@ describe("toSheetData — validityDate default fallback", () => {
 
   it("the two produce different dates for the same issueDate", () => {
     const withDefault = toSheetData(
-      baseDoc({ validityDays: null, defaultValidityDays: 7, issueDate: new Date("2026-01-01T00:00:00.000Z") })
+      sheetDoc({ validityDays: null, defaultValidityDays: 7, issueDate: new Date("2026-01-01T00:00:00.000Z") })
     ).validityDate;
     const withOwnValue = toSheetData(
-      baseDoc({ validityDays: 30, defaultValidityDays: 7, issueDate: new Date("2026-01-01T00:00:00.000Z") })
+      sheetDoc({ validityDays: 30, defaultValidityDays: 7, issueDate: new Date("2026-01-01T00:00:00.000Z") })
     ).validityDate;
     expect(withDefault).not.toBe(withOwnValue);
   });
@@ -642,8 +564,257 @@ describe("formatBankDetails", () => {
   });
 
   it("shares the same label mapping toSheetData uses for entity.bankDetails", () => {
-    const doc = baseDoc({ bankDetails: { bank: "Live Bank", bsb: "000 000", accountNo: "111 111" } });
+    const doc = sheetDoc({ bankDetails: { bank: "Live Bank", bsb: "000 000", accountNo: "111 111" } });
     const sheet = toSheetData(doc);
     expect(formatBankDetails(sheet.entity.bankDetails)).toBe("Bank: Live Bank\nBSB: 000 000\nAccount No.: 111 111");
+  });
+});
+
+
+// --- was tests/item-breakdown.test.ts: toSheetData — item.breakdown ------------------
+
+describe("toSheetData — item.breakdown", () => {
+  it("carries the base price separately from the subtotal", () => {
+    const doc = sheetDoc({
+      items: [
+        sheetItem({
+          unitPrice: "175000.00",
+          total: "186000.00",
+          lines: [
+            {
+              id: "line-1",
+              code: "OPT-1",
+              name: "Winch upgrade",
+              description: null,
+              qty: 1,
+              unitPrice: "11000.00",
+            },
+          ],
+        }),
+      ],
+    });
+    const sheet = toSheetData(doc);
+    const breakdown = sheet.items[0].breakdown;
+
+    expect(breakdown.basePrice).toBe("175000.00");
+    expect(breakdown.subtotal).toBe("186000.00");
+  });
+
+  it("negates a credit item's base price to match its already-negative total (isCredit: true)", () => {
+    const doc = sheetDoc({
+      items: [
+        sheetItem({
+          code: "TRADE-IN",
+          unitPrice: "20000.00", // typed positive, per Product.isCredit's design
+          total: "-20000.00", // already signed by the pricing engine (see getDocumentForBuilder)
+          isCredit: true,
+        }),
+      ],
+    });
+    const breakdown = toSheetData(doc).items[0].breakdown;
+    expect(breakdown.basePrice).toBe("-20000.00");
+    expect(breakdown.subtotal).toBe("-20000.00");
+  });
+
+  it("always reports qty 1 for a product line", () => {
+    const doc = sheetDoc({ items: [sheetItem()] });
+    expect(toSheetData(doc).items[0].breakdown.qty).toBe(1);
+  });
+
+  it("nulls every option's lineTotal when option prices are hidden, but keeps the subtotal", () => {
+    const doc = sheetDoc({
+      showOptionPrices: false,
+      items: [
+        sheetItem({
+          unitPrice: "175000.00",
+          total: "186000.00",
+          lines: [
+            {
+              id: "line-1",
+              code: "OPT-1",
+              name: "Winch upgrade",
+              description: null,
+              qty: 1,
+              unitPrice: "11000.00",
+            },
+            {
+              id: "line-2",
+              code: "OPT-2",
+              name: "Extra shelf",
+              description: null,
+              qty: 3,
+              unitPrice: "25.50",
+            },
+          ],
+        }),
+      ],
+    });
+    const breakdown = toSheetData(doc).items[0].breakdown;
+
+    expect(breakdown.options).toHaveLength(2);
+    expect(breakdown.options.every((option) => option.lineTotal === null)).toBe(true);
+    expect(breakdown.subtotal).toBe("186000.00");
+  });
+
+  it("resolves a fixed (AMOUNT) discount to its cash figure", () => {
+    const doc = sheetDoc({
+      items: [
+        sheetItem({
+          discountMode: "AMOUNT",
+          discountValue: "6000.00",
+          discountAmount: "6000.00",
+        }),
+      ],
+    });
+    const breakdown = toSheetData(doc).items[0].breakdown;
+
+    expect(breakdown.discount).toEqual({ mode: "AMOUNT", value: "6000.00", amount: "6000.00" });
+  });
+
+  it("reports both the typed percentage and the resolved cash amount for a PERCENT discount", () => {
+    const doc = sheetDoc({
+      items: [
+        sheetItem({
+          unitPrice: "1000.00",
+          discountMode: "PERCENT",
+          discountValue: "10",
+          discountAmount: "100.00",
+          total: "900.00",
+        }),
+      ],
+    });
+    const breakdown = toSheetData(doc).items[0].breakdown;
+
+    expect(breakdown.discount).toEqual({ mode: "PERCENT", value: "10", amount: "100.00" });
+  });
+
+  it("reports no discount when the item has none set", () => {
+    const doc = sheetDoc({ items: [sheetItem({ discountValue: null })] });
+    expect(toSheetData(doc).items[0].breakdown.discount).toBeNull();
+  });
+
+  it("carries each option's own code and (deduped) description through, same as an item's own", () => {
+    const doc = sheetDoc({
+      items: [
+        sheetItem({
+          lines: [
+            {
+              id: "line-1",
+              code: "OPT-1",
+              name: "Winch upgrade",
+              description: "Heavy-duty electric winch, 2000kg capacity",
+              qty: 1,
+              unitPrice: "11000.00",
+            },
+            {
+              id: "line-2",
+              code: "OPT-2",
+              name: "Extra shelf",
+              description: "Extra shelf", // redundant with name — deduped to null
+              qty: 1,
+              unitPrice: "25.50",
+            },
+            {
+              id: "line-3",
+              code: null,
+              name: "No-code option",
+              description: null,
+              qty: 1,
+              unitPrice: "10.00",
+            },
+          ],
+        }),
+      ],
+    });
+    const options = toSheetData(doc).items[0].breakdown.options;
+
+    expect(options[0]).toMatchObject({
+      code: "OPT-1",
+      description: "Heavy-duty electric winch, 2000kg capacity",
+    });
+    expect(options[1]).toMatchObject({ code: "OPT-2", description: null });
+    expect(options[2]).toMatchObject({ code: null, description: null });
+  });
+
+  // An EasyLoader has no price of its own -- it is a table assembled from
+  // 1.2m modules, every one of which is an option. Neither has Service. No
+  // money prints against such a product's own row, because "$0" reads as
+  // though the machine were being given away; and when the options carry the
+  // whole price, the row goes too, since it then says nothing the heading
+  // above it has not already said.
+  describe("basePriceUnquoted / assembledFromOptions", () => {
+    const modules = [
+      { id: "line-1", code: "EL-2020 Drive Module (first 1.2M)", name: "Drive Module", description: null, qty: 1, unitPrice: "4050.00" },
+      { id: "line-2", code: "EL-2020 Additional 1.2M lengths", name: "Additional 1.2M", description: null, qty: 4, unitPrice: "1200.00" },
+    ];
+
+    const breakdownOf = (item: Parameters<typeof sheetItem>[0]) =>
+      toSheetData(sheetDoc({ items: [sheetItem(item)] })).items[0].breakdown;
+
+    it("drops the row for an assembled product carrying options", () => {
+      const breakdown = breakdownOf({
+        unitPrice: "0.00",
+        listPrice: "0.00",
+        lines: modules,
+        total: "8850.00",
+      });
+      expect(breakdown.basePriceUnquoted).toBe(true);
+      expect(breakdown.assembledFromOptions).toBe(true);
+    });
+
+    it("keeps an unpriced row for an assembled product with no options at all", () => {
+      // Service, the case the options-present rule used to miss entirely:
+      // there are no option rows to carry the price, so dropping this row
+      // would leave the item with nothing at all -- but printing "$0" against
+      // it is what made the owner think the whole line was free.
+      const breakdown = breakdownOf({ unitPrice: "0.00", listPrice: "0.00", lines: [], total: "0.00" });
+      expect(breakdown.basePriceUnquoted).toBe(true);
+      expect(breakdown.assembledFromOptions).toBe(false);
+    });
+
+    it("keeps the row and the price for a machine a salesperson hand-zeroed", () => {
+      // The catalogue still prices it, so the $0 is a decision someone made
+      // and the row is where the customer reads it.
+      const breakdown = breakdownOf({
+        unitPrice: "0.00",
+        listPrice: "175000.00",
+        lines: modules,
+        total: "8850.00",
+      });
+      expect(breakdown.basePriceUnquoted).toBe(false);
+      expect(breakdown.assembledFromOptions).toBe(false);
+    });
+
+    it("keeps the price for a catalogue-unpriced machine priced by hand", () => {
+      // An import gap (`Price.needsReview`) snapshots into `listPrice` as 0,
+      // exactly like a deliberate zero. What separates them is that real money
+      // is being charged here, and it has to print.
+      const breakdown = breakdownOf({
+        unitPrice: "85000.00",
+        listPrice: "0.00",
+        lines: modules,
+        total: "93850.00",
+      });
+      expect(breakdown.basePriceUnquoted).toBe(false);
+      expect(breakdown.assembledFromOptions).toBe(false);
+    });
+
+    it("is NOT set for an ordinary priced machine", () => {
+      const breakdown = breakdownOf({ lines: modules });
+      expect(breakdown.basePriceUnquoted).toBe(false);
+      expect(breakdown.assembledFromOptions).toBe(false);
+    });
+
+    it("is NOT set when the list price was never recorded", () => {
+      // A row from before the column existed. Unknown is not zero.
+      const breakdown = breakdownOf({
+        unitPrice: "0.00",
+        listPrice: null,
+        lines: modules,
+        total: "8850.00",
+      });
+      expect(breakdown.basePriceUnquoted).toBe(false);
+      expect(breakdown.assembledFromOptions).toBe(false);
+    });
   });
 });

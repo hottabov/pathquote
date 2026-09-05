@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useToast } from "@/components/ui-kit";
-import type { ActionResult } from "@/lib/actions/documents";
+import { useToast } from "@/components/ui-kit/client";
+import { setItemShowImage } from "@/lib/actions/documents";
 
 /**
  * "Show image in PDF" checkbox on an item card — only ever rendered when
@@ -11,17 +11,15 @@ import type { ActionResult } from "@/lib/actions/documents";
  * nothing to toggle. Flips `DocumentItem.showImage` immediately on click —
  * unlike `ItemDiscountField` there's no intermediate value to type before
  * committing, so there's no separate "Save" step. Optimistic: the checkbox
- * reflects the clicked state right away and reverts if `setShowImageAction`
+ * reflects the clicked state right away and reverts if `setItemShowImage`
  * rejects it, same failure-recovery shape as `RemoveItemButton`.
  */
 export function ItemShowImageToggle({
   itemId,
   showImage,
-  setShowImageAction,
 }: {
   itemId: string;
   showImage: boolean;
-  setShowImageAction: (itemId: string, show: boolean) => Promise<ActionResult>;
 }) {
   const toast = useToast();
   const [checked, setChecked] = useState(showImage);
@@ -30,7 +28,7 @@ export function ItemShowImageToggle({
   function handleChange(next: boolean) {
     setChecked(next);
     startTransition(async () => {
-      const result = await setShowImageAction(itemId, next);
+      const result = await setItemShowImage(itemId, next);
       if (result?.error) {
         setChecked(!next);
         toast.error(result.error);

@@ -3,9 +3,10 @@
 import { useState, useTransition } from "react";
 import { Plus, ChevronLeft, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { StatusBadge, useToast } from "@/components/ui-kit";
+import { StatusBadge } from "@/components/ui-kit";
+import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
-import type { ActionResult } from "@/lib/actions/documents";
+import { addItem } from "@/lib/actions/documents";
 import type { ItemPickerSeries } from "@/lib/queries/documents";
 
 /**
@@ -20,11 +21,9 @@ import type { ItemPickerSeries } from "@/lib/queries/documents";
 export function AddItemPicker({
   documentId,
   catalog,
-  addItemAction,
 }: {
   documentId: string;
   catalog: ItemPickerSeries[];
-  addItemAction: (documentId: string, productCode: string) => Promise<ActionResult>;
 }) {
   const [open, setOpen] = useState(false);
   const [seriesCode, setSeriesCode] = useState<string | null>(null);
@@ -43,7 +42,7 @@ export function AddItemPicker({
   function handleAdd(productCode: string, productName: string) {
     setError(null);
     startTransition(async () => {
-      const result = await addItemAction(documentId, productCode);
+      const result = await addItem(documentId, productCode);
       if (result?.error) {
         setError(result.error);
         return;

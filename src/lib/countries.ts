@@ -1,23 +1,22 @@
-// Pure country list + ISO 3166-1 alpha-2 helpers, built on top of
-// `i18n-iso-countries` (Michael Wittig, Germany, MIT — deliberately chosen
-// over alternatives per the owner's "no Russian-authored libraries"
-// constraint). No `@/lib/db` or `next/*` imports — safe to import from a
-// plain `vitest run` and from both server and client components (the
-// country <select> needs this list in the browser bundle too).
-import * as countriesLib from "i18n-iso-countries";
-import enLocale from "i18n-iso-countries/langs/en.json";
-
-countriesLib.registerLocale(enLocale);
+// Pure country list + ISO 3166-1 alpha-2 helpers over the checked-in table in
+// `src/lib/country-names.ts` (generated from `i18n-iso-countries` — Michael
+// Wittig, Germany, MIT — deliberately chosen over alternatives per the owner's
+// "no Russian-authored libraries" constraint; see that file for why the list
+// is generated rather than computed at runtime, and note the package is no
+// longer a dependency: generating that table was its last use, so it is
+// installed on demand when the list needs regenerating). No `@/lib/db` or `next/*`
+// imports — safe to import from a plain `vitest run` and from both server and
+// client components (the country <select> needs this list in the browser
+// bundle too).
+import { COUNTRY_NAMES } from "./country-names";
 
 export type CountryOption = { code: string; name: string };
 
-const NAMES: Record<string, string> = countriesLib.getNames("en", { select: "official" });
-
 /** Every ISO 3166-1 alpha-2 country code + English name, sorted by name —
- * the data source for `CountrySelect` and any other country picker. */
-export const COUNTRIES: CountryOption[] = Object.entries(NAMES)
-  .map(([code, name]) => ({ code, name }))
-  .sort((a, b) => a.name.localeCompare(b.name));
+ * the data source for `CountrySelect` and any other country picker. Copied
+ * out of the readonly generated table so callers keep the mutable
+ * `CountryOption[]` they've always had. */
+export const COUNTRIES: CountryOption[] = COUNTRY_NAMES.map(({ code, name }) => ({ code, name }));
 
 const COUNTRY_BY_CODE = new Map(COUNTRIES.map((c) => [c.code, c.name]));
 

@@ -1,5 +1,15 @@
+import { cache } from "react";
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { DEFAULT_COMMISSION_TIERS, validateCommissionTiers, type CommissionTier } from "@/lib/pricing";
+
+/** Lets a caller already inside a `db.$transaction(async (tx) => ...)` read a
+ * setting through its own `tx` rather than the `db` singleton, which would see
+ * a different snapshot and check out a second pool connection while the
+ * transaction holds one. Structurally satisfied by both. Only
+ * `getCommissionTiers` takes it so far, because only the recalc
+ * (src/lib/documents/recalc.ts) reads a setting from inside a transaction. */
+type SettingReader = { setting: Prisma.TransactionClient["setting"] };
 
 const QUOTE_VALIDITY_SETTING_KEY = "quote.validityDays";
 
@@ -21,12 +31,22 @@ export const DEFAULT_QUOTE_VALIDITY_DAYS = 7;
  * this onto `Document.validityDays` for QUOTE documents) and the main
  * /settings page (which displays/edits it) — pulled out here so both read
  * the same fallback logic instead of duplicating it.
+ *
+ * Wrapped in React's `cache` because a single document-builder render reads
+ * it twice over — once directly for the org-default the validity field shows,
+ * once inside `getDocumentForBuilder` for `defaultValidityDays` — and neither
+ * caller can see the other's result. The memo lives on the Flight render
+ * request, so it dedupes within one page render (`generateMetadata` and the
+ * page body included, since Next renders both in the same request) and cannot
+ * outlive it: a server action runs outside any render, where `cache` is an
+ * inert passthrough, so a settings save is never served its own pre-write
+ * value on the re-render that follows.
  */
-export async function getQuoteValidityDays(): Promise<number> {
+export const getQuoteValidityDays = cache(async function getQuoteValidityDays(): Promise<number> {
   const setting = await db.setting.findUnique({ where: { key: QUOTE_VALIDITY_SETTING_KEY } });
   const rawValue = setting?.value;
   return typeof rawValue === "number" && Number.isFinite(rawValue) ? rawValue : DEFAULT_QUOTE_VALIDITY_DAYS;
-}
+});
 
 const SHOW_OPTION_ICONS_SETTING_KEY = "ui.showOptionIcons";
 
@@ -45,12 +65,15 @@ export const DEFAULT_SHOW_OPTION_ICONS = true;
  * Read server-side by the document builder page, which passes the result
  * down through `ItemsSection` -> `ItemsList` -> `ItemOptionsEditor`, and by
  * the main /settings page (which displays/edits it).
+ *
+ * Request-memoized for the same reason `getQuoteValidityDays` above is — see
+ * that function's doc comment for why the memo can't outlive one render.
  */
-export async function getShowOptionIcons(): Promise<boolean> {
+export const getShowOptionIcons = cache(async function getShowOptionIcons(): Promise<boolean> {
   const setting = await db.setting.findUnique({ where: { key: SHOW_OPTION_ICONS_SETTING_KEY } });
   const rawValue = setting?.value;
   return typeof rawValue === "boolean" ? rawValue : DEFAULT_SHOW_OPTION_ICONS;
-}
+});
 
 const COMMISSION_TIERS_SETTING_KEY = "commission.tiers";
 
@@ -96,8 +119,12 @@ function isCommissionTierArray(value: unknown): value is CommissionTier[] {
  * value -> default" rule `getShowOptionIcons` above already follows —
  * never a table that could silently pay the wrong rate.
  */
-export async function getCommissionTiers(): Promise<CommissionTier[]> {
-  const setting = await db.setting.findUnique({ where: { key: COMMISSION_TIERS_SETTING_KEY } });
+export async function getCommissionTiers(client?: SettingReader): Promise<CommissionTier[]> {
+  return client ? readCommissionTiers(client) : readDefaultCommissionTiers();
+}
+
+async function readCommissionTiers(client: SettingReader): Promise<CommissionTier[]> {
+  const setting = await client.setting.findUnique({ where: { key: COMMISSION_TIERS_SETTING_KEY } });
   if (setting === null) return DEFAULT_COMMISSION_TIERS;
 
   const rawValue = setting.value;
@@ -105,3 +132,20 @@ export async function getCommissionTiers(): Promise<CommissionTier[]> {
   if (validateCommissionTiers(rawValue) !== null) return DEFAULT_COMMISSION_TIERS;
   return rawValue;
 }
+
+/** Only the `db`-singleton read is request-memoized, and deliberately so:
+ * a caller that hands in its own `client` is inside a transaction (see
+ * `SettingReader` above), and a transaction's reads must stay that
+ * transaction's, never answered from — or shared with — a memo the rest of
+ * the request can reach. React's `cache` would in fact key a transaction
+ * client apart from `db` (arguments are matched by identity, and Prisma
+ * hands out a fresh `tx` per transaction), so wrapping the exported function
+ * whole would not actually cross the two; splitting the memo off the
+ * parameter says that in the code rather than resting it on that detail,
+ * and keeps a caller's explicitly-passed `db` from quietly sharing the
+ * singleton's memo either way. */
+const readDefaultCommissionTiers = cache(async function readDefaultCommissionTiers(): Promise<
+  CommissionTier[]
+> {
+  return readCommissionTiers(db);
+});

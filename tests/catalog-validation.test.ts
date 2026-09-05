@@ -9,6 +9,7 @@ import {
   reorderProductsSchema,
   isProductPermutation,
 } from "../src/lib/validation/catalog";
+import { accepts, rejects } from "./helpers/schema";
 
 describe("productSchema", () => {
   const base = {
@@ -45,36 +46,9 @@ describe("productSchema", () => {
     }
   });
 
-  it("accepts a single-character code", () => {
-    const result = productSchema.safeParse({ ...base, code: "A" });
-    expect(result.success).toBe(true);
-  });
-
-  it("rejects an empty code", () => {
-    const result = productSchema.safeParse({ ...base, code: "" });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects a code over 120 characters", () => {
-    const result = productSchema.safeParse({ ...base, code: "A".repeat(121) });
-    expect(result.success).toBe(false);
-  });
-
-  it("accepts a code at exactly the 120 character bound", () => {
-    const result = productSchema.safeParse({ ...base, code: "A".repeat(120) });
-    expect(result.success).toBe(true);
-  });
-
-  it("rejects a code with leading whitespace", () => {
-    const result = productSchema.safeParse({ ...base, code: " M5180" });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects a code with trailing whitespace", () => {
-    const result = productSchema.safeParse({ ...base, code: "M5180 " });
-    expect(result.success).toBe(false);
-  });
-
+  // Codes are printable-ASCII-only, so a tab/newline/embedded-null is
+  // refused up front rather than silently stored and later mangled by
+  // whatever renders it in the admin UI.
   it("rejects a code containing a control character (tab, newline, null)", () => {
     for (const code of ["M5180\t", "M5180\n", "M51\x0080"]) {
       const result = productSchema.safeParse({ ...base, code });
@@ -82,27 +56,22 @@ describe("productSchema", () => {
     }
   });
 
-  it("accepts codes containing internal spaces and hyphens", () => {
-    for (const code of ["M51 80", "80-code"]) {
-      const result = productSchema.safeParse({ ...base, code });
-      expect(result.success, `expected "${code}" to be valid`).toBe(true);
-    }
-  });
+  accepts(productSchema, [
+    ["a single-character code", { ...base, code: "A" }],
+    ["a code at exactly the 120 character bound", { ...base, code: "A".repeat(120) }],
+    ["a code with internal spaces", { ...base, code: "M51 80" }],
+    ["a code with an internal hyphen", { ...base, code: "80-code" }],
+  ]);
 
-  it("rejects a name shorter than 2 characters", () => {
-    const result = productSchema.safeParse({ ...base, name: "A" });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects a name over 200 characters", () => {
-    const result = productSchema.safeParse({ ...base, name: "A".repeat(201) });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects a description over 2000 characters", () => {
-    const result = productSchema.safeParse({ ...base, description: "A".repeat(2001) });
-    expect(result.success).toBe(false);
-  });
+  rejects(productSchema, [
+    ["an empty code", { ...base, code: "" }],
+    ["a code over 120 characters", { ...base, code: "A".repeat(121) }],
+    ["a code with leading whitespace", { ...base, code: " M5180" }],
+    ["a code with trailing whitespace", { ...base, code: "M5180 " }],
+    ["a name shorter than 2 characters", { ...base, name: "A" }],
+    ["a name over 200 characters", { ...base, name: "A".repeat(201) }],
+    ["a description over 2000 characters", { ...base, description: "A".repeat(2001) }],
+  ]);
 
   it("treats a missing/null description as absent, not an error", () => {
     const result = productSchema.safeParse({ ...base, description: null });
@@ -151,15 +120,10 @@ describe("productSchema", () => {
       if (result.success) expect(result.data.sortOrder).toBe(12);
     });
 
-    it("rejects a negative sort order", () => {
-      const result = productSchema.safeParse({ ...base, sortOrder: "-1" });
-      expect(result.success).toBe(false);
-    });
-
-    it("rejects a non-integer sort order", () => {
-      const result = productSchema.safeParse({ ...base, sortOrder: "1.5" });
-      expect(result.success).toBe(false);
-    });
+    rejects(productSchema, [
+      ["a negative sort order", { ...base, sortOrder: "-1" }],
+      ["a non-integer sort order", { ...base, sortOrder: "1.5" }],
+    ]);
   });
 });
 
@@ -173,21 +137,16 @@ describe("optionSchema", () => {
     attributeSchema: "",
   };
 
-  it("accepts a valid option with all product fields plus option-only fields", () => {
-    const result = optionSchema.safeParse(base);
-    expect(result.success).toBe(true);
-  });
+  accepts(optionSchema, [
+    ["a valid option with all product fields plus option-only fields", base],
+  ]);
 
-  it("rejects a shortDescription over 500 characters", () => {
-    const result = optionSchema.safeParse({ ...base, shortDescription: "A".repeat(501) });
-    expect(result.success).toBe(false);
-  });
-
-  it("still enforces the base product code/name rules", () => {
-    expect(optionSchema.safeParse({ ...base, code: " leading space" }).success).toBe(false);
-    expect(optionSchema.safeParse({ ...base, code: "" }).success).toBe(false);
-    expect(optionSchema.safeParse({ ...base, name: "A" }).success).toBe(false);
-  });
+  rejects(optionSchema, [
+    ["a shortDescription over 500 characters", { ...base, shortDescription: "A".repeat(501) }],
+    ["a code with leading whitespace (base product rule)", { ...base, code: " leading space" }],
+    ["an empty code (base product rule)", { ...base, code: "" }],
+    ["a name shorter than 2 characters (base product rule)", { ...base, name: "A" }],
+  ]);
 
   describe("attributeSchema JSON refine", () => {
     it("collapses an empty string to null", () => {
@@ -227,60 +186,41 @@ describe("optionSchema", () => {
       if (result.success) expect(result.data.attributeSchema).toEqual({ metres: 4 });
     });
 
-    it("rejects malformed JSON", () => {
-      const result = optionSchema.safeParse({ ...base, attributeSchema: "{not json" });
-      expect(result.success).toBe(false);
-    });
-
-    it("rejects valid JSON that isn't an array or object (e.g. a bare number or string)", () => {
-      expect(optionSchema.safeParse({ ...base, attributeSchema: "123" }).success).toBe(false);
-      expect(optionSchema.safeParse({ ...base, attributeSchema: '"hello"' }).success).toBe(false);
-      expect(optionSchema.safeParse({ ...base, attributeSchema: "null" }).success).toBe(false);
-      expect(optionSchema.safeParse({ ...base, attributeSchema: "true" }).success).toBe(false);
-    });
+    rejects(optionSchema, [
+      ["an attributeSchema value that's malformed JSON", { ...base, attributeSchema: "{not json" }],
+      ["an attributeSchema value that's a bare number", { ...base, attributeSchema: "123" }],
+      ["an attributeSchema value that's a bare string", { ...base, attributeSchema: '"hello"' }],
+      ["an attributeSchema value that's the literal null", { ...base, attributeSchema: "null" }],
+      ["an attributeSchema value that's the literal true", { ...base, attributeSchema: "true" }],
+    ]);
   });
 });
 
 describe("priceInputSchema", () => {
-  it('allows an empty amount ("" = clear the price)', () => {
-    const result = priceInputSchema.safeParse({ regionCode: "AU", amount: "" });
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data.amount).toBe("");
-  });
+  accepts(priceInputSchema, [
+    [
+      'an empty amount ("" = clear the price)',
+      { regionCode: "AU", amount: "" },
+      { regionCode: "AU", amount: "" },
+    ],
+    ["a whole-number amount", { regionCode: "AU", amount: "175000" }],
+    ["an amount with exactly 2 decimal places", { regionCode: "AU", amount: "12.50" }],
+    [
+      "a lowercase region code, normalized to uppercase",
+      { regionCode: "au", amount: "100" },
+      { regionCode: "AU", amount: "100" },
+    ],
+  ]);
 
-  it("accepts a whole-number amount", () => {
-    expect(priceInputSchema.safeParse({ regionCode: "AU", amount: "175000" }).success).toBe(true);
-  });
-
-  it("accepts an amount with exactly 2 decimal places", () => {
-    expect(priceInputSchema.safeParse({ regionCode: "AU", amount: "12.50" }).success).toBe(true);
-  });
-
-  it("rejects a negative amount", () => {
-    expect(priceInputSchema.safeParse({ regionCode: "AU", amount: "-1" }).success).toBe(false);
-  });
-
-  it("rejects an amount with more than 2 decimal places", () => {
-    expect(priceInputSchema.safeParse({ regionCode: "AU", amount: "1.234" }).success).toBe(false);
-  });
-
-  it("rejects a non-numeric amount", () => {
-    expect(priceInputSchema.safeParse({ regionCode: "AU", amount: "abc" }).success).toBe(false);
-  });
-
-  it("uppercases a lowercase region code", () => {
-    const result = priceInputSchema.safeParse({ regionCode: "au", amount: "100" });
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data.regionCode).toBe("AU");
-  });
-
-  it("rejects a region code that isn't 2-3 letters", () => {
-    for (const regionCode of ["A", "ABCD", "A1", ""]) {
-      expect(priceInputSchema.safeParse({ regionCode, amount: "100" }).success, regionCode).toBe(
-        false
-      );
-    }
-  });
+  rejects(priceInputSchema, [
+    ["a negative amount", { regionCode: "AU", amount: "-1" }],
+    ["an amount with more than 2 decimal places", { regionCode: "AU", amount: "1.234" }],
+    ["a non-numeric amount", { regionCode: "AU", amount: "abc" }],
+    ["a 1-letter region code", { regionCode: "A", amount: "100" }],
+    ["a 4-letter region code", { regionCode: "ABCD", amount: "100" }],
+    ["a region code with a digit", { regionCode: "A1", amount: "100" }],
+    ["a blank region code", { regionCode: "", amount: "100" }],
+  ]);
 });
 
 describe("compatDiff", () => {
@@ -314,101 +254,48 @@ describe("compatDiff", () => {
 });
 
 describe("conflictGroupNameSchema", () => {
-  it("accepts a valid name", () => {
-    const result = conflictGroupNameSchema.safeParse("Knife tools — fit one only");
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data).toBe("Knife tools — fit one only");
-    }
-  });
+  accepts(conflictGroupNameSchema, [
+    ["a valid name", "Knife tools — fit one only"],
+    ["a name with surrounding whitespace, trimmed", "  Knife tools  ", "Knife tools"],
+  ]);
 
-  it("trims surrounding whitespace", () => {
-    const result = conflictGroupNameSchema.safeParse("  Knife tools  ");
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data).toBe("Knife tools");
-    }
-  });
-
-  it("rejects a name that's too short", () => {
-    expect(conflictGroupNameSchema.safeParse("K").success).toBe(false);
-  });
-
-  it("rejects a name over 200 characters", () => {
-    expect(conflictGroupNameSchema.safeParse("x".repeat(201)).success).toBe(false);
-  });
+  rejects(conflictGroupNameSchema, [
+    ["a name that's too short", "K"],
+    ["a name over 200 characters", "x".repeat(201)],
+  ]);
 });
 
 describe("maxDiscountPctSchema", () => {
-  it("collapses an empty string to null (no cap)", () => {
-    const result = maxDiscountPctSchema.safeParse("");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBeNull();
-  });
+  accepts(maxDiscountPctSchema, [
+    ["an empty string, collapsed to null (no cap)", "", null],
+    ["a missing value, collapsed to null", undefined, null],
+    ["a null value, collapsed to null", null, null],
+    ["an integer percentage", "10", 10],
+    ["up to 2 decimal places", "12.5", 12.5],
+    ["the boundary value 0", "0", 0],
+    ["the boundary value 100", "100", 100],
+  ]);
 
-  it("collapses a missing/null value to null", () => {
-    expect(maxDiscountPctSchema.safeParse(null).success).toBe(true);
-    expect(maxDiscountPctSchema.safeParse(undefined).success).toBe(true);
-  });
-
-  it("accepts an integer percentage", () => {
-    const result = maxDiscountPctSchema.safeParse("10");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe(10);
-  });
-
-  it("accepts up to 2 decimal places", () => {
-    const result = maxDiscountPctSchema.safeParse("12.5");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe(12.5);
-  });
-
-  it("accepts the boundary values 0 and 100", () => {
-    expect(maxDiscountPctSchema.safeParse("0").success).toBe(true);
-    expect(maxDiscountPctSchema.safeParse("100").success).toBe(true);
-  });
-
-  it("rejects more than 2 decimal places", () => {
-    expect(maxDiscountPctSchema.safeParse("10.555").success).toBe(false);
-  });
-
-  it("rejects a value above 100", () => {
-    expect(maxDiscountPctSchema.safeParse("101").success).toBe(false);
-  });
-
-  it("rejects a negative value", () => {
-    expect(maxDiscountPctSchema.safeParse("-5").success).toBe(false);
-  });
-
-  it("rejects a non-numeric string", () => {
-    expect(maxDiscountPctSchema.safeParse("abc").success).toBe(false);
-  });
+  rejects(maxDiscountPctSchema, [
+    ["more than 2 decimal places", "10.555"],
+    ["a value above 100", "101"],
+    ["a negative value", "-5"],
+    ["a non-numeric string", "abc"],
+  ]);
 });
 
 describe("reorderProductsSchema", () => {
-  it("accepts a non-empty list of ids", () => {
-    expect(reorderProductsSchema.safeParse(["p1", "p2", "p3"]).success).toBe(true);
-  });
+  accepts(reorderProductsSchema, [
+    ["a non-empty list of ids", ["p1", "p2", "p3"]],
+    ["a single id", ["p1"]],
+  ]);
 
-  it("accepts a single id", () => {
-    expect(reorderProductsSchema.safeParse(["p1"]).success).toBe(true);
-  });
-
-  it("rejects an empty list", () => {
-    expect(reorderProductsSchema.safeParse([]).success).toBe(false);
-  });
-
-  it("rejects a duplicate id", () => {
-    expect(reorderProductsSchema.safeParse(["p1", "p2", "p1"]).success).toBe(false);
-  });
-
-  it("rejects an empty-string id", () => {
-    expect(reorderProductsSchema.safeParse(["p1", ""]).success).toBe(false);
-  });
-
-  it("rejects a non-array", () => {
-    expect(reorderProductsSchema.safeParse("p1").success).toBe(false);
-  });
+  rejects(reorderProductsSchema, [
+    ["an empty list", []],
+    ["a duplicate id", ["p1", "p2", "p1"]],
+    ["an empty-string id", ["p1", ""]],
+    ["a non-array", "p1"],
+  ]);
 });
 
 describe("isProductPermutation", () => {

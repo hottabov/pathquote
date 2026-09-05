@@ -4,6 +4,7 @@ import {
   visibleSettingsNavItems,
   SETTINGS_NAV_ITEMS,
 } from "../src/lib/settings-nav";
+import { isAdminRole } from "../src/lib/roles";
 
 describe("visibleSettingsNavItems", () => {
   it("includes every section for an ADMIN", () => {
@@ -88,5 +89,28 @@ describe("activeSettingsNavHref", () => {
       "/settings/preferences"
     );
     expect(activeSettingsNavHref("/settings/users", managerItems)).toBe("/settings");
+  });
+});
+
+
+// --- was tests/roles.test.ts: isAdminRole (src/lib/roles.ts) ------------------
+
+describe("isAdminRole", () => {
+  it("returns true for ADMIN", () => {
+    expect(isAdminRole("ADMIN")).toBe(true);
+  });
+
+  it("returns true for DEVELOPER", () => {
+    expect(isAdminRole("DEVELOPER")).toBe(true);
+  });
+
+  it("returns false for MANAGER", () => {
+    expect(isAdminRole("MANAGER")).toBe(false);
+  });
+
+  it("returns false for null/undefined/an unrecognised role", () => {
+    expect(isAdminRole(null)).toBe(false);
+    expect(isAdminRole(undefined)).toBe(false);
+    expect(isAdminRole("SOMETHING_ELSE")).toBe(false);
   });
 });

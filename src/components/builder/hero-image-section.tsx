@@ -1,5 +1,5 @@
 import { ImageUpload } from "@/components/catalog/image-upload";
-import type { ActionResult } from "@/lib/actions/documents";
+import { setDocumentHeroImage } from "@/lib/actions/documents";
 
 /**
  * The builder's "Setup image" card (owner, relaying the director: a
@@ -21,19 +21,17 @@ import type { ActionResult } from "@/lib/actions/documents";
 export function HeroImageSection({
   documentId,
   heroImageUrl,
-  setHeroImageAction,
   readOnly = false,
 }: {
   documentId: string;
   heroImageUrl: string | null;
-  setHeroImageAction: (documentId: string, url: string | null) => Promise<ActionResult>;
   readOnly?: boolean;
 }) {
   return (
     <ImageUpload
       currentUrl={heroImageUrl}
       alt="Setup image"
-      onSave={setHeroImageAction.bind(null, documentId)}
+      onSave={setDocumentHeroImage.bind(null, documentId)}
       readOnly={readOnly}
       purpose="document-hero"
       removeLabel="Remove setup image"

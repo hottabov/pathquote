@@ -3,7 +3,8 @@
 import { useState, useTransition, type FormEvent } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { fieldInputClass, useToast } from "@/components/ui-kit";
+import { fieldInputClass } from "@/components/ui-kit";
+import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 import type { CommissionTier } from "@/lib/pricing";
 import type { ActionResult } from "@/lib/actions/settings";

@@ -10,6 +10,7 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
+    "catalog:dump": "tsx scripts/dump-catalog.ts",
     "extract:catalog": "tsx scripts/extract-catalog.ts",
     "extract:us-prices": "tsx scripts/extract-us-prices.ts",
     "db:migrate": "prisma migrate deploy",
@@ -33,7 +34,6 @@
     "clsx": "^2.1.1",
     "fflate": "^0.8.3",
     "google-libphonenumber": "^3.2.46",
-    "i18n-iso-countries": "^7.14.0",
     "isomorphic-dompurify": "^3.23.0",
     "lucide-react": "^1.37.0",
     "next": "16.3.3",
@@ -44,7 +44,6 @@
     "react-dom": "19.2.8",
     "sharp": "^0.35.4",
     "tailwind-merge": "^3.6.0",
-    "tw-animate-css": "^1.4.0",
     "zod": "^4.5.2"
   },
   "devDependencies": {
@@ -57,7 +56,6 @@
     "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
-    "shadcn": "^4.19.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.12",
     "typescript": "^5",

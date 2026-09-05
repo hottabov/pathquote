@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ChevronDown, ChevronUp, GripVertical } from "lucide-react";
 import { CatalogThumb } from "@/components/catalog/catalog-thumb";
 import { PriceDisplay, InactiveBadge } from "@/components/catalog-badges";
-import { useToast } from "@/components/ui-kit";
+import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 import type { ActionResult } from "@/lib/actions/catalog";
 import type { ProductListItem } from "@/lib/queries/catalog";

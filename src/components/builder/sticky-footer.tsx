@@ -4,7 +4,6 @@ import { formatMoney } from "@/lib/format";
 import { toCents } from "@/lib/pricing";
 import { StatusBadge, STATUS_TONE } from "@/components/ui-kit";
 import { DeleteDraftButton } from "@/components/builder/delete-draft-button";
-import type { ActionResult } from "@/lib/actions/documents";
 
 type TotalsProps = {
   taxName: string;
@@ -87,13 +86,17 @@ export function DocumentTotals({
  * Sticky bottom bar for the <lg builder layout: the document's status
  * badge, the live totals breakdown (recalculated server-side by every
  * mutating action — see recalcDocument in src/lib/actions/documents.ts),
- * and — for a DRAFT — the delete-draft control. Stays visible while
+ * and — for a DRAFT — the delete-draft control, which `status` alone decides:
+ * only a draft can be deleted, so there is nothing for a caller to say about
+ * it that this component cannot read off the status it is already given.
+ * Stays visible while
  * scrolling the item list on a phone, which is the primary device this
  * builder targets; `pb-safe` keeps it clear of the home-indicator on
  * notched devices. Hidden at `lg+`, where the same totals live in the
  * sticky right-hand summary panel instead (see `[documentId]/page.tsx`).
  */
 export function StickyFooter({
+  documentId,
   status,
   taxName,
   taxRate,
@@ -103,10 +106,9 @@ export function StickyFooter({
   total,
   currency,
   commission,
-  deleteAction,
 }: {
+  documentId: string;
   status: DocumentStatus;
-  deleteAction?: () => Promise<ActionResult>;
 } & TotalsProps) {
   return (
     <div className="pb-safe sticky bottom-0 -mx-4 border-t border-slate-200 bg-white px-4 py-3 sm:mx-0 sm:rounded-xl sm:border sm:px-6 lg:hidden">
@@ -115,7 +117,7 @@ export function StickyFooter({
           <FileText className="size-3.5" aria-hidden="true" />
           {status === "DRAFT" ? "Draft" : "Final"}
         </StatusBadge>
-        {deleteAction ? <DeleteDraftButton action={deleteAction} /> : null}
+        {status === "DRAFT" ? <DeleteDraftButton documentId={documentId} /> : null}
       </div>
 
       <div className="mt-2">

@@ -14,11 +14,19 @@ const TABS = [
  * detouring back through the outer settings nav, the same "no intermediate
  * card to click through" goal the settings redesign applies one level up.
  * Rendered by each of the list pages themselves, immediately under their
- * `PageHeader`.
+ * `PageHeader` — except below `sm`, where `order-first` lifts it to the top
+ * of the page instead. Under the header it sits after a title, a
+ * description and (on some pages) a stacked action button, all three of
+ * which differ per page and wrap to different heights on a phone — so the
+ * tabs landed somewhere different on every page and appeared to jump as you
+ * flipped between them. Above the header its position depends on nothing
+ * but itself. Each page root is a `flex flex-col`, which is what makes the
+ * reorder possible without moving it in the DOM (so focus and reading order
+ * still follow the heading).
  */
 export function CatalogueSubnav({ active }: { active: "content" | "option-conflict-groups" | "spec-images" }) {
   return (
-    <div role="tablist" aria-label="Catalogue" className="inline-flex w-fit flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1">
+    <div role="tablist" aria-label="Catalogue" className="order-first inline-flex w-fit flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1 sm:order-none">
       {TABS.map((tab) => {
         const isActive = tab.href === `/settings/${active}`;
         return (

@@ -6,7 +6,7 @@ import { fieldInputClass } from "@/components/ui-kit";
 import { useAutosave } from "@/lib/use-autosave";
 import { currencySymbol, formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { ActionResult } from "@/lib/actions/documents";
+import { setItemDiscount } from "@/lib/actions/documents";
 import type { DiscountMode } from "@/lib/pricing";
 
 /**
@@ -43,7 +43,6 @@ export function ItemDiscountField({
   discountValue,
   maxDiscountPct,
   currency,
-  setDiscountAction,
   readOnly = false,
 }: {
   itemId: string;
@@ -51,7 +50,6 @@ export function ItemDiscountField({
   discountValue: string | null;
   maxDiscountPct: string | null;
   currency: string;
-  setDiscountAction: (itemId: string, formData: FormData) => Promise<ActionResult>;
   readOnly?: boolean;
 }) {
   const [mode, setMode] = useState<DiscountMode>(discountMode);
@@ -71,7 +69,7 @@ export function ItemDiscountField({
       const formData = new FormData();
       formData.set("mode", nextMode);
       formData.set("value", nextValue);
-      const result = await setDiscountAction(itemId, formData);
+      const result = await setItemDiscount(itemId, formData);
       return result.error ? { error: result.error } : {};
     },
   });

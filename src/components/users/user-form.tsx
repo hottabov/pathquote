@@ -1,13 +1,31 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FieldRow, fieldInputClass } from "@/components/ui-kit";
 import type { ActionResult } from "@/lib/actions/users";
 
 export type RegionOption = { code: string; name: string };
 
+type UserFormValues = {
+  email: string;
+  name: string;
+  phone: string;
+  role: string;
+  regionCode: string;
+  password: string;
+};
+
 const initialState: ActionResult = {};
+
+const BLANK_USER: UserFormValues = {
+  email: "",
+  name: "",
+  phone: "",
+  role: "MANAGER",
+  regionCode: "",
+  password: "",
+};
 
 /**
  * The "new user" form. On success `createUser` redirects to the new user's
@@ -16,6 +34,14 @@ const initialState: ActionResult = {};
  * src/components/catalog/product-form.tsx). Email/role/region occupy the
  * two-column grid; the password field spans full-width with its
  * magic-link-only note directly beneath it.
+ *
+ * Controlled throughout, for the reason `CompanyForm` spells out: React
+ * empties an uncontrolled form as soon as its action returns, error or not.
+ * "That email is already in use" is the likeliest thing this form ever says,
+ * and it used to take the name, phone, role, region and password down with it
+ * — every one of which the server was perfectly happy with. The password is
+ * held the same way as the rest: an admin who has to retype it is an admin who
+ * types a different one, and then has to go and tell the new user twice.
  */
 export function UserForm({
   action,
@@ -28,6 +54,11 @@ export function UserForm({
     (_prevState: ActionResult, formData: FormData) => action(formData),
     initialState
   );
+  const [values, setValues] = useState<UserFormValues>(BLANK_USER);
+
+  function set<K extends keyof UserFormValues>(field: K, value: UserFormValues[K]) {
+    setValues((current) => ({ ...current, [field]: value }));
+  }
 
   return (
     <form action={formAction} autoComplete="off" className="flex flex-col gap-4">
@@ -37,6 +68,8 @@ export function UserForm({
             id="user-email"
             name="email"
             type="email"
+            value={values.email}
+            onChange={(e) => set("email", e.target.value)}
             required
             maxLength={200}
             autoComplete="off"
@@ -45,15 +78,37 @@ export function UserForm({
         </FieldRow>
 
         <FieldRow label="Name" htmlFor="user-name">
-          <input id="user-name" name="name" maxLength={120} className={fieldInputClass} />
+          <input
+            id="user-name"
+            name="name"
+            value={values.name}
+            onChange={(e) => set("name", e.target.value)}
+            maxLength={120}
+            className={fieldInputClass}
+          />
         </FieldRow>
 
         <FieldRow label="Phone" htmlFor="user-phone" hint="Shown on a quotation's Prepared by block.">
-          <input id="user-phone" name="phone" type="tel" maxLength={40} className={fieldInputClass} />
+          <input
+            id="user-phone"
+            name="phone"
+            type="tel"
+            value={values.phone}
+            onChange={(e) => set("phone", e.target.value)}
+            maxLength={40}
+            className={fieldInputClass}
+          />
         </FieldRow>
 
         <FieldRow label="Role" htmlFor="user-role" required>
-          <select id="user-role" name="role" defaultValue="MANAGER" required className={fieldInputClass}>
+          <select
+            id="user-role"
+            name="role"
+            value={values.role}
+            onChange={(e) => set("role", e.target.value)}
+            required
+            className={fieldInputClass}
+          >
             <option value="MANAGER">Manager</option>
             <option value="ADMIN">Admin</option>
             <option value="DEVELOPER">Developer</option>
@@ -61,7 +116,14 @@ export function UserForm({
         </FieldRow>
 
         <FieldRow label="Region" htmlFor="user-region" hint="Leave unset if this user isn't tied to one region.">
-          <select id="user-region" name="regionCode" defaultValue="" autoComplete="off" className={fieldInputClass}>
+          <select
+            id="user-region"
+            name="regionCode"
+            value={values.regionCode}
+            onChange={(e) => set("regionCode", e.target.value)}
+            autoComplete="off"
+            className={fieldInputClass}
+          >
             <option value="">No region</option>
             {regions.map((r) => (
               <option key={r.code} value={r.code}>
@@ -81,6 +143,8 @@ export function UserForm({
             id="user-password"
             name="password"
             type="password"
+            value={values.password}
+            onChange={(e) => set("password", e.target.value)}
             minLength={10}
             maxLength={200}
             autoComplete="new-password"

@@ -6,6 +6,7 @@
 // pure fs/path/crypto module with the same no-db/no-next discipline.
 import { z } from "zod";
 import { IMAGE_URL_PATTERN } from "@/lib/uploads";
+import { validityDayCountSchema } from "./validity-days";
 
 /** Every id in this app is a Prisma `cuid()` — 25 lowercase base36
  * characters starting with "c". We don't couple to that exact alphabet
@@ -286,12 +287,12 @@ export type NotesInput = z.infer<typeof notesSchema>;
 
 // --- validity (per-quote override) ------------------------------------------
 
-/** Days a quote stays valid. Null means "use the org-wide setting". Over 30 is
- * allowed — a customer's capex approval can genuinely take six weeks — and the
- * UI warns rather than blocks. */
+/** Days a quote stays valid, or null for "use the org-wide setting" — the
+ * nullable form of the shared rule in ./validity-days, which the settings
+ * page's mandatory `quoteValidityDaysSchema` builds on too. */
 export const validityDaysSchema = z.preprocess(
   (v) => (v === null || v === undefined || (typeof v === "string" && v.trim() === "") ? null : v),
-  z.union([z.null(), z.coerce.number().int().min(1).max(365)])
+  z.union([z.null(), validityDayCountSchema()])
 );
 export type ValidityDaysInput = z.infer<typeof validityDaysSchema>;
 

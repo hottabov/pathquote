@@ -1,40 +1,28 @@
 import { describe, it, expect } from "vitest";
 import { supportSubjectSchema, supportBodySchema, supportMessageSchema } from "@/lib/validation/support";
+import { accepts, rejects } from "./helpers/schema";
 
 describe("supportSubjectSchema", () => {
-  it("requires a non-blank subject", () => {
-    expect(supportSubjectSchema.safeParse("").success).toBe(false);
-    expect(supportSubjectSchema.safeParse("   ").success).toBe(false);
-  });
+  accepts(supportSubjectSchema, [
+    ["a subject with surrounding whitespace, trimmed", "  Prices are wrong  ", "Prices are wrong"],
+    ["a subject at exactly 150 characters", "a".repeat(150)],
+  ]);
 
-  it("trims a valid subject", () => {
-    const result = supportSubjectSchema.safeParse("  Prices are wrong  ");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("Prices are wrong");
-  });
-
-  it("rejects a subject over 150 characters", () => {
-    expect(supportSubjectSchema.safeParse("a".repeat(151)).success).toBe(false);
-  });
-
-  it("accepts a subject at exactly 150 characters", () => {
-    expect(supportSubjectSchema.safeParse("a".repeat(150)).success).toBe(true);
-  });
+  rejects(supportSubjectSchema, [
+    ["a blank subject", ""],
+    ["a whitespace-only subject", "   "],
+    ["a subject over 150 characters", "a".repeat(151)],
+  ]);
 });
 
 describe("supportBodySchema", () => {
-  it("requires a non-blank message", () => {
-    expect(supportBodySchema.safeParse("").success).toBe(false);
-    expect(supportBodySchema.safeParse("   ").success).toBe(false);
-  });
+  accepts(supportBodySchema, [["a message at exactly 5000 characters", "a".repeat(5000)]]);
 
-  it("rejects a message over 5000 characters", () => {
-    expect(supportBodySchema.safeParse("a".repeat(5001)).success).toBe(false);
-  });
-
-  it("accepts a message at exactly 5000 characters", () => {
-    expect(supportBodySchema.safeParse("a".repeat(5000)).success).toBe(true);
-  });
+  rejects(supportBodySchema, [
+    ["a blank message", ""],
+    ["a whitespace-only message", "   "],
+    ["a message over 5000 characters", "a".repeat(5001)],
+  ]);
 });
 
 describe("supportMessageSchema", () => {

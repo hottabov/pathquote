@@ -10,13 +10,12 @@ import { ItemDiscountField } from "@/components/builder/item-discount-field";
 import { ItemBreakdownEditor } from "@/components/builder/item-breakdown-editor";
 import { ItemShowImageToggle } from "@/components/builder/item-show-image-toggle";
 import { ProductionSpecEditor } from "@/components/builder/production-spec-editor";
-import { useToast } from "@/components/ui-kit";
+import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 import { resolveForm } from "@/lib/production-forms/resolve";
 import { derivedEasyLoaderCodes } from "@/lib/production-forms/table-sections";
-import type { ActionResult } from "@/lib/actions/documents";
+import { removeItem, reorderItems, setItemSerialNumber } from "@/lib/actions/documents";
 import type { BuilderItem, CompatibleOption } from "@/lib/queries/documents";
-import type { OptionSelectionInput } from "@/lib/validation/documents";
 
 function arrayMove<T>(list: T[], from: number, to: number): T[] {
   const copy = list.slice();
@@ -30,7 +29,7 @@ function arrayMove<T>(list: T[], from: number, to: number): T[] {
  * `items` is the server's own `sortOrder asc` order (see
  * `getDocumentForBuilder`) — the single source of truth. Reordering is
  * optimistic via `useOptimistic`: a drag-drop or Up/Down click updates the
- * displayed order immediately, then `reorderItemsAction` persists it. If the
+ * displayed order immediately, then `reorderItems` persists it. If the
  * action fails, `items` itself never changed, so the optimistic order
  * reverts automatically once the transition settles; we additionally toast
  * the error and force a `router.refresh()` so a client whose local item list
@@ -38,13 +37,16 @@ function arrayMove<T>(list: T[], from: number, to: number): T[] {
  * re-syncs with the server instead of re-showing a rejected order.
  *
  * Two reorder affordances, both scoped to `!readOnly`:
- * - A grip handle (HTML5 drag & drop) for pointer/desktop use — dragging the
- *   handle drags the whole card (via `setDragImage`) onto another card to
- *   swap positions.
- * - Up/Down icon buttons, always visible (not just on touch): the
- *   accessible fallback for touch devices (native HTML5 DnD doesn't work on
- *   mobile browsers) and for keyboard/screen-reader users, since the drag
- *   handle itself isn't keyboard-operable.
+ * - A grip handle, draggable onto another card to swap positions. It runs
+ *   two implementations: native HTML5 drag & drop for the mouse (which
+ *   supplies a real drag image via `setDragImage`), and Pointer Events for
+ *   touch/pen, because mobile browsers never fire the HTML5 drag events at
+ *   all. The pointer path hit-tests `document.elementFromPoint` in place of
+ *   the `dragover`/`drop` it doesn't get.
+ * - Up/Down icon buttons at `md`+ only. They are the keyboard/screen-reader
+ *   affordance (the grip isn't keyboard-operable), and they used to be the
+ *   touch fallback too — but on a phone they overflowed the header row, and
+ *   the pointer drag above now covers touch, so they're hidden there.
  *
  * Each card is independently collapsible (owner: cards get huge once an
  * item has many options, and collapsed cards are easier to drag-reorder).
@@ -64,16 +66,6 @@ export function ItemsList({
   items,
   currency,
   compatibleOptionsByItemKey,
-  removeItemAction,
-  setItemOptionsAction,
-  setItemDiscountAction,
-  setItemUnitPriceAction,
-  resetItemUnitPriceAction,
-  setLineUnitPriceAction,
-  resetLineUnitPriceAction,
-  setItemShowImageAction,
-  setItemSerialNumberAction,
-  reorderItemsAction,
   showOptionIcons = true,
   screenSideImages,
   readOnly = false,
@@ -82,18 +74,6 @@ export function ItemsList({
   items: BuilderItem[];
   currency: string;
   compatibleOptionsByItemKey: Record<string, CompatibleOption[]>;
-  removeItemAction: (itemId: string) => Promise<ActionResult>;
-  setItemOptionsAction: (itemId: string, selections: OptionSelectionInput[]) => Promise<ActionResult>;
-  setItemDiscountAction: (itemId: string, formData: FormData) => Promise<ActionResult>;
-  setItemUnitPriceAction: (itemId: string, formData: FormData) => Promise<ActionResult>;
-  resetItemUnitPriceAction: (itemId: string) => Promise<ActionResult>;
-  setLineUnitPriceAction: (lineId: string, formData: FormData) => Promise<ActionResult>;
-  resetLineUnitPriceAction: (lineId: string) => Promise<ActionResult>;
-  setItemShowImageAction: (itemId: string, show: boolean) => Promise<ActionResult>;
-  /** See `CreditItemSerialNumber` below — only ever rendered for a credit
-   * item (`item.isCredit`, e.g. the TRADE-IN product). */
-  setItemSerialNumberAction: (itemId: string, formData: FormData) => Promise<ActionResult>;
-  reorderItemsAction: (documentId: string, orderedItemIds: string[]) => Promise<ActionResult>;
   showOptionIcons?: boolean;
   /** `value -> imageUrl` for the "screenSide" `SpecImage` field — see
    * `ProductionSpecEditor`'s own doc comment on the prop of the same name.
@@ -112,6 +92,10 @@ export function ItemsList({
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const cardNodes = useRef(new Map<string, HTMLDivElement>());
+  /** The in-flight touch/pen drag, or `null`. Mouse drags don't come through
+   * here at all — they use the native HTML5 drag below, which gives a real
+   * drag image for free. See `startPointerDrag`. */
+  const pointerDrag = useRef<{ pointerId: number; itemId: string } | null>(null);
   const [collapsedByItemId, setCollapsedByItemId] = useState<Map<string, boolean>>(new Map());
 
   function isCollapsed(itemId: string) {
@@ -137,7 +121,7 @@ export function ItemsList({
   function commitOrder(newOrder: BuilderItem[]) {
     startTransition(async () => {
       setOptimisticItems(newOrder);
-      const result = await reorderItemsAction(
+      const result = await reorderItems(
         documentId,
         newOrder.map((item) => item.id)
       );
@@ -158,6 +142,37 @@ export function ItemsList({
   // single-machine one, so it only appears once the document holds two or
   // more items a production form recognizes.
   const machineCount = optimisticItems.filter((item) => resolveForm(item.code) !== null).length;
+
+  /** The id of the item card under a viewport point, or `null` when the
+   * point is outside every card. Hit-testing the DOM is what stands in for
+   * `dragover`/`drop` during a pointer drag: those fire only for the native
+   * HTML5 drag, which touch browsers never start. */
+  function itemIdAtPoint(clientX: number, clientY: number): string | null {
+    const card = document
+      .elementFromPoint(clientX, clientY)
+      ?.closest<HTMLElement>("[data-builder-item-id]");
+    return card?.dataset.builderItemId ?? null;
+  }
+
+  function endPointerDrag(clientX: number, clientY: number) {
+    const drag = pointerDrag.current;
+    if (!drag) return;
+    pointerDrag.current = null;
+    const targetId = itemIdAtPoint(clientX, clientY);
+    if (targetId) {
+      handleDrop(targetId);
+      return;
+    }
+    // Dropped on empty space — leave the order alone.
+    setDraggingId(null);
+    setDropTargetId(null);
+  }
+
+  function cancelPointerDrag() {
+    pointerDrag.current = null;
+    setDraggingId(null);
+    setDropTargetId(null);
+  }
 
   function handleDrop(targetId: string) {
     setDropTargetId(null);
@@ -205,6 +220,10 @@ export function ItemsList({
         return (
           <div
             key={item.id}
+            // Read back by `itemIdAtPoint` to hit-test a touch drag. A data
+            // attribute rather than the `cardNodes` map because the lookup
+            // starts from whatever element is under the finger and walks up.
+            data-builder-item-id={item.id}
             ref={(node) => {
               if (node) cardNodes.current.set(item.id, node);
               else cardNodes.current.delete(item.id);
@@ -243,9 +262,19 @@ export function ItemsList({
                 are inline on the right with compact 36px visual / 44px hit area. */}
             <div
               onClick={() => toggleCollapsed(item.id)}
-              className="flex cursor-pointer select-none items-start justify-between gap-3"
+              className="flex cursor-pointer select-none flex-wrap items-start justify-between gap-x-2 gap-y-1 sm:flex-nowrap sm:gap-x-3"
             >
-              <div className="flex min-w-0 items-start gap-2">
+              {/* `flex-1` matters as much as `min-w-0` here: the controls to
+                  the right are `shrink-0`, so without it a narrow row hands
+                  them everything and collapses this column to zero width —
+                  at which point its children paint straight over the price,
+                  which is exactly what a phone used to render.
+                  `basis-full` then takes it further below `sm`: even once it
+                  stops overlapping, sharing one 327px line with the grip,
+                  the thumbnail and ~170px of controls leaves the name about
+                  35px — enough for "Co…". Wrapping the controls onto their
+                  own line buys the title the whole width instead. */}
+              <div className="flex min-w-0 basis-full items-start gap-2 sm:flex-1 sm:basis-auto">
                 {!readOnly && (
                   <div
                     onClick={(event) => event.stopPropagation()}
@@ -265,8 +294,49 @@ export function ItemsList({
                         setDraggingId(null);
                         setDropTargetId(null);
                       }}
+                      // Touch/pen path. Mobile browsers never fire the HTML5
+                      // drag events above, so on a phone — where the up/down
+                      // buttons are hidden — this is the only way to reorder.
+                      // Mouse is left to the native drag, which supplies a
+                      // drag image these handlers can't.
+                      onPointerDown={(event) => {
+                        if (event.pointerType === "mouse") return;
+                        // Suppresses the scroll/long-press gesture that would
+                        // otherwise steal the pointer mid-drag; `touch-none`
+                        // below is the same guarantee at the CSS level, which
+                        // is the one Safari actually honours.
+                        event.preventDefault();
+                        // Keeps `pointermove`/`pointerup` targeted at this
+                        // handle once the finger leaves it, which is the
+                        // entire drag. Not fatal if the browser refuses (the
+                        // pointer can already be gone by the time this runs):
+                        // the drag still starts, it just ends early if the
+                        // finger slides off — far better than throwing here
+                        // and never setting `draggingId` at all.
+                        try {
+                          event.currentTarget.setPointerCapture(event.pointerId);
+                        } catch {
+                          // Capture is an optimisation, not a precondition.
+                        }
+                        pointerDrag.current = { pointerId: event.pointerId, itemId: item.id };
+                        setDraggingId(item.id);
+                      }}
+                      onPointerMove={(event) => {
+                        const drag = pointerDrag.current;
+                        if (drag?.pointerId !== event.pointerId) return;
+                        const overId = itemIdAtPoint(event.clientX, event.clientY);
+                        setDropTargetId(overId === drag.itemId ? null : overId);
+                      }}
+                      onPointerUp={(event) => {
+                        if (pointerDrag.current?.pointerId !== event.pointerId) return;
+                        endPointerDrag(event.clientX, event.clientY);
+                      }}
+                      onPointerCancel={(event) => {
+                        if (pointerDrag.current?.pointerId !== event.pointerId) return;
+                        cancelPointerDrag();
+                      }}
                       aria-label={`Reorder ${item.name}`}
-                      className="focus-ring flex size-11 cursor-grab items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 active:cursor-grabbing"
+                      className="focus-ring flex size-11 cursor-grab touch-none items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 active:cursor-grabbing"
                     >
                       <GripVertical className="size-4" aria-hidden="true" />
                     </button>
@@ -283,7 +353,10 @@ export function ItemsList({
                 <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                   <div className="flex min-w-0 flex-col">
                     <span className="truncate text-sm font-medium text-brand-dark">{item.name}</span>
-                    <span className="font-mono text-xs text-slate-500">{item.code}</span>
+                    {/* Truncates for the same reason the name does: a code is
+                        unbroken text, so without it a squeezed column lets it
+                        spill out over whatever sits to its right. */}
+                    <span className="truncate font-mono text-xs text-slate-500">{item.code}</span>
                   </div>
                   {optionCount > 0 ? (
                     <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
@@ -292,13 +365,23 @@ export function ItemsList({
                   ) : null}
                 </div>
               </div>
-              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                <span className="pt-2 text-sm font-medium tabular-nums text-brand-dark">
+              {/* Below `sm` this sits on its own line under the title (the
+                  title block is `basis-full` there), so it stretches to the
+                  full width and keeps its controls right-aligned. */}
+              <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
+                <span className="text-sm font-medium tabular-nums text-brand-dark sm:pt-2">
                   {formatMoney(item.total, currency)}
                 </span>
                 {!readOnly && (
                   <>
-                    <div onClick={(event) => event.stopPropagation()} className="flex items-center gap-2">
+                    {/* md+ only. On a phone these two buttons plus the price,
+                        remove and chevron overflow the row, and reordering
+                        there is served by dragging the grip handle instead
+                        (which works on touch — see its pointer handlers). */}
+                    <div
+                      onClick={(event) => event.stopPropagation()}
+                      className="hidden items-center gap-2 md:flex"
+                    >
                       <button
                         type="button"
                         onClick={() => moveBy(index, -1)}
@@ -319,7 +402,7 @@ export function ItemsList({
                       </button>
                     </div>
                     <span onClick={(event) => event.stopPropagation()}>
-                      <RemoveItemButton action={removeItemAction.bind(null, item.id)} itemName={item.name} />
+                      <RemoveItemButton action={removeItem.bind(null, item.id)} itemName={item.name} />
                     </span>
                   </>
                 )}
@@ -358,22 +441,13 @@ export function ItemsList({
                     repeating the same lines below it with a "Price" input
                     each. */}
                 <div className="mb-3">
-                  <ItemBreakdownEditor
-                    item={item}
-                    currency={currency}
-                    setItemUnitPriceAction={setItemUnitPriceAction}
-                    resetItemUnitPriceAction={resetItemUnitPriceAction}
-                    setLineUnitPriceAction={setLineUnitPriceAction}
-                    resetLineUnitPriceAction={resetLineUnitPriceAction}
-                    readOnly={readOnly}
-                  />
+                  <ItemBreakdownEditor item={item} currency={currency} readOnly={readOnly} />
                 </div>
 
                 {item.isCredit ? (
                   <CreditItemSerialNumber
                     itemId={item.id}
                     serialNumber={item.serialNumber}
-                    setSerialNumberAction={setItemSerialNumberAction}
                     readOnly={readOnly}
                   />
                 ) : null}
@@ -400,7 +474,6 @@ export function ItemsList({
                     .map((line) => ({ code: line.code, qty: line.qty, attributes: line.attributes }))}
                   compatibleOptions={compatKey ? (compatibleOptionsByItemKey[compatKey] ?? []) : []}
                   currency={currency}
-                  setOptionsAction={setItemOptionsAction}
                   showOptionIcons={showOptionIcons}
                   readOnly={readOnly}
                   lockedCodes={isEasyLoader ? derivedEasyLoaderCodes(item.code) : undefined}
@@ -422,16 +495,11 @@ export function ItemsList({
                         discountValue={item.discountValue}
                         maxDiscountPct={item.maxDiscountPct}
                         currency={currency}
-                        setDiscountAction={setItemDiscountAction}
                         readOnly={readOnly}
                       />
                     ) : null}
                     {!readOnly && item.productHasImage ? (
-                      <ItemShowImageToggle
-                        itemId={item.id}
-                        showImage={item.showImage}
-                        setShowImageAction={setItemShowImageAction}
-                      />
+                      <ItemShowImageToggle itemId={item.id} showImage={item.showImage} />
                     ) : null}
                   </div>
                 ) : null}
@@ -467,12 +535,10 @@ export function ItemsList({
 function CreditItemSerialNumber({
   itemId,
   serialNumber,
-  setSerialNumberAction,
   readOnly,
 }: {
   itemId: string;
   serialNumber: string | null;
-  setSerialNumberAction: (itemId: string, formData: FormData) => Promise<ActionResult>;
   readOnly: boolean;
 }) {
   const toast = useToast();
@@ -484,7 +550,7 @@ function CreditItemSerialNumber({
     startTransition(async () => {
       const formData = new FormData();
       formData.set("serialNumber", serial);
-      const result = await setSerialNumberAction(itemId, formData);
+      const result = await setItemSerialNumber(itemId, formData);
       if (result.error) toast.error(result.error);
     });
   }

@@ -1,11 +1,12 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidateUser } from "@/lib/revalidate";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/authz";
 import { compatDiff } from "@/lib/validation/catalog";
+import type { ActionResult } from "./_shared";
 
-export type ActionResult = { error?: string };
+export type { ActionResult };
 
 /**
  * Sets a user's `CatalogVisibility` to exactly `hiddenSeriesCodes` +
@@ -79,6 +80,6 @@ export async function setCatalogVisibility(
   // Catalogue visibility lives on the user's own settings page now (see
   // "feat: settings gets its own navigation") — there is no longer a
   // separate /settings/catalog-visibility route to revalidate.
-  revalidatePath(`/settings/users/${user.id}`);
+  revalidateUser(user.id);
   return {};
 }

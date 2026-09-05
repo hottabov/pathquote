@@ -3,7 +3,7 @@
 import { useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useConfirm, useToast } from "@/components/ui-kit";
+import { useConfirm, useToast } from "@/components/ui-kit/client";
 import type { ActionResult } from "@/lib/actions/documents";
 import type { DocumentStatus } from "@prisma/client";
 

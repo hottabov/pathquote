@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useToast } from "@/components/ui-kit";
-import type { ActionResult } from "@/lib/actions/documents";
+import { useToast } from "@/components/ui-kit/client";
+import { setPriceDisplay } from "@/lib/actions/documents";
 
 type PriceDisplayState = { showItemPrices: boolean; showOptionPrices: boolean };
 
@@ -13,7 +13,7 @@ type PriceDisplayState = { showItemPrices: boolean; showOptionPrices: boolean };
  * write-ups reveal underneath it. Only ever rendered on a QUOTE (see the
  * builder page) and only while DRAFT.
  *
- * Both flags always submit together in one `setPriceDisplayAction` call
+ * Both flags always submit together in one `setPriceDisplay` call
  * (there's no partial-update action, unlike the per-item discount field) —
  * flipping "Show all prices in full" on also flips "Show item totals" on in
  * the same request, mirroring the rendering rule an option's price only
@@ -27,13 +27,11 @@ export function PriceDisplayToggles({
   documentId,
   showItemPrices,
   showOptionPrices,
-  setPriceDisplayAction,
   readOnly = false,
 }: {
   documentId: string;
   showItemPrices: boolean;
   showOptionPrices: boolean;
-  setPriceDisplayAction: (documentId: string, input: PriceDisplayState) => Promise<ActionResult>;
   readOnly?: boolean;
 }) {
   const toast = useToast();
@@ -44,7 +42,7 @@ export function PriceDisplayToggles({
     const previous = state;
     setState(next);
     startTransition(async () => {
-      const result = await setPriceDisplayAction(documentId, next);
+      const result = await setPriceDisplay(documentId, next);
       if (result?.error) {
         setState(previous);
         toast.error(result.error);

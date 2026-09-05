@@ -14,133 +14,81 @@ import {
   createRegionSchema,
   updateRegionSchema,
 } from "../src/lib/validation/regions";
+import { accepts, rejects } from "./helpers/schema";
 
 describe("regionCodeSchema", () => {
-  it("normalizes a lowercase code to uppercase", () => {
-    const result = regionCodeSchema.safeParse("au");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("AU");
-  });
+  accepts(regionCodeSchema, [
+    ["a lowercase code, normalized to uppercase", "au", "AU"],
+    ["a 2-letter code", "AU"],
+    ["a 3-letter code", "USA"],
+  ]);
 
-  it("accepts 2- and 3-letter codes", () => {
-    expect(regionCodeSchema.safeParse("AU").success).toBe(true);
-    expect(regionCodeSchema.safeParse("USA").success).toBe(true);
-  });
-
-  it("rejects a code with digits", () => {
-    expect(regionCodeSchema.safeParse("A1").success).toBe(false);
-  });
-
-  it("rejects a code with 1 or 4+ letters", () => {
-    expect(regionCodeSchema.safeParse("A").success).toBe(false);
-    expect(regionCodeSchema.safeParse("ABCD").success).toBe(false);
-  });
-
-  it("rejects a blank code", () => {
-    expect(regionCodeSchema.safeParse("").success).toBe(false);
-  });
+  rejects(regionCodeSchema, [
+    ["a code with digits", "A1"],
+    ["a 1-letter code", "A"],
+    ["a 4-letter code", "ABCD"],
+    ["a blank code", ""],
+  ]);
 });
 
 describe("currencyCodeSchema", () => {
-  it("normalizes a lowercase code to uppercase", () => {
-    const result = currencyCodeSchema.safeParse("aud");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("AUD");
-  });
+  accepts(currencyCodeSchema, [
+    ["a lowercase code, normalized to uppercase", "aud", "AUD"],
+    ["exactly 3 letters", "USD"],
+  ]);
 
-  it("accepts exactly 3 letters", () => {
-    expect(currencyCodeSchema.safeParse("USD").success).toBe(true);
-  });
-
-  it("rejects 2 or 4 letters", () => {
-    expect(currencyCodeSchema.safeParse("US").success).toBe(false);
-    expect(currencyCodeSchema.safeParse("USDD").success).toBe(false);
-  });
-
-  it("rejects digits", () => {
-    expect(currencyCodeSchema.safeParse("US1").success).toBe(false);
-  });
+  rejects(currencyCodeSchema, [
+    ["2 letters", "US"],
+    ["4 letters", "USDD"],
+    ["digits", "US1"],
+  ]);
 });
 
 describe("regionNameSchema", () => {
-  it("accepts a normal name", () => {
-    expect(regionNameSchema.safeParse("Australia").success).toBe(true);
-  });
+  accepts(regionNameSchema, [["a normal name", "Australia"]]);
 
-  it("rejects a name shorter than 2 characters", () => {
-    expect(regionNameSchema.safeParse("A").success).toBe(false);
-  });
-
-  it("rejects a name over 200 characters", () => {
-    expect(regionNameSchema.safeParse("A".repeat(201)).success).toBe(false);
-  });
+  rejects(regionNameSchema, [
+    ["a name shorter than 2 characters", "A"],
+    ["a name over 200 characters", "A".repeat(201)],
+  ]);
 });
 
 describe("taxNameSchema", () => {
-  it("accepts a normal tax name", () => {
-    expect(taxNameSchema.safeParse("GST").success).toBe(true);
-  });
+  accepts(taxNameSchema, [
+    ["a normal tax name", "GST"],
+    ["a tax name at exactly the 40 character bound", "A".repeat(40)],
+  ]);
 
-  it("rejects an empty tax name", () => {
-    expect(taxNameSchema.safeParse("").success).toBe(false);
-  });
-
-  it("accepts a tax name at exactly the 40 character bound", () => {
-    expect(taxNameSchema.safeParse("A".repeat(40)).success).toBe(true);
-  });
-
-  it("rejects a tax name over 40 characters", () => {
-    expect(taxNameSchema.safeParse("A".repeat(41)).success).toBe(false);
-  });
+  rejects(taxNameSchema, [
+    ["an empty tax name", ""],
+    ["a tax name over 40 characters", "A".repeat(41)],
+  ]);
 });
 
 describe("taxRateSchema", () => {
-  it("accepts a whole number rate", () => {
-    expect(taxRateSchema.safeParse("10").success).toBe(true);
-  });
+  accepts(taxRateSchema, [
+    ["a whole number rate", "10"],
+    ["a rate with 1 decimal place", "10.5"],
+    ["a rate with 2 decimal places", "10.55"],
+    ["zero", "0"],
+    ["the upper bound 99.99", "99.99"],
+  ]);
 
-  it("accepts a rate with up to 2 decimal places", () => {
-    expect(taxRateSchema.safeParse("10.5").success).toBe(true);
-    expect(taxRateSchema.safeParse("10.55").success).toBe(true);
-  });
-
-  it("accepts 0", () => {
-    expect(taxRateSchema.safeParse("0").success).toBe(true);
-  });
-
-  it("accepts the upper bound 99.99", () => {
-    expect(taxRateSchema.safeParse("99.99").success).toBe(true);
-  });
-
-  it("rejects a rate over 99.99", () => {
-    expect(taxRateSchema.safeParse("100").success).toBe(false);
-  });
-
-  it("rejects more than 2 decimal places", () => {
-    expect(taxRateSchema.safeParse("10.555").success).toBe(false);
-  });
-
-  it("rejects a negative rate", () => {
-    expect(taxRateSchema.safeParse("-1").success).toBe(false);
-  });
-
-  it("rejects a non-numeric value", () => {
-    expect(taxRateSchema.safeParse("ten").success).toBe(false);
-  });
+  rejects(taxRateSchema, [
+    ["a rate over 99.99", "100"],
+    ["more than 2 decimal places", "10.555"],
+    ["a negative rate", "-1"],
+    ["a non-numeric value", "ten"],
+  ]);
 });
 
 describe("entityNameSchema", () => {
-  it("accepts a normal entity name", () => {
-    expect(entityNameSchema.safeParse("Pathfinder Australia Pty Ltd").success).toBe(true);
-  });
+  accepts(entityNameSchema, [["a normal entity name", "Pathfinder Australia Pty Ltd"]]);
 
-  it("rejects an empty entity name", () => {
-    expect(entityNameSchema.safeParse("").success).toBe(false);
-  });
-
-  it("rejects an entity name over 200 characters", () => {
-    expect(entityNameSchema.safeParse("A".repeat(201)).success).toBe(false);
-  });
+  rejects(entityNameSchema, [
+    ["an empty entity name", ""],
+    ["an entity name over 200 characters", "A".repeat(201)],
+  ]);
 });
 
 describe("optional entity/footer fields", () => {
@@ -152,63 +100,31 @@ describe("optional entity/footer fields", () => {
     }
   });
 
-  it("rejects entityLegalId over 100 characters", () => {
-    expect(entityLegalIdSchema.safeParse("A".repeat(101)).success).toBe(false);
-  });
+  rejects(entityLegalIdSchema, [["entityLegalId over 100 characters", "A".repeat(101)]]);
+  rejects(entityAddressSchema, [["entityAddress over 400 characters", "A".repeat(401)]]);
 
-  it("rejects entityAddress over 400 characters", () => {
-    expect(entityAddressSchema.safeParse("A".repeat(401)).success).toBe(false);
-  });
-
-  it("rejects footerText over 2000 characters", () => {
-    expect(footerTextSchema.safeParse("A".repeat(2001)).success).toBe(false);
-  });
-
-  it("accepts footerText at exactly the 2000 character bound", () => {
-    expect(footerTextSchema.safeParse("A".repeat(2000)).success).toBe(true);
-  });
+  accepts(footerTextSchema, [["footerText at exactly the 2000 character bound", "A".repeat(2000)]]);
+  rejects(footerTextSchema, [["footerText over 2000 characters", "A".repeat(2001)]]);
 });
 
 describe("bankDetailsRecordSchema", () => {
-  it("accepts an empty record", () => {
-    expect(bankDetailsRecordSchema.safeParse({}).success).toBe(true);
-  });
+  const record = (count: number) =>
+    Object.fromEntries(Array.from({ length: count }, (_, i) => [`Key ${i}`, "value"]));
 
-  it("accepts a normal record", () => {
-    expect(bankDetailsRecordSchema.safeParse({ "Account name": "Pathfinder", BSB: "123-456" }).success).toBe(
-      true
-    );
-  });
+  accepts(bankDetailsRecordSchema, [
+    ["an empty record", {}],
+    ["a normal record", { "Account name": "Pathfinder", BSB: "123-456" }],
+    ["exactly 12 keys", record(12)],
+    ["a key at exactly 40 characters", { ["A".repeat(40)]: "value" }],
+    ["a value at exactly 120 characters", { Key: "A".repeat(120) }],
+  ]);
 
-  it("accepts exactly 12 keys", () => {
-    const obj = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`Key ${i}`, "value"]));
-    expect(bankDetailsRecordSchema.safeParse(obj).success).toBe(true);
-  });
-
-  it("rejects more than 12 keys", () => {
-    const obj = Object.fromEntries(Array.from({ length: 13 }, (_, i) => [`Key ${i}`, "value"]));
-    expect(bankDetailsRecordSchema.safeParse(obj).success).toBe(false);
-  });
-
-  it("rejects a key over 40 characters", () => {
-    expect(bankDetailsRecordSchema.safeParse({ ["A".repeat(41)]: "value" }).success).toBe(false);
-  });
-
-  it("accepts a key at exactly 40 characters", () => {
-    expect(bankDetailsRecordSchema.safeParse({ ["A".repeat(40)]: "value" }).success).toBe(true);
-  });
-
-  it("rejects a value over 120 characters", () => {
-    expect(bankDetailsRecordSchema.safeParse({ Key: "A".repeat(121) }).success).toBe(false);
-  });
-
-  it("accepts a value at exactly 120 characters", () => {
-    expect(bankDetailsRecordSchema.safeParse({ Key: "A".repeat(120) }).success).toBe(true);
-  });
-
-  it("rejects a non-string value", () => {
-    expect(bankDetailsRecordSchema.safeParse({ Key: 123 }).success).toBe(false);
-  });
+  rejects(bankDetailsRecordSchema, [
+    ["more than 12 keys", record(13)],
+    ["a key over 40 characters", { ["A".repeat(41)]: "value" }],
+    ["a value over 120 characters", { Key: "A".repeat(121) }],
+    ["a non-string value", { Key: 123 }],
+  ]);
 });
 
 describe("bankDetailsSchema", () => {

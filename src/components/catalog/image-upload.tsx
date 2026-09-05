@@ -3,7 +3,7 @@
 import { useState, useTransition, type ChangeEvent } from "react";
 import { ImageIcon, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/components/ui-kit";
+import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 import type { ActionResult } from "@/lib/actions/catalog";
 

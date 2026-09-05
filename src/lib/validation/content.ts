@@ -53,14 +53,7 @@ export const contentBlockSchema = z.object({
 
 export type ContentBlockInput = z.infer<typeof contentBlockSchema>;
 
-/** A region code as used by createRegionOverride/deleteRegionOverride —
- * 2-3 letters, case-insensitive, normalized to uppercase to match
- * Region.code. Mirrors priceInputSchema's regionCode piece in
- * src/lib/validation/catalog.ts. */
-export const regionCodeSchema = z
-  .string()
-  .trim()
-  .transform((value) => value.toUpperCase())
-  .refine((value) => /^[A-Z]{2,3}$/.test(value), {
-    message: "Region code must be 2-3 letters",
-  });
+/** Re-exported (not redeclared) so `createRegionOverride`/`deleteRegionOverride`
+ * in src/lib/actions/content.ts can keep importing it from here while there is
+ * only one region-code rule in the codebase. */
+export { regionCodeSchema } from "./region-code";

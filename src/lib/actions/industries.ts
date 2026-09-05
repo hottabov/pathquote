@@ -1,30 +1,15 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidateCompany, revalidateCompanyList } from "@/lib/revalidate";
 import { Prisma } from "@prisma/client";
-import type { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAdmin, requireSession } from "@/lib/authz";
 import { idSchema, optionalIdSchema } from "@/lib/validation/documents";
 import { industryNameSchema, normalizeIndustryName } from "@/lib/validation/industries";
 import { companyWhereForUser } from "@/lib/scope";
+import { NOT_FOUND_ERROR, flattenZodError, type ActionResult } from "./_shared";
 
-export type ActionResult = { error?: string };
-
-const NOT_FOUND_ERROR = "Not found";
-
-/** Join every zod issue message (form-level + field-level) into one string
- * for a plain `{ error }` result — mirrors src/lib/actions/clients.ts and
- * every other action module (each keeps a private copy: a `"use server"`
- * module may only export async server actions, so this can't be shared via
- * a named export). */
-function flattenZodError(error: z.ZodError): string {
-  const flat = error.flatten();
-  const messages = [...flat.formErrors, ...Object.values(flat.fieldErrors).flat()].filter(
-    (m): m is string => Boolean(m)
-  );
-  return messages.length > 0 ? messages.join(" ") : "Invalid input";
-}
+export type { ActionResult };
 
 function isUniqueConstraintError(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
@@ -60,7 +45,7 @@ export async function createIndustry(name: string): Promise<ActionResult & { id?
 
   try {
     const created = await db.industry.create({ data: { name: parsed.data } });
-    revalidatePath("/clients");
+    revalidateCompanyList();
     return { id: created.id };
   } catch (error) {
     // The findByNormalizedName() check above is check-then-act and can
@@ -118,7 +103,7 @@ export async function renameIndustry(industryId: string, name: string): Promise<
     throw error;
   }
 
-  revalidatePath("/clients");
+  revalidateCompanyList();
   return {};
 }
 
@@ -157,6 +142,6 @@ export async function setCompanyIndustry(
     data: { industryId: parsedIndustryId.data ?? null },
   });
 
-  revalidatePath(`/clients/${company.id}`);
+  revalidateCompany(company.id);
   return {};
 }

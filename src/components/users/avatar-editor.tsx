@@ -2,7 +2,8 @@
 
 import { useRef, useState, useTransition, type ChangeEvent } from "react";
 import { Pencil } from "lucide-react";
-import { Avatar, useToast } from "@/components/ui-kit";
+import { Avatar } from "@/components/ui-kit";
+import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 import type { ActionResult } from "@/lib/actions/documents";
 

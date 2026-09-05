@@ -2,15 +2,10 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { FieldRow, fieldInputClass, PhoneField } from "@/components/ui-kit";
+import { ContactFields, type ContactFieldValues } from "@/components/clients/contact-fields";
 import type { ActionResult } from "@/lib/actions/clients";
 
-export type ContactFormValues = {
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-  position: string;
+export type ContactFormValues = ContactFieldValues & {
   isPrimary: boolean;
 };
 
@@ -68,62 +63,17 @@ export function ContactForm({
 
   return (
     <form action={formAction} className="flex flex-col gap-3">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <FieldRow label="First name" htmlFor={`${idPrefix}-first-name`} required>
-          <input
-            id={`${idPrefix}-first-name`}
-            name="firstName"
-            value={values.firstName}
-            onChange={(e) => set("firstName", e.target.value)}
-            required
-            maxLength={80}
-            className={fieldInputClass}
-          />
-        </FieldRow>
-
-        <FieldRow label="Last name" htmlFor={`${idPrefix}-last-name`}>
-          <input
-            id={`${idPrefix}-last-name`}
-            name="lastName"
-            value={values.lastName}
-            onChange={(e) => set("lastName", e.target.value)}
-            maxLength={80}
-            className={fieldInputClass}
-          />
-        </FieldRow>
-
-        <FieldRow label="Email" htmlFor={`${idPrefix}-email`}>
-          <input
-            id={`${idPrefix}-email`}
-            name="email"
-            type="email"
-            value={values.email}
-            onChange={(e) => set("email", e.target.value)}
-            className={fieldInputClass}
-          />
-        </FieldRow>
-
-        <FieldRow label="Phone" htmlFor={`${idPrefix}-phone`}>
-          <PhoneField
-            id={`${idPrefix}-phone`}
-            name="phone"
-            value={values.phone}
-            onChange={(phone) => set("phone", phone)}
-            defaultCountry={defaultCountry}
-          />
-        </FieldRow>
-
-        <FieldRow label="Position" htmlFor={`${idPrefix}-position`} className="sm:col-span-2">
-          <input
-            id={`${idPrefix}-position`}
-            name="position"
-            value={values.position}
-            onChange={(e) => set("position", e.target.value)}
-            maxLength={80}
-            className={fieldInputClass}
-          />
-        </FieldRow>
-      </div>
+      <ContactFields
+        values={values}
+        // Its own setter rather than `set` above: `ContactFields` only knows
+        // about `ContactFieldValues`, and a `set` narrowed to this form's
+        // wider key set isn't the same function type even though every call it
+        // makes is legal.
+        set={(field, value) => setValues((current) => ({ ...current, [field]: value }))}
+        idPrefix={idPrefix}
+        named
+        defaultCountry={defaultCountry}
+      />
 
       <label className="flex min-h-11 items-center gap-2 text-sm font-medium text-brand-dark">
         <input

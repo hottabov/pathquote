@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FieldRow, fieldInputClass } from "@/components/ui-kit";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,10 @@ export type OptionFormValues = {
   sortOrder: number;
 };
 
+/** What this form holds while it is being edited — see the note on
+ * `sortOrder` below. */
+type OptionFormState = Omit<OptionFormValues, "sortOrder"> & { sortOrder: string };
+
 const initialState: ActionResult = {};
 
 /**
@@ -23,6 +27,13 @@ const initialState: ActionResult = {};
  * description and a raw-JSON attribute schema textarea (validated by
  * optionSchema — must parse to an array or object, or be left empty), set
  * in a monospace face since it holds structured text.
+ *
+ * Controlled throughout, for the reason `CompanyForm` spells out: React
+ * empties an uncontrolled form as soon as its action returns, error or not.
+ * That hurt most here, where the likeliest rejection is the attribute schema
+ * failing to parse — the one field on the screen nobody wants to retype, and
+ * the one that used to vanish along with everything else the moment the
+ * server said so. `defaultValue` cannot survive that reset; state can.
  */
 export function OptionForm({
   action,
@@ -40,6 +51,18 @@ export function OptionForm({
     (_prevState: ActionResult, formData: FormData) => action(formData),
     initialState
   );
+  // `sortOrder` is held as the string the input actually contains, not as a
+  // number: `Number("")` is 0, so a number-typed state would turn a cleared
+  // field into a visible "0" the moment the admin deleted the last digit. The
+  // server parses the submitted string either way (see `optionSchema`).
+  const [values, setValues] = useState<OptionFormState>(() => ({
+    ...defaultValues,
+    sortOrder: String(defaultValues.sortOrder),
+  }));
+
+  function set<K extends keyof OptionFormState>(field: K, value: OptionFormState[K]) {
+    setValues((current) => ({ ...current, [field]: value }));
+  }
 
   return (
     <form action={formAction} className="flex flex-col gap-4">
@@ -48,7 +71,8 @@ export function OptionForm({
           <input
             id="option-code"
             name="code"
-            defaultValue={defaultValues.code}
+            value={values.code}
+            onChange={(e) => set("code", e.target.value)}
             required
             disabled={readOnly}
             className={fieldInputClass}
@@ -59,7 +83,8 @@ export function OptionForm({
           <input
             id="option-name"
             name="name"
-            defaultValue={defaultValues.name}
+            value={values.name}
+            onChange={(e) => set("name", e.target.value)}
             required
             minLength={2}
             maxLength={200}
@@ -76,7 +101,8 @@ export function OptionForm({
           <textarea
             id="option-short-description"
             name="shortDescription"
-            defaultValue={defaultValues.shortDescription}
+            value={values.shortDescription}
+            onChange={(e) => set("shortDescription", e.target.value)}
             maxLength={500}
             rows={2}
             disabled={readOnly}
@@ -93,7 +119,8 @@ export function OptionForm({
           <textarea
             id="option-attribute-schema"
             name="attributeSchema"
-            defaultValue={defaultValues.attributeSchema}
+            value={values.attributeSchema}
+            onChange={(e) => set("attributeSchema", e.target.value)}
             rows={4}
             disabled={readOnly}
             className={cn(fieldInputClass, "h-auto min-h-24 py-2 font-mono text-xs")}
@@ -104,7 +131,8 @@ export function OptionForm({
           <input
             name="active"
             type="checkbox"
-            defaultChecked={defaultValues.active}
+            checked={values.active}
+            onChange={(e) => set("active", e.target.checked)}
             disabled={readOnly}
             className="size-4 rounded border-slate-300 accent-brand disabled:cursor-not-allowed"
           />
@@ -115,7 +143,8 @@ export function OptionForm({
           <input
             name="noCommission"
             type="checkbox"
-            defaultChecked={defaultValues.noCommission}
+            checked={values.noCommission}
+            onChange={(e) => set("noCommission", e.target.checked)}
             disabled={readOnly}
             className="size-4 rounded border-slate-300 accent-brand disabled:cursor-not-allowed"
           />
@@ -129,7 +158,8 @@ export function OptionForm({
             type="number"
             min={0}
             step={1}
-            defaultValue={defaultValues.sortOrder}
+            value={values.sortOrder}
+            onChange={(e) => set("sortOrder", e.target.value)}
             disabled={readOnly}
             className={fieldInputClass}
           />

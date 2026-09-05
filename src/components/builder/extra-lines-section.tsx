@@ -4,7 +4,7 @@ import { toCents, fromCents } from "@/lib/pricing";
 import { SectionCard, EmptyState } from "@/components/ui-kit";
 import { RemoveItemButton } from "@/components/builder/remove-item-button";
 import { AddCustomLineForm } from "@/components/builder/add-custom-line-form";
-import type { ActionResult } from "@/lib/actions/documents";
+import { removeLine } from "@/lib/actions/documents";
 import type { BuilderLine } from "@/lib/queries/documents";
 
 /**
@@ -22,15 +22,11 @@ export function ExtraLinesSection({
   documentId,
   lines,
   currency,
-  addCustomLineAction,
-  removeLineAction,
   readOnly = false,
 }: {
   documentId: string;
   lines: BuilderLine[];
   currency: string;
-  addCustomLineAction: (documentId: string, formData: FormData) => Promise<ActionResult>;
-  removeLineAction: (lineId: string) => Promise<ActionResult>;
   readOnly?: boolean;
 }) {
   return (
@@ -68,7 +64,7 @@ export function ExtraLinesSection({
                   {formatMoney(fromCents(line.qty * toCents(line.unitPrice)), currency)}
                 </span>
                 {!readOnly && (
-                  <RemoveItemButton action={removeLineAction.bind(null, line.id)} itemName={line.name} />
+                  <RemoveItemButton action={removeLine.bind(null, line.id)} itemName={line.name} />
                 )}
               </div>
             </div>
@@ -78,7 +74,7 @@ export function ExtraLinesSection({
 
       {!readOnly && (
         <div className="mt-4">
-          <AddCustomLineForm documentId={documentId} addCustomLineAction={addCustomLineAction} />
+          <AddCustomLineForm documentId={documentId} />
         </div>
       )}
     </SectionCard>

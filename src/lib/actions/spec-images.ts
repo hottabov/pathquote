@@ -1,11 +1,12 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidateSpecImages } from "@/lib/revalidate";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/authz";
 import { IMAGE_URL_PATTERN } from "@/lib/uploads";
+import type { ActionResult } from "./_shared";
 
-export type ActionResult = { error?: string };
+export type { ActionResult };
 
 /** Validates that a submitted image URL is either `null` (clear the diagram)
  * or exactly the `/api/files/<uuid>.<ext>` shape `saveUpload` produces —
@@ -44,6 +45,6 @@ export async function setSpecImage(field: string, value: string, url: string | n
     });
   }
 
-  revalidatePath("/settings/spec-images");
+  revalidateSpecImages();
   return {};
 }

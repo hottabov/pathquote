@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useToast } from "@/components/ui-kit";
+import { useToast } from "@/components/ui-kit/client";
 import type { ActionResult } from "@/lib/actions/settings";
 
 /**

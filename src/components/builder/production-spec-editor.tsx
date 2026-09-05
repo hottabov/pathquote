@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import { ChevronDown, Minus, Plus, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { fieldInputClass, useToast } from "@/components/ui-kit";
+import { fieldInputClass } from "@/components/ui-kit";
+import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 import { applyScreenSideToQuote, setProductionSpec } from "@/lib/actions/production";
 import { setEasyLoaderLayout } from "@/lib/actions/documents";
@@ -491,8 +492,18 @@ export function ProductionSpecEditor({
                   <input
                     type="checkbox"
                     checked={drills?.required ?? false}
+                    // Ticking the box is the only control here that does not
+                    // write immediately. The printed form says "TBC" is not
+                    // acceptable, so `drillsSchema` refuses "drills required,
+                    // detail blank" -- which is precisely the half-answer a
+                    // tick on its own is. Hold it in the draft, let it reveal
+                    // the detail field, and write both halves together on
+                    // that field's blur. Unticking is a complete answer ("no
+                    // drills") and saves like everything else.
                     onChange={(e) =>
-                      save({ ...draft, drills: { required: e.target.checked, detail: "" } }, "spec")
+                      e.target.checked
+                        ? setDraft({ ...draft, drills: { required: true, detail: "" } })
+                        : save({ ...draft, drills: { required: false, detail: "" } }, "spec")
                     }
                     className={checkboxClass}
                   />

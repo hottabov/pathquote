@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { unzipSync, strFromU8 } from "fflate";
 import { patchSheetXml, patchWorkbook } from "../src/lib/production-forms/xlsx-patch";
+import { columnIndex, splitRef } from "../src/lib/production-forms/cell-ref";
 
 const TEMPLATE = path.resolve(
   __dirname,
@@ -106,5 +107,31 @@ describe("patchWorkbook", () => {
     expect(patched["xl/media/image1.jpeg"]).toBeDefined();
     expect(patched["xl/printerSettings/printerSettings1.bin"]).toBeDefined();
     expect(strFromU8(patched[SHEET])).toContain("pageSetup");
+  });
+});
+
+
+// --- was tests/cell-ref.test.ts: cell-ref helpers (src/lib/production-forms/cell-ref.ts) ------------------
+
+describe("columnIndex", () => {
+  it("maps A to 1", () => expect(columnIndex("A")).toBe(1));
+  it("maps Z to 26", () => expect(columnIndex("Z")).toBe(26));
+  it("maps AA to 27", () => expect(columnIndex("AA")).toBe(27));
+  it("maps AZ to 52", () => expect(columnIndex("AZ")).toBe(52));
+  it("orders G before M", () => expect(columnIndex("G")).toBeLessThan(columnIndex("M")));
+  it("orders Z before AA", () => expect(columnIndex("Z")).toBeLessThan(columnIndex("AA")));
+});
+
+describe("splitRef", () => {
+  it("splits a single-letter reference", () => {
+    expect(splitRef("G8")).toEqual({ col: "G", colIndex: 7, row: 8 });
+  });
+
+  it("splits a two-letter reference", () => {
+    expect(splitRef("AA108")).toEqual({ col: "AA", colIndex: 27, row: 108 });
+  });
+
+  it("throws on a malformed reference", () => {
+    expect(() => splitRef("8G")).toThrow();
   });
 });

@@ -28,10 +28,15 @@ import type { ItemBreakdown } from "@/lib/sheet-data";
  *   in the same column shape the option rows use, so the machine reads as
  *   the first line of its own list rather than a differently formatted
  *   heading. The quantity renders regardless of `showPrices`; only the price
- *   itself is gated. The one exception is a product assembled from its own
- *   options (`breakdown.assembledFromOptions` — see its doc comment), where
- *   the row is dropped entirely: it would show a machine at $0 directly
- *   under a heading that already names that machine.
+ *   itself is gated. Two exceptions, both about a product with no price of
+ *   its own (see `ItemBreakdown.basePriceUnquoted`): its price never renders,
+ *   because "$0" against a machine reads as free or broken rather than as
+ *   "priced elsewhere"; and when its price is carried by option rows below it
+ *   (`breakdown.assembledFromOptions`) the row is dropped entirely, since a
+ *   bare code and quantity under a heading that already names the machine add
+ *   nothing. Service — assembled in the same sense but with no options to
+ *   carry it — is why those are two rules and not one: it keeps its row and
+ *   loses only the number.
  * - Every option row always renders — `code`/name (as "`code` — `name`" when
  *   `code` is set, plain `name` otherwise, exactly this component's old
  *   hand-rolled `OptionRow` formatting), its own `description` underneath
@@ -87,7 +92,7 @@ export function ItemBreakdownRows({
           </td>
           <td className={baseNegative && showPrices ? "pq-col-qty pq-negative" : "pq-col-qty"}>{breakdown.qty}</td>
           <td className={baseNegative && showPrices ? "pq-col-amount pq-amount pq-negative" : "pq-col-amount pq-amount"}>
-            {showPrices ? formatMoney(breakdown.basePrice, currency) : null}
+            {showPrices && !breakdown.basePriceUnquoted ? formatMoney(breakdown.basePrice, currency) : null}
           </td>
         </tr>
       )}

@@ -514,6 +514,7 @@ describe("renderQuotationHtml — investment summary: base price, options, subto
             breakdown: {
               qty: 1,
               basePrice: "175000.00",
+              basePriceUnquoted: false,
               assembledFromOptions: false,
               options: [{ name: "MTS", code: "MTS", description: null, qty: 1, lineTotal: null }],
               discount: null,
@@ -528,6 +529,93 @@ describe("renderQuotationHtml — investment summary: base price, options, subto
     expect(html).toContain("$215,425");
     // The option's own price never appears — only its name/qty do.
     expect(html).not.toContain("$40,425");
+  });
+
+  // The other half of the fix that hides the equipment-detail base row: the
+  // Investment Summary shows the same machine at the same price, so if it
+  // still printed "$0" the two pages would contradict each other.
+  describe("a product with no price of its own", () => {
+    const unpricedItem = (lines: QuotationData["items"][number]["lines"]) =>
+      baseDocSheetItem({
+        code: "SERVICE",
+        name: "Service",
+        unitPrice: "0.00",
+        total: lines.length > 0 ? "1,200.00" : "0.00",
+        lines,
+        breakdown: buildItemBreakdown(
+          {
+            unitPrice: "0.00",
+            listPrice: "0.00",
+            discountMode: "PERCENT",
+            discountValue: null,
+            discountAmount: "0.00",
+            total: lines.length > 0 ? "1200.00" : "0.00",
+            lines,
+            isCredit: false,
+          },
+          true
+        ),
+      });
+
+    it("prints no money against it when it has no options either", async () => {
+      const html = await renderQuotationHtml(
+        baseQuotationData({ showItemPrices: true, items: [unpricedItem([])] })
+      );
+      // The row survives — dropping it would leave the item with nothing at
+      // all — but nothing in it reads as "this machine costs zero dollars".
+      expect(html).toContain("SERVICE");
+      expect(html).not.toContain(">$0<");
+    });
+
+    it("drops its row when its options carry the price", async () => {
+      const modules = [
+        {
+          id: "line-1",
+          code: "SVC-EL-INSTALL",
+          name: "EasyLoader installation",
+          description: null,
+          qty: 1,
+          unitPrice: "1200.00",
+          lineTotal: "1200.00",
+          image: null,
+        },
+      ];
+      const html = await renderQuotationHtml(
+        baseQuotationData({ showItemPrices: true, items: [unpricedItem(modules)] })
+      );
+      expect(html).toContain("EasyLoader installation");
+      expect(html).not.toContain(">$0<");
+    });
+
+    it("still prints the $0 a salesperson typed by hand", async () => {
+      // The catalogue prices this machine; the zero is a giveaway someone
+      // decided on, and that figure is the message.
+      const html = await renderQuotationHtml(
+        baseQuotationData({
+          showItemPrices: true,
+          items: [
+            baseDocSheetItem({
+              unitPrice: "0.00",
+              total: "0.00",
+              breakdown: buildItemBreakdown(
+                {
+                  unitPrice: "0.00",
+                  listPrice: "175000.00",
+                  discountMode: "PERCENT",
+                  discountValue: null,
+                  discountAmount: "0.00",
+                  total: "0.00",
+                  lines: [],
+                  isCredit: false,
+                },
+                true
+              ),
+            }),
+          ],
+        })
+      );
+      expect(html).toContain(">$0<");
+    });
   });
 
   it("renders the totals block (Subtotal/Tax/TOTAL) after the items table, at the bottom of the summary section", async () => {
@@ -619,6 +707,30 @@ describe("renderQuotationHtml — the machine heads its own options table", () =
     // just not what each piece costs.
     expect(html).toContain("Pathfinder X-10180 Cutting System");
     expect(html).not.toContain("$212,500.00");
+  });
+
+  it("keeps an unpriced row for a machine that has no price of its own", async () => {
+    // Service: no options to carry the price, so the row has to stay or the
+    // item vanishes — but with prices on and nothing to print in the price
+    // column, which is the whole complaint about "$0".
+    const html = await renderQuotationHtml(withBaseRow(null, true));
+    expect(html).toContain("Pathfinder X-10180 Cutting System");
+    expect(html).toContain('class="pq-option-row pq-base-row"');
+    // Its option still prints its own price — only the machine's row is bare.
+    expect(html).toContain("$1,560.00");
+  });
+
+  it("drops the row entirely when the options carry the whole price", async () => {
+    // An EasyLoader: the modules below say everything the base row would.
+    const data = withBaseRow(null, true);
+    const html = await renderQuotationHtml({
+      ...data,
+      machineSections: [{ ...data.machineSections[0], baseRow: null }],
+    });
+    expect(html).not.toContain("Pathfinder X-10180 Cutting System");
+    expect(html).not.toContain('class="pq-option-row pq-base-row"');
+    // The table is still there, headed by the options that do carry the price.
+    expect(html).toContain("Automatic Foot Pressure");
   });
 });
 

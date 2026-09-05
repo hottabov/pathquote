@@ -27,6 +27,7 @@
 import { fromCents, toCents } from "./pricing";
 import { formatDateAU } from "./format";
 import { displayCountry } from "./countries";
+import { identityResolver } from "./sheet-identity";
 
 // --- input shape -------------------------------------------------------------
 
@@ -58,9 +59,9 @@ export type ToSheetItemInput = {
   /** `DocumentItem.listPrice` — the catalogue price snapshotted when this
    * item was added, which is not always what is being charged (a manual
    * price edit moves `unitPrice` and leaves this alone). Read here for one
-   * question only: whether the product has a price of its own at all. See
-   * `ItemBreakdown.assembledFromOptions`. Null on a row added before the
-   * column existed. */
+   * question only, and always together with `unitPrice`: whether the product
+   * has a price of its own at all. See `ItemBreakdown.basePriceUnquoted`.
+   * Null on a row added before the column existed. */
   listPrice: string | null;
   discountMode: "PERCENT" | "AMOUNT";
   discountValue: string | null;
@@ -222,8 +223,6 @@ export type ToSheetDataDoc = {
  * to await a mapper that has no other reason to be async. */
 export type ImageResolver = (url: string) => string | undefined;
 
-const identityResolver: ImageResolver = (url) => url;
-
 // --- output shape --------------------------------------------------------
 
 export type DocSheetLine = {
@@ -261,23 +260,39 @@ export type ItemBreakdown = {
    * string ready for `formatMoney`. */
   basePrice: string;
   /**
-   * The product cannot be sold on its own: it has no catalogue price, because
-   * it *is* its options. The EasyLoader is the case this exists for — a table
-   * assembled from 1.2 metre modules, where the machine line is genuinely
-   * free and every part of it is priced as an option.
+   * The product has no price of its own to quote: the catalogue prices it at
+   * nothing, and nothing is being charged for it either. The EasyLoader is
+   * the case this exists for — a table assembled from 1.2 metre modules,
+   * where the machine line is genuinely free and every part of it is priced
+   * as an option — but Service is the same shape without the modules, and so
+   * is any product whose whole price lives somewhere other than its own row.
    *
-   * Renderers hide the base-price row when this is set. Not because a zero is
-   * untidy, but because the row carries nothing: the item's name and
-   * description are already printed in the caller's own header row above it,
-   * so at 0 the row is a duplicate of the heading with a misleading number
-   * attached — a reader sees "$0" against a machine and reasonably concludes
-   * something is broken or being given away.
+   * Renderers print no money against the base row when this is set. A reader
+   * who sees "$0" against a machine reasonably concludes the table is free or
+   * that something is broken; a blank says the honest thing, which is that
+   * this row is not where the price is.
    *
-   * Decided by the *catalogue* price, not the charged one, and that
-   * distinction is the whole point. A machine a salesperson hand-zeroed as a
-   * giveaway keeps its row and its "$0", because there that figure is the
-   * message. Only a product the price list itself prices at nothing is
-   * assembled rather than discounted.
+   * The catalogue price is half the test, and that half is the whole point. A
+   * machine a salesperson hand-zeroed as a giveaway keeps its "$0", because
+   * there the figure *is* the message. The charged price is the other half:
+   * a machine the catalogue never priced (an import gap — see `Price.needsReview`)
+   * but that a salesperson then priced by hand is being sold for real money,
+   * and that money must print. Only when both are nothing is there nothing to
+   * say.
+   */
+  basePriceUnquoted: boolean;
+  /**
+   * `basePriceUnquoted` and the item's price is carried entirely by option
+   * rows that follow it, so the base row is dropped altogether rather than
+   * merely left blank: the item's name and description are already printed in
+   * the caller's own header row above it, and a nameless, priceless row under
+   * that heading is a duplicate of it.
+   *
+   * Requires options to be present, and that is the difference between this
+   * and `basePriceUnquoted`. An assembled product with none is a half-built
+   * machine; dropping its row too would leave the item with no rows at all,
+   * concealing the unfinished machine instead of showing it. It keeps a row —
+   * an unpriced one.
    */
   assembledFromOptions: boolean;
   options: Array<{
@@ -628,16 +643,19 @@ export function buildItemBreakdown(
   >,
   showOptionPrices: boolean
 ): ItemBreakdown {
-  // Requires options to be present: an assembled product with none is a
-  // half-built machine, and hiding its row too would leave the item with no
-  // rows at all rather than showing the reader that something is unfinished.
-  const assembledFromOptions =
-    item.listPrice !== null && Number(item.listPrice) === 0 && item.lines.length > 0;
+  // Both prices have to be nothing. The catalogue price alone would swallow a
+  // hand-zeroed giveaway, where the "$0" is the message; the charged price
+  // alone would swallow a machine the catalogue never priced (`Price.needsReview`
+  // snapshots into `listPrice` as 0, indistinguishable here from a deliberate
+  // zero) that a salesperson has since priced by hand for real money.
+  const basePriceUnquoted =
+    item.listPrice !== null && Number(item.listPrice) === 0 && Number(item.unitPrice) === 0;
 
   return {
     qty: 1,
     basePrice: signedLineTotal(item.isCredit, 1, item.unitPrice),
-    assembledFromOptions,
+    basePriceUnquoted,
+    assembledFromOptions: basePriceUnquoted && item.lines.length > 0,
     options: item.lines.map((line) => ({
       name: line.name,
       code: line.code,

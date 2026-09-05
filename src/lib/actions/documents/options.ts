@@ -1,0 +1,319 @@
+"use server";
+
+/**
+ * An item's OPTION lines: the hand-picked set a manager saves from the
+ * options editor, and the EasyLoader table layout that derives its own set
+ * from a drawn table. Both go through the same private `writeItemOptions`,
+ * which is the only place OPTION lines are ever written.
+ */
+
+import { revalidateDocument } from "@/lib/revalidate";
+import { Prisma } from "@prisma/client";
+import { z } from "zod";
+import { db } from "@/lib/db";
+import { requireSession } from "@/lib/authz";
+import { documentWhereForUser, type ScopeUser } from "@/lib/scope";
+import {
+  compatibilityOrFilter,
+  findConflictingSelection,
+  conflictPartnersByGroup,
+} from "@/lib/catalog-compat";
+import { recalcAndEnforce } from "@/lib/documents/recalc";
+import { resolveForm } from "@/lib/production-forms/resolve";
+import { easyLoaderSpecSchema } from "@/lib/validation/production-spec";
+import {
+  deriveEasyLoaderOptions,
+  isDerivedEasyLoaderOption,
+} from "@/lib/production-forms/table-sections";
+import { idSchema, optionSelectionSchema, type OptionSelectionInput } from "@/lib/validation/documents";
+import { NOT_FOUND_ERROR, flattenZodError } from "../_shared";
+import { assertStillDraft, mapDraftWriteError, type ActionResult } from "./_internal";
+
+const MAX_OPTION_SELECTIONS = 100;
+
+/**
+ * Replaces an item's OPTION lines with exactly `selections`, preserving
+ * selection order as `sortOrder`. Every option code must (a) resolve to a
+ * real, active-or-not `Option` row, (b) be compatible with the item —
+ * either via a series-level `OptionCompatibility` row (matching the item's
+ * product's series) or a product-level one (matching the item's product
+ * directly, e.g. EasyLoader accessories scoped to EL-2020 — see
+ * `compatibilityOrFilter`) — and (c) carry a usable price (exists, not
+ * `needsReview`) in the *document's* region — otherwise
+ * nothing is written at all and the offending codes are named in the
+ * returned error, checked in that order (unknown, then incompatible, then
+ * unpriced, then conflicting — see `findConflictingSelection`) so the caller
+ * always gets one actionable message. Delete+create happens in a single
+ * transaction so a failed create can never leave an item with no options
+ * where it had some a moment ago. Scoped through item -> document -> author
+ * chain and DRAFT-only, like every other item mutation in this directory.
+ *
+ * The conflict check only governs what this call is about to *write* — an
+ * item that already carries two now-conflicting OPTION lines (saved before
+ * the conflict existed, or before this rejection existed) keeps those lines
+ * and its totals exactly as they are until the next `setItemOptions` call
+ * for that item; nothing here re-validates existing `DocumentLine` rows on
+ * read (recalc/totals work purely off what's already stored — see
+ * `recalcAndEnforce`/`computeTotals`, neither of which touches
+ * `OptionConflictGroup` at all). A save that resubmits the same two
+ * conflicting codes unchanged is still a save, though, and is rejected
+ * exactly like a brand-new one — the rule is "no new writes with a
+ * conflicting pair", not "grandfather whatever was already there".
+ */
+export async function setItemOptions(
+  itemId: string,
+  selections: OptionSelectionInput[]
+): Promise<ActionResult> {
+  const session = await requireSession();
+  return writeItemOptions(session.user, itemId, selections);
+}
+
+/**
+ * The body of `setItemOptions`, reachable by one other caller:
+ * `setEasyLoaderLayout`, which computes an EasyLoader's option lines from
+ * its table layout and then needs exactly these checks -- compatibility,
+ * pricing, conflicts, the delete/create/recalc transaction -- applied to
+ * them. Split out rather than duplicated so a derived selection can never be
+ * written under looser rules than a hand-picked one.
+ */
+async function writeItemOptions(
+  user: ScopeUser,
+  itemId: string,
+  selections: OptionSelectionInput[]
+): Promise<ActionResult> {
+  const parsedItemId = idSchema.safeParse(itemId);
+  if (!parsedItemId.success) return { error: NOT_FOUND_ERROR };
+
+  if (!Array.isArray(selections) || selections.length > MAX_OPTION_SELECTIONS) {
+    return { error: "Invalid selection" };
+  }
+  const parsedSelections = z.array(optionSelectionSchema).safeParse(selections);
+  if (!parsedSelections.success) return { error: flattenZodError(parsedSelections.error) };
+
+  const codes = parsedSelections.data.map((s) => s.optionCode);
+  if (new Set(codes).size !== codes.length) {
+    return { error: "Each option can only be selected once" };
+  }
+
+  const item = await db.documentItem.findFirst({
+    where: {
+      id: parsedItemId.data,
+      document: { status: "DRAFT", ...documentWhereForUser(user) },
+    },
+    include: { document: true, product: { include: { series: true } } },
+  });
+  if (!item) return { error: NOT_FOUND_ERROR };
+  if (!item.product) return { error: "This item has no product to attach options to" };
+
+  if (codes.length === 0) {
+    let concessionWarning: string | undefined;
+    try {
+      await db.$transaction(async (tx) => {
+        await assertStillDraft(tx, item.documentId);
+        await tx.documentLine.deleteMany({ where: { itemId: item.id, kind: "OPTION" } });
+        concessionWarning = (await recalcAndEnforce(item.documentId, tx, user.role)).warning;
+      });
+    } catch (error) {
+      return mapDraftWriteError(error);
+    }
+    revalidateDocument(item.documentId);
+    return concessionWarning ? { warning: concessionWarning } : {};
+  }
+
+  // item.product is checked truthy above, so both its id and seriesId
+  // (a required field on Product) are always available here — the OR filter
+  // is never null in practice, but the `?? []` keeps the type honest.
+  const compatOr = compatibilityOrFilter(item.product.id, item.product.seriesId) ?? [];
+  const options = await db.option.findMany({
+    where: { code: { in: codes } },
+    include: {
+      prices: { where: { regionId: item.document.regionId } },
+      compat: { where: { OR: compatOr } },
+      // Every `OptionConflictGroup` this option belongs to -- see that
+      // model's comment in schema.prisma. Only fetched for the *submitted*
+      // options (this `where: { code: { in: codes } }` above) -- correct,
+      // since `conflictPartnersByGroup` below only needs to know which
+      // *submitted* options share a group with which other submitted
+      // options, never who else (outside this submission) is in that group.
+      conflictGroupMemberships: { select: { groupId: true } },
+    },
+  });
+  const optionByCode = new Map(options.map((o) => [o.code, o]));
+
+  const missingCodes: string[] = [];
+  const incompatibleCodes: string[] = [];
+  const unpricedCodes: string[] = [];
+  for (const code of codes) {
+    const option = optionByCode.get(code);
+    if (!option) {
+      missingCodes.push(code);
+      continue;
+    }
+    if (option.compat.length === 0) {
+      incompatibleCodes.push(code);
+      continue;
+    }
+    const price = option.prices[0];
+    if (!price || price.needsReview) {
+      unpricedCodes.push(code);
+    }
+  }
+  if (missingCodes.length > 0) {
+    return { error: `Unknown option code(s): ${missingCodes.join(", ")}` };
+  }
+  if (incompatibleCodes.length > 0) {
+    return {
+      error: `Not compatible with ${item.product.series.name}: ${incompatibleCodes.join(", ")}`,
+    };
+  }
+  if (unpricedCodes.length > 0) {
+    return { error: `Price required for: ${unpricedCodes.join(", ")}` };
+  }
+
+  const conflictsByCode = conflictPartnersByGroup(
+    options.flatMap((option) =>
+      option.conflictGroupMemberships.map((m) => ({ memberKey: option.code, groupId: m.groupId }))
+    )
+  );
+  const conflictingPair = findConflictingSelection(codes, conflictsByCode);
+  if (conflictingPair) {
+    const [a, b] = conflictingPair;
+    return { error: `${a} conflicts with ${b} — remove one before saving` };
+  }
+
+  // Delete+create+recalc all in one interactive transaction (previously
+  // delete+create alone, as a batch `$transaction([...])`; folding the
+  // recalc in means a failed create *or* a resulting negative subtotal both
+  // roll back the whole thing, never leaving an item with no options where
+  // it had some a moment ago, or a set of options committed that the
+  // negative-subtotal guard should have rejected).
+  let concessionWarning: string | undefined;
+  try {
+    await db.$transaction(async (tx) => {
+      await assertStillDraft(tx, item.documentId);
+      await tx.documentLine.deleteMany({ where: { itemId: item.id, kind: "OPTION" } });
+      // One `createMany` rather than a `create` per selection: an option line
+      // is written and never read back here (nothing downstream needs the
+      // generated ids — the recalc below works off the document, not off
+      // these rows), so the whole set goes in a single round trip instead of
+      // holding the transaction open for one per option.
+      await tx.documentLine.createMany({
+        data: parsedSelections.data.map((selection, index) => {
+          const option = optionByCode.get(selection.optionCode)!;
+          const price = option.prices[0]!;
+          return {
+            documentId: item.documentId,
+            itemId: item.id,
+            kind: "OPTION" as const,
+            refId: option.id,
+            code: option.code,
+            name: option.name,
+            description: option.shortDescription,
+            qty: selection.qty,
+            unitPrice: price.amount,
+            // Snapshot the catalogue price too — see setItemUnitPrice's
+            // comment. A freshly (re)selected option always starts equal to
+            // its list price; any prior manual edit to this option line is
+            // gone anyway once selections are resaved (this whole-set
+            // replace deletes and recreates every OPTION line).
+            listPrice: price.amount,
+            attributes: selection.attributes as Prisma.InputJsonValue | undefined,
+            sortOrder: index,
+          };
+        }),
+      });
+      concessionWarning = (await recalcAndEnforce(item.documentId, tx, user.role)).warning;
+    });
+  } catch (error) {
+    return mapDraftWriteError(error);
+  }
+
+  revalidateDocument(item.documentId);
+  return concessionWarning ? { warning: concessionWarning } : {};
+}
+
+/**
+ * Saves an EasyLoader's table layout and rewrites the option lines that
+ * layout adds up to.
+ *
+ * The EasyLoader is sold as a table assembled from 1.2 metre modules, and
+ * the machine itself now costs nothing: every part of it is an option. So a
+ * manager draws the table -- how many sections, how long each is, conveyor
+ * or static, whether a FabricPro has to run along it -- and the drive
+ * modules, lengths, busbar and rail follow from that. See
+ * `deriveEasyLoaderOptions` for the arithmetic.
+ *
+ * The manager's own EasyLoader options -- roll holder, sync feature, crate
+ * -- are kept exactly as they are. Only the derived family is replaced, so
+ * redrawing the table never silently drops an accessory that was sold with
+ * it.
+ *
+ * DRAFT-only, unlike `setProductionSpec`, which this otherwise resembles:
+ * that one writes facts the workshop needs and no money, while this one
+ * moves the price of the machine. Correcting a knife size on a finalized
+ * quote is housekeeping; re-pricing one is not.
+ */
+export async function setEasyLoaderLayout(itemId: string, spec: unknown): Promise<ActionResult> {
+  const session = await requireSession();
+
+  const parsedItemId = idSchema.safeParse(itemId);
+  if (!parsedItemId.success) return { error: NOT_FOUND_ERROR };
+
+  const item = await db.documentItem.findFirst({
+    where: {
+      id: parsedItemId.data,
+      document: { status: "DRAFT", ...documentWhereForUser(session.user) },
+    },
+    select: {
+      id: true,
+      code: true,
+      documentId: true,
+      lines: {
+        where: { kind: "OPTION" },
+        select: { code: true, qty: true, attributes: true },
+        orderBy: { sortOrder: "asc" },
+      },
+    },
+  });
+  if (!item) return { error: NOT_FOUND_ERROR };
+
+  if (resolveForm(item.code)?.id !== "easyloader") {
+    return { error: "This item is not an EasyLoader" };
+  }
+
+  const parsed = easyLoaderSpecSchema.safeParse(spec);
+  if (!parsed.success) return { error: flattenZodError(parsed.error) };
+
+  const derived = deriveEasyLoaderOptions(
+    item.code,
+    parsed.data.sections,
+    parsed.data.fabricProCompatible
+  );
+
+  // The manager's own picks first, in the order they were in, then the
+  // derived rows. Anything in the derived family that is already on the item
+  // is dropped here and re-added from `derived` -- that is what makes a
+  // section deleted in the builder disappear from the quote.
+  const kept = item.lines
+    .filter((line) => line.code !== null && !isDerivedEasyLoaderOption(item.code, line.code))
+    .map((line) => ({
+      optionCode: line.code as string,
+      qty: line.qty,
+      attributes: (line.attributes ?? undefined) as Record<string, unknown> | undefined,
+    }));
+
+  const written = await writeItemOptions(session.user, item.id, [...kept, ...derived]);
+  // The options are the price, so a layout that cannot be priced is not
+  // saved at all -- writing the spec anyway would leave the builder showing
+  // a table the quote does not charge for.
+  if (written.error) return written;
+
+  const specWritten = await db.documentItem.updateMany({
+    where: { id: item.id, document: { status: "DRAFT" } },
+    data: { productionSpec: parsed.data as object },
+  });
+  if (specWritten.count !== 1) return { error: NOT_FOUND_ERROR };
+
+  revalidateDocument(item.documentId);
+  return written;
+}

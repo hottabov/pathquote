@@ -1,6 +1,14 @@
+/* `tw-animate-css` and `shadcn/tailwind.css` were imported here by the
+   scaffolding and dropped on 2026-09-05: an audit grepped every utility and
+   variant the two define — animate-in/out, fade-*, zoom-*, slide-*,
+   no-scrollbar, scroll-fade*, shimmer*, the data-open/closed/checked/
+   unchecked/selected/disabled/active/horizontal/vertical variants and the
+   accordion keyframes — and found zero uses across src/. (The duration-*
+   and ease-* classes that do appear are Tailwind's own.) Dropping the two
+   imports let both packages leave package.json, taking ~32 MB of transitive
+   CLI dependencies with them. Re-add the import, not just the package, if a
+   component ever needs one of those utilities. */
 @import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
 

@@ -178,44 +178,33 @@ async function seriesProductsResult(
 }
 
 /**
- * A series (by code) plus its products ordered for display, each carrying
- * its price in the given region (default AU) if one exists. A product with
- * no Price row for the region, or whose Price row has needsReview=true, is
- * returned with `price` reflecting that (or omitted entirely when there's
- * no row at all) so the UI can render a "price required" badge.
+ * A series (by id) plus its products ordered for display, each carrying its
+ * price in the given region (default AU) if one exists. A product with no
+ * Price row for the region, or whose Price row has needsReview=true, is
+ * returned with `price` reflecting that (or omitted entirely when there's no
+ * row at all) so the UI can render a "price required" badge.
  *
- * Looked up by *code* deliberately -- unlike the `/catalog/[seriesId]` route
- * page, which uses `listProductsBySeriesById` below, this function's other
- * caller (`getItemPickerCatalog`, src/lib/queries/documents.ts) builds the
- * "Add item" picker, which is keyed by product/series code throughout (see
- * `addItem`, src/lib/actions/documents.ts) — nothing to do with routing, so
- * it stays on code rather than being forced onto id.
+ * Routed by id rather than code for the same reason the option editor route
+ * is (see the doc comment on `Params` in
+ * `src/app/(app)/catalog/[seriesId]/page.tsx`): a series code is short-lived
+ * free text today, but nothing stops an admin editing it, and an id never
+ * changes. A code-keyed twin of this used to sit alongside it for the "Add
+ * item" picker's sake, which is keyed by code throughout; the picker now
+ * reads its whole tree in one query of its own (see `getItemPickerCatalog`,
+ * src/lib/queries/documents.ts), leaving nothing that needs the lookup by
+ * code.
+ *
+ * Request-memoized because `/catalog/[seriesId]` resolves the series in
+ * `generateMetadata` and again in the page body.
  */
-export const listProductsBySeries = cache(async function listProductsBySeries(
-  seriesCode: string,
-  regionCode: string = DEFAULT_REGION_CODE
-): Promise<SeriesProductsResult | null> {
-  const series = await db.series.findUnique({ where: { code: seriesCode } });
-  if (!series) return null;
-  return seriesProductsResult(series, regionCode);
-});
-
-/** Same as `listProductsBySeries` above, but looked up by id -- the
- * `/catalog/[seriesId]` route page's query. Routed by id rather than code
- * for the same reason the option editor route is (see the doc comment on
- * `Params` in `src/app/(app)/catalog/[seriesId]/page.tsx`): a series code is
- * short-lived free text today, but nothing stops an admin editing it, and an
- * id never changes. Added alongside the code-based version above rather
- * than replacing it, since that one has its own legitimate non-routing
- * caller. */
-export async function listProductsBySeriesById(
+export const listProductsBySeriesById = cache(async function listProductsBySeriesById(
   seriesId: string,
   regionCode: string = DEFAULT_REGION_CODE
 ): Promise<SeriesProductsResult | null> {
   const series = await db.series.findUnique({ where: { id: seriesId } });
   if (!series) return null;
   return seriesProductsResult(series, regionCode);
-}
+});
 
 /** The product photo a series falls back to on /catalog when it has no
  * explicit `Series.imageUrl` override -- the first active product (ordered
@@ -384,8 +373,14 @@ export type ProductDetail = {
  * (like `/`) that don't survive as a URL path segment — same reasoning as
  * `getOptionDetailById`. `getProductDetail`-by-code has no other callers, so
  * it was replaced here rather than kept alongside this.
+ *
+ * Request-memoized: `/catalog/[seriesId]/[productId]` loads the product in
+ * `generateMetadata` (to decide whether its name may appear in the tab
+ * title) and again in the page body.
  */
-export async function getProductDetailById(productId: string): Promise<ProductDetail | null> {
+export const getProductDetailById = cache(async function getProductDetailById(
+  productId: string
+): Promise<ProductDetail | null> {
   const [product, regions] = await Promise.all([
     db.product.findUnique({
       where: { id: productId },
@@ -413,7 +408,7 @@ export async function getProductDetailById(productId: string): Promise<ProductDe
     },
     prices: toRegionPriceRows(regions, product.prices),
   };
-}
+});
 
 export type ConflictingOption = { id: string; code: string; name: string };
 
@@ -449,8 +444,13 @@ export type OptionDetail = {
  * (`/catalog/options/[optionId]`) needs a key that never changes, since a
  * code is free text an admin can edit and may contain characters (like `/`)
  * that don't survive as a URL path segment. `getOptionDetail`-by-code has no
- * other callers, so it was replaced here rather than kept alongside this. */
-export async function getOptionDetailById(optionId: string): Promise<OptionDetail | null> {
+ * other callers, so it was replaced here rather than kept alongside this.
+ * Request-memoized for the same reason `getProductDetailById` above is:
+ * `/catalog/options/[optionId]` reads it in `generateMetadata` and again in
+ * the page body. */
+export const getOptionDetailById = cache(async function getOptionDetailById(
+  optionId: string
+): Promise<OptionDetail | null> {
   const [option, regions] = await Promise.all([
     db.option.findUnique({
       where: { id: optionId },
@@ -486,7 +486,7 @@ export async function getOptionDetailById(optionId: string): Promise<OptionDetai
       .sort(),
     conflictGroups,
   };
-}
+});
 
 /** Every option (id/code/name only), ordered by code, for the
  * `/settings/option-conflict-groups/[groupId]` member checkbox editor — the

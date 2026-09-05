@@ -4,10 +4,13 @@ import { buildPatches, resolveForm } from "../src/lib/production-forms/resolve";
 import { patchWorkbook } from "../src/lib/production-forms/xlsx-patch";
 import { readTemplate } from "../src/lib/production-forms/render";
 import type { FormContext } from "../src/lib/production-forms/types";
+import { formContext, formItem } from "./helpers/fixtures";
 
-const ctx: FormContext = {
-  distributorName: "Pathfinder Australia Pty Ltd",
-  authorName: "Vadym H",
+// A fully-loaded order: two software products, two options (one of them
+// carrying an attribute), and drilling requested — every value below is
+// asserted on somewhere in this file, which is why it overrides so much of
+// the shared fixture.
+const ctx: FormContext = formContext({
   company: {
     name: "Relaxvanguard",
     addressLines: ["12 Industrial Drive", "Dandenong South VIC 3175"],
@@ -16,10 +19,7 @@ const ctx: FormContext = {
   contact: { fullName: "John Smith", position: "Manager", phone: "+61 3 9999 0000", email: "j@e.com" },
   deliveryAddressLines: ["12 Industrial Drive"],
   softwareCodes: ["PTW(I)", "ANT-V6"],
-  item: {
-    id: "item1",
-    code: "M5220",
-    name: "M-Series",
+  item: formItem({
     spec: { ui: "+Y", knifeSize: "1.5x5.0", drills: { required: true, detail: "2 x 6mm" } },
     optionCodes: ["MTS", "ABR-M"],
     optionAttributes: { MTS: { metres: 14 } },
@@ -27,8 +27,8 @@ const ctx: FormContext = {
       { code: "MTS", qty: 1 },
       { code: "ABR-M", qty: 1 },
     ],
-  },
-};
+  }),
+});
 
 describe("production form pipeline", () => {
   it("produces a workbook carrying every expected value and tick", () => {

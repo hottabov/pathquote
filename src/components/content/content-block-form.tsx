@@ -2,9 +2,10 @@
 
 import { useMemo, useRef, useState, useTransition, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
-import { FieldRow, fieldInputClass, useToast } from "@/components/ui-kit";
-import { RichTextEditor, type RichTextEditorHandle } from "@/components/ui-kit/rich-text-editor";
-import { toEditorHtml } from "@/lib/rich-text";
+import { FieldRow, fieldInputClass } from "@/components/ui-kit";
+import { useToast } from "@/components/ui-kit/client";
+import { RichTextEditor, type RichTextEditorHandle } from "@/components/ui-kit/rich-text-editor-lazy";
+import { toEditorHtml } from "@/lib/rich-text-core";
 import type { ActionResult } from "@/lib/actions/content";
 
 const PLACEHOLDER_TOKEN_REGEX = /\{\{(\w+)\}\}/g;

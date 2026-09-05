@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { db } from "@/lib/db";
 
 export type ContentBlockListItem = {
@@ -88,8 +89,13 @@ export type ContentBlockDetail = {
 /** A single content block by key: its default (regionId:null) row, every
  * existing region override, and the full list of active regions (so the
  * editor can render a tab for a region that has no override yet). Returns
- * `null` if the key has no default row at all. */
-export async function getContentBlock(key: string): Promise<ContentBlockDetail | null> {
+ * `null` if the key has no default row at all. Request-memoized because the
+ * editor page resolves the block in `generateMetadata` (for the tab title)
+ * and again in the page body — three queries either way, so the duplicate
+ * was the most expensive of the metadata/body pairs in the settings area. */
+export const getContentBlock = cache(async function getContentBlock(
+  key: string
+): Promise<ContentBlockDetail | null> {
   const [defaultBlock, overrideRows, activeRegions] = await Promise.all([
     db.contentBlock.findFirst({ where: { key, regionId: null } }),
     db.contentBlock.findMany({
@@ -116,7 +122,7 @@ export async function getContentBlock(key: string): Promise<ContentBlockDetail |
     overrides,
     activeRegions: activeRegions.map((r) => ({ id: r.id, code: r.code, name: r.name })),
   };
-}
+});
 
 // --- quotation rendering ---------------------------------------------------
 

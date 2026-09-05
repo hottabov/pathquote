@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
-import { fieldInputClass, useToast } from "@/components/ui-kit";
+import { fieldInputClass } from "@/components/ui-kit";
+import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 
 export type ConflictGroupOptionRow = { id: string; code: string; name: string };

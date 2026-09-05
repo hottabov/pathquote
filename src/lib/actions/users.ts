@@ -1,10 +1,14 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import {
+  revalidateHome,
+  revalidateSettings,
+  revalidateUser,
+  revalidateUserList,
+} from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
 import { hash } from "@node-rs/argon2";
-import type { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAdmin, requireSession } from "@/lib/authz";
 import { idSchema } from "@/lib/validation/documents";
@@ -17,22 +21,11 @@ import {
 } from "@/lib/validation/users";
 import { countActiveAdmins } from "@/lib/queries/users";
 import { IMAGE_URL_PATTERN } from "@/lib/uploads";
+import { NOT_FOUND_ERROR, flattenZodError, type ActionResult } from "./_shared";
 
-export type ActionResult = { error?: string };
+export type { ActionResult };
 
-const NOT_FOUND_ERROR = "Not found";
 const EMAIL_EXISTS_ERROR = "That email already exists — choose a different one.";
-
-/** Join every zod issue message (form-level + field-level) into one string
- * for a plain `{ error }` result — see src/lib/actions/content.ts for the
- * same helper on the content-block editor. */
-function flattenZodError(error: z.ZodError): string {
-  const flat = error.flatten();
-  const messages = [...flat.formErrors, ...Object.values(flat.fieldErrors).flat()].filter(
-    (m): m is string => Boolean(m)
-  );
-  return messages.length > 0 ? messages.join(" ") : "Invalid input";
-}
 
 function isUniqueConstraintError(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
@@ -72,8 +65,8 @@ async function resolveRegionId(
 }
 
 function revalidateUserPaths(userId: string) {
-  revalidatePath("/settings/users");
-  revalidatePath(`/settings/users/${userId}`);
+  revalidateUserList();
+  revalidateUser(userId);
 }
 
 /**
@@ -114,7 +107,7 @@ export async function createUser(formData: FormData): Promise<ActionResult> {
     throw error;
   }
 
-  revalidatePath("/settings/users");
+  revalidateUserList();
   redirect(`/settings/users/${created.id}`);
 }
 
@@ -242,7 +235,7 @@ export async function setUserAvatar(userId: string, url: string | null): Promise
   // signed-in user's own avatar — revalidate both so a self-service change
   // (the MANAGER case `canSetAvatar` allows) shows up immediately rather
   // than waiting on those pages' own `force-dynamic`/cache lifetimes.
-  revalidatePath("/");
-  revalidatePath("/settings");
+  revalidateHome();
+  revalidateSettings();
   return {};
 }

@@ -13,94 +13,57 @@ import {
   priceDisplaySchema,
   reorderSchema,
   unitPriceSchema,
+  validityDaysSchema,
 } from "../src/lib/validation/documents";
+import { accepts, rejects } from "./helpers/schema";
 
 describe("idSchema", () => {
-  it("accepts a cuid-shaped id", () => {
-    expect(idSchema.safeParse("cldz9x1a30000abcd1234efgh").success).toBe(true);
-  });
+  accepts(idSchema, [
+    ["a cuid-shaped id", "cldz9x1a30000abcd1234efgh"],
+    ["an id with surrounding whitespace, trimmed", "  cldz9x1a30000abcd1234efgh  ", "cldz9x1a30000abcd1234efgh"],
+  ]);
 
-  it("trims surrounding whitespace", () => {
-    const result = idSchema.safeParse("  cldz9x1a30000abcd1234efgh  ");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("cldz9x1a30000abcd1234efgh");
-  });
-
-  it("rejects an empty string", () => {
-    expect(idSchema.safeParse("").success).toBe(false);
-  });
-
-  it("rejects an id shorter than 10 characters", () => {
-    expect(idSchema.safeParse("short").success).toBe(false);
-  });
-
-  it("rejects an id longer than 40 characters", () => {
-    expect(idSchema.safeParse("a".repeat(41)).success).toBe(false);
-  });
-
-  it("rejects a non-string value", () => {
-    expect(idSchema.safeParse(12345).success).toBe(false);
-  });
+  rejects(idSchema, [
+    ["an empty string", ""],
+    ["an id shorter than 10 characters", "short"],
+    ["an id longer than 40 characters", "a".repeat(41)],
+    ["a non-string value", 12345],
+  ]);
 });
 
 describe("optionalIdSchema", () => {
-  it("accepts a valid id", () => {
-    const result = optionalIdSchema.safeParse("cldz9x1a30000abcd1234efgh");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("cldz9x1a30000abcd1234efgh");
+  accepts(optionalIdSchema, [["a valid id", "cldz9x1a30000abcd1234efgh"]]);
+
+  it("collapses missing/blank optionalId to undefined", () => {
+    for (const value of [undefined, null, "", "   "]) {
+      const result = optionalIdSchema.safeParse(value);
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data).toBeUndefined();
+    }
   });
 
-  it("collapses undefined to undefined", () => {
-    const result = optionalIdSchema.safeParse(undefined);
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBeUndefined();
-  });
-
-  it("collapses null to undefined", () => {
-    const result = optionalIdSchema.safeParse(null);
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBeUndefined();
-  });
-
-  it("collapses an empty string to undefined", () => {
-    const result = optionalIdSchema.safeParse("");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBeUndefined();
-  });
-
-  it("collapses a whitespace-only string to undefined", () => {
-    const result = optionalIdSchema.safeParse("   ");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBeUndefined();
-  });
-
-  it("rejects an invalid non-empty id", () => {
-    expect(optionalIdSchema.safeParse("short").success).toBe(false);
-  });
+  rejects(optionalIdSchema, [["an invalid non-empty id", "short"]]);
 });
 
 describe("discountModeSchema", () => {
-  it("accepts PERCENT and AMOUNT", () => {
-    expect(discountModeSchema.safeParse("PERCENT").success).toBe(true);
-    expect(discountModeSchema.safeParse("AMOUNT").success).toBe(true);
-  });
+  accepts(discountModeSchema, [
+    ["PERCENT", "PERCENT"],
+    ["AMOUNT", "AMOUNT"],
+  ]);
 
-  it("rejects an unknown mode", () => {
-    expect(discountModeSchema.safeParse("PCT").success).toBe(false);
-    expect(discountModeSchema.safeParse("").success).toBe(false);
-  });
+  rejects(discountModeSchema, [
+    ["an unknown mode", "PCT"],
+    ["a blank mode", ""],
+  ]);
 });
 
 describe("discountValueSchema", () => {
-  it("accepts a two-decimal value, kept as a string", () => {
-    const result = discountValueSchema.safeParse("10.55");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("10.55");
-  });
-
-  it("rejects a three-decimal value", () => {
-    expect(discountValueSchema.safeParse("10.555").success).toBe(false);
-  });
+  accepts(discountValueSchema, [
+    ["a two-decimal value, kept as a string", "10.55", "10.55"],
+    ["a large AMOUNT-shaped figure (up to 9 digits before the point)", "123456789", "123456789"],
+    ["exactly 100", "100", "100"],
+    ["exactly 0", "0", "0"],
+  ]);
 
   it("accepts a value over 100 — the 0..100 ceiling is mode-dependent, enforced by exceedsPercentCeiling instead", () => {
     const result = discountValueSchema.safeParse("101");
@@ -108,49 +71,19 @@ describe("discountValueSchema", () => {
     if (result.success) expect(result.data).toBe("101");
   });
 
-  it("accepts a large AMOUNT-shaped figure (up to 9 digits before the point)", () => {
-    const result = discountValueSchema.safeParse("123456789");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("123456789");
+  it("collapses a missing/blank discount value to null", () => {
+    for (const value of [undefined, null, ""]) {
+      const result = discountValueSchema.safeParse(value);
+      expect(result.success).toBe(true);
+      if (result.success) expect(result.data).toBeNull();
+    }
   });
 
-  it("accepts exactly 100", () => {
-    const result = discountValueSchema.safeParse("100");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("100");
-  });
-
-  it("accepts exactly 0", () => {
-    const result = discountValueSchema.safeParse("0");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("0");
-  });
-
-  it("collapses an empty string to null", () => {
-    const result = discountValueSchema.safeParse("");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBeNull();
-  });
-
-  it("collapses null to null", () => {
-    const result = discountValueSchema.safeParse(null);
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBeNull();
-  });
-
-  it("collapses undefined to null", () => {
-    const result = discountValueSchema.safeParse(undefined);
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBeNull();
-  });
-
-  it("rejects a negative value", () => {
-    expect(discountValueSchema.safeParse("-5").success).toBe(false);
-  });
-
-  it("rejects a non-numeric string", () => {
-    expect(discountValueSchema.safeParse("abc").success).toBe(false);
-  });
+  rejects(discountValueSchema, [
+    ["a three-decimal value", "10.555"],
+    ["a negative value", "-5"],
+    ["a non-numeric string", "abc"],
+  ]);
 });
 
 describe("exceedsPercentCeiling", () => {
@@ -191,88 +124,55 @@ describe("customLineSchema", () => {
     }
   });
 
-  it("accepts a description", () => {
-    const result = customLineSchema.safeParse({ ...valid, description: "Freight to site" });
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data.description).toBe("Freight to site");
-  });
+  accepts(customLineSchema, [
+    [
+      "a description",
+      { ...valid, description: "Freight to site" },
+      { name: "Delivery", qty: 1, unitPrice: "150.00", description: "Freight to site", imageUrl: undefined },
+    ],
+    ["qty at the 999 boundary", { ...valid, qty: "999" }],
+    ["a negative unit price (a trade-in)", { ...valid, unitPrice: "-1" }],
+    [
+      "a negative custom line for a trade-in",
+      {
+        name: "Trade-in K5 390",
+        qty: "1",
+        unitPrice: "-15000.00",
+        description: "Serial 12345. Customer responsible for removal.",
+      },
+    ],
+    ["a zero unit price", { ...valid, unitPrice: "0" }],
+    [
+      "a well-formed imageUrl",
+      { ...valid, imageUrl: "/api/files/a1b2c3d4-e5f6-4789-a0b1-c2d3e4f56789.jpg" },
+      {
+        name: "Delivery",
+        qty: 1,
+        unitPrice: "150.00",
+        description: undefined,
+        imageUrl: "/api/files/a1b2c3d4-e5f6-4789-a0b1-c2d3e4f56789.jpg",
+      },
+    ],
+    [
+      "a blank imageUrl, collapsed to undefined",
+      { ...valid, imageUrl: "" },
+      { name: "Delivery", qty: 1, unitPrice: "150.00", description: undefined, imageUrl: undefined },
+    ],
+  ]);
 
-  it("rejects an empty name", () => {
-    expect(customLineSchema.safeParse({ ...valid, name: "" }).success).toBe(false);
-  });
-
-  it("rejects a name over 200 characters", () => {
-    expect(customLineSchema.safeParse({ ...valid, name: "a".repeat(201) }).success).toBe(false);
-  });
-
-  it("rejects qty 0", () => {
-    expect(customLineSchema.safeParse({ ...valid, qty: "0" }).success).toBe(false);
-  });
-
-  it("rejects qty 1000", () => {
-    expect(customLineSchema.safeParse({ ...valid, qty: "1000" }).success).toBe(false);
-  });
-
-  it("accepts qty at the 999 boundary", () => {
-    expect(customLineSchema.safeParse({ ...valid, qty: "999" }).success).toBe(true);
-  });
-
-  it("rejects a fractional qty", () => {
-    expect(customLineSchema.safeParse({ ...valid, qty: "1.5" }).success).toBe(false);
-  });
-
-  it("accepts a negative unit price (a trade-in)", () => {
-    expect(customLineSchema.safeParse({ ...valid, unitPrice: "-1" }).success).toBe(true);
-  });
-
-  it("accepts a negative custom line for a trade-in", () => {
-    const parsed = customLineSchema.safeParse({
-      name: "Trade-in K5 390",
-      qty: "1",
-      unitPrice: "-15000.00",
-      description: "Serial 12345. Customer responsible for removal.",
-    });
-    expect(parsed.success).toBe(true);
-  });
-
-  it("rejects a negative amount with more than two decimals", () => {
-    const parsed = customLineSchema.safeParse({
-      name: "Trade-in",
-      qty: "1",
-      unitPrice: "-1.005",
-      description: undefined,
-    });
-    expect(parsed.success).toBe(false);
-  });
-
-  it("rejects a unit price with three decimal places", () => {
-    expect(customLineSchema.safeParse({ ...valid, unitPrice: "1.234" }).success).toBe(false);
-  });
-
-  it("accepts a zero unit price", () => {
-    expect(customLineSchema.safeParse({ ...valid, unitPrice: "0" }).success).toBe(true);
-  });
-
-  it("rejects a description over 500 characters", () => {
-    expect(customLineSchema.safeParse({ ...valid, description: "a".repeat(501) }).success).toBe(false);
-  });
-
-  it("accepts a well-formed imageUrl", () => {
-    const result = customLineSchema.safeParse({
-      ...valid,
-      imageUrl: "/api/files/a1b2c3d4-e5f6-4789-a0b1-c2d3e4f56789.jpg",
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.imageUrl).toBe("/api/files/a1b2c3d4-e5f6-4789-a0b1-c2d3e4f56789.jpg");
-    }
-  });
-
-  it("collapses a blank imageUrl to undefined", () => {
-    const result = customLineSchema.safeParse({ ...valid, imageUrl: "" });
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data.imageUrl).toBeUndefined();
-  });
+  rejects(customLineSchema, [
+    ["an empty name", { ...valid, name: "" }],
+    ["a name over 200 characters", { ...valid, name: "a".repeat(201) }],
+    ["qty 0", { ...valid, qty: "0" }],
+    ["qty 1000", { ...valid, qty: "1000" }],
+    ["a fractional qty", { ...valid, qty: "1.5" }],
+    ["a unit price with three decimal places", { ...valid, unitPrice: "1.234" }],
+    [
+      "a negative amount with more than two decimals",
+      { name: "Trade-in", qty: "1", unitPrice: "-1.005", description: undefined },
+    ],
+    ["a description over 500 characters", { ...valid, description: "a".repeat(501) }],
+  ]);
 
   it("rejects an imageUrl that isn't a well-formed /api/files/ URL", () => {
     expect(customLineSchema.safeParse({ ...valid, imageUrl: "https://evil.example/x.jpg" }).success).toBe(
@@ -282,84 +182,47 @@ describe("customLineSchema", () => {
 });
 
 describe("optionSelectionSchema", () => {
-  it("accepts a selection with no attributes", () => {
-    const result = optionSelectionSchema.safeParse({ optionCode: "MTS", qty: 1 });
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toEqual({ optionCode: "MTS", qty: 1, attributes: undefined });
-  });
+  accepts(optionSelectionSchema, [
+    [
+      "a selection with no attributes",
+      { optionCode: "MTS", qty: 1 },
+      { optionCode: "MTS", qty: 1, attributes: undefined },
+    ],
+    [
+      "a selection with attributes",
+      { optionCode: "VRB-180", qty: 2, attributes: { metres: 4, label: "north" } },
+      { optionCode: "VRB-180", qty: 2, attributes: { metres: 4, label: "north" } },
+    ],
+  ]);
 
-  it("accepts a selection with attributes", () => {
-    const result = optionSelectionSchema.safeParse({
-      optionCode: "VRB-180",
-      qty: 2,
-      attributes: { metres: 4, label: "north" },
-    });
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data.attributes).toEqual({ metres: 4, label: "north" });
-  });
-
-  it("rejects a missing option code", () => {
-    expect(optionSelectionSchema.safeParse({ optionCode: "", qty: 1 }).success).toBe(false);
-  });
-
-  it("rejects qty 0", () => {
-    expect(optionSelectionSchema.safeParse({ optionCode: "MTS", qty: 0 }).success).toBe(false);
-  });
-
-  it("rejects qty over 999", () => {
-    expect(optionSelectionSchema.safeParse({ optionCode: "MTS", qty: 1000 }).success).toBe(false);
-  });
-
-  it("rejects a non-string/number attribute value", () => {
-    const result = optionSelectionSchema.safeParse({
-      optionCode: "MTS",
-      qty: 1,
-      attributes: { metres: true },
-    });
-    expect(result.success).toBe(false);
-  });
+  rejects(optionSelectionSchema, [
+    ["a missing option code", { optionCode: "", qty: 1 }],
+    ["qty 0", { optionCode: "MTS", qty: 0 }],
+    ["qty over 999", { optionCode: "MTS", qty: 1000 }],
+    ["a non-string/number attribute value", { optionCode: "MTS", qty: 1, attributes: { metres: true } }],
+  ]);
 });
 
 describe("reorderSchema", () => {
   const id1 = "cldz9x1a30000abcd1234efgh";
   const id2 = "cldz9x1a30001abcd1234efgh";
   const id3 = "cldz9x1a30002abcd1234efgh";
+  const ids = (count: number) =>
+    Array.from({ length: count }, (_, i) => `cldz9x1a3${String(i).padStart(4, "0")}abcd1234efgh`);
 
-  it("accepts a list of valid ids", () => {
-    const result = reorderSchema.safeParse([id1, id2, id3]);
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toEqual([id1, id2, id3]);
-  });
+  accepts(reorderSchema, [
+    ["a list of valid ids", [id1, id2, id3], [id1, id2, id3]],
+    ["a single id", [id1]],
+    ["exactly 100 ids", ids(100)],
+  ]);
 
-  it("accepts a single id", () => {
-    expect(reorderSchema.safeParse([id1]).success).toBe(true);
-  });
-
-  it("rejects an empty array", () => {
-    expect(reorderSchema.safeParse([]).success).toBe(false);
-  });
-
-  it("rejects more than 100 ids", () => {
-    const ids = Array.from({ length: 101 }, (_, i) => `cldz9x1a3${String(i).padStart(4, "0")}abcd1234efgh`);
-    expect(reorderSchema.safeParse(ids).success).toBe(false);
-  });
-
-  it("accepts exactly 100 ids", () => {
-    const ids = Array.from({ length: 100 }, (_, i) => `cldz9x1a3${String(i).padStart(4, "0")}abcd1234efgh`);
-    expect(reorderSchema.safeParse(ids).success).toBe(true);
-  });
-
-  it("rejects a duplicate id", () => {
-    expect(reorderSchema.safeParse([id1, id2, id1]).success).toBe(false);
-  });
-
-  it("rejects an invalid id in the list", () => {
-    expect(reorderSchema.safeParse([id1, "short"]).success).toBe(false);
-  });
-
-  it("rejects a non-array value", () => {
-    expect(reorderSchema.safeParse(id1).success).toBe(false);
-  });
+  rejects(reorderSchema, [
+    ["an empty array", []],
+    ["more than 100 ids", ids(101)],
+    ["a duplicate id", [id1, id2, id1]],
+    ["an invalid id in the list", [id1, "short"]],
+    ["a non-array value", id1],
+  ]);
 });
 
 describe("isPermutation", () => {
@@ -397,25 +260,16 @@ describe("isPermutation", () => {
 });
 
 describe("priceDisplaySchema", () => {
-  it("accepts both flags false", () => {
-    expect(priceDisplaySchema.safeParse({ showItemPrices: false, showOptionPrices: false }).success).toBe(true);
-  });
+  accepts(priceDisplaySchema, [
+    ["both flags false", { showItemPrices: false, showOptionPrices: false }],
+    ["both flags true", { showItemPrices: true, showOptionPrices: true }],
+  ]);
 
-  it("accepts both flags true", () => {
-    expect(priceDisplaySchema.safeParse({ showItemPrices: true, showOptionPrices: true }).success).toBe(true);
-  });
-
-  it("rejects a non-boolean value", () => {
-    expect(priceDisplaySchema.safeParse({ showItemPrices: "true", showOptionPrices: false }).success).toBe(false);
-  });
-
-  it("rejects a missing field", () => {
-    expect(priceDisplaySchema.safeParse({ showItemPrices: true }).success).toBe(false);
-  });
-
-  it("rejects a non-object input", () => {
-    expect(priceDisplaySchema.safeParse(null).success).toBe(false);
-  });
+  rejects(priceDisplaySchema, [
+    ["a non-boolean value", { showItemPrices: "true", showOptionPrices: false }],
+    ["a missing field", { showItemPrices: true }],
+    ["a non-object input", null],
+  ]);
 });
 
 describe("notesSchema", () => {
@@ -427,27 +281,24 @@ describe("notesSchema", () => {
     }
   });
 
-  it("accepts and trims a normal markdown body", () => {
-    const result = notesSchema.safeParse("  **Important:** handle with care.  ");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("**Important:** handle with care.");
-  });
+  accepts(notesSchema, [
+    [
+      "a normal markdown body, trimmed",
+      "  **Important:** handle with care.  ",
+      "**Important:** handle with care.",
+    ],
+    ["a body at exactly the 5000 character bound", "a".repeat(5000)],
+  ]);
 
-  it("rejects a body over 5000 characters", () => {
-    expect(notesSchema.safeParse("a".repeat(5001)).success).toBe(false);
-  });
-
-  it("accepts a body at exactly the 5000 character bound", () => {
-    expect(notesSchema.safeParse("a".repeat(5000)).success).toBe(true);
-  });
+  rejects(notesSchema, [["a body over 5000 characters", "a".repeat(5001)]]);
 });
 
 describe("unitPriceSchema", () => {
-  it("accepts a non-negative amount, with or without cents", () => {
-    expect(unitPriceSchema.safeParse("20000").success).toBe(true);
-    expect(unitPriceSchema.safeParse("20000.00").success).toBe(true);
-    expect(unitPriceSchema.safeParse("0").success).toBe(true);
-  });
+  accepts(unitPriceSchema, [
+    ["a non-negative amount without cents", "20000"],
+    ["a non-negative amount with cents", "20000.00"],
+    ["zero", "0"],
+  ]);
 
   it("rejects a negative amount -- an ordinary item's price has no minus-sign shorthand", () => {
     const result = unitPriceSchema.safeParse("-20000");
@@ -462,35 +313,33 @@ describe("unitPriceSchema", () => {
 // model there and nowhere else. The sign is always stripped before storage;
 // EngineItem.isCredit (src/lib/pricing.ts) is what actually applies it.
 describe("creditUnitPriceSchema", () => {
-  it("strips a leading minus and stores the positive amount", () => {
-    const result = creditUnitPriceSchema.safeParse("-20000");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("20000");
-  });
+  accepts(creditUnitPriceSchema, [
+    ["a leading minus, stripped to the positive amount", "-20000", "20000"],
+    ["a leading minus on a cents amount, stripped too", "-20000.50", "20000.50"],
+    ["a plain positive amount, unchanged", "20000.00", "20000.00"],
+    ["0", "0", "0"],
+  ]);
 
-  it("strips a leading minus from a cents amount too", () => {
-    const result = creditUnitPriceSchema.safeParse("-20000.50");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("20000.50");
-  });
+  rejects(creditUnitPriceSchema, [
+    ["a non-numeric value", "abc"],
+    ["more than 2 decimal places", "-20000.999"],
+  ]);
+});
 
-  it("still accepts a plain positive amount, unchanged", () => {
-    const result = creditUnitPriceSchema.safeParse("20000.00");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("20000.00");
-  });
 
-  it("still accepts 0", () => {
-    const result = creditUnitPriceSchema.safeParse("0");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("0");
-  });
+// --- was tests/validity.test.ts: validityDaysSchema ------------------
 
-  it("rejects a non-numeric value", () => {
-    expect(creditUnitPriceSchema.safeParse("abc").success).toBe(false);
-  });
+describe("validity days", () => {
+  accepts(validityDaysSchema, [
+    ["a value inside the usual range", "30"],
+    ["a longer window for a slow capex process", "56"],
+    ["a blank value, cleared to null", "", null],
+    ["a year", "365"],
+  ]);
 
-  it("rejects more than 2 decimal places", () => {
-    expect(creditUnitPriceSchema.safeParse("-20000.999").success).toBe(false);
-  });
+  rejects(validityDaysSchema, [
+    ["zero", "0"],
+    ["a negative value", "-5"],
+    ["anything beyond a year", "366"],
+  ]);
 });

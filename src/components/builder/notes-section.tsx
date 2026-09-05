@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { AutosaveIndicator } from "@/components/builder/autosave-indicator";
-import { RichTextEditor, RICH_TEXT_PROSE_CLASS } from "@/components/ui-kit/rich-text-editor";
+import { RichTextEditor } from "@/components/ui-kit/rich-text-editor-lazy";
+import { RICH_TEXT_PROSE_CLASS } from "@/components/ui-kit/rich-text-prose";
 import { cn } from "@/lib/utils";
-import { toEditorHtml, renderStoredRichText } from "@/lib/rich-text";
+import { toEditorHtml } from "@/lib/rich-text-core";
 import { useAutosave } from "@/lib/use-autosave";
-import type { ActionResult } from "@/lib/actions/documents";
+import { setDocumentNotes } from "@/lib/actions/documents";
 
 /**
  * The builder's "Notes" section (owner: freeform remarks on a document,
@@ -24,20 +25,39 @@ import type { ActionResult } from "@/lib/actions/documents";
  * saved, it's always HTML from then on. `setDocumentNotes` sanitizes on
  * write, so this component doesn't need to.
  *
- * Read-only (a FINAL document, or the caller otherwise passing
- * `readOnly`) renders the last-saved notes via `renderStoredRichText`, or
- * nothing at all when there aren't any — the caller decides whether an
- * empty `SectionCard` is worth showing in that case.
+ * Read-only (a FINAL document, or the caller otherwise passing `readOnly`)
+ * renders `notesHtml` — the same `renderStoredRichText(notes)` output as
+ * before, only computed by the server page that renders this component (see
+ * src/app/(app)/documents/[documentId]/page.tsx) rather than here. The
+ * sanitizer is still mandatory: the markup goes straight into
+ * `dangerouslySetInnerHTML` and `notes` is a raw column value that may
+ * predate the write-boundary allowlist, so a legacy row's stored
+ * `<script>`/`onerror=` has only that pass between it and the DOM. Running it
+ * server-side keeps `isomorphic-dompurify` out of the browser chunk entirely
+ * (this file was its last client-side importer) and means the safety of the
+ * page no longer rests on code an attacker's own markup shares a runtime
+ * with. `null` when the document has no notes at all — the caller decides
+ * whether an empty `SectionCard` is worth showing in that case.
+ *
+ * The editable branch needs no such pass. `notes` seeds a `RichTextEditor`
+ * (Tiptap), which parses incoming HTML against its own node/mark schema and
+ * keeps only what that schema names — nothing here is ever handed to
+ * `dangerouslySetInnerHTML`, so `toEditorHtml` alone (sanitizer-free, from
+ * `@/lib/rich-text-core`) is what it has always needed and still is.
  */
 export function NotesSection({
   documentId,
   notes,
-  setNotesAction,
+  notesHtml,
   readOnly = false,
 }: {
   documentId: string;
+  /** The raw stored column — HTML or legacy markdown — used only to seed the
+   * editor. Never rendered as markup. */
   notes: string | null;
-  setNotesAction: (documentId: string, formData: FormData) => Promise<ActionResult>;
+  /** `renderStoredRichText(notes)`, sanitized server-side; `null` when there
+   * are no notes. The only value this component ever renders as HTML. */
+  notesHtml: string | null;
   readOnly?: boolean;
 }) {
   const [body, setBody] = useState(() => toEditorHtml(notes ?? ""));
@@ -47,15 +67,15 @@ export function NotesSection({
     onSave: async (html) => {
       const formData = new FormData();
       formData.set("notes", html);
-      return setNotesAction(documentId, formData);
+      return setDocumentNotes(documentId, formData);
     },
   });
 
   if (readOnly) {
-    if (!notes) return <p className="text-sm text-slate-500">No notes.</p>;
+    if (!notesHtml) return <p className="text-sm text-slate-500">No notes.</p>;
     return (
       <div className={cn("text-sm text-slate-700", RICH_TEXT_PROSE_CLASS)}>
-        <div dangerouslySetInnerHTML={{ __html: renderStoredRichText(notes) }} />
+        <div dangerouslySetInnerHTML={{ __html: notesHtml }} />
       </div>
     );
   }

@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useConfirm, useToast } from "@/components/ui-kit";
+import { useConfirm, useToast } from "@/components/ui-kit/client";
 
 /**
  * A danger-zone delete button, shared by the product and option editors.

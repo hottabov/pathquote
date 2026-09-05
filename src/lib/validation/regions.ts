@@ -6,19 +6,15 @@
 // src/lib/validation/users.ts and src/lib/validation/catalog.ts.
 import { z } from "zod";
 import { maxDiscountPctSchema, maxMarkupPctSchema } from "./catalog";
+import { regionCodeSchema } from "./region-code";
 
 // --- field pieces ----------------------------------------------------------
 
-/** A region's `code` — 2-3 uppercase letters (AU, US, UK...), normalized to
- * uppercase. Immutable after create: `updateRegionSchema` below deliberately
- * has no `code` field at all, and the edit form renders it read-only. */
-export const regionCodeSchema = z
-  .string()
-  .trim()
-  .transform((value) => value.toUpperCase())
-  .refine((value) => /^[A-Z]{2,3}$/.test(value), {
-    message: "Region code must be 2-3 letters",
-  });
+/** A region's `code`. Immutable after create: `updateRegionSchema` below
+ * deliberately has no `code` field at all, and the edit form renders it
+ * read-only. Re-exported from ./region-code so this module's importers are
+ * undisturbed by the rule having moved. */
+export { regionCodeSchema };
 
 /** ISO-4217-shaped currency code — exactly 3 letters, normalized to
  * uppercase (AUD, USD, GBP...). Not validated against a real currency list;

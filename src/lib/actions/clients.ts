@@ -1,30 +1,17 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidateCompany, revalidateCompanyList } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
-import type { z } from "zod";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/authz";
 import { companyWhereForUser } from "@/lib/scope";
 import { companySchema, contactSchema } from "@/lib/validation/clients";
 import { idSchema } from "@/lib/validation/documents";
+import { NOT_FOUND_ERROR, flattenZodError, type ActionResult } from "./_shared";
 
-export type ActionResult = { error?: string };
+export type { ActionResult };
 
 // --- shared helpers ----------------------------------------------------
-
-/** Join every zod issue message (form-level + field-level) into one string
- * for a plain `{ error }` result — see src/lib/actions/catalog.ts for the
- * same helper on the catalog editors. */
-function flattenZodError(error: z.ZodError): string {
-  const flat = error.flatten();
-  const messages = [...flat.formErrors, ...Object.values(flat.fieldErrors).flat()].filter(
-    (m): m is string => Boolean(m)
-  );
-  return messages.length > 0 ? messages.join(" ") : "Invalid input";
-}
-
-const NOT_FOUND_ERROR = "Not found";
 
 function readCompanyForm(formData: FormData) {
   return {
@@ -107,7 +94,7 @@ export async function createCompany(formData: FormData): Promise<ActionResult> {
     },
   });
 
-  revalidatePath("/clients");
+  revalidateCompanyList();
   redirect(`/clients/${created.id}`);
 }
 
@@ -157,8 +144,8 @@ export async function updateCompany(companyId: string, formData: FormData): Prom
     },
   });
 
-  revalidatePath("/clients");
-  revalidatePath(`/clients/${companyId}`);
+  revalidateCompanyList();
+  revalidateCompany(companyId);
   return {};
 }
 
@@ -183,7 +170,7 @@ export async function deleteCompany(companyId: string): Promise<ActionResult> {
   // Contact rows cascade (Contact.companyId is onDelete: Cascade in the schema).
   await db.company.delete({ where: { id: companyId } });
 
-  revalidatePath("/clients");
+  revalidateCompanyList();
   redirect("/clients");
 }
 
@@ -233,7 +220,7 @@ export async function createContact(companyId: string, formData: FormData): Prom
     });
   });
 
-  revalidatePath(`/clients/${company.id}`);
+  revalidateCompany(company.id);
   return {};
 }
 
@@ -275,7 +262,7 @@ export async function updateContact(contactId: string, formData: FormData): Prom
     });
   });
 
-  revalidatePath(`/clients/${existing.companyId}`);
+  revalidateCompany(existing.companyId);
   return {};
 }
 
@@ -294,7 +281,7 @@ export async function deleteContact(contactId: string): Promise<ActionResult> {
 
   await db.contact.delete({ where: { id: contactId } });
 
-  revalidatePath(`/clients/${existing.companyId}`);
+  revalidateCompany(existing.companyId);
   return {};
 }
 
@@ -375,7 +362,7 @@ export async function createCompanyInline(input: CompanyInlineInput): Promise<Cr
     },
   });
 
-  revalidatePath("/clients");
+  revalidateCompanyList();
   return { ok: true, company: { id: created.id, name: created.name } };
 }
 
@@ -444,7 +431,7 @@ export async function createContactInline(
     });
   });
 
-  revalidatePath(`/clients/${company.id}`);
+  revalidateCompany(company.id);
   const label = [created.firstName, created.lastName].filter(Boolean).join(" ");
   return { ok: true, contact: { id: created.id, label } };
 }

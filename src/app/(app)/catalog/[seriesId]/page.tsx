@@ -64,7 +64,15 @@ export default async function SeriesProductsPage({ params }: { params: Promise<P
 
   const { series } = result;
   const isAdmin = isAdminRole(session?.user?.role);
-  const hiddenCatalogIds = await getHiddenCatalogIds(catalogVisibilityUserId(session?.user));
+  // Both reads depend only on the session and the series just loaded, so
+  // they go out together. The fallback image is only needed for the admin
+  // "Series image" panel below, and an ADMIN never fails the hidden-series
+  // check underneath, so pairing it with the visibility read here still
+  // never issues a query for a request that ends in a 404.
+  const [hiddenCatalogIds, fallbackImageUrl] = await Promise.all([
+    getHiddenCatalogIds(catalogVisibilityUserId(session?.user)),
+    isAdmin ? getSeriesFallbackImageUrl(series.id) : null,
+  ]);
   // A hidden series is absent, full stop — a MANAGER hitting its URL
   // directly (bookmark, typed URL) gets the same 404 as a nonexistent
   // series, same "never distinguish the two" rule `documentWhereForUser`
@@ -74,9 +82,6 @@ export default async function SeriesProductsPage({ params }: { params: Promise<P
   const products = isAdmin
     ? result.products
     : result.products.filter((p) => !hiddenCatalogIds.productIds.has(p.id));
-  // Only needed for the admin "Series image" panel below -- skip the extra
-  // query entirely for a MANAGER, who never sees that panel.
-  const fallbackImageUrl = isAdmin ? await getSeriesFallbackImageUrl(series.id) : null;
 
   return (
     <div className="flex flex-col gap-6">

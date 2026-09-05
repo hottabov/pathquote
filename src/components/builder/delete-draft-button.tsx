@@ -3,18 +3,19 @@
 import { useState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useConfirm } from "@/components/ui-kit";
-import type { ActionResult } from "@/lib/actions/documents";
+import { useConfirm } from "@/components/ui-kit/client";
+import { deleteDraft } from "@/lib/actions/documents";
 
 /**
  * Deletes the current draft. Builder-local equivalent of
  * src/components/catalog/delete-button.tsx (which still uses
  * `window.confirm` — out of scope for Phase 5b Task B, which only covers
  * the documents list and builder screens) but built on the shared
- * `useConfirm` dialog instead. On success `deleteAction` (bound to
- * `deleteDraft`) redirects away itself, same as the catalog version.
+ * `useConfirm` dialog instead. On success `deleteDraft` redirects away
+ * itself, same as the catalog version, so there is no post-delete state to
+ * handle here beyond the error branch.
  */
-export function DeleteDraftButton({ action }: { action: () => Promise<ActionResult> }) {
+export function DeleteDraftButton({ documentId }: { documentId: string }) {
   const confirm = useConfirm();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +31,7 @@ export function DeleteDraftButton({ action }: { action: () => Promise<ActionResu
 
     setError(null);
     startTransition(async () => {
-      const result = await action();
+      const result = await deleteDraft(documentId);
       if (result?.error) setError(result.error);
     });
   }

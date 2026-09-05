@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useToast } from "@/components/ui-kit";
+import { useToast } from "@/components/ui-kit/client";
 
 /**
  * Toasts the ADMIN-only non-blocking concession-cap warning exactly once —

@@ -8,9 +8,9 @@ import {
   resolveBlocks,
   substitutePlaceholders,
   type ContentBlockRow,
-  type QuotationDataDoc,
   type QuotationItemInput,
 } from "../src/lib/quotation-data";
+import { quotationDoc, quotationItem } from "./helpers/fixtures";
 
 // Pure module — no @/lib/db import (see quotation-data.ts's header comment),
 // so this never needs DATABASE_URL set, same as tests/sheet-data.test.ts.
@@ -151,67 +151,6 @@ describe("substitutePlaceholders", () => {
 
 // --- buildQuotationData: light integration coverage -------------------------
 
-function baseItem(overrides: Partial<QuotationItemInput> = {}): QuotationItemInput {
-  return {
-    id: "item-1",
-    code: "M5180",
-    name: "M5180 Cutting System",
-    description: null,
-    unitPrice: "175000.00",
-    listPrice: "175000.00",
-    discountMode: "PERCENT",
-    discountValue: null,
-    discountAmount: "0.00",
-    total: "175000.00",
-    imageUrl: null,
-    showImage: false,
-    serialNumber: null,
-    seriesCode: "M",
-    specs: { cutHeightCm: 18, cutWidthCm: 180 },
-    lines: [],
-    isCredit: false,
-    ...overrides,
-  };
-}
-
-function baseDoc(overrides: Partial<QuotationDataDoc> = {}): QuotationDataDoc {
-  return {
-    status: "DRAFT",
-    number: null,
-    issueDate: new Date("2026-08-30T00:00:00.000Z"),
-    validityDays: 30,
-    defaultValidityDays: 7,
-    currency: "AUD",
-    taxName: "GST",
-    taxRate: "10",
-    deliveryTerms: "DELIVERED",
-    entitySnapshot: null,
-    entityName: "Pathfinder Australia Pty Ltd",
-    entityLegalId: "ABN 64 072 458 667",
-    entityAddress: "12 Did Ct, Tullamarine Vic. 3043, Australia",
-    bankDetails: { bank: "ANZ Westfield", bsb: "013 442", accountNo: "4405 63886" },
-    logoUrl: null,
-    footerText: null,
-    discountMode: "PERCENT",
-    discountValue: null,
-    subtotal: "175000.00",
-    discountAmount: "0.00",
-    taxAmount: "17500.00",
-    total: "192500.00",
-    company: null,
-    contact: null,
-    extraLines: [],
-    regionId: "region-au",
-    items: [baseItem()],
-    showItemPrices: false,
-    showOptionPrices: false,
-    author: { name: "Jane Author", email: "jane@example.com", phone: "0400 000 000", avatar: null },
-    notes: null,
-    heroImageUrl: null,
-    ...overrides,
-  };
-}
-
 // `{{price}}` deliberately lives on its own line/paragraph (blank line
 // before it) — mirrors the real machine.m-series seed body's own
 // "**Price: {{price}}**" paragraph (see prisma/seed-data/content-blocks.json)
@@ -262,23 +201,23 @@ describe("buildQuotationData — machine spec parsing", () => {
     // M3390 parses to 3cm height / 390cm width per the code — this must win
     // over the (deliberately different/stale) specs field to prove code
     // parsing is authoritative, not just a fallback.
-    const doc = baseDoc({
-      items: [baseItem({ code: "M3390", seriesCode: "M", specs: { cutHeightCm: 99, cutWidthCm: 99 } })],
+    const doc = quotationDoc({
+      items: [quotationItem({ code: "M3390", seriesCode: "M", specs: { cutHeightCm: 99, cutWidthCm: 99 } })],
     });
     const data = buildQuotationData(doc, [machineBlock]);
     expect(data.machineSections[0].titleBlockHtml).toContain("Height 3cm, width 390cm");
   });
 
   it("falls back to the stored specs field when the code doesn't parse", () => {
-    const doc = baseDoc({
-      items: [baseItem({ code: "M999", seriesCode: "M", specs: { cutHeightCm: 7, cutWidthCm: 220 } })],
+    const doc = quotationDoc({
+      items: [quotationItem({ code: "M999", seriesCode: "M", specs: { cutHeightCm: 7, cutWidthCm: 220 } })],
     });
     const data = buildQuotationData(doc, [machineBlock]);
     expect(data.machineSections[0].titleBlockHtml).toContain("Height 7cm, width 220cm");
   });
 
   it("exposes specSentence on the machine section for a parseable M-Series code", () => {
-    const doc = baseDoc({ items: [baseItem({ code: "M3390", seriesCode: "M" })] });
+    const doc = quotationDoc({ items: [quotationItem({ code: "M3390", seriesCode: "M" })] });
     const data = buildQuotationData(doc, [machineBlock]);
     expect(data.machineSections[0].specSentence).toBe(
       "M-Series Cutting Machine, 3cm compressed lay height, 390cm cutting width"
@@ -286,7 +225,7 @@ describe("buildQuotationData — machine spec parsing", () => {
   });
 
   it("exposes specSentence for an L-Series code even with no matching content block", () => {
-    const doc = baseDoc({ items: [baseItem({ code: "L-320", seriesCode: "L", name: "L-320 Cutting System" })] });
+    const doc = quotationDoc({ items: [quotationItem({ code: "L-320", seriesCode: "L", name: "L-320 Cutting System" })] });
     const data = buildQuotationData(doc, []);
     expect(data.machineSections[0].specSentence).toBe("L-Series Cutting Machine with 320cm cutting width");
     // No `machine.*`/etc. content block covers L-Series at all — verify the
@@ -296,7 +235,7 @@ describe("buildQuotationData — machine spec parsing", () => {
   });
 
   it("leaves specSentence null for a non-spec-encoding series (e.g. software)", () => {
-    const doc = baseDoc({ items: [baseItem({ code: "PTW(S)", seriesCode: "SW", name: "PathWorks" })] });
+    const doc = quotationDoc({ items: [quotationItem({ code: "PTW(S)", seriesCode: "SW", name: "PathWorks" })] });
     const data = buildQuotationData(doc, []);
     expect(data.machineSections[0].specSentence).toBeNull();
   });
@@ -309,14 +248,14 @@ describe("buildQuotationData", () => {
     // prisma/seed-data/content-blocks.json) uses a bare "{{model}}" (no
     // hardcoded "M" prefix), so a full product code renders correctly with
     // no doubled "M". This fixture's own block body mirrors that shape.
-    const data = buildQuotationData(baseDoc({ items: [baseItem({ code: "M450" })] }), [machineBlock]);
+    const data = buildQuotationData(quotationDoc({ items: [quotationItem({ code: "M450" })] }), [machineBlock]);
     expect(data.machineSections).toHaveLength(1);
     expect(data.machineSections[0].titleBlockHtml).toContain("Model M450");
     expect(data.machineSections[0].titleBlockHtml).toContain("Height 18cm, width 180cm");
   });
 
   it("leaves titleBlockHtml null when no block matches the product", () => {
-    const doc = baseDoc({ items: [baseItem({ seriesCode: "EF", code: "EF-100" })] });
+    const doc = quotationDoc({ items: [quotationItem({ seriesCode: "EF", code: "EF-100" })] });
     const data = buildQuotationData(doc, [machineBlock]);
     expect(data.machineSections[0].titleBlockHtml).toBeNull();
   });
@@ -327,10 +266,10 @@ describe("buildQuotationData", () => {
     // `specs` (18/180) — same fixture shape as the "resolves a machine title
     // block" test above — keeping this test's height/width assertion
     // independent of code-parsing behaviour.
-    const doc = baseDoc({
+    const doc = quotationDoc({
       showItemPrices: false,
       showOptionPrices: false,
-      items: [baseItem({ code: "M450" })],
+      items: [quotationItem({ code: "M450" })],
     });
     const data = buildQuotationData(doc, [machineBlock]);
     expect(data.machineSections[0].titleBlockHtml).not.toContain("Price");
@@ -340,10 +279,10 @@ describe("buildQuotationData", () => {
   });
 
   it("substitutes the item's TOTAL (incl. options), currency-formatted, when showItemPrices is on", () => {
-    const doc = baseDoc({
+    const doc = quotationDoc({
       showItemPrices: true,
       showOptionPrices: false,
-      items: [baseItem({ unitPrice: "175000.00", total: "180000.00" })],
+      items: [quotationItem({ unitPrice: "175000.00", total: "180000.00" })],
     });
     const data = buildQuotationData(doc, [machineBlock]);
     // Uses the pricing engine's per-item TOTAL (180000, incl. an option),
@@ -361,10 +300,10 @@ describe("buildQuotationData", () => {
       body: "Base: {{basePrice}}\n\nTotal: {{price}}",
       sortOrder: 1,
     };
-    const doc = baseDoc({
+    const doc = quotationDoc({
       showItemPrices: true,
       showOptionPrices: false,
-      items: [baseItem({ unitPrice: "175000.00", total: "180000.00" })],
+      items: [quotationItem({ unitPrice: "175000.00", total: "180000.00" })],
     });
     const data = buildQuotationData(doc, [basePriceBlock]);
     // {{basePrice}} resolves to the bare machine price (175000), while the
@@ -383,10 +322,10 @@ describe("buildQuotationData", () => {
       body: "Model {{model}}.\n\nBase: {{basePrice}}",
       sortOrder: 1,
     };
-    const doc = baseDoc({
+    const doc = quotationDoc({
       showItemPrices: false,
       showOptionPrices: false,
-      items: [baseItem({ code: "M450" })],
+      items: [quotationItem({ code: "M450" })],
     });
     const data = buildQuotationData(doc, [basePriceBlock]);
     expect(data.machineSections[0].titleBlockHtml).not.toContain("Base");
@@ -395,22 +334,22 @@ describe("buildQuotationData", () => {
   });
 
   it("substitutes the real price when only showOptionPrices is on (implies item prices visible)", () => {
-    const doc = baseDoc({ showItemPrices: false, showOptionPrices: true });
+    const doc = quotationDoc({ showItemPrices: false, showOptionPrices: true });
     const data = buildQuotationData(doc, [machineBlock]);
     expect(data.machineSections[0].titleBlockHtml).toContain("Price: $175,000");
   });
 
   it("passes both price-display toggles through onto the returned QuotationData", () => {
-    const doc = baseDoc({ showItemPrices: true, showOptionPrices: false });
+    const doc = quotationDoc({ showItemPrices: true, showOptionPrices: false });
     const data = buildQuotationData(doc, []);
     expect(data.showItemPrices).toBe(true);
     expect(data.showOptionPrices).toBe(false);
   });
 
   it("resolves OPTION lines to option blocks using line attributes, falls back for lines with no match", () => {
-    const doc = baseDoc({
+    const doc = quotationDoc({
       items: [
-        baseItem({
+        quotationItem({
           lines: [
             {
               id: "line-1",
@@ -455,10 +394,10 @@ describe("buildQuotationData", () => {
   });
 
   it("no selected option is ever omitted: 3 options (1 with a block, 2 without) all appear in the one unified table", () => {
-    const doc = baseDoc({
+    const doc = quotationDoc({
       showOptionPrices: true,
       items: [
-        baseItem({
+        quotationItem({
           lines: [
             {
               id: "line-1",
@@ -527,10 +466,10 @@ describe("buildQuotationData", () => {
   });
 
   it("hides option row prices when showOptionPrices is off", () => {
-    const doc = baseDoc({
+    const doc = quotationDoc({
       showOptionPrices: false,
       items: [
-        baseItem({
+        quotationItem({
           lines: [
             {
               id: "line-1",
@@ -552,9 +491,9 @@ describe("buildQuotationData", () => {
   });
 
   it("carries qty onto a matched-block option row (for the table's qty column)", () => {
-    const doc = baseDoc({
+    const doc = quotationDoc({
       items: [
-        baseItem({
+        quotationItem({
           lines: [
             {
               id: "line-1",
@@ -576,7 +515,7 @@ describe("buildQuotationData", () => {
   });
 
   it("substitutes bankDetails into terms blocks and sorts terms/conditions by sortOrder", () => {
-    const data = buildQuotationData(baseDoc(), [termsBlock, conditionsBlock]);
+    const data = buildQuotationData(quotationDoc(), [termsBlock, conditionsBlock]);
     expect(data.termsSections).toHaveLength(1);
     // Multi-line: each bank field (bank/bsb/accountNo, per baseDoc's fixture)
     // renders as its own line, not squashed onto one.
@@ -609,7 +548,7 @@ describe("buildQuotationData", () => {
       body: "{{warrantyMonths}}-month parts warranty.",
       sortOrder: 8,
     };
-    const data = buildQuotationData(baseDoc(), [deliveryBlock, scheduleBlock, warrantyBlock]);
+    const data = buildQuotationData(quotationDoc(), [deliveryBlock, scheduleBlock, warrantyBlock]);
     const bodies = data.termsSections.map((t) => t.bodyHtml).join("\n");
     // None of these are wired up from any per-document source today — every
     // one must come from the auto-fill default, with no "____"/stripped line.
@@ -627,32 +566,32 @@ describe("buildQuotationData", () => {
       body: "Customer agrees to 2nd year RSP.\n\n- 1st Year: 100% discount.\n- 2nd Year: {{rspYear2Cost}} + GST.",
       sortOrder: 9,
     };
-    const data = buildQuotationData(baseDoc(), [rspTermsBlock]);
+    const data = buildQuotationData(quotationDoc(), [rspTermsBlock]);
     expect(data.termsSections[0].bodyHtml).toContain("1st Year: 100% discount");
     expect(data.termsSections[0].bodyHtml).not.toContain("2nd Year");
     expect(data.termsSections[0].bodyHtml).not.toContain("____");
   });
 
   it("builds an RSP coverage row per item with a 'TBA' unit cost (table cell, not a markdown line — never '____')", () => {
-    const doc = baseDoc({ items: [baseItem({ name: "M5180 Cutting System", serialNumber: "SN-001" })] });
+    const doc = quotationDoc({ items: [quotationItem({ name: "M5180 Cutting System", serialNumber: "SN-001" })] });
     const data = buildQuotationData(doc, [rspAgreementBlock]);
     expect(data.rsp.agreementHtml).toContain("Remote support program");
     expect(data.rsp.coverageRows).toEqual([{ name: "M5180 Cutting System", serialNumber: "SN-001", rspUnitCost: "TBA" }]);
   });
 
   it("blanks serialNumber when unset rather than rendering null", () => {
-    const data = buildQuotationData(baseDoc(), []);
+    const data = buildQuotationData(quotationDoc(), []);
     expect(data.rsp.coverageRows[0].serialNumber).toBe("");
   });
 
   it("includes items from every machine series (M, X, L, P, LNS)", () => {
-    const doc = baseDoc({
+    const doc = quotationDoc({
       items: [
-        baseItem({ id: "i-m", name: "M item", seriesCode: "M" }),
-        baseItem({ id: "i-xc", name: "X item", seriesCode: "X" }),
-        baseItem({ id: "i-l", name: "L item", seriesCode: "L" }),
-        baseItem({ id: "i-p", name: "P item", seriesCode: "P" }),
-        baseItem({ id: "i-lns", name: "LNS item", seriesCode: "LNS" }),
+        quotationItem({ id: "i-m", name: "M item", seriesCode: "M" }),
+        quotationItem({ id: "i-xc", name: "X item", seriesCode: "X" }),
+        quotationItem({ id: "i-l", name: "L item", seriesCode: "L" }),
+        quotationItem({ id: "i-p", name: "P item", seriesCode: "P" }),
+        quotationItem({ id: "i-lns", name: "LNS item", seriesCode: "LNS" }),
       ],
     });
     const data = buildQuotationData(doc, []);
@@ -660,16 +599,16 @@ describe("buildQuotationData", () => {
   });
 
   it("excludes a non-machine-series item with no serial number (e.g. an option/accessory/software item)", () => {
-    const doc = baseDoc({
-      items: [baseItem({ name: "Easy-Loader", seriesCode: "EL", serialNumber: null })],
+    const doc = quotationDoc({
+      items: [quotationItem({ name: "Easy-Loader", seriesCode: "EL", serialNumber: null })],
     });
     const data = buildQuotationData(doc, []);
     expect(data.rsp.coverageRows).toEqual([]);
   });
 
   it("includes a non-machine-series item when it has a serial number", () => {
-    const doc = baseDoc({
-      items: [baseItem({ name: "Fabric Master", seriesCode: null, serialNumber: "SN-FM-1" })],
+    const doc = quotationDoc({
+      items: [quotationItem({ name: "Fabric Master", seriesCode: null, serialNumber: "SN-FM-1" })],
     });
     const data = buildQuotationData(doc, []);
     expect(data.rsp.coverageRows).toEqual([{ name: "Fabric Master", serialNumber: "SN-FM-1", rspUnitCost: "TBA" }]);
@@ -698,7 +637,7 @@ describe("buildQuotationData — sectionTitle", () => {
   // references a placeholder, e.g. "Pathfinder {{model}} Cutting System" —
   // see the next test) still gets used, substituted.
   it("ignores a matched content block's static title, always uses the item's own name instead", () => {
-    const data = buildQuotationData(baseDoc({ items: [baseItem({ code: "M450" })] }), [machineBlock]);
+    const data = buildQuotationData(quotationDoc({ items: [quotationItem({ code: "M450" })] }), [machineBlock]);
     expect(data.machineSections[0].sectionTitle).toBe("M5180 Cutting System");
   });
 
@@ -710,20 +649,20 @@ describe("buildQuotationData — sectionTitle", () => {
       body: "Model {{model}}.",
       sortOrder: 1,
     };
-    const data = buildQuotationData(baseDoc({ items: [baseItem({ code: "X-5180", seriesCode: "X" })] }), [
+    const data = buildQuotationData(quotationDoc({ items: [quotationItem({ code: "X-5180", seriesCode: "X" })] }), [
       modelTitleBlock,
     ]);
     expect(data.machineSections[0].sectionTitle).toBe("Pathfinder X-5180 Cutting System");
   });
 
   it("falls back to the item's name when no content block matches the product", () => {
-    const doc = baseDoc({ items: [baseItem({ seriesCode: "EF", code: "EF-100", name: "EF-100 Accessory" })] });
+    const doc = quotationDoc({ items: [quotationItem({ seriesCode: "EF", code: "EF-100", name: "EF-100 Accessory" })] });
     const data = buildQuotationData(doc, [machineBlock]);
     expect(data.machineSections[0].sectionTitle).toBe("EF-100 Accessory");
   });
 
   it("falls back to the item's name for a blockless series (e.g. L-Series)", () => {
-    const doc = baseDoc({ items: [baseItem({ code: "L-320", seriesCode: "L", name: "L-320 Cutting System" })] });
+    const doc = quotationDoc({ items: [quotationItem({ code: "L-320", seriesCode: "L", name: "L-320 Cutting System" })] });
     const data = buildQuotationData(doc, []);
     expect(data.machineSections[0].sectionTitle).toBe("L-320 Cutting System");
   });
@@ -736,7 +675,7 @@ describe("buildQuotationData — sectionTitle", () => {
       body: "Model {{model}}.",
       sortOrder: 1,
     };
-    const doc = baseDoc({ items: [baseItem({ name: "M5180 Cutting System" })] });
+    const doc = quotationDoc({ items: [quotationItem({ name: "M5180 Cutting System" })] });
     const data = buildQuotationData(doc, [noTitleBlock]);
     expect(data.machineSections[0].sectionTitle).toBe("M5180 Cutting System");
   });
@@ -749,7 +688,7 @@ describe("buildQuotationData — sectionTitle", () => {
       body: "Model {{model}}.",
       sortOrder: 1,
     };
-    const doc = baseDoc({ items: [baseItem({ name: "M5180 Cutting System" })] });
+    const doc = quotationDoc({ items: [quotationItem({ name: "M5180 Cutting System" })] });
     const data = buildQuotationData(doc, [unresolvedTitleBlock]);
     expect(data.machineSections[0].sectionTitle).toBe("M5180 Cutting System");
   });
@@ -787,9 +726,9 @@ describe("dedupeOptionCode", () => {
 
 describe("buildQuotationData — unified options table (QuotationOptionRow)", () => {
   it("resolves a matched option's imageUrl through the same resolver as item images (icon flow: query -> data -> sheet)", () => {
-    const doc = baseDoc({
+    const doc = quotationDoc({
       items: [
-        baseItem({
+        quotationItem({
           lines: [
             {
               id: "line-1",
@@ -813,9 +752,9 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
   });
 
   it("leaves icon null when the line carries no imageUrl", () => {
-    const doc = baseDoc({
+    const doc = quotationDoc({
       items: [
-        baseItem({
+        quotationItem({
           lines: [
             {
               id: "line-1",
@@ -837,9 +776,9 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
   });
 
   it("dedupes the row's own code when it's redundant with its name", () => {
-    const doc = baseDoc({
+    const doc = quotationDoc({
       items: [
-        baseItem({
+        quotationItem({
           lines: [
             {
               id: "line-1",
@@ -861,9 +800,9 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
   });
 
   it("falls back to the line's own (deduped) description when no option.* block matches", () => {
-    const doc = baseDoc({
+    const doc = quotationDoc({
       items: [
-        baseItem({
+        quotationItem({
           lines: [
             {
               id: "line-1",
@@ -885,9 +824,9 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
   });
 
   it("descriptionHtml is null when there's no block AND the line's description is redundant with its name", () => {
-    const doc = baseDoc({
+    const doc = quotationDoc({
       items: [
-        baseItem({
+        quotationItem({
           lines: [
             {
               id: "line-1",
@@ -909,9 +848,9 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
   });
 
   it("flattens attributes to one 'key: value · key: value' line, null when there are none", () => {
-    const doc = baseDoc({
+    const doc = quotationDoc({
       items: [
-        baseItem({
+        quotationItem({
           lines: [
             {
               id: "line-1",
@@ -958,13 +897,13 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
       imageUrl: null,
     };
 
-    const off = buildQuotationData(baseDoc({ showOptionPrices: false, items: [baseItem({ lines: [line] })] }), [
+    const off = buildQuotationData(quotationDoc({ showOptionPrices: false, items: [quotationItem({ lines: [line] })] }), [
       machineBlock,
       mtsBlock,
     ]);
     expect(off.machineSections[0].optionRows[0].price).toBeNull();
 
-    const on = buildQuotationData(baseDoc({ showOptionPrices: true, items: [baseItem({ lines: [line] })] }), [
+    const on = buildQuotationData(quotationDoc({ showOptionPrices: true, items: [quotationItem({ lines: [line] })] }), [
       machineBlock,
       mtsBlock,
     ]);
@@ -981,27 +920,88 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
 // `sectionPrice`/`hasInlinePrice` make the price structural for every
 // section, while still avoiding a double print for a block (like
 // machine.m-series) that already inlines its own price line.
+// The Equipment Detail table repeats the machine and its price, so it has to
+// follow the same rules the Investment Summary's own base row does — the two
+// disagreeing is what put "$0" next to EL-2020 on one page and nothing on the
+// next. See `ItemBreakdown.basePriceUnquoted` / `assembledFromOptions`.
+describe("buildQuotationData — baseRow for a product with no price of its own", () => {
+  const driveModule = {
+    id: "line-1",
+    kind: "OPTION" as const,
+    code: "EL-2020 Drive Module (first 1.2M)",
+    name: "Drive Module",
+    description: null,
+    qty: 1,
+    unitPrice: "4050.00",
+    attributes: null,
+    imageUrl: null,
+  };
+
+  const sectionFor = (item: Partial<Parameters<typeof quotationItem>[0]>) =>
+    buildQuotationData(
+      quotationDoc({ showOptionPrices: true, items: [quotationItem(item)] }),
+      [machineBlock]
+    ).machineSections[0];
+
+  it("drops the row for an EasyLoader, whose modules carry the whole price", () => {
+    const section = sectionFor({
+      code: "EL-2020",
+      name: "EasyLoader 2020",
+      unitPrice: "0.00",
+      listPrice: "0.00",
+      total: "4050.00",
+      lines: [driveModule],
+    });
+    expect(section.baseRow).toBeNull();
+    // Never leaves an empty table — the modules are still there to head it.
+    expect(section.optionRows.length).toBeGreaterThan(0);
+  });
+
+  it("keeps an unpriced row for Service, which has no options to carry it", () => {
+    const section = sectionFor({
+      code: "SERVICE",
+      name: "Service",
+      unitPrice: "0.00",
+      listPrice: "0.00",
+      total: "0.00",
+      lines: [],
+    });
+    expect(section.baseRow).not.toBeNull();
+    expect(section.baseRow?.price).toBeNull();
+  });
+
+  it("keeps the row and its $0 for a machine hand-zeroed as a giveaway", () => {
+    const section = sectionFor({ unitPrice: "0.00", total: "0.00", lines: [driveModule] });
+    expect(section.baseRow?.price).toBe("$0");
+  });
+
+  it("prints the price of an ordinary machine unchanged", () => {
+    const section = sectionFor({ lines: [driveModule] });
+    expect(section.baseRow?.price).toBe("$175,000");
+  });
+});
+
 describe("buildQuotationData — sectionPrice / hasInlinePrice", () => {
   it("exposes sectionPrice (item total incl. options) when a price toggle is on", () => {
-    const doc = baseDoc({ showItemPrices: true, items: [baseItem({ total: "180000.00" })] });
+    const doc = quotationDoc({ showItemPrices: true, items: [quotationItem({ total: "180000.00" })] });
     const data = buildQuotationData(doc, []);
     expect(data.machineSections[0].sectionPrice).toBe("$180,000");
   });
 
   it("is null when both price-display toggles are off", () => {
-    const doc = baseDoc({ showItemPrices: false, showOptionPrices: false });
+    const doc = quotationDoc({ showItemPrices: false, showOptionPrices: false });
     const data = buildQuotationData(doc, []);
     expect(data.machineSections[0].sectionPrice).toBeNull();
   });
 
   it("is visible when only showOptionPrices is on (implies item totals visible)", () => {
-    const doc = baseDoc({ showItemPrices: false, showOptionPrices: true, items: [baseItem({ total: "175000.00" })] });
+    const doc = quotationDoc({ showItemPrices: false, showOptionPrices: true, items: [quotationItem({ total: "175000.00" })] });
     const data = buildQuotationData(doc, []);
     expect(data.machineSections[0].sectionPrice).toBe("$175,000");
   });
 
   it("hasInlinePrice is true for a matched block whose raw body references {{price}} (machine.m-series)", () => {
-    const doc = baseDoc({ items: [baseItem({ code: "M450" })] });
+    const doc = quotationDoc({ items: [quotationItem({ code: "M450" })] });
     const data = buildQuotationData(doc, [machineBlock]);
     expect(data.machineSections[0].hasInlinePrice).toBe(true);
   });
@@ -1014,7 +1014,7 @@ describe("buildQuotationData — sectionPrice / hasInlinePrice", () => {
       body: "Automates fabric loading.",
       sortOrder: 1,
     };
-    const doc = baseDoc({ items: [baseItem({ code: "EL-2020", seriesCode: "EL" })] });
+    const doc = quotationDoc({ items: [quotationItem({ code: "EL-2020", seriesCode: "EL" })] });
     const data = buildQuotationData(doc, [elBlock]);
     expect(data.machineSections[0].hasInlinePrice).toBe(false);
     // sectionPrice is still exposed structurally even though showItemPrices
@@ -1023,7 +1023,7 @@ describe("buildQuotationData — sectionPrice / hasInlinePrice", () => {
   });
 
   it("hasInlinePrice is false for a blockless section (e.g. L-Series)", () => {
-    const doc = baseDoc({ items: [baseItem({ code: "L-320", seriesCode: "L" })] });
+    const doc = quotationDoc({ items: [quotationItem({ code: "L-320", seriesCode: "L" })] });
     const data = buildQuotationData(doc, []);
     expect(data.machineSections[0].hasInlinePrice).toBe(false);
     expect(data.machineSections[0].titleBlockHtml).toBeNull();
@@ -1034,7 +1034,7 @@ describe("buildQuotationData — sectionPrice / hasInlinePrice", () => {
 
 describe("buildQuotationData — preparedBy / notesHtml", () => {
   it("passes the document author through as preparedBy", () => {
-    const doc = baseDoc({ author: { name: "Jane Author", email: "jane@example.com", phone: "0400 000 000", avatar: null } });
+    const doc = quotationDoc({ author: { name: "Jane Author", email: "jane@example.com", phone: "0400 000 000", avatar: null } });
     const data = buildQuotationData(doc, []);
     expect(data.preparedBy).toEqual({
       name: "Jane Author",
@@ -1045,13 +1045,13 @@ describe("buildQuotationData — preparedBy / notesHtml", () => {
   });
 
   it("renders notes to HTML via renderMarkdown when present", () => {
-    const doc = baseDoc({ notes: "**Important:** handle with care." });
+    const doc = quotationDoc({ notes: "**Important:** handle with care." });
     const data = buildQuotationData(doc, []);
     expect(data.notesHtml).toContain("<strong>Important:</strong>");
   });
 
   it("is null when there are no notes", () => {
-    const doc = baseDoc({ notes: null });
+    const doc = quotationDoc({ notes: null });
     const data = buildQuotationData(doc, []);
     expect(data.notesHtml).toBeNull();
   });
@@ -1065,17 +1065,17 @@ describe("buildQuotationData — preparedBy / notesHtml", () => {
 // through the same `renderStoredRichText` path every other stored body does.
 describe("buildQuotationData — item descriptionHtml", () => {
   it("renders a legacy plain-text item description through renderMarkdown", () => {
-    const doc = baseDoc({
-      items: [baseItem({ name: "X-5180 Cutting System", description: "Ships with mounting bracket" })],
+    const doc = quotationDoc({
+      items: [quotationItem({ name: "X-5180 Cutting System", description: "Ships with mounting bracket" })],
     });
     const data = buildQuotationData(doc, []);
     expect(data.items[0].descriptionHtml).toBe("<p>Ships with mounting bracket</p>");
   });
 
   it("sanitizes an HTML item description (from the RichTextEditor) rather than passing it through unsanitized", () => {
-    const doc = baseDoc({
+    const doc = quotationDoc({
       items: [
-        baseItem({
+        quotationItem({
           name: "X-5180 Cutting System",
           description: "<p>Hi</p><script>alert(1)</script>",
         }),
@@ -1087,14 +1087,14 @@ describe("buildQuotationData — item descriptionHtml", () => {
   });
 
   it("is null when the item has no description", () => {
-    const doc = baseDoc({ items: [baseItem({ description: null })] });
+    const doc = quotationDoc({ items: [quotationItem({ description: null })] });
     const data = buildQuotationData(doc, []);
     expect(data.items[0].descriptionHtml).toBeNull();
   });
 
   it("is null when the description is redundant with the item's own name (deduped by toSheetData)", () => {
-    const doc = baseDoc({
-      items: [baseItem({ name: "X-5180 Cutting System", description: "X-5180 Cutting System" })],
+    const doc = quotationDoc({
+      items: [quotationItem({ name: "X-5180 Cutting System", description: "X-5180 Cutting System" })],
     });
     const data = buildQuotationData(doc, []);
     expect(data.items[0].descriptionHtml).toBeNull();
@@ -1107,13 +1107,13 @@ describe("buildQuotationData — item descriptionHtml", () => {
 // straight onto `QuotationData.heroImage`, exactly like `logo`.
 describe("buildQuotationData — hero image", () => {
   it("resolves the document's hero image through resolveImage onto QuotationData.heroImage", () => {
-    const doc = baseDoc({ heroImageUrl: "/api/files/setup.jpg" });
+    const doc = quotationDoc({ heroImageUrl: "/api/files/setup.jpg" });
     const data = buildQuotationData(doc, [], { resolveImage: (url) => `resolved:${url}` });
     expect(data.heroImage).toBe("resolved:/api/files/setup.jpg");
   });
 
   it("is null when the document has no hero image", () => {
-    const doc = baseDoc({ heroImageUrl: null });
+    const doc = quotationDoc({ heroImageUrl: null });
     const data = buildQuotationData(doc, []);
     expect(data.heroImage).toBeNull();
   });

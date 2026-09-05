@@ -8,7 +8,8 @@ import {
   NO_HIDDEN_CATALOG_IDS,
   type HiddenCatalogIds,
 } from "../src/lib/catalog-visibility";
-import { toSheetData, type ToSheetDataDoc, type ToSheetItemInput } from "../src/lib/sheet-data";
+import { toSheetData } from "../src/lib/sheet-data";
+import { sheetDoc, sheetItem } from "./helpers/fixtures";
 
 const hidden: HiddenCatalogIds = {
   seriesIds: new Set(["series_X"]),
@@ -175,70 +176,28 @@ describe("a hidden product already on a document still renders and totals identi
   // a submitted code -- neither one ever runs against an item already on a
   // document. So hiding "X100" today cannot change how an existing document
   // that already contains it renders or totals.
-  function baseItem(overrides: Partial<ToSheetItemInput> = {}): ToSheetItemInput {
-    return {
-      id: "item-1",
-      code: "X100",
-      name: "X-Calibre 100",
-      description: null,
-      unitPrice: "50000.00",
-      listPrice: "50000.00",
-      discountMode: "PERCENT",
-      discountValue: null,
-      discountAmount: "0.00",
-      total: "50000.00",
-      imageUrl: null,
-      showImage: false,
-      lines: [],
-      isCredit: false,
-      ...overrides,
-    };
-  }
-
-  function baseDoc(overrides: Partial<ToSheetDataDoc> = {}): ToSheetDataDoc {
-    return {
-      status: "FINAL",
-      number: "Q-1",
-      issueDate: new Date("2026-08-30T00:00:00.000Z"),
-      validityDays: null,
-      defaultValidityDays: 7,
-      currency: "AUD",
-      taxName: "GST",
-      taxRate: "10",
-      deliveryTerms: "DELIVERED",
-      entitySnapshot: null,
-      entityName: "Live Region Entity",
-      entityLegalId: "ABN 111",
-      entityAddress: "1 Live St",
-      bankDetails: { bank: "Live Bank", bsb: "000 000", accountNo: "111 111" },
-      logoUrl: null,
-      footerText: "Live footer",
-      discountMode: "PERCENT",
-      discountValue: null,
-      subtotal: "50000.00",
-      discountAmount: "0.00",
-      taxAmount: "5000.00",
-      total: "55000.00",
-      company: null,
-      contact: null,
-      items: [],
-      extraLines: [],
-      author: { name: "Jane Author", email: "jane@example.com", phone: null, avatar: null },
-      notes: null,
-      showItemPrices: true,
-      showOptionPrices: true,
-      heroImageUrl: null,
-      ...overrides,
-    };
-  }
-
   it("renders the item and the document totals exactly the same whether or not its series is hidden elsewhere", () => {
     // This item's code, "X100", belongs to "series_X" -- the exact series
     // `hidden` (defined at the top of this file) marks hidden for whichever
     // user that fixture represents.
     expect(hidden.seriesIds.has("series_X")).toBe(true);
 
-    const doc = baseDoc({ items: [baseItem()] });
+    const doc = sheetDoc({
+      status: "FINAL",
+      number: "Q-1",
+      subtotal: "50000.00",
+      taxAmount: "5000.00",
+      total: "55000.00",
+      items: [
+        sheetItem({
+          code: "X100",
+          name: "X-Calibre 100",
+          unitPrice: "50000.00",
+          listPrice: "50000.00",
+          total: "50000.00",
+        }),
+      ],
+    });
     const sheet = toSheetData(doc);
 
     // `toSheetData` never consulted `hidden` -- there's no productId/seriesId

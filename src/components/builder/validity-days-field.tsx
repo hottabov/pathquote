@@ -5,7 +5,7 @@ import { AutosaveIndicator } from "@/components/builder/autosave-indicator";
 import { fieldInputClass } from "@/components/ui-kit";
 import { useAutosave } from "@/lib/use-autosave";
 import { cn } from "@/lib/utils";
-import type { ActionResult } from "@/lib/actions/documents";
+import { setValidityDays } from "@/lib/actions/documents";
 
 /** The sales-guideline norm the inline warning below is measured against —
  * NOT enforced (see `validityDaysSchema`, which allows up to 365): the
@@ -31,13 +31,11 @@ export function ValidityDaysField({
   documentId,
   validityDays,
   orgDefaultDays,
-  setValidityDaysAction,
   readOnly = false,
 }: {
   documentId: string;
   validityDays: number | null;
   orgDefaultDays: number;
-  setValidityDaysAction: (documentId: string, formData: FormData) => Promise<ActionResult>;
   readOnly?: boolean;
 }) {
   const [value, setValue] = useState(validityDays !== null ? String(validityDays) : "");
@@ -48,7 +46,7 @@ export function ValidityDaysField({
     onSave: async (next) => {
       const formData = new FormData();
       formData.set("validityDays", next);
-      return setValidityDaysAction(documentId, formData);
+      return setValidityDays(documentId, formData);
     },
   });
 

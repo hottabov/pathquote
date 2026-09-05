@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { db } from "@/lib/db";
 
 export type RegionAdminListItem = {
@@ -72,8 +73,11 @@ function toBankDetails(value: unknown): Record<string, string> | null {
 }
 
 /** A single region by id, or `null` if it doesn't exist — feeds the
- * /settings/regions/[regionId] edit page. */
-export async function getRegionAdmin(regionId: string): Promise<RegionAdminDetail | null> {
+ * /settings/regions/[regionId] edit page, which reads it both in
+ * `generateMetadata` and in the page body, hence the request memo. */
+export const getRegionAdmin = cache(async function getRegionAdmin(
+  regionId: string
+): Promise<RegionAdminDetail | null> {
   const region = await db.region.findUnique({ where: { id: regionId } });
   if (!region) return null;
 
@@ -94,7 +98,7 @@ export async function getRegionAdmin(regionId: string): Promise<RegionAdminDetai
     maxMarkupPct: region.maxMarkupPct?.toString() ?? null,
     active: region.active,
   };
-}
+});
 
 /** Count of currently active users assigned to `regionId` — feeds the
  * deactivate guard in `updateRegion` (src/lib/actions/regions.ts): a region

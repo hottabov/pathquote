@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { companySchema, contactSchema } from "../src/lib/validation/clients";
+import { accepts, rejects } from "./helpers/schema";
 
 describe("companySchema", () => {
   const base = {
@@ -14,10 +15,7 @@ describe("companySchema", () => {
     regionCode: "AU",
   };
 
-  it("accepts a fully populated valid company", () => {
-    const result = companySchema.safeParse(base);
-    expect(result.success).toBe(true);
-  });
+  accepts(companySchema, [["a fully populated valid company", base]]);
 
   it("accepts a company with only name and regionCode", () => {
     const result = companySchema.safeParse({ name: "Acme", regionCode: "AU" });
@@ -28,17 +26,11 @@ describe("companySchema", () => {
     }
   });
 
-  it("rejects a name shorter than 2 characters", () => {
-    expect(companySchema.safeParse({ ...base, name: "A" }).success).toBe(false);
-  });
-
-  it("rejects a name over 200 characters", () => {
-    expect(companySchema.safeParse({ ...base, name: "A".repeat(201) }).success).toBe(false);
-  });
-
-  it("rejects a missing name", () => {
-    expect(companySchema.safeParse({ regionCode: "AU" }).success).toBe(false);
-  });
+  rejects(companySchema, [
+    ["a name shorter than 2 characters", { ...base, name: "A" }],
+    ["a name over 200 characters", { ...base, name: "A".repeat(201) }],
+    ["a missing name", { regionCode: "AU" }],
+  ]);
 
   it("treats a missing/null optional field as absent, not an error", () => {
     const result = companySchema.safeParse({ ...base, street: null, notes: undefined });
@@ -55,26 +47,15 @@ describe("companySchema", () => {
     if (result.success) expect(result.data.city).toBeUndefined();
   });
 
-  it("rejects a street over 120 characters", () => {
-    expect(companySchema.safeParse({ ...base, street: "A".repeat(121) }).success).toBe(false);
-  });
-
-  it("rejects a postcode over 20 characters", () => {
-    expect(companySchema.safeParse({ ...base, postcode: "A".repeat(21) }).success).toBe(false);
-  });
-
-  it("rejects a taxId over 50 characters", () => {
-    expect(companySchema.safeParse({ ...base, taxId: "A".repeat(51) }).success).toBe(false);
-  });
-
-  it("rejects notes over 2000 characters", () => {
-    expect(companySchema.safeParse({ ...base, notes: "A".repeat(2001) }).success).toBe(false);
-  });
+  rejects(companySchema, [
+    ["a street over 120 characters", { ...base, street: "A".repeat(121) }],
+    ["a postcode over 20 characters", { ...base, postcode: "A".repeat(21) }],
+    ["a taxId over 50 characters", { ...base, taxId: "A".repeat(51) }],
+    ["notes over 2000 characters", { ...base, notes: "A".repeat(2001) }],
+  ]);
 
   describe("regionCode", () => {
-    it("requires a regionCode", () => {
-      expect(companySchema.safeParse({ name: "Acme" }).success).toBe(false);
-    });
+    rejects(companySchema, [["a missing regionCode", { name: "Acme" }]]);
 
     it("uppercases a lowercase region code", () => {
       const result = companySchema.safeParse({ ...base, regionCode: "au" });
@@ -82,15 +63,14 @@ describe("companySchema", () => {
       if (result.success) expect(result.data.regionCode).toBe("AU");
     });
 
-    it("accepts a 3-letter region code", () => {
-      expect(companySchema.safeParse({ ...base, regionCode: "usa" }).success).toBe(true);
-    });
+    accepts(companySchema, [["a 3-letter region code", { ...base, regionCode: "usa" }]]);
 
-    it("rejects a region code that isn't 2-3 letters", () => {
-      for (const regionCode of ["A", "ABCD", "A1", ""]) {
-        expect(companySchema.safeParse({ ...base, regionCode }).success, regionCode).toBe(false);
-      }
-    });
+    rejects(companySchema, [
+      ["a 1-letter region code", { ...base, regionCode: "A" }],
+      ["a 4-letter region code", { ...base, regionCode: "ABCD" }],
+      ["a region code with digits", { ...base, regionCode: "A1" }],
+      ["a blank region code", { ...base, regionCode: "" }],
+    ]);
   });
 
   describe("country", () => {
@@ -106,11 +86,11 @@ describe("companySchema", () => {
       if (result.success) expect(result.data.country).toBe("AU");
     });
 
-    it("rejects a country that isn't a real ISO code", () => {
-      expect(companySchema.safeParse({ ...base, country: "Australia" }).success).toBe(false);
-      expect(companySchema.safeParse({ ...base, country: "ZZ" }).success).toBe(false);
-      expect(companySchema.safeParse({ ...base, country: "USA" }).success).toBe(false);
-    });
+    rejects(companySchema, [
+      ["a country name instead of a code", { ...base, country: "Australia" }],
+      ["a country code that isn't a real ISO code", { ...base, country: "ZZ" }],
+      ["a 3-letter country code", { ...base, country: "USA" }],
+    ]);
 
     it("treats a missing/blank country as absent, not an error", () => {
       for (const country of [null, undefined, ""]) {
@@ -251,22 +231,13 @@ describe("contactSchema", () => {
     }
   });
 
-  it("rejects a missing first name", () => {
-    expect(contactSchema.safeParse({ ...base, firstName: "" }).success).toBe(false);
-    expect(contactSchema.safeParse({ ...base, firstName: undefined }).success).toBe(false);
-  });
-
-  it("rejects a first name over 80 characters", () => {
-    expect(contactSchema.safeParse({ ...base, firstName: "A".repeat(81) }).success).toBe(false);
-  });
-
-  it("rejects a last name over 80 characters", () => {
-    expect(contactSchema.safeParse({ ...base, lastName: "A".repeat(81) }).success).toBe(false);
-  });
-
-  it("rejects an invalid email address", () => {
-    expect(contactSchema.safeParse({ ...base, email: "not-an-email" }).success).toBe(false);
-  });
+  rejects(contactSchema, [
+    ["a missing first name (empty string)", { ...base, firstName: "" }],
+    ["a missing first name (undefined)", { ...base, firstName: undefined }],
+    ["a first name over 80 characters", { ...base, firstName: "A".repeat(81) }],
+    ["a last name over 80 characters", { ...base, lastName: "A".repeat(81) }],
+    ["an invalid email address", { ...base, email: "not-an-email" }],
+  ]);
 
   it("treats a missing/empty email as absent, not an error", () => {
     for (const email of [null, undefined, ""]) {
@@ -276,13 +247,10 @@ describe("contactSchema", () => {
     }
   });
 
-  it("rejects a phone over 40 characters", () => {
-    expect(contactSchema.safeParse({ ...base, phone: "1".repeat(41) }).success).toBe(false);
-  });
-
-  it("rejects a position over 80 characters", () => {
-    expect(contactSchema.safeParse({ ...base, position: "A".repeat(81) }).success).toBe(false);
-  });
+  rejects(contactSchema, [
+    ["a phone over 40 characters", { ...base, phone: "1".repeat(41) }],
+    ["a position over 80 characters", { ...base, position: "A".repeat(81) }],
+  ]);
 
   describe("isPrimary coercion", () => {
     it('coerces the raw FormData "on" value to true', () => {
@@ -318,13 +286,9 @@ describe("companySchema - website validation", () => {
     regionCode: "AU",
   };
 
-  it("accepts a fully populated company with a website", () => {
-    const result = companySchema.safeParse({
-      ...base,
-      website: "https://example.com",
-    });
-    expect(result.success).toBe(true);
-  });
+  accepts(companySchema, [
+    ["a fully populated company with a website", { ...base, website: "https://example.com" }],
+  ]);
 
   it("normalizes a bare domain by prepending https://", () => {
     const result = companySchema.safeParse({
@@ -388,19 +352,15 @@ describe("companySchema - website validation", () => {
     }
   });
 
-  it("rejects an invalid URL (no protocol, not a domain)", () => {
-    expect(companySchema.safeParse({ ...base, website: "not a url" }).success).toBe(false);
-  });
+  rejects(companySchema, [
+    ["an invalid URL (no protocol, not a domain)", { ...base, website: "not a url" }],
+    ["a website over 200 characters", { ...base, website: `https://example.com/${"a".repeat(200)}` }],
+  ]);
 
-  it("rejects a website over 200 characters", () => {
-    const longUrl = `https://example.com/${"a".repeat(200)}`;
-    expect(companySchema.safeParse({ ...base, website: longUrl }).success).toBe(false);
-  });
-
-  it("accepts a 200-character website (boundary)", () => {
-    const url200 = `https://example.com/${"a".repeat(177)}`; // 8 + 11 + 1 + 177 = 197
-    expect(companySchema.safeParse({ ...base, website: url200 }).success).toBe(true);
-  });
+  accepts(companySchema, [
+    // 8 + 11 + 1 + 177 = 197
+    ["a 200-character website (boundary)", { ...base, website: `https://example.com/${"a".repeat(177)}` }],
+  ]);
 
   it("rejects javascript: protocol URLs (XSS protection)", () => {
     expect(companySchema.safeParse({ ...base, website: "javascript:alert(1)" }).success).toBe(false);

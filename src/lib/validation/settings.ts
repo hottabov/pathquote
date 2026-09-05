@@ -3,6 +3,7 @@
 // src/lib/validation/users.ts and src/lib/validation/regions.ts.
 import { z } from "zod";
 import { type CommissionTier, validateCommissionTiers } from "@/lib/pricing";
+import { validityDayCountSchema } from "./validity-days";
 
 /** Keys `updateSetting` (src/lib/actions/settings.ts) is allowed to write.
  * Kept as an array (rather than inlining string literals at each call site)
@@ -19,11 +20,12 @@ export function isAllowedSettingKey(key: string): key is SettingKey {
  * `getQuoteValidityDays` (src/lib/queries/settings.ts). A whole number of
  * days from 1 to 365 inclusive; the default of 7 (used when no `Setting` row
  * exists yet) lives with that query, not here. */
-export const quoteValidityDaysSchema = z.coerce
-  .number({ error: "Quote validity must be a number" })
-  .int("Quote validity must be a whole number")
-  .min(1, "Quote validity must be at least 1 day")
-  .max(365, "Quote validity must be at most 365 days");
+export const quoteValidityDaysSchema = validityDayCountSchema({
+  invalidType: "Quote validity must be a number",
+  notInteger: "Quote validity must be a whole number",
+  tooSmall: "Quote validity must be at least 1 day",
+  tooLarge: "Quote validity must be at most 365 days",
+});
 export type QuoteValidityDaysInput = z.infer<typeof quoteValidityDaysSchema>;
 
 /** Whether the builder's options editor shows each compatible option's small

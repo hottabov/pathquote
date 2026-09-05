@@ -1,0 +1,17 @@
+{
+  // The app's tsconfig.json excludes this directory so that neither
+  // `npm run typecheck` nor `next build` pays to check test code. This config
+  // adds it back as an explicit opt-in: editors pick it up automatically for
+  // files under tests/, and `npx tsc -p tests --noEmit` checks them in CI or
+  // by hand.
+  "extends": "../tsconfig.json",
+  // "paths" is inherited rather than redeclared: path mappings resolve against
+  // the config that declares them, so "@/*" -> "./src/*" still points at the
+  // repo's src/ and must not be rewritten relative to this directory.
+  "include": ["./**/*.ts"],
+  // "exclude" has to be overridden, not inherited: the parent's entry lists
+  // this very directory, and inherited include/exclude paths resolve against
+  // the parent's location, so without this every file here is excluded again
+  // and tsc reports TS18003 (no inputs found).
+  "exclude": ["../node_modules"]
+}

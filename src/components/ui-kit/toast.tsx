@@ -36,7 +36,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <BaseToast.Provider timeout={4000} limit={4}>
       {children}
       <BaseToast.Portal>
-        <BaseToast.Viewport className="fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-2 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:inset-x-auto sm:right-4 sm:bottom-4 sm:items-end sm:p-0">
+        {/* `pointer-events-none` is load-bearing, not decoration: below `sm`
+            this viewport is a full-width strip pinned to the bottom of the
+            screen at `z-50`, so even with no toasts in it, its padding box
+            sits directly over the mobile bottom nav (`z-20`) and swallowed
+            every tap on those buttons. Each toast re-enables pointer events
+            on itself (`pointer-events-auto` on Root) so it stays clickable
+            and dismissable. */}
+        <BaseToast.Viewport className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-2 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:inset-x-auto sm:right-4 sm:bottom-4 sm:items-end sm:p-0">
           <ToastList />
         </BaseToast.Viewport>
       </BaseToast.Portal>

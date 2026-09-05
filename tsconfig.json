@@ -30,5 +30,10 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  // "include" above is deliberately broad, so without this the ~11.8k lines
+  // under tests/ are type-checked as part of the app — once by `npm run
+  // typecheck` and again by `next build`, about a second each, to check code
+  // that never ships. tests/tsconfig.json extends this one and adds them
+  // back, which is what editors and `npx tsc -p tests --noEmit` use.
+  "exclude": ["node_modules", "tests"]
 }

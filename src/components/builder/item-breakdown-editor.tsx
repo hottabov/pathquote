@@ -5,9 +5,15 @@ import { Pencil } from "lucide-react";
 import { formatMoney } from "@/lib/format";
 import { buildItemBreakdown } from "@/lib/sheet-data";
 import { discountLabel } from "@/components/sheet/item-breakdown";
-import { useToast } from "@/components/ui-kit";
+import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
-import type { ActionResult } from "@/lib/actions/documents";
+import {
+  resetItemUnitPrice,
+  resetLineUnitPrice,
+  setItemUnitPrice,
+  setLineUnitPrice,
+  type ActionResult,
+} from "@/lib/actions/documents";
 import type { BuilderItem } from "@/lib/queries/documents";
 
 /**
@@ -36,28 +42,28 @@ import type { BuilderItem } from "@/lib/queries/documents";
  * as `src/components/users/avatar-editor.tsx`'s avatar overlay — copied
  * intentionally, see `EditablePrice` below). Clicking it swaps the figure
  * for a focused, fully-selected number input; blurring or Enter saves
- * through the same `setItemUnitPriceAction`/`setLineUnitPriceAction` server
- * actions `unit-price-field.tsx` used before it was deleted, and Escape
- * cancels, restoring the previous value without saving. A price that
- * differs from its snapshotted list price still shows that list price
- * struck through beside it with a "Reset to list" control, exactly as it
- * did in the old two-block layout.
+ * through the same `setItemUnitPrice`/`setLineUnitPrice` server actions
+ * `unit-price-field.tsx` used before it was deleted, and Escape cancels,
+ * restoring the previous value without saving. A price that differs from its
+ * snapshotted list price still shows that list price struck through beside it
+ * with a "Reset to list" control, exactly as it did in the old two-block
+ * layout.
+ *
+ * The four price actions are imported here and handed to `BreakdownRow` /
+ * `EditablePrice` below as `setAction`/`resetAction` — those two are private
+ * to this file and deliberately id-generic, because the identical row markup
+ * serves both an item (`setItemUnitPrice`) and one of its option lines
+ * (`setLineUnitPrice`). Which pair a row gets is the only difference between
+ * the two cases, so it stays a parameter rather than becoming two near-copies
+ * of the row.
  */
 export function ItemBreakdownEditor({
   item,
   currency,
-  setItemUnitPriceAction,
-  resetItemUnitPriceAction,
-  setLineUnitPriceAction,
-  resetLineUnitPriceAction,
   readOnly = false,
 }: {
   item: BuilderItem;
   currency: string;
-  setItemUnitPriceAction: (itemId: string, formData: FormData) => Promise<ActionResult>;
-  resetItemUnitPriceAction: (itemId: string) => Promise<ActionResult>;
-  setLineUnitPriceAction: (lineId: string, formData: FormData) => Promise<ActionResult>;
-  resetLineUnitPriceAction: (lineId: string) => Promise<ActionResult>;
   readOnly?: boolean;
 }) {
   // Always built with showOptionPrices=true — see buildItemBreakdown's own
@@ -89,8 +95,8 @@ export function ItemBreakdownEditor({
           listPrice={item.listPrice}
           currency={currency}
           editable={!readOnly}
-          setAction={setItemUnitPriceAction}
-          resetAction={resetItemUnitPriceAction}
+          setAction={setItemUnitPrice}
+          resetAction={resetItemUnitPrice}
         />
       )}
       {breakdown.options.map((option, index) => {
@@ -111,8 +117,8 @@ export function ItemBreakdownEditor({
             listPrice={line.listPrice}
             currency={currency}
             editable={!readOnly}
-            setAction={setLineUnitPriceAction}
-            resetAction={resetLineUnitPriceAction}
+            setAction={setLineUnitPrice}
+            resetAction={resetLineUnitPrice}
           />
         );
       })}

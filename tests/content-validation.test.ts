@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { contentBlockSchema, regionCodeSchema, CONTENT_KEY_REGEX } from "../src/lib/validation/content";
+import { accepts, rejects } from "./helpers/schema";
 
 describe("CONTENT_KEY_REGEX", () => {
   it("accepts every real key shape used in content-blocks.json", () => {
@@ -53,10 +54,7 @@ describe("contentBlockSchema", () => {
     }
   });
 
-  it("rejects an invalid key", () => {
-    const result = contentBlockSchema.safeParse({ ...base, key: "bad key!" });
-    expect(result.success).toBe(false);
-  });
+  rejects(contentBlockSchema, [["an invalid key", { ...base, key: "bad key!" }]]);
 
   it("collapses a missing/blank title to undefined", () => {
     for (const title of [undefined, null, "", "   "]) {
@@ -66,33 +64,19 @@ describe("contentBlockSchema", () => {
     }
   });
 
-  it("rejects a title over 200 characters", () => {
-    const result = contentBlockSchema.safeParse({ ...base, title: "A".repeat(201) });
-    expect(result.success).toBe(false);
-  });
+  accepts(contentBlockSchema, [
+    ["a body at exactly the 20000 character bound", { ...base, body: "A".repeat(20000) }],
+    [
+      "a body with markdown and {{placeholder}} tokens",
+      { ...base, body: "## Heading\n\n- Item one\n- Item two ({{token}})\n" },
+    ],
+  ]);
 
-  it("rejects an empty body", () => {
-    const result = contentBlockSchema.safeParse({ ...base, body: "" });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects a body over 20000 characters", () => {
-    const result = contentBlockSchema.safeParse({ ...base, body: "A".repeat(20001) });
-    expect(result.success).toBe(false);
-  });
-
-  it("accepts a body at exactly the 20000 character bound", () => {
-    const result = contentBlockSchema.safeParse({ ...base, body: "A".repeat(20000) });
-    expect(result.success).toBe(true);
-  });
-
-  it("accepts a body with markdown and {{placeholder}} tokens", () => {
-    const result = contentBlockSchema.safeParse({
-      ...base,
-      body: "## Heading\n\n- Item one\n- Item two ({{token}})\n",
-    });
-    expect(result.success).toBe(true);
-  });
+  rejects(contentBlockSchema, [
+    ["a title over 200 characters", { ...base, title: "A".repeat(201) }],
+    ["an empty body", { ...base, body: "" }],
+    ["a body over 20000 characters", { ...base, body: "A".repeat(20001) }],
+  ]);
 
   it("defaults a missing/blank sortOrder to 0", () => {
     for (const sortOrder of [undefined, null, ""]) {
@@ -102,34 +86,21 @@ describe("contentBlockSchema", () => {
     }
   });
 
-  it("rejects a negative sortOrder", () => {
-    const result = contentBlockSchema.safeParse({ ...base, sortOrder: "-1" });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects a non-integer sortOrder", () => {
-    const result = contentBlockSchema.safeParse({ ...base, sortOrder: "1.5" });
-    expect(result.success).toBe(false);
-  });
+  rejects(contentBlockSchema, [
+    ["a negative sortOrder", { ...base, sortOrder: "-1" }],
+    ["a non-integer sortOrder", { ...base, sortOrder: "1.5" }],
+  ]);
 });
 
 describe("regionCodeSchema", () => {
-  it("normalizes a lowercase code to uppercase", () => {
-    const result = regionCodeSchema.safeParse("au");
-    expect(result.success).toBe(true);
-    if (result.success) expect(result.data).toBe("AU");
-  });
+  accepts(regionCodeSchema, [
+    ["a lowercase code, normalized to uppercase", "au", "AU"],
+    ["a 2-letter code", "AU"],
+    ["a 3-letter code", "USA"],
+  ]);
 
-  it("accepts 2- and 3-letter codes", () => {
-    expect(regionCodeSchema.safeParse("AU").success).toBe(true);
-    expect(regionCodeSchema.safeParse("USA").success).toBe(true);
-  });
-
-  it("rejects a code with digits", () => {
-    expect(regionCodeSchema.safeParse("A1").success).toBe(false);
-  });
-
-  it("rejects an empty code", () => {
-    expect(regionCodeSchema.safeParse("").success).toBe(false);
-  });
+  rejects(regionCodeSchema, [
+    ["a code with digits", "A1"],
+    ["an empty code", ""],
+  ]);
 });

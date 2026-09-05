@@ -19,30 +19,7 @@ import { getHiddenCatalogIds } from "@/lib/queries/catalog-visibility";
 import { getQuoteValidityDays, getShowOptionIcons } from "@/lib/queries/settings";
 import { getSpecImages } from "@/lib/queries/spec-images";
 import { concessionCapMessage, markupCapMessage } from "@/lib/pricing";
-import {
-  addCustomLine,
-  addItem,
-  deleteDraft,
-  removeItem,
-  removeLine,
-  reorderItems,
-  resetItemUnitPrice,
-  resetLineUnitPrice,
-  setDeliveryTerms,
-  setDocumentClient,
-  setDocumentDiscount,
-  setDocumentHeroImage,
-  setDocumentNotes,
-  setItemDiscount,
-  setItemOptions,
-  setItemSerialNumber,
-  setItemShowImage,
-  setItemUnitPrice,
-  setLineUnitPrice,
-  setPriceDisplay,
-  setValidityDays,
-} from "@/lib/actions/documents";
-import { createCompanyInline, createContactInline } from "@/lib/actions/clients";
+import { renderStoredRichText } from "@/lib/rich-text";
 import { PageHeader, SectionCard, StatusBadge, STATUS_TONE } from "@/components/ui-kit";
 import { ClientSection } from "@/components/builder/client-section";
 import { HeroImageSection } from "@/components/builder/hero-image-section";
@@ -113,32 +90,6 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
       : null;
   const capExceeded = document.documentConcession.exceedsCap || document.documentConcession.exceedsMarkupCap;
 
-  // Whose visibility gates the item picker: the current *signed-in user*
-  // (an ADMIN always resolves to `null` here and sees everything), not the
-  // document's author or region — two managers in the same region can have
-  // different catalogues, and it's whoever is looking at the picker right
-  // now that matters. Resolved before the batch below since
-  // `getItemPickerCatalog` needs the actual set, not a pending promise.
-  const hiddenCatalogIds = await getHiddenCatalogIds(catalogVisibilityUserId(session.user));
-
-  const [companies, catalog, showOptionIcons, regions, orgDefaultValidityDays, formsDocument, screenSideImages] =
-    await Promise.all([
-      listClientPickerCompanies(session.user),
-      getItemPickerCatalog(document.regionCode, hiddenCatalogIds),
-      getShowOptionIcons(),
-      listActiveRegions(),
-      getQuoteValidityDays(),
-      // Separate, narrower payload (see `productionFormsInclude`) than
-      // `document` above -- `ProductionFormsSection` returns `null` itself
-      // for anything that isn't FINAL, so no status check is needed here.
-      getDocumentForForms(session.user, documentId),
-      // The screen-side diagrams (owner: illustrate +Y/-Y rather than
-      // leaving it as bare text) — fetched once per page load, same as
-      // `showOptionIcons`, and threaded down through ItemsSection/ItemsList
-      // to every item's ProductionSpecEditor.
-      getSpecImages("screenSide"),
-    ]);
-
   // Compatible options are preloaded once per distinct (productId, seriesId)
   // pair across the document's items (not once per item) — most documents
   // have items from a handful of products at most, so this is a small,
@@ -153,15 +104,69 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
     const key = item.productId ?? `series:${item.seriesId}`;
     if (!compatKeys.has(key)) compatKeys.set(key, { productId: item.productId, seriesId: item.seriesId });
   }
-  const compatibleOptionsEntries = await Promise.all(
-    Array.from(compatKeys.entries()).map(
-      async ([key, { productId, seriesId }]) =>
-        [key, await listCompatibleOptions(productId, seriesId, document.regionId)] as const
-    )
-  );
+
+  // Everything below depends on nothing but the session and the document
+  // just loaded, so it all goes out together rather than in the three
+  // sequential waves this used to run (hidden ids, then the batch, then the
+  // compatible-options fan-out). Only the item picker actually needs the
+  // hidden-id set in hand, so that one dependency is expressed as a `then`
+  // on its own promise instead of an `await` that would hold back the other
+  // six reads with it.
+  //
+  // Whose visibility gates the item picker: the current *signed-in user*
+  // (an ADMIN always resolves to `null` here and sees everything), not the
+  // document's author or region — two managers in the same region can have
+  // different catalogues, and it's whoever is looking at the picker right
+  // now that matters.
+  const hiddenCatalogIdsPromise = getHiddenCatalogIds(catalogVisibilityUserId(session.user));
+
+  const [
+    companies,
+    catalog,
+    showOptionIcons,
+    regions,
+    orgDefaultValidityDays,
+    formsDocument,
+    screenSideImages,
+    compatibleOptionsEntries,
+  ] = await Promise.all([
+    listClientPickerCompanies(session.user),
+    hiddenCatalogIdsPromise.then((hiddenCatalogIds) =>
+      getItemPickerCatalog(document.regionCode, hiddenCatalogIds)
+    ),
+    getShowOptionIcons(),
+    listActiveRegions(),
+    getQuoteValidityDays(),
+    // Separate, narrower payload (see `productionFormsInclude`) than
+    // `document` above -- `ProductionFormsSection` returns `null` itself
+    // for anything that isn't FINAL, so no status check is needed here.
+    getDocumentForForms(session.user, documentId),
+    // The screen-side diagrams (owner: illustrate +Y/-Y rather than
+    // leaving it as bare text) — fetched once per page load, same as
+    // `showOptionIcons`, and threaded down through ItemsSection/ItemsList
+    // to every item's ProductionSpecEditor.
+    getSpecImages("screenSide"),
+    Promise.all(
+      Array.from(compatKeys.entries()).map(
+        async ([key, { productId, seriesId }]) =>
+          [key, await listCompatibleOptions(productId, seriesId, document.regionId)] as const
+      )
+    ),
+  ]);
+
   const compatibleOptionsByItemKey: Record<string, CompatibleOption[]> = Object.fromEntries(
     compatibleOptionsEntries
   );
+
+  // Sanitized here rather than inside `NotesSection`, which renders it through
+  // `dangerouslySetInnerHTML`: `Document.notes` is a raw column that may
+  // predate the write-boundary allowlist (`setDocumentNotes`), so the
+  // read-side pass is not optional — but there is no reason for it to happen
+  // in the browser, where it costs every visitor the DOMPurify bundle and
+  // leaves the page's safety resting on code that shares a runtime with
+  // whatever the markup itself might do. See `NotesSection`'s doc comment for
+  // why only the read-only branch needs this and the editor branch does not.
+  const notesHtml = document.notes ? renderStoredRichText(document.notes) : null;
 
   const title = document.company?.name ?? "New quote";
   const description = `Quote · ${document.number ?? "draft"}${!isDraft ? " — final and read-only" : ""}`;
@@ -177,9 +182,6 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
             companies={companies}
             initialCompanyId={document.company?.id ?? null}
             initialContactId={document.contactId}
-            setClientAction={setDocumentClient}
-            createCompanyInlineAction={createCompanyInline}
-            createContactInlineAction={createContactInline}
             regions={regions.map((r) => ({ code: r.code, name: r.name }))}
             defaultRegionCode={document.regionCode}
             readOnly={!isDraft}
@@ -191,17 +193,6 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
             currency={document.currency}
             catalog={catalog}
             compatibleOptionsByItemKey={compatibleOptionsByItemKey}
-            removeItemAction={removeItem}
-            addItemAction={addItem}
-            setItemOptionsAction={setItemOptions}
-            setItemDiscountAction={setItemDiscount}
-            setItemUnitPriceAction={setItemUnitPrice}
-            resetItemUnitPriceAction={resetItemUnitPrice}
-            setLineUnitPriceAction={setLineUnitPrice}
-            resetLineUnitPriceAction={resetLineUnitPrice}
-            setItemShowImageAction={setItemShowImage}
-            setItemSerialNumberAction={setItemSerialNumber}
-            reorderItemsAction={reorderItems}
             showOptionIcons={showOptionIcons}
             screenSideImages={screenSideImages}
             readOnly={!isDraft}
@@ -211,8 +202,6 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
             documentId={document.id}
             lines={document.extraLines}
             currency={document.currency}
-            addCustomLineAction={addCustomLine}
-            removeLineAction={removeLine}
             readOnly={!isDraft}
           />
 
@@ -222,7 +211,6 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
               discountMode={document.discountMode}
               discountValue={document.discountValue}
               currency={document.currency}
-              setDiscountAction={setDocumentDiscount}
               readOnly={!isDraft}
             />
           </SectionCard>
@@ -235,7 +223,6 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
             <DeliveryTermsField
               documentId={document.id}
               deliveryTerms={document.deliveryTerms}
-              setDeliveryTermsAction={setDeliveryTerms}
               readOnly={!isDraft}
             />
           </SectionCard>
@@ -250,7 +237,6 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
               documentId={document.id}
               validityDays={document.validityDays}
               orgDefaultDays={orgDefaultValidityDays}
-              setValidityDaysAction={setValidityDays}
               readOnly={!isDraft}
             />
           </SectionCard>
@@ -261,7 +247,7 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
             <NotesSection
               documentId={document.id}
               notes={document.notes}
-              setNotesAction={setDocumentNotes}
+              notesHtml={notesHtml}
               readOnly={!isDraft}
             />
           </SectionCard>
@@ -277,7 +263,6 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
             <HeroImageSection
               documentId={document.id}
               heroImageUrl={document.heroImageUrl}
-              setHeroImageAction={setDocumentHeroImage}
               readOnly={!isDraft}
             />
           </SectionCard>
@@ -287,7 +272,6 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
               documentId={document.id}
               showItemPrices={document.showItemPrices}
               showOptionPrices={document.showOptionPrices}
-              setPriceDisplayAction={setPriceDisplay}
               readOnly={!isDraft}
             />
           </SectionCard>
@@ -321,7 +305,7 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
               </div>
               {isDraft ? (
                 <div className="border-t border-slate-100 pt-4">
-                  <DeleteDraftButton action={deleteDraft.bind(null, document.id)} />
+                  <DeleteDraftButton documentId={document.id} />
                 </div>
               ) : null}
             </div>
@@ -351,6 +335,7 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
       ) : null}
 
       <StickyFooter
+        documentId={document.id}
         status={document.status}
         taxName={document.taxName}
         taxRate={document.taxRate}
@@ -360,7 +345,6 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
         total={document.total}
         currency={document.currency}
         commission={document.commission}
-        deleteAction={isDraft ? deleteDraft.bind(null, document.id) : undefined}
       />
     </div>
   );

@@ -191,6 +191,15 @@ model Product {
   compat            OptionCompatibility[]
   docItems          DocumentItem[]
   catalogVisibility CatalogVisibility[]
+
+  // Every catalogue page that lists products narrows by series first --
+  // seriesProductsResult (src/lib/queries/catalog.ts), behind both
+  // listProductsBySeries and listProductsBySeriesById, and
+  // getSeriesFallbackImageUrl alongside it. `code` is unique but says
+  // nothing about which series a row belongs to, so without this the
+  // /catalog/[seriesId] page reads the whole product table on every request
+  // to return one series' worth of rows.
+  @@index([seriesId])
 }
 
 model Option {
@@ -272,6 +281,15 @@ model OptionConflictGroupMember {
   option   Option              @relation(fields: [optionId], references: [id], onDelete: Cascade)
 
   @@unique([groupId, optionId])
+  // The unique above is keyed groupId-first, which answers "who is in this
+  // group" (setConflictGroupMembers, src/lib/actions/catalog.ts) but not the
+  // direction the builder actually asks in: listCompatibleOptions
+  // (src/lib/queries/documents.ts) and setItemOptions
+  // (src/lib/actions/documents.ts) both load
+  // `conflictGroupMemberships` off a set of Options, i.e. filter on optionId
+  // alone, which a groupId-leading index cannot serve. That runs on every
+  // render of the item options editor, so it gets its own index.
+  @@index([optionId])
 }
 
 model OptionCompatibility {
@@ -284,6 +302,21 @@ model OptionCompatibility {
   product   Product? @relation(fields: [productId], references: [id])
 
   @@unique([optionId, seriesId, productId])
+  // The unique above leads with optionId, so it serves "which series/products
+  // is THIS option compatible with" (listOptionCompatibility,
+  // src/lib/actions/catalog.ts) but is useless for the question the builder
+  // asks far more often, and in the opposite direction: given an item's
+  // product and its series, which options may be fitted? That is
+  // compatibilityOrFilter (src/lib/catalog-compat.ts) -- an OR over
+  // `{ seriesId }` and `{ productId }` with no optionId in sight -- used by
+  // listCompatibleOptions (src/lib/queries/documents.ts) to draw the options
+  // list and again by setItemOptions (src/lib/actions/documents.ts) to
+  // re-validate what came back. Two single-column indexes rather than one
+  // composite because the OR's two branches are independent: Postgres can
+  // bitmap-OR them, whereas a composite on (seriesId, productId) would only
+  // ever have its first column used here.
+  @@index([seriesId])
+  @@index([productId])
 }
 
 // One row per (user x series-or-product) pair that is HIDDEN from that
@@ -336,6 +369,15 @@ model CatalogVisibility {
   productId String? // or a single product hidden for this user
   product   Product? @relation(fields: [productId], references: [id], onDelete: Cascade)
 
+  // No separate index on seriesId or productId, unlike the same-shaped pair
+  // on OptionCompatibility above. Every read of this table starts from a user
+  // -- getHiddenCatalogIds (src/lib/queries/catalog-visibility.ts),
+  // getUserVisibility (queries/catalog-visibility-admin.ts) and
+  // setUserVisibility (actions/catalog-visibility.ts) all filter on `userId`
+  // and nothing else, which the unique below already serves as its leftmost
+  // column. The series/product columns are only ever *written*, and the
+  // cascade that reads them fires at most once per catalogue deletion against
+  // a table holding a handful of rows per user. Nothing to gain.
   @@unique([userId, seriesId, productId])
 }
 
@@ -509,6 +551,23 @@ model Document {
   @@index([companyId])
   @@index([authorId])
   @@index([regionId, status])
+  // listDocuments (src/lib/queries/documents.ts) is the app's front door for
+  // an ADMIN and sorts newest-edited-first with no WHERE at all, so the sort
+  // is the whole cost of the query. A MANAGER's variant filters on authorId
+  // (indexed above) and then sorts, which this cannot help with -- a
+  // composite (authorId, updatedAt) would, but it would leave the ADMIN case,
+  // the one that reads every row, unserved. Indexing updatedAt alone covers
+  // the unbounded read; the scoped read is bounded by one author's documents
+  // either way.
+  @@index([updatedAt])
+  // Nothing queries documents *by* contact, but deleteContact
+  // (src/lib/actions/clients.ts) removes Contact rows, and this FK is
+  // ON DELETE NO ACTION -- so Postgres must prove no Document references the
+  // contact before every such delete. Unindexed, that proof is a sequential
+  // scan of the largest and fastest-growing table in the schema. companyId
+  // and authorId above are indexed on the same reasoning; contactId was
+  // simply missed when they were added.
+  @@index([contactId])
 }
 
 model DocumentItem {
@@ -548,6 +607,13 @@ model DocumentItem {
   lines          DocumentLine[]
 
   @@index([documentId])
+  // deleteProduct (src/lib/actions/catalog.ts) refuses to delete a catalogue
+  // product that any document still quotes, and proves that with a
+  // `documentItem.count({ where: { productId } })`. That count is also what
+  // the answer hinges on, so it runs on every attempted delete whether or not
+  // the product is in use. Postgres needs the same lookup a second time for
+  // the FK check on the delete that follows.
+  @@index([productId])
 }
 
 model DocumentLine {
@@ -577,6 +643,20 @@ model DocumentLine {
 
   @@index([documentId])
   @@index([itemId])
+  // `refId` is the catalogue id a line was created from (see the column
+  // above), and it is only ever read in the "is this catalogue row still in
+  // use" direction: deleteProduct filters `{ refId, kind: "PRODUCT" }` and
+  // deleteOption filters `{ refId }` with no kind at all (both
+  // src/lib/actions/catalog.ts), and prisma/seed.ts counts
+  // `{ refId, kind: "OPTION" }` before retiring an option, choosing between
+  // deleting it and merely deactivating it.
+  //
+  // refId leads, kind follows -- not the other way round. refId is a cuid and
+  // near-unique; kind has three values, so a kind-first index would land the
+  // scan on roughly a third of the table before refId narrowed anything, and
+  // could not serve deleteOption's kind-less filter at all. This order serves
+  // all three call sites from one index.
+  @@index([refId, kind])
 }
 
 model ContentBlock {
@@ -589,6 +669,14 @@ model ContentBlock {
   sortOrder Int     @default(0)
 
   @@unique([key, regionId])
+  // The unique above leads with `key`, which serves every by-key lookup but
+  // not the two places that select on region alone: listContentBlocks
+  // (src/lib/queries/content.ts) splits the table into defaults
+  // (`regionId: null`) and overrides (`regionId: { not: null }`), and
+  // getContentBlocksForRegion -- run once per rendered quotation -- pulls
+  // `OR: [{ regionId: null }, { regionId }]`. A btree index covers IS NULL as
+  // well as equality in Postgres, so one plain index answers both branches.
+  @@index([regionId])
 }
 
 model NumberSequence {

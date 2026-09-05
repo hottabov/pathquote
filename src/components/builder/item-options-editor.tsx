@@ -8,7 +8,7 @@ import { formatMoney } from "@/lib/format";
 import { formatMetres, unitLengthMetres } from "@/lib/option-length";
 import { isOptionDisabled } from "@/lib/catalog-compat";
 import { cn } from "@/lib/utils";
-import type { ActionResult } from "@/lib/actions/documents";
+import { setItemOptions } from "@/lib/actions/documents";
 import type { CompatibleOption } from "@/lib/queries/documents";
 import type { OptionSelectionInput } from "@/lib/validation/documents";
 
@@ -92,7 +92,6 @@ export function ItemOptionsEditor({
   currentLines,
   compatibleOptions,
   currency,
-  setOptionsAction,
   showOptionIcons = true,
   readOnly = false,
   lockedCodes,
@@ -102,7 +101,6 @@ export function ItemOptionsEditor({
   currentLines: CurrentLine[];
   compatibleOptions: CompatibleOption[];
   currency: string;
-  setOptionsAction: (itemId: string, selections: OptionSelectionInput[]) => Promise<ActionResult>;
   /** Option codes this item's own builder owns, and that a manager must not
    * hand-edit here. Today that is the EasyLoader's table: its drive modules,
    * lengths, busbar and rail are computed from the layout drawn in the
@@ -251,7 +249,7 @@ export function ItemOptionsEditor({
       });
 
     startTransition(async () => {
-      const result = await setOptionsAction(itemId, selections);
+      const result = await setItemOptions(itemId, selections);
       if (result?.error) {
         setError(result.error);
         return;

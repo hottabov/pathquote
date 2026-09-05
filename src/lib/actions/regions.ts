@@ -1,31 +1,17 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidateRegion, revalidateRegionList } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
-import type { z } from "zod";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/authz";
 import { idSchema } from "@/lib/validation/documents";
 import { createRegionSchema, updateRegionSchema } from "@/lib/validation/regions";
 import { countActiveUsersInRegion } from "@/lib/queries/regions";
 import { IMAGE_URL_PATTERN } from "@/lib/uploads";
+import { CODE_EXISTS_ERROR, NOT_FOUND_ERROR, flattenZodError, type ActionResult } from "./_shared";
 
-export type ActionResult = { error?: string };
-
-const NOT_FOUND_ERROR = "Not found";
-const CODE_EXISTS_ERROR = "That code already exists — choose a different one.";
-
-/** Join every zod issue message (form-level + field-level) into one string
- * for a plain `{ error }` result — mirrors src/lib/actions/users.ts and
- * src/lib/actions/catalog.ts. */
-function flattenZodError(error: z.ZodError): string {
-  const flat = error.flatten();
-  const messages = [...flat.formErrors, ...Object.values(flat.fieldErrors).flat()].filter(
-    (m): m is string => Boolean(m)
-  );
-  return messages.length > 0 ? messages.join(" ") : "Invalid input";
-}
+export type { ActionResult };
 
 function isUniqueConstraintError(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
@@ -49,8 +35,8 @@ function readRegionForm(formData: FormData) {
 }
 
 function revalidateRegionPaths(regionId: string) {
-  revalidatePath("/settings/regions");
-  revalidatePath(`/settings/regions/${regionId}`);
+  revalidateRegionList();
+  revalidateRegion(regionId);
 }
 
 /** Builds the `bankDetails` write for a Prisma `create`/`update` call: `null`
@@ -104,7 +90,7 @@ export async function createRegion(formData: FormData): Promise<ActionResult> {
     throw error;
   }
 
-  revalidatePath("/settings/regions");
+  revalidateRegionList();
   redirect(`/settings/regions/${created.id}`);
 }
 

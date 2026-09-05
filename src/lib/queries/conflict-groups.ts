@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { db } from "@/lib/db";
 
 // Admin reads for /settings/option-conflict-groups — the settings-area
@@ -34,8 +35,11 @@ export type ConflictGroupDetail = {
 };
 
 /** A single conflict group (by id) with its current member option ids, for
- * the group's own editor page. */
-export async function getConflictGroupDetail(groupId: string): Promise<ConflictGroupDetail | null> {
+ * the group's own editor page — which reads it in `generateMetadata` and
+ * again in the page body, hence the request memo. */
+export const getConflictGroupDetail = cache(async function getConflictGroupDetail(
+  groupId: string
+): Promise<ConflictGroupDetail | null> {
   const group = await db.optionConflictGroup.findUnique({
     where: { id: groupId },
     include: { members: { select: { optionId: true } } },
@@ -47,4 +51,4 @@ export async function getConflictGroupDetail(groupId: string): Promise<ConflictG
     name: group.name,
     memberIds: group.members.map((m) => m.optionId),
   };
-}
+});

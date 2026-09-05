@@ -29,15 +29,38 @@ export const drillsSchema = z
   });
 
 /**
+ * These schemas describe a spec *being filled in*, not a finished one, so
+ * every answer is optional even where the form insists on it. That is not a
+ * relaxation of the rules -- it is where they live. `ProductionSpecEditor`
+ * has no Save button: each control spreads the value that just changed over
+ * the spec already stored and writes the result, so on an item whose
+ * `productionSpec` column is still null the first field a manager touches
+ * arrives entirely on its own. Requiring a whole object here made that first
+ * write impossible ("expected object, received undefined" for the absent
+ * `drills`), which is to say it made the panel unusable on exactly the items
+ * it exists for.
+ *
+ * What a completed spec must contain is `FormSpec.requires`, checked by
+ * `missingKeys` below -- the same check that greys out the download button
+ * and that the form route answers 422 on. One gate, at the point where the
+ * spec is printed rather than at every keystroke on the way there.
+ *
+ * Nothing gains a default in place of being required, either: `missingKeys`
+ * reads `drills: { required: false }` as asked-and-answered, so a default
+ * would tell the workshop a question had been put to the customer that
+ * never was.
+ */
+
+/**
  * The two free-text areas on the M-Series form are tall single rows with no
  * empty cells to their right, so text cannot overflow the way an address
  * line does -- it would simply be clipped. Hence the hard caps.
  */
 export const mSeriesSpecSchema = z.object({
   ui: screenSideSchema,
-  knifeSize: z.enum(["1.5x5.0", "1.5x7.0", "2.0x7.0"]),
+  knifeSize: z.enum(["1.5x5.0", "1.5x7.0", "2.0x7.0"]).optional(),
   voltage: z.enum(["220V", "400V", "415V", "480V"]).optional(),
-  drills: drillsSchema,
+  drills: drillsSchema.optional(),
   specialNotes: z.string().trim().max(28, "Special notes must be 28 characters or fewer").optional(),
 });
 
@@ -67,7 +90,10 @@ export const easyLoaderSpecSchema = z.object({
 
 export const fabricProSpecSchema = z.object({
   ui: screenSideSchema,
-  travelPlatform: z.boolean(),
+  // Optional for the reason given above the M-Series schema: the rail
+  // lengths and the screen side sit either side of this checkbox in the
+  // panel, and whichever a manager reaches for first is saved without it.
+  travelPlatform: z.boolean().optional(),
   railLengthM: z.number().positive().max(99).optional(),
   powerRailLengthM: z.number().positive().max(99).optional(),
   exWorks: z.boolean().optional(),

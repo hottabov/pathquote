@@ -1,7 +1,6 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
-import type { z } from "zod";
+import { revalidateSupport } from "@/lib/revalidate";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/authz";
 import { supportMessageSchema } from "@/lib/validation/support";
@@ -12,18 +11,9 @@ import { getAppVersion } from "@/lib/app-version";
 import { buildSupportMessageEmail } from "@/lib/email/support-message";
 import { resolveReplyTo } from "@/lib/email/reply-to";
 import { createAppMailTransport, mailFromAddress } from "@/lib/email/transport";
+import { flattenZodError, type ActionResultWithWarning } from "./_shared";
 
-export type SupportActionResult = { error?: string; warning?: string };
-
-/** Join every zod issue message into one string — same helper every other
- * action module in this app keeps locally (see e.g. src/lib/actions/users.ts). */
-function flattenZodError(error: z.ZodError): string {
-  const flat = error.flatten();
-  const messages = [...flat.formErrors, ...Object.values(flat.fieldErrors).flat()].filter(
-    (m): m is string => Boolean(m)
-  );
-  return messages.length > 0 ? messages.join(" ") : "Invalid input";
-}
+export type SupportActionResult = ActionResultWithWarning;
 
 /**
  * Handles a PathQuote Support submission (Settings -> PathQuote Support,
@@ -123,6 +113,6 @@ export async function submitSupportMessage(formData: FormData): Promise<SupportA
     };
   }
 
-  revalidatePath("/settings/support");
+  revalidateSupport();
   return {};
 }

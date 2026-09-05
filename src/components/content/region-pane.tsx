@@ -4,7 +4,8 @@ import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { EmptyState, SectionCard, useConfirm, useToast } from "@/components/ui-kit";
+import { EmptyState, SectionCard } from "@/components/ui-kit";
+import { useConfirm, useToast } from "@/components/ui-kit/client";
 import { updateContentBlock, createRegionOverride, deleteRegionOverride } from "@/lib/actions/content";
 import { ContentBlockForm } from "./content-block-form";
 
