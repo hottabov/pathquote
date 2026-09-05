@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import type { ProductionForm } from "@prisma/client";
 import { ChevronDown, Minus, Plus, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { fieldInputClass } from "@/components/ui-kit";
@@ -9,6 +10,8 @@ import { cn } from "@/lib/utils";
 import { applyScreenSideToQuote, setProductionSpec } from "@/lib/actions/production";
 import { setEasyLoaderLayout } from "@/lib/actions/documents";
 import { resolveForm } from "@/lib/production-forms/resolve";
+import { easyLoaderPrintedWidthCell } from "@/lib/production-forms/specs/easyloader";
+import type { ProductSpecs } from "@/lib/validation/product-specs";
 import {
   layoutTotals,
   modulesIn,
@@ -100,7 +103,11 @@ function Stepper({
 
 type Props = {
   itemId: string;
-  itemCode: string;
+  /** `Product.form` -- which order form this item prints on, or null for none. */
+  form: ProductionForm | null;
+  /** `Product.specs`, validated -- the table width is what decides whether
+   * an EasyLoader needs the custom-width field below. */
+  productSpecs: ProductSpecs;
   spec: Record<string, unknown>;
   /** True when the quote holds another machine the screen side could also
    * apply to — see the offer this panel shows after the side changes. */
@@ -128,8 +135,8 @@ type Props = {
  * doesn't cover (operator screen side, knife size, table sections, etc — see
  * `src/lib/production-forms`), collapsed behind a disclosure button that
  * surfaces how many required fields are still unanswered. Returns `null` for
- * an item `resolveForm` doesn't recognize (software/service rows), so it's
- * safe to mount unconditionally from `ItemsList`.
+ * an item with no form (software/service rows), so it's safe to mount
+ * unconditionally from `ItemsList`.
  *
  * For an EasyLoader this is also where the machine is *built*. An EasyLoader
  * is a table assembled from 1.2 metre modules and the machine itself costs
@@ -145,14 +152,15 @@ type Props = {
  */
 export function ProductionSpecEditor({
   itemId,
-  itemCode,
+  form: productForm,
+  productSpecs,
   spec,
   hasOtherMachines,
   screenSideImages,
   readOnly = false,
   defaultOpen = false,
 }: Props) {
-  const form = resolveForm(itemCode);
+  const form = resolveForm(productForm);
   const toast = useToast();
   const [open, setOpen] = useState(defaultOpen);
   const [draft, setDraft] = useState<Record<string, unknown>>(spec);
@@ -189,7 +197,7 @@ export function ProductionSpecEditor({
 
   if (!form) return null;
 
-  const isEasyLoader = form.id === "easyloader";
+  const isEasyLoader = form.form === "EASYLOADER";
 
   async function save(next: Record<string, unknown>, kind: "spec" | "layout") {
     setDraft(next);
@@ -450,7 +458,7 @@ export function ProductionSpecEditor({
             </div>
           ) : null}
 
-          {form.id === "m-series" ? (
+          {form.form === "M_SERIES" ? (
             <>
               <CompactField label="Knife size" htmlFor={`${itemId}-knife-size`}>
                 <select
@@ -554,7 +562,10 @@ export function ProductionSpecEditor({
                 </select>
               </CompactField>
 
-              {!["EL-2020", "EL-2420"].includes(itemCode) ? (
+              {/* The printed form has a box for two widths and a "Custom
+                  ___mm" line for the rest; the field exists exactly when the
+                  box does not -- see `easyLoaderPrintedWidthCell`. */}
+              {easyLoaderPrintedWidthCell(productSpecs) === null ? (
                 <CompactField label="Custom width (mm)" htmlFor={`${itemId}-custom-width`}>
                   <input
                     id={`${itemId}-custom-width`}
@@ -579,7 +590,7 @@ export function ProductionSpecEditor({
             </>
           ) : null}
 
-          {form.id === "fabricpro" ? (
+          {form.form === "FABRICPRO" ? (
             <>
               <label className="flex min-h-11 items-center gap-2.5 text-sm text-slate-700">
                 <input

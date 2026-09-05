@@ -13,7 +13,8 @@ import { ProductionSpecEditor } from "@/components/builder/production-spec-edito
 import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 import { resolveForm } from "@/lib/production-forms/resolve";
-import { derivedEasyLoaderCodes } from "@/lib/production-forms/table-sections";
+import { EL_MODULE_ROLES } from "@/lib/production-forms/table-sections";
+import { readProductSpecs } from "@/lib/validation/product-specs";
 import { removeItem, reorderItems, setItemSerialNumber } from "@/lib/actions/documents";
 import type { BuilderItem, CompatibleOption } from "@/lib/queries/documents";
 
@@ -141,7 +142,7 @@ export function ItemsList({
   // The offer to apply a screen side to the rest of the quote is noise on a
   // single-machine one, so it only appears once the document holds two or
   // more items a production form recognizes.
-  const machineCount = optimisticItems.filter((item) => resolveForm(item.code) !== null).length;
+  const machineCount = optimisticItems.filter((item) => resolveForm(item.form) !== null).length;
 
   /** The id of the item card under a viewport point, or `null` when the
    * point is outside every card. Hit-testing the DOM is what stands in for
@@ -211,7 +212,7 @@ export function ItemsList({
 
       {optimisticItems.map((item, index) => {
         const compatKey = item.productId ?? (item.seriesId ? `series:${item.seriesId}` : null);
-        const isEasyLoader = resolveForm(item.code)?.id === "easyloader";
+        const isEasyLoader = item.form === "EASYLOADER";
         const isDragging = draggingId === item.id;
         const isDropTarget = dropTargetId === item.id && draggingId !== item.id;
         const collapsed = isCollapsed(item.id);
@@ -459,7 +460,8 @@ export function ItemsList({
                     inviting a manager to pick modules the builder owns. */}
                 <ProductionSpecEditor
                   itemId={item.id}
-                  itemCode={item.code}
+                  form={item.form}
+                  productSpecs={readProductSpecs(item.specs)}
                   spec={(item.productionSpec ?? {}) as Record<string, unknown>}
                   hasOtherMachines={machineCount > 1}
                   screenSideImages={screenSideImages}
@@ -471,12 +473,18 @@ export function ItemsList({
                   itemId={item.id}
                   currentLines={item.lines
                     .filter((line) => line.kind === "OPTION")
-                    .map((line) => ({ code: line.code, qty: line.qty, attributes: line.attributes }))}
+                    .map((line) => ({
+                      refId: line.refId,
+                      code: line.code,
+                      qty: line.qty,
+                      attributes: line.attributes,
+                      role: line.role,
+                    }))}
                   compatibleOptions={compatKey ? (compatibleOptionsByItemKey[compatKey] ?? []) : []}
                   currency={currency}
                   showOptionIcons={showOptionIcons}
                   readOnly={readOnly}
-                  lockedCodes={isEasyLoader ? derivedEasyLoaderCodes(item.code) : undefined}
+                  lockedRoles={isEasyLoader ? EL_MODULE_ROLES : undefined}
                   startClosed={isEasyLoader}
                 />
 

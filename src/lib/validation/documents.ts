@@ -201,8 +201,10 @@ export const creditUnitPriceSchema = z
   .transform((value) => (value.startsWith("-") ? value.slice(1) : value));
 export type CreditUnitPriceInput = z.infer<typeof creditUnitPriceSchema>;
 
-/** One option selection from the item options editor: the option's code,
- * the quantity of it on the item, and (when the option carries an
+/** One option selection from the item options editor: the option's `id`
+ * (never its code -- a code is a label an admin can rename while the editor
+ * is open, see docs/plans/2026-09-05-catalog-identity-and-cleanup.md), the
+ * quantity of it on the item, and (when the option carries an
  * `attributeSchema`) the freeform attribute values keyed by attribute
  * `key`. Value type is loosely `string | number` — the editor renders
  * "number" and "text" attribute inputs and this schema doesn't re-validate
@@ -210,7 +212,7 @@ export type CreditUnitPriceInput = z.infer<typeof creditUnitPriceSchema>;
  * concern, not a data-integrity one: the value is stored as-is in
  * `DocumentLine.attributes` Json). */
 export const optionSelectionSchema = z.object({
-  optionCode: z.string().trim().min(1, "Option code is required").max(120, "Option code is too long"),
+  optionId: idSchema,
   qty: qtySchema,
   attributes: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
 });

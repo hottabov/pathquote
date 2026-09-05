@@ -1,3 +1,4 @@
+import type { OptionRole } from "@prisma/client";
 import { db } from "@/lib/db";
 import { companyWhereForUser, type ScopeUser } from "@/lib/scope";
 import { compatibilityOrFilter } from "@/lib/catalog-compat";
@@ -61,12 +62,15 @@ export async function listClientPickerCompanies(user: ScopeUser): Promise<Client
 // --- item picker ---------------------------------------------------------
 
 export type ItemPickerProduct = {
+  /** `Product.id` -- what `addItem` takes. `code` is display only. */
+  id: string;
   code: string;
   name: string;
   priced: boolean;
 };
 
 export type ItemPickerSeries = {
+  id: string;
   code: string;
   name: string;
   maxDiscountPct: string | null;
@@ -131,6 +135,7 @@ export async function getItemPickerCatalog(
   return seriesList
     .filter((series) => !isSeriesHidden(series.id, hidden))
     .map((series) => ({
+      id: series.id,
       code: series.code,
       name: series.name,
       maxDiscountPct: series.maxDiscountPct?.toString() ?? null,
@@ -139,6 +144,7 @@ export async function getItemPickerCatalog(
         .map((product) => {
           const price = product.prices[0];
           return {
+            id: product.id,
             code: product.code,
             name: product.name,
             priced: Boolean(price && !price.needsReview),
@@ -159,6 +165,17 @@ export type CompatibleOption = {
    * responsible for tolerating anything else (see its `parseAttributeFields`
    * helper) since this is unvalidated admin-entered JSON. */
   attributeSchema: unknown;
+  /** `Option.role` -- what the builder uses to recognise the rows an
+   * EasyLoader's table layout owns (see `EL_MODULE_ROLES`) and lock them in
+   * the options editor. `null` for an option no form or builder keys on. */
+  role: OptionRole | null;
+  /** `Option.unitLengthM` as a plain number -- the per-unit length of an
+   * option sold by the section (1.2 for an EasyLoader length, 1 for MTS
+   * travel), which the options editor multiplies by the quantity into a
+   * running metre total (see src/lib/option-length.ts). `null` for an option
+   * sold by the piece. Converted from Prisma's `Decimal` here, at the query
+   * boundary, so the client component never sees one. */
+  unitLengthM: number | null;
   price: { amount: string; needsReview: boolean } | null;
   /** `Option.imageUrl`, rendered as a small icon next to the option in the
    * builder's options editor when present and the "ui.showOptionIcons" app
@@ -167,16 +184,17 @@ export type CompatibleOption = {
   imageUrl: string | null;
   /** Every option this one conflicts with — i.e. every *other* option that
    * shares at least one `OptionConflictGroup` with it (see that model's
-   * comment in schema.prisma) — by code/name plus the shared group's name,
-   * not just the ones also compatible with this item, since an incompatible
-   * partner can never be selected anyway and so can never trip the
-   * conflict. The builder (`ItemOptionsEditor`) checks this against the
-   * *other* currently-selected codes to decide whether to disable this
-   * option (see `isOptionDisabled`'s `conflictingWith` parameter) — never
-   * against itself. `groupName` names whichever shared group produced that
-   * partner (the first found, if a pair happens to share more than one) —
-   * enough to explain a block without an exhaustive list. */
-  conflictsWith: { code: string; name: string; groupName: string }[];
+   * comment in schema.prisma) — by id (what the builder matches on) plus
+   * code/name and the shared group's name (what it shows), not just the
+   * ones also compatible with this item, since an incompatible partner can
+   * never be selected anyway and so can never trip the conflict. The
+   * builder (`ItemOptionsEditor`) checks this against the *other*
+   * currently-selected ids to decide whether to disable this option (see
+   * `isOptionDisabled`'s `conflictingWith` parameter) — never against
+   * itself. `groupName` names whichever shared group produced that partner
+   * (the first found, if a pair happens to share more than one) — enough to
+   * explain a block without an exhaustive list. */
+  conflictsWith: { id: string; code: string; name: string; groupName: string }[];
 };
 
 /**
@@ -233,7 +251,7 @@ export async function listCompatibleOptions(
     // partner must never appear twice just because two groups both link
     // them. `groupName` on a partner is whichever shared group was found
     // first (see the CompatibleOption.conflictsWith doc comment above).
-    const partnersById = new Map<string, { code: string; name: string; groupName: string }>();
+    const partnersById = new Map<string, { id: string; code: string; name: string; groupName: string }>();
     for (const membership of o.conflictGroupMemberships) {
       const group = groupById.get(membership.groupId);
       if (!group) continue;
@@ -241,6 +259,7 @@ export async function listCompatibleOptions(
         if (member.option.id === o.id) continue;
         if (partnersById.has(member.option.id)) continue;
         partnersById.set(member.option.id, {
+          id: member.option.id,
           code: member.option.code,
           name: member.option.name,
           groupName: group.name,
@@ -254,6 +273,8 @@ export async function listCompatibleOptions(
       name: o.name,
       shortDescription: o.shortDescription,
       attributeSchema: o.attributeSchema,
+      role: o.role,
+      unitLengthM: o.unitLengthM !== null ? Number(o.unitLengthM) : null,
       price: price ? { amount: price.amount.toString(), needsReview: price.needsReview } : null,
       imageUrl: o.imageUrl,
       conflictsWith: Array.from(partnersById.values()),

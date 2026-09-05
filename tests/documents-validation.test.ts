@@ -182,24 +182,31 @@ describe("customLineSchema", () => {
 });
 
 describe("optionSelectionSchema", () => {
+  // The selection names the option by id, never by code: a code is a label
+  // an admin can rename while the editor is open.
+  const mtsId = "cldz9x1a30010abcd1234efgh";
+  const vrbId = "cldz9x1a30011abcd1234efgh";
+
   accepts(optionSelectionSchema, [
     [
       "a selection with no attributes",
-      { optionCode: "MTS", qty: 1 },
-      { optionCode: "MTS", qty: 1, attributes: undefined },
+      { optionId: mtsId, qty: 1 },
+      { optionId: mtsId, qty: 1, attributes: undefined },
     ],
     [
       "a selection with attributes",
-      { optionCode: "VRB-180", qty: 2, attributes: { metres: 4, label: "north" } },
-      { optionCode: "VRB-180", qty: 2, attributes: { metres: 4, label: "north" } },
+      { optionId: vrbId, qty: 2, attributes: { metres: 4, label: "north" } },
+      { optionId: vrbId, qty: 2, attributes: { metres: 4, label: "north" } },
     ],
   ]);
 
   rejects(optionSelectionSchema, [
-    ["a missing option code", { optionCode: "", qty: 1 }],
-    ["qty 0", { optionCode: "MTS", qty: 0 }],
-    ["qty over 999", { optionCode: "MTS", qty: 1000 }],
-    ["a non-string/number attribute value", { optionCode: "MTS", qty: 1, attributes: { metres: true } }],
+    ["a missing option id", { optionId: "", qty: 1 }],
+    ["an option code where an id is expected", { optionId: "MTS", qty: 1 }],
+    ["the old optionCode field", { optionCode: mtsId, qty: 1 }],
+    ["qty 0", { optionId: mtsId, qty: 0 }],
+    ["qty over 999", { optionId: mtsId, qty: 1000 }],
+    ["a non-string/number attribute value", { optionId: mtsId, qty: 1, attributes: { metres: true } }],
   ]);
 });
 

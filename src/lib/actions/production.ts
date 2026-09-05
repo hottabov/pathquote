@@ -6,7 +6,7 @@ import { requireSession } from "@/lib/authz";
 import { documentWhereForUser } from "@/lib/scope";
 import { idSchema } from "@/lib/validation/documents";
 import { screenSideSchema } from "@/lib/validation/production-spec";
-import { resolveForm, specSchemaForCode } from "@/lib/production-forms/resolve";
+import { resolveForm, specSchemaForForm } from "@/lib/production-forms/resolve";
 import { NOT_FOUND_ERROR, flattenZodError, type ActionResult } from "./_shared";
 
 export type { ActionResult };
@@ -47,11 +47,11 @@ export async function setProductionSpec(itemId: string, spec: unknown): Promise<
 
   const item = await db.documentItem.findFirst({
     where: { id: parsedItemId.data, document: documentWhereForUser(session.user) },
-    select: { id: true, code: true, documentId: true },
+    select: { id: true, documentId: true, product: { select: { form: true } } },
   });
   if (!item) return { error: NOT_FOUND_ERROR };
 
-  const schema = specSchemaForCode(item.code);
+  const schema = specSchemaForForm(item.product?.form);
   if (!schema) return { error: "This item has no production form" };
 
   const parsed = schema.safeParse(spec);
@@ -72,12 +72,12 @@ export async function setProductionSpec(itemId: string, spec: unknown): Promise<
  * side changes -- a manager who wants two machines facing different ways
  * simply does not take the offer.
  *
- * "Machine" means an item `resolveForm` recognises. A screen side is a fact
- * about a thing an operator stands in front of, and a quote also holds
- * software modules, service entries and accessories, which have no side and
- * no form to print one on. Gating on the form rather than on a hand-kept
- * list of series codes means the set widens on its own the day the X, L and
- * EF forms are written.
+ * "Machine" means an item whose product carries a `form` that `resolveForm`
+ * recognises. A screen side is a fact about a thing an operator stands in
+ * front of, and a quote also holds software modules, service entries and
+ * accessories, which have no side and no form to print one on. Gating on the
+ * form rather than on a hand-kept list of series means the set widens on its
+ * own the day the X, L and EF forms are written and their products get one.
  */
 export async function applyScreenSideToQuote(
   itemId: string,
@@ -102,11 +102,11 @@ export async function applyScreenSideToQuote(
   await db.$transaction(async (tx) => {
     const others = await tx.documentItem.findMany({
       where: { documentId: item.documentId, id: { not: item.id } },
-      select: { id: true, code: true, productionSpec: true },
+      select: { id: true, code: true, productionSpec: true, product: { select: { form: true } } },
     });
 
     for (const other of others) {
-      if (!resolveForm(other.code)) continue;
+      if (!resolveForm(other.product?.form)) continue;
       const current = (other.productionSpec ?? {}) as Record<string, unknown>;
       if (current.ui === parsedSide.data) continue;
       await tx.documentItem.update({

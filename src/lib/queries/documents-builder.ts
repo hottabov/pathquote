@@ -1,5 +1,5 @@
 import { cache } from "react";
-import type { DocumentStatus, LineKind } from "@prisma/client";
+import type { DocumentStatus, LineKind, OptionRole, ProductKind, ProductionForm } from "@prisma/client";
 import { db } from "@/lib/db";
 import { documentWhereForUser, type ScopeUser } from "@/lib/scope";
 import { computeTotals, type CommissionResult, type DocumentConcession, type EngineInput } from "@/lib/pricing";
@@ -51,6 +51,11 @@ export type BuilderCompany = {
 export type BuilderLine = {
   id: string;
   kind: LineKind;
+  /** For an OPTION line: the `Option.id` it was added from -- what the
+   * options editor keys its selection by and resubmits to `setItemOptions`,
+   * since `code` below is a snapshot label the catalogue may have renamed
+   * since. `null` for a CUSTOM line (no catalogue row). */
+  refId: string | null;
   code: string | null;
   name: string;
   description: string | null;
@@ -70,6 +75,18 @@ export type BuilderLine = {
    * editor into storage and back. */
   attributes: Record<string, string | number> | null;
   sortOrder: number;
+  /** For an OPTION line: `Option.role`, resolved by `refId` against the
+   * catalog the same live way `imageUrl` below is. What the builder uses to
+   * tell an EasyLoader's derived module rows (see `EL_MODULE_ROLES`) from
+   * the manager's own picks. `null` for a line with no `refId`, an option
+   * with no role, or any non-OPTION line. */
+  role: OptionRole | null;
+  /** For an OPTION line: `Option.contentBlockKey`, resolved by `refId` the
+   * same live way `role` is -- the `option.*` content block that describes
+   * this option on the quotation (see `buildQuotationData`'s option rows).
+   * `null` for an option with no block, a line with no `refId`, or any
+   * non-OPTION line. */
+  contentBlockKey: string | null;
   /** For an OPTION line: `Option.imageUrl`, resolved by `refId` against the
    * catalog (see `getDocumentForBuilder`'s `optionImageMap`) — not a
    * snapshot column on `DocumentLine` itself, so this always reflects the
@@ -118,22 +135,37 @@ export type BuilderItem = {
    * (shouldn't happen: deleting a referenced product is blocked — see
    * `deleteProduct` in actions/catalog.ts). */
   seriesId: string | null;
-  /** The item's product's series *code* (e.g. "M", "X", "EL") — distinct
-   * from `seriesId`, needed by `productBlockKey` (src/lib/quotation-data.ts)
-   * to map an item to its `machine.*`/`equipment.*`/`software.*` content
-   * block. `null` in the same defensive case as `seriesId`. */
-  seriesCode: string | null;
+  /** The item's product's `Series.name` (e.g. "M-Series", "X-Calibre") —
+   * display only, the one piece of prose the quotation's spec sentence
+   * needs (`machineSpecSentence`, src/lib/machine-specs.ts). Never an
+   * identity: nothing branches on it. `null` in the same defensive case as
+   * `seriesId`. */
+  seriesName: string | null;
   /** The item's own product id — options can be compatible at the
    * product level as well as the series level (see `OptionCompatibility`),
    * so callers need both ids to look up the full compatible-options set.
    * `null` only in the same defensive case as `seriesId`. */
   productId: string | null;
+  /** `Product.kind`, read live off the joined product. ACCESSORY for an
+   * item whose product no longer resolves (same defensive case as
+   * `seriesId`) -- the kind a custom line with no catalogue entry has. */
+  kind: ProductKind;
+  /** `Product.form` -- which production order form this item prints on
+   * (see `resolveForm`), or `null` for none. Drives which production-spec
+   * editor the builder card shows and whether the EasyLoader builder
+   * replaces the options panel. */
+  form: ProductionForm | null;
   /** `Product.specs` exactly as stored (opaque `Json?`, e.g.
    * `{ cutHeightCm, cutWidthCm }`) — carried through unvalidated for
    * `buildQuotationData`'s placeholder substitution, which validates its
    * shape defensively at runtime. `null` for an item with no resolving
    * product or no specs recorded. */
   specs: unknown;
+  /** `Product.contentBlockKey`, read live off the joined product -- which
+   * `machine.*`/`equipment.*`/`software.*` content block describes this
+   * item on the quotation (see `buildQuotationData`). `null` for a product
+   * no block covers, or an item whose product no longer resolves. */
+  contentBlockKey: string | null;
   /** `DocumentItem.serialNumber` — set post-installation, used as-is in the
    * quotation's RSP coverage table. Not editable anywhere in the builder for
    * an ordinary item; for a credit item (`isCredit`) it's opened up via
@@ -141,7 +173,7 @@ export type BuilderItem = {
    * machine's serial number. */
   serialNumber: string | null;
   /** `Product.isCredit`, read live off the joined product (same rule as
-   * `seriesId`/`seriesCode`/`specs` above) — true for the TRADE-IN product.
+   * `seriesId`/`seriesName`/`specs` above) — true for the TRADE-IN product.
    * Drives the negative-amount rendering in `buildItemBreakdown`
    * (src/lib/sheet-data.ts) and gates the serial-number/description edit UI
    * for this item in the builder (`items-list.tsx`). See the doc comment on
@@ -180,8 +212,8 @@ export type BuilderItem = {
    * `ToSheetItemInput.discountAmount` / `ItemBreakdown.discount.amount`. */
   discountAmount: string;
   /** `DocumentItem.productionSpec` exactly as stored (opaque `Json?`,
-   * validated by `specSchemaForCode` on write) — `{}` when nothing has been
-   * answered yet. Only meaningful for an item `resolveForm` recognizes. */
+   * validated by `specSchemaForForm` on write) — `{}` when nothing has been
+   * answered yet. Only meaningful for an item whose `form` is set. */
   productionSpec: unknown;
 };
 
@@ -321,14 +353,22 @@ export type DocumentForBuilder = {
   updatedAt: Date;
 };
 
+/** The live catalog facts an OPTION line reads off its option. */
+type OptionRow = {
+  imageUrl: string | null;
+  noCommission: boolean;
+  role: OptionRole | null;
+  contentBlockKey: string | null;
+};
+
 /**
- * `optionImageMap` (optionId -> Option.imageUrl, built once per
- * `getDocumentForBuilder` call from every OPTION line's `refId` — see
- * below) resolves `imageUrl` for an OPTION line (an OPTION with no `refId`
- * or no matching catalog image gets `null`); a CUSTOM line uses its own
- * `imageUrl`/`showImage` columns instead (there's no catalog entry to
- * resolve); a PRODUCT line always gets `null` (its image lives on
- * `BuilderItem.imageUrl`).
+ * `optionRowMap` (optionId -> the option's live `imageUrl`/`role`/
+ * `contentBlockKey`, built once per `getDocumentForBuilder` call from every
+ * OPTION line's `refId` — see below) resolves those for an OPTION line (an
+ * OPTION with no `refId` or no matching catalog row gets `null` for all); a
+ * CUSTOM line uses its own `imageUrl`/`showImage` columns instead (there's
+ * no catalog entry to resolve); a PRODUCT line always gets `null` (its
+ * image lives on `BuilderItem.imageUrl`).
  */
 function toBuilderLine(
   line: {
@@ -346,11 +386,13 @@ function toBuilderLine(
     imageUrl: string | null;
     showImage: boolean;
   },
-  optionImageMap: Map<string, string>
+  optionRowMap: Map<string, OptionRow>
 ): BuilderLine {
+  const optionRow = line.kind === "OPTION" && line.refId ? optionRowMap.get(line.refId) : undefined;
   return {
     id: line.id,
     kind: line.kind,
+    refId: line.refId,
     code: line.code,
     name: line.name,
     description: line.description,
@@ -362,12 +404,9 @@ function toBuilderLine(
         ? (line.attributes as Record<string, string | number>)
         : null,
     sortOrder: line.sortOrder,
-    imageUrl:
-      line.kind === "OPTION"
-        ? line.refId
-          ? (optionImageMap.get(line.refId) ?? null)
-          : null
-        : line.imageUrl,
+    role: optionRow?.role ?? null,
+    contentBlockKey: optionRow?.contentBlockKey ?? null,
+    imageUrl: line.kind === "OPTION" ? (optionRow?.imageUrl ?? null) : line.imageUrl,
     showImage: line.kind === "OPTION" ? false : line.showImage,
   };
 }
@@ -478,19 +517,23 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
         .map((line) => line.refId)
     )
   );
-  // `Option.noCommission` (see the commission section below) is read the
-  // same way — live off the option, not a line snapshot — so this one query
-  // covers both needs rather than adding a second round trip just for the
-  // flag.
+  // `Option.noCommission` (see the commission section below), `Option.role`
+  // (see `BuilderLine.role`) and `Option.contentBlockKey` (see
+  // `BuilderLine.contentBlockKey`) are read the same way — live off the
+  // option, not a line snapshot — so this one query covers every need
+  // rather than adding a round trip per fact.
   const optionRows =
     optionRefIds.length > 0
       ? await db.option.findMany({
           where: { id: { in: optionRefIds } },
-          select: { id: true, imageUrl: true, noCommission: true },
+          select: { id: true, imageUrl: true, noCommission: true, role: true, contentBlockKey: true },
         })
       : [];
-  const optionImageMap = new Map(
-    optionRows.filter((o): o is { id: string; imageUrl: string; noCommission: boolean } => o.imageUrl !== null).map((o) => [o.id, o.imageUrl])
+  const optionRowMap = new Map<string, OptionRow>(
+    optionRows.map((o) => [
+      o.id,
+      { imageUrl: o.imageUrl, noCommission: o.noCommission, role: o.role, contentBlockKey: o.contentBlockKey },
+    ])
   );
   const optionNoCommissionMap = new Map(optionRows.map((o) => [o.id, o.noCommission]));
 
@@ -637,9 +680,12 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
       discountValue: item.discountValue?.toString() ?? null,
       maxDiscountPct: document.region.maxDiscountPct?.toString() ?? null,
       seriesId: item.product?.seriesId ?? null,
-      seriesCode: item.product?.series.code ?? null,
+      seriesName: item.product?.series.name ?? null,
       productId: item.product?.id ?? null,
+      kind: item.product?.kind ?? "ACCESSORY",
+      form: item.product?.form ?? null,
       specs: item.product?.specs ?? null,
+      contentBlockKey: item.product?.contentBlockKey ?? null,
       serialNumber: item.serialNumber,
       isCredit: item.product?.isCredit ?? false,
       noCommission: item.product?.noCommission ?? false,
@@ -647,12 +693,12 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
       showImage: item.showImage,
       productHasImage: item.imageUrl !== null,
       sortOrder: item.sortOrder,
-      lines: item.lines.map((line) => toBuilderLine(line, optionImageMap)),
+      lines: item.lines.map((line) => toBuilderLine(line, optionRowMap)),
       total: totals.itemTotals[index].toString(),
       discountAmount: totals.itemDiscounts[index].toString(),
       productionSpec: item.productionSpec,
     })),
-    extraLines: document.lines.map((line) => toBuilderLine(line, optionImageMap)),
+    extraLines: document.lines.map((line) => toBuilderLine(line, optionRowMap)),
     notes: document.notes,
     author: {
       name: document.author.name,

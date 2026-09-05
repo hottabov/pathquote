@@ -6,7 +6,7 @@ import {
   buildPatches,
   missingRequirements,
   resolveForm,
-  unmatchedOptionCodes,
+  unmatchedOptions,
 } from "@/lib/production-forms/resolve";
 import { patchWorkbook } from "@/lib/production-forms/xlsx-patch";
 import { mergePdfs, readTemplate, xlsxToPdf } from "@/lib/production-forms/render";
@@ -51,7 +51,7 @@ export async function GET(request: Request, { params }: { params: Promise<Params
   }
 
   const blockers = contexts.flatMap((ctx) => {
-    const spec = resolveForm(ctx.item.code)!;
+    const spec = resolveForm(ctx.item.form)!;
     const missing = missingRequirements(spec, ctx.item.spec);
 
     // The EasyLoader's table used to be checked against the options sold
@@ -69,7 +69,7 @@ export async function GET(request: Request, { params }: { params: Promise<Params
 
   try {
     for (const ctx of contexts) {
-      const spec = resolveForm(ctx.item.code)!;
+      const spec = resolveForm(ctx.item.form)!;
       const patched = patchWorkbook(
         readTemplate(spec.template),
         spec.sheetPath,
@@ -89,13 +89,19 @@ export async function GET(request: Request, { params }: { params: Promise<Params
         source: null,
       })),
       ...contexts.flatMap((ctx) => {
-        const spec = resolveForm(ctx.item.code)!;
+        const spec = resolveForm(ctx.item.form)!;
         const item = document.items.find((row) => row.id === ctx.item.id);
-        return unmatchedOptionCodes(spec, ctx).map((code) => {
-          const line = item?.lines.find((row) => row.code === code);
+        return unmatchedOptions(spec, ctx).map((option) => {
+          // The line is found by `refId` (the option's id), not by its
+          // snapshotted code: the catalogue may have renamed the option
+          // since the quote was written. A line with no `refId` has no
+          // catalogue row at all, so its code is as stable as anything.
+          const line = item?.lines.find((row) =>
+            option.id !== null ? row.refId === option.id : row.code === option.code,
+          );
           return {
-            name: line?.name ?? code,
-            qty: line?.qty ?? 1,
+            name: line?.name ?? option.code,
+            qty: line?.qty ?? option.qty,
             description: line?.description ?? null,
             source: `${ctx.item.code} — ${ctx.item.name}`,
           };

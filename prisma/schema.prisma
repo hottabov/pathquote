@@ -53,6 +53,99 @@ enum DeliveryTerms {
   EX_WORKS
 }
 
+// What a catalogue product *is*, stated outright instead of being inferred
+// from its code. Until migration z31_catalog_identity every "is this a
+// machine?", "which order form?", "how wide?" question was answered by a
+// regex over Product.code (/^M(3|5|7|10)(180|220|300|390)$/ and friends),
+// which made the code an identifier the owner could never rename. The code
+// is now a label; these columns carry the meaning. The full map of what the
+// codes used to encode is in docs/audit/2026-09-05-catalog-proposal-v1.md.
+enum ProductKind {
+  MACHINE // a cutter: M, X, L series
+  TABLE // EasyLoader
+  FEEDER // EasyFeeder
+  SPREADER // FabricPro
+  SOFTWARE // PathWorks and its modules, Production Analyst, LS Convert
+  SYSTEM // Leather Nesting System -- a bundle
+  SERVICE // RSP, SERVICE
+  CREDIT // TRADE-IN (see Product.isCredit, which stays the pricing engine's flag)
+  ACCESSORY // HDRF, FP-TROLLEY -- anything else that ships
+}
+
+// Which production order form an item prints on. Null = no form (software,
+// services, accessories, and machines whose form is not built yet -- L
+// series, HDRF). Replaces the per-form `matches(code)` regexes in
+// src/lib/production-forms/specs/*.
+enum ProductionForm {
+  M_SERIES
+  EASYLOADER
+  FABRICPRO
+}
+
+// What an option *is*, for the parts of the app that need to know: the
+// order forms tick a box per role (src/lib/production-forms/specs/*), the
+// EasyLoader builder derives its module lines by role
+// (src/lib/production-forms/table-sections.ts), and the options editor locks
+// the derived rows by role. Null is fine and common: an option with no role
+// is priced and printed like any other, it just has no box on any form and
+// lands on the "Additional items" sheet. Roles are per *kind of thing*, not
+// per catalogue row -- ABR-M and ABR-L both carry ABR.
+enum OptionRole {
+  // Cutter options with a box on the M-Series form
+  ABR
+  AFP
+  APM
+  BCR
+  BED
+  CRATE
+  DMT
+  DR2
+  DRG_1
+  DRG_2
+  DRG_3
+  EDS
+  EXH
+  HDC
+  HFV
+  IJP
+  IKA
+  IKP
+  MRK
+  MTS
+  MTS_TRAVEL
+  OFD
+  OFJ
+  OFP
+  PM
+  PRM
+  TRANSFORMER
+  VRB
+  WASTE_BIN
+  // L-Series
+  JTP
+  L_EXTENDED
+  L_TOOL
+  // EasyLoader modules and fittings
+  EL_DRIVE
+  EL_CONVEYOR
+  EL_STATIC
+  EL_BUSBAR
+  EL_RAIL
+  EL_ROLL_FEED
+  EL_ROLL_HOLDER
+  EL_SYNC
+  // FabricPro
+  TPL
+  // Services sold as option lines
+  INSTALL
+  TRAINING
+  // Software mistakenly sold as an option (PTW, PRA-L) -- retired in
+  // catalogue v2, role kept so the rows can be identified until then
+  SOFTWARE
+  // Sets of consumables (drills)
+  CONSUMABLE
+}
+
 model Region {
   id                String              @id @default(cuid())
   code              String              @unique // AU, US, UK
@@ -151,12 +244,34 @@ model Series {
 
 model Product {
   id                String                @id @default(cuid())
-  code              String                @unique // M5180
+  // A label. Unique, printed on quotes, shown in lists -- and free to change:
+  // nothing in src/ branches on its value (migration z31_catalog_identity;
+  // see ProductKind above). When it does change, the old value goes into
+  // `legacyCodes` so imports keyed on the old code (price sheets, image maps)
+  // still find the row -- see findProductByAnyCode in src/lib/catalog-identity.ts.
+  code              String                @unique // M-5180
+  legacyCodes       String[]              @default([])
   seriesId          String
   series            Series                @relation(fields: [seriesId], references: [id])
   name              String
   description       String?
-  specs             Json? // { cutHeightCm, widthCm, ... }
+  kind              ProductKind           @default(ACCESSORY)
+  form              ProductionForm?
+  // Typed by productSpecsSchema (src/lib/validation/product-specs.ts):
+  // { cutHeightCm, cutWidthCm, tableWidthMm, paperWidthMm, modelTier,
+  //   widthCode, extended, belt, softwareMode, pathworksModule }. What the
+  // quotation's spec sentence, the order forms' model/width boxes and the
+  // EasyLoader form's printed-width box read, instead of parsing the code.
+  specs             Json?
+  // Which quotation content block describes this product
+  // (ContentBlock.key, e.g. "machine.m-series", "software.pathworks-i").
+  // Null = resolved by series the way it always was. See
+  // src/lib/quotation-data.ts.
+  contentBlockKey   String?
+  // Options that belong to this product rather than to a series -- the
+  // EasyLoader's modules ("EL-2020-DM12" is a module *of* EL-2020). Replaces
+  // the `${itemCode} ${suffix}` code template in table-sections.ts.
+  ownedOptions      Option[]              @relation("OptionParentProduct")
   imageUrl          String?
   active            Boolean               @default(true)
   sortOrder         Int                   @default(0)
@@ -204,9 +319,26 @@ model Product {
 
 model Option {
   id               String                @id @default(cuid())
+  // A label, same contract as Product.code: unique, renameable, never
+  // branched on. See migration z31_catalog_identity.
   code             String                @unique // MTS, HFV, VRB-180...
+  legacyCodes      String[]              @default([])
   name             String
   shortDescription String?
+  role             OptionRole?
+  // Set for options that are part of one product rather than fitted to a
+  // series -- today the EasyLoader modules and fittings. Null for everything
+  // fitted by series compatibility.
+  parentProductId  String?
+  parentProduct    Product?              @relation("OptionParentProduct", fields: [parentProductId], references: [id])
+  // Physical length one unit of this option adds, in metres (1.2 for an
+  // EasyLoader module, 1 for a metre of MTS travel). What the options editor
+  // shows beside the quantity stepper (src/lib/option-length.ts) -- it used
+  // to parse "1.2M" out of the name.
+  unitLengthM      Decimal?              @db.Decimal(6, 2)
+  // ContentBlock.key of the quotation block for this option ("option.MTS").
+  // Null = no block. See src/lib/quotation-data.ts.
+  contentBlockKey  String?
   attributeSchema  Json? // e.g. [{key:"metres",label:"Travel (m)",type:"number"}]
   imageUrl         String?
   active           Boolean               @default(true)
@@ -223,6 +355,11 @@ model Option {
   // comment below for why group membership, not a pairwise row, is how two
   // options are said to conflict.
   conflictGroupMemberships OptionConflictGroupMember[]
+
+  // The EasyLoader builder asks "which options does THIS product own, with
+  // WHICH role" on every layout change (findOwnedOption,
+  // src/lib/production-forms/table-sections.ts).
+  @@index([parentProductId])
 }
 
 // A named set of options where at most one may be fitted to the same item

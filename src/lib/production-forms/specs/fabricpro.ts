@@ -1,10 +1,12 @@
 import { fabricProSpecSchema } from "@/lib/validation/production-spec";
 import type { FormContext, FormSpec } from "../types";
 
-/** FP-TROLLEY is deliberately excluded: it has its own form, out of scope. */
-const CODE = /^FP-(180|220|300)$/;
-
-const modelCell = (code: string) => ({ "FP-180": "H27", "FP-220": "J27", "FP-300": "M27" })[code];
+/**
+ * The model row prints one box per width family. FP-TROLLEY prints nothing
+ * here: it has its own form, out of scope, and carries no `form` at all.
+ */
+const modelCell = (widthCode: number | undefined) =>
+  widthCode === undefined ? undefined : ({ 180: "H27", 220: "J27", 300: "M27" } as Record<number, string>)[widthCode];
 const spec = (key: string, want: string) => (ctx: FormContext) => ctx.item.spec[key] === want;
 
 export const fabricProSpec: FormSpec = {
@@ -12,7 +14,7 @@ export const fabricProSpec: FormSpec = {
   title: "Fabric Pro Order Form",
   template: "fabric-pro-order-form-08.xlsx",
   sheetPath: "xl/worksheets/sheet1.xml",
-  matches: (code) => CODE.test(code),
+  form: "FABRICPRO",
   specSchema: fabricProSpecSchema,
   // "ui" is not listed: screenSideSchema defaults to -Y, so it can never be
   // missing. FabricPro has no other required field.
@@ -44,9 +46,9 @@ export const fabricProSpec: FormSpec = {
   replaces: [],
 
   ticks: [
-    { cell: "H27", when: (c) => modelCell(c.item.code) === "H27" },
-    { cell: "J27", when: (c) => modelCell(c.item.code) === "J27" },
-    { cell: "M27", when: (c) => modelCell(c.item.code) === "M27" },
+    { cell: "H27", when: (c) => modelCell(c.item.specs.widthCode) === "H27" },
+    { cell: "J27", when: (c) => modelCell(c.item.specs.widthCode) === "J27" },
+    { cell: "M27", when: (c) => modelCell(c.item.specs.widthCode) === "M27" },
 
     // The form prints one voltage and notes it is the only one available.
     { cell: "H35", when: () => true },

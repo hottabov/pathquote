@@ -10,10 +10,13 @@
 // reason `ToSheetDataDoc` is: TypeScript's structural typing means the real
 // `DocumentForBuilder` satisfies `QuotationDataDoc` without either file
 // importing the other, as long as `DocumentForBuilder`'s items carry the
-// extra fields (`specs`, `seriesCode`, `serialNumber`) this module needs.
+// extra fields (`kind`, `specs`, `contentBlockKey`, `seriesName`,
+// `serialNumber`) this module needs.
+import type { ProductKind } from "@prisma/client";
 import { formatMoney } from "./format";
-import { machineSpecSentence, parseMachineSpecs, extraSpecVars } from "./machine-specs";
+import { machineSpecSentence, extraSpecVars } from "./machine-specs";
 import { renderStoredRichText } from "./rich-text";
+import { readProductSpecs } from "./validation/product-specs";
 import {
   dedupeDescription,
   formatBankDetails,
@@ -43,6 +46,12 @@ export type QuotationLineInput = ToSheetLineInput & {
    * `substitutePlaceholders` for option blocks like `option.MTS` whose body
    * references `{{metres}}`/`{{tables}}`. */
   attributes: Record<string, string | number> | null;
+  /** The line's option's `Option.contentBlockKey` (resolved by `refId` the
+   * same live way `imageUrl` below is) — the `option.*` content block whose
+   * body becomes the row's description. `null` for a PRODUCT/CUSTOM line or
+   * an option no block covers; the row then falls back to the line's own
+   * snapshot description. */
+  contentBlockKey: string | null;
   /** The line's option's `Option.imageUrl` (resolved by `refId` — see
    * `getDocumentForBuilder`'s `optionImageMap`), snapshotted from the
    * catalog at read time rather than frozen on the line itself (an option's
@@ -57,14 +66,23 @@ export type QuotationItemInput = ToSheetItemInput & {
   /** `DocumentItem.serialNumber` — used as-is (blank when unset) in the RSP
    * coverage table; never a placeholder-substitution concern. */
   serialNumber: string | null;
-  /** The item's product's series code (e.g. "M", "X", "EL") — see
-   * `productBlockKey`. `null` for a snapshot item whose product no longer
-   * resolves a series. */
-  seriesCode: string | null;
+  /** `Product.kind` — what decides whether the item is a cutting machine
+   * (spec sentence, RSP coverage). ACCESSORY for a snapshot item whose
+   * product no longer resolves. */
+  kind: ProductKind;
+  /** The item's product's `Series.name` (e.g. "M-Series", "X-Calibre") —
+   * display only, the prose `machineSpecSentence` opens with. `null` for a
+   * snapshot item whose product no longer resolves a series. */
+  seriesName: string | null;
   /** `Product.specs` exactly as stored (opaque `Json?`) — validated
-   * defensively at runtime, same treatment as `entitySnapshot`/`bankDetails`
-   * in sheet-data.ts. */
+   * defensively at runtime via `readProductSpecs`, same treatment as
+   * `entitySnapshot`/`bankDetails` in sheet-data.ts. */
   specs: unknown;
+  /** `Product.contentBlockKey` — the `machine.*`/`equipment.*`/`software.*`
+   * block that describes this item, or `null` when nothing in the content
+   * library covers it (the item still renders, just without a
+   * `titleBlockHtml`). */
+  contentBlockKey: string | null;
   lines: QuotationLineInput[];
 };
 
@@ -127,97 +145,19 @@ export function resolveBlocks(blocks: ContentBlockRow[], regionId: string): Map<
   return resolved;
 }
 
-// --- key mapping ---------------------------------------------------------
-
-/**
- * Candidate `ContentBlock` keys for an option line's code, in priority
- * order: the exact code first (e.g. "ABR-M" -> "option.ABR-M"), then — only
- * when the code contains a "-" — the code with its trailing series suffix
- * stripped (e.g. "ABR-M" -> "option.ABR", "ABR-FP" -> "option.ABR"). A code
- * with no "-" only ever produces the one exact candidate.
- *
- * Fabric Master ("FM180") no longer needs a special-case fallback here: it
- * was catalogued as an M/X-series option with no standalone product to
- * route through `productBlockKey`, but the option itself was retired (not
- * sold anymore, owner decision — see RETIRED_OPTION_CODES in prisma/seed.ts)
- * and dropped from extraction entirely (scripts/extract-catalog.ts), so no
- * document can add a new "FM180" line any more. The `equipment.fabric-master`
- * content block itself is left in place (harmless — content blocks with no
- * matching option are simply never rendered).
- *
- * Callers should try each candidate against the resolved blocks map in
- * order and use the first hit, skipping the option entirely if none
- * resolve.
- */
-export function optionBlockKey(code: string): string[] {
-  const candidates = [`option.${code}`];
-  const lastDash = code.lastIndexOf("-");
-  if (lastDash > 0) {
-    const stripped = code.slice(0, lastDash);
-    const strippedKey = `option.${stripped}`;
-    if (!candidates.includes(strippedKey)) candidates.push(strippedKey);
-  }
-  return candidates;
-}
-
-/**
- * The single `ContentBlock` key for a machine/equipment item's product, or
- * `null` when nothing in the content library covers it (item still renders,
- * just without a `titleBlockHtml`). Mapping is by series code:
- *  - "M" / "X" (the cutting-machine series) -> "machine.m-series"
- *  - "EL" (Easy-Loader) -> "equipment.easy-loader"
- *  - "FP" (Fabric Pro) -> "equipment.fabric-pro"
- *  - "P" (Punchline) -> "equipment.punchline"
- *  - "SW" (software) -> "software.pathworks-s" for a "(S)"-suffixed code
- *    (standalone), "software.pathworks-i" for an "(I)"-suffixed code
- *    (integrated), else `null` (an unrecognised SW variant)
- *  - anything else (including "EF", which has no matching content block,
- *    and "L"/"LNS") -> `null`
- */
-export function productBlockKey(productCode: string, seriesCode: string | null): string | null {
-  switch (seriesCode) {
-    case "M":
-    case "X":
-      return "machine.m-series";
-    case "EL":
-      return "equipment.easy-loader";
-    case "FP":
-      return "equipment.fabric-pro";
-    case "P":
-      return "equipment.punchline";
-    case "SW": {
-      const upper = productCode.toUpperCase();
-      if (upper.includes("(S)")) return "software.pathworks-s";
-      if (upper.includes("(I)")) return "software.pathworks-i";
-      return null;
-    }
-    default:
-      return null;
-  }
-}
-
 // --- RSP coverage --------------------------------------------------------
 
 /**
- * Series codes that identify a cutting machine (as opposed to an accessory
- * or software product) for the RSP coverage table — see
- * `buildQuotationData`'s `coverageRows`. Kept separate from
- * `productBlockKey`'s switch because the two questions differ: this is
- * "is this a machine at all" (RSP coverage), that is "which content block
- * describes this specific product".
+ * The product kinds the RSP coverage table lists even before a serial
+ * number is recorded — see `buildQuotationData`'s `coverageRows`. A cutting
+ * machine (M / X / L series) and a whole system (the LNS camera nesting
+ * system) are what the remote support program covers; a table, feeder,
+ * spreader, software licence or service only appears there once it has a
+ * serial number of its own. Distinct from `contentBlockKey`, which answers
+ * "which content block describes this specific product", not "is this a
+ * machine at all".
  */
-const MACHINE_SERIES_CODES = new Set(["M", "X", "L", "P", "LNS"]);
-
-/**
- * Display name per series code, for the one piece of prose
- * `machineSpecSentence` needs that the code itself doesn't encode — e.g.
- * "M3390" parses to a height+width but has no way to know it should read
- * "M-Series" rather than "M". Limited to the three series
- * `parseMachineSpecs` actually recognises; any other series code falls back
- * to the raw code itself (moot in practice, since `machineSpecSentence`
- * returns `null` for those series regardless of the name it's given).
- */
-const SERIES_DISPLAY_NAMES: Record<string, string> = { M: "M-Series", X: "X-Calibre", L: "L-Series" };
+const RSP_COVERED_KINDS: ReadonlySet<ProductKind> = new Set<ProductKind>(["MACHINE", "SYSTEM"]);
 
 // --- substitutePlaceholders ------------------------------------------------
 
@@ -281,7 +221,7 @@ export function substitutePlaceholders(body: string, vars: PlaceholderVars): str
  * which rendered inconsistently — prose for a matched `option.*` block,
  * bold indented lines for an unmatched one — and drifted visually against
  * each other). EVERY selected OPTION line produces exactly one row here,
- * whether or not its code matched a content block, so no selected option is
+ * whether or not its option has a content block, so no selected option is
  * ever silently omitted (same owner rule the old fallback list enforced).
  */
 export type QuotationOptionRow = {
@@ -373,8 +313,8 @@ export type QuotationMachineSection = {
   sectionTitle: string;
   /** Rendered `machine.*`/`equipment.*`/`software.*` block BODY for this
    * item's product, with `{{model}}`/`{{price}}`/`{{cutHeightCm}}`/
-   * `{{cutWidthCm}}`/`{{specSentence}}` substituted — `null` when
-   * `productBlockKey` found no matching block, in which case the sheet
+   * `{{cutWidthCm}}`/`{{specSentence}}` substituted — `null` when the
+   * item's `contentBlockKey` is null or matches no block, in which case the sheet
    * renders `specSentence` (alongside `sectionTitle` and the item's price
    * from `lineSummary`) as a minimal auto-generated section instead — see
    * quotation-sheet.tsx. No longer carries its own top-level heading (that's
@@ -382,11 +322,11 @@ export type QuotationMachineSection = {
    * HTML) — see the `machine.m-series` seed body, which used to open with
    * its own "## Pathfinder {{model}} Cutting System" line. */
   titleBlockHtml: string | null;
-  /** One-line spec summary derived purely from the product code (see
-   * `machineSpecSentence` in src/lib/machine-specs.ts) — e.g. "M-Series
-   * Cutting Machine, 3cm compressed lay height, 390cm cutting width".
-   * `null` when the series/code isn't one `parseMachineSpecs` recognises
-   * (most non-cutting-machine products, or a malformed code). */
+  /** One-line spec summary from `Product.specs` (see `machineSpecSentence`
+   * in src/lib/machine-specs.ts) — e.g. "M-Series Cutting Machine, 3cm
+   * compressed lay height, 390cm cutting width". `null` for anything that
+   * is not a cutting machine (`kind !== "MACHINE"`), or a machine with no
+   * width recorded. */
   specSentence: string | null;
   /** The item's total (incl. options), currency-formatted — same figure as
    * the `{{price}}` token substituted into `titleBlockHtml`, but exposed
@@ -410,7 +350,7 @@ export type QuotationMachineSection = {
   /** One row per selected OPTION line on this item, in a single unified
    * table (see `QuotationOptionRow`) — replaces the old optionBlocksHtml/
    * fallbackOptions two-tier split; every OPTION line lands here whether or
-   * not its code resolved to an `option.*` content block. */
+   * not its option has an `option.*` content block. */
   optionRows: QuotationOptionRow[];
   /** The machine itself, as the first row of its own options table (owner:
    * the customer should read the product and its base price at the top of
@@ -510,17 +450,6 @@ export type BuildQuotationDataOpts = {
   resolveImage?: ImageResolver;
 };
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function specString(specs: unknown, key: string): string {
-  if (!isPlainObject(specs)) return "";
-  const value = specs[key];
-  if (value === undefined || value === null) return "";
-  return String(value);
-}
-
 function attributeVars(attributes: Record<string, string | number> | null): PlaceholderVars {
   if (!attributes) return {};
   const vars: PlaceholderVars = {};
@@ -590,20 +519,19 @@ export function buildQuotationData(
       throw new Error(`buildQuotationData: no sheet item for document item ${item.id}`);
     }
 
-    // Code parsing is authoritative for a machine's cutting specs (per the
-    // owner's domain rule — catalog descriptions can be wrong, e.g. some
-    // "220"-width codes are mis-described as "227cm" in the source
-    // catalog). Only fall back to the item's stored `specs` JSON when the
-    // code doesn't parse against its series' known scheme (an unrecognised
-    // series, or a malformed code) — that's the pre-existing behavior this
-    // module had before code parsing existed, preserved as-is.
-    const parsedSpecs = parseMachineSpecs(item.seriesCode, item.code);
-    const cutHeightCm =
-      parsedSpecs?.heightCm !== undefined ? String(parsedSpecs.heightCm) : specString(item.specs, "cutHeightCm");
-    const cutWidthCm =
-      parsedSpecs?.widthCm !== undefined ? String(parsedSpecs.widthCm) : specString(item.specs, "cutWidthCm");
-    const seriesDisplayName = item.seriesCode ? (SERIES_DISPLAY_NAMES[item.seriesCode] ?? item.seriesCode) : "";
-    const specSentence = machineSpecSentence(seriesDisplayName, item.seriesCode, item.code);
+    // `Product.specs` is the one source for a machine's cutting figures
+    // (this used to parse them out of the code; the code is a label now --
+    // see src/lib/validation/product-specs.ts). A figure the product does
+    // not carry substitutes as "" and line-strips like any unresolved token.
+    const specs = readProductSpecs(item.specs);
+    const cutHeightCm = specs.cutHeightCm !== undefined ? String(specs.cutHeightCm) : "";
+    const cutWidthCm = specs.cutWidthCm !== undefined ? String(specs.cutWidthCm) : "";
+    // Only a cutting machine gets the "<Series> Cutting Machine ..." line: a
+    // spreader carries a `cutWidthCm` too (its spread width) and must not be
+    // introduced as one. `seriesName` is the prose the sentence opens with
+    // and nothing else keys on it.
+    const specSentence =
+      item.kind === "MACHINE" && item.seriesName ? machineSpecSentence(item.seriesName, specs) : null;
 
     // Shared placeholder vars for both the block BODY and the block TITLE
     // (see `sectionTitle` below) — one computation, one source of truth, so
@@ -615,9 +543,9 @@ export function buildQuotationData(
       cutHeightCm,
       cutWidthCm,
       ...(specSentence ? { specSentence } : {}),
-      // Resolve width placeholders from product code for series that don't
-      // encode specs in the code itself (EL, P).
-      ...extraSpecVars(item.seriesCode ?? "", item.code),
+      // `{{tableWidthMm}}` / `{{paperWidthMm}}` for the equipment that has
+      // a width but no cutting spec (EasyLoader, Punchline).
+      ...extraSpecVars(specs),
       // The item's own TOTAL — qty * unit price plus every attached option,
       // exactly the figure `lineSummary.total` already carries from the
       // pricing engine (`totals.itemTotals`, see getDocumentForBuilder) —
@@ -640,8 +568,7 @@ export function buildQuotationData(
       basePrice: itemPriceVisible ? formatMoney(lineSummary.breakdown.basePrice, sheet.totals.currency) : OMIT,
     };
 
-    const blockKey = productBlockKey(item.code, item.seriesCode);
-    const block = blockKey ? resolved.get(blockKey) : undefined;
+    const block = item.contentBlockKey ? resolved.get(item.contentBlockKey) : undefined;
     const titleBlockHtml = block ? renderStoredRichText(substitutePlaceholders(block.body, vars)) : null;
 
     // Structural section price (see `QuotationMachineSection.sectionPrice`'s
@@ -673,17 +600,16 @@ export function buildQuotationData(
       rawTitle && rawTitle.includes("{{") ? substitutePlaceholders(rawTitle, vars).trim() || item.name : item.name;
 
     // Unified options table (owner: "table with small icons") — one row per
-    // selected OPTION line, whether or not its code resolved to an
-    // `option.*` content block, replacing the old prose-paragraphs (matched)
-    // vs. bold-bullets (unmatched) split that rendered inconsistently.
+    // selected OPTION line, whether or not its option has an `option.*`
+    // content block, replacing the old prose-paragraphs (matched) vs.
+    // bold-bullets (unmatched) split that rendered inconsistently.
     const optionRows: QuotationOptionRow[] = [];
     const docLinesById = new Map(lineSummary.lines.map((docLine) => [docLine.id, docLine]));
     for (const line of item.lines) {
       if (line.kind !== "OPTION") continue;
       const docLine = docLinesById.get(line.id);
       const name = docLine?.name ?? line.name;
-      const candidates = line.code ? optionBlockKey(line.code) : [];
-      const found = candidates.map((key) => resolved.get(key)).find((b) => b !== undefined);
+      const found = line.contentBlockKey ? resolved.get(line.contentBlockKey) : undefined;
 
       const descriptionHtml = found
         ? renderStoredRichText(substitutePlaceholders(found.body, attributeVars(line.attributes)))
@@ -759,7 +685,7 @@ export function buildQuotationData(
     : null;
 
   const coverageRows: QuotationRspRow[] = doc.items
-    .filter((item) => MACHINE_SERIES_CODES.has(item.seriesCode ?? "") || Boolean(item.serialNumber))
+    .filter((item) => RSP_COVERED_KINDS.has(item.kind) || Boolean(item.serialNumber))
     .map((item) => ({
       name: item.name,
       serialNumber: item.serialNumber ?? "",

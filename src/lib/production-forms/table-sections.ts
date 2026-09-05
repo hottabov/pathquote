@@ -17,6 +17,8 @@
  * they are two separate runs of table, each with its own drive.
  */
 
+import type { OptionRole } from "@prisma/client";
+
 /** Every table option is priced and counted per 1.2 metre unit. */
 export const SECTION_UNIT_M = 1.2;
 
@@ -29,31 +31,28 @@ export type SectionSurface = "static" | "conveyor";
 export type Section = { lengthM: number; surface: SectionSurface };
 
 /**
- * The option-code suffixes that follow the product code. Every EasyLoader
- * option is scoped to one width -- "EL-2420 Additional 1.2M lengths" -- and
- * the part after the code is identical across widths, so a derived code is
- * always `${itemCode} ${suffix}`.
- *
- * These strings must match `prisma/seed-data/catalog.json` exactly, and they
- * are long because the catalogue's own codes are the full descriptions. A
- * suffix that drifted would not be cosmetic: `setItemOptions` rejects a code
- * the catalogue does not have, so the table simply could not be saved.
- * tests/catalog.test.ts derives every kind for every width and checks the
- * catalogue has all of them.
+ * The kinds of module a table is built from, as `Option.role` names them.
+ * Every EasyLoader width has one option per role, scoped to that width by
+ * `Option.parentProductId` -- so a derived row is "this item's option with
+ * this role", never a code assembled from strings. `setEasyLoaderLayout`
+ * does that lookup; tests/catalog.test.ts checks the catalogue has every
+ * role for every width.
  */
-export const EL_OPTION_SUFFIX = {
-  drive: "Drive Module (first 1.2M)",
-  conveyor: "Additional 1.2M lengths",
-  static: "Static table 1.2M lengths",
-  busbar: "Electrical Busbar Per 1.2M Used for Fabric Pro automatic spreader.",
-  rail: "Travel Platform support rail. Per 1.2m",
-} as const;
+export const EL_MODULE_ROLE_LIST = ["EL_DRIVE", "EL_CONVEYOR", "EL_STATIC", "EL_BUSBAR", "EL_RAIL"] as const;
 
-export type ElOptionKind = keyof typeof EL_OPTION_SUFFIX;
+export type ElModuleRole = (typeof EL_MODULE_ROLE_LIST)[number];
 
-/** The catalogue code for one of this item's derived options. */
-export function elOptionCode(itemCode: string, kind: ElOptionKind): string {
-  return `${itemCode} ${EL_OPTION_SUFFIX[kind]}`;
+export const EL_MODULE_ROLES: ReadonlySet<OptionRole> = new Set<OptionRole>(EL_MODULE_ROLE_LIST);
+
+/**
+ * Whether an option is one a table layout owns. Used to tell the manager's
+ * own selections (roll holder, sync feature, crate) apart from the derived
+ * rows when rewriting them, and to render the derived rows read-only in the
+ * options editor -- editing a number the builder recomputes on the next
+ * click would only ever be undone.
+ */
+export function isEasyLoaderModuleRole(role: OptionRole | null | undefined): role is ElModuleRole {
+  return role !== null && role !== undefined && EL_MODULE_ROLES.has(role);
 }
 
 /**
@@ -105,55 +104,33 @@ export function layoutTotals(sections: Section[]): LayoutTotals {
   return { driveModules, conveyorModules, staticModules, totalModules, totalM: unitsToM(totalModules) };
 }
 
-export type DerivedOption = { optionCode: string; qty: number };
+export type DerivedOption = { role: ElModuleRole; qty: number };
 
 /**
- * The option lines an EasyLoader's layout adds up to. Anything with a
- * quantity of zero is left out rather than written as a zero-quantity line,
- * so a table with no static run simply has no static row.
+ * The option lines an EasyLoader's layout adds up to, by role. Anything with
+ * a quantity of zero is left out rather than written as a zero-quantity
+ * line, so a table with no static run simply has no static row.
  *
  * `fabricProCompatible` adds the electrical busbar and the travel-platform
  * support rail, one of each per module -- including the static ones, which
  * the FabricPro still has to travel over.
  */
-export function deriveEasyLoaderOptions(
-  itemCode: string,
-  sections: Section[],
-  fabricProCompatible: boolean
-): DerivedOption[] {
+export function deriveEasyLoaderOptions(sections: Section[], fabricProCompatible: boolean): DerivedOption[] {
   const totals = layoutTotals(sections);
   const derived: DerivedOption[] = [];
 
-  const push = (kind: ElOptionKind, qty: number) => {
-    if (qty > 0) derived.push({ optionCode: elOptionCode(itemCode, kind), qty });
+  const push = (role: ElModuleRole, qty: number) => {
+    if (qty > 0) derived.push({ role, qty });
   };
 
-  push("drive", totals.driveModules);
-  push("conveyor", totals.conveyorModules);
-  push("static", totals.staticModules);
+  push("EL_DRIVE", totals.driveModules);
+  push("EL_CONVEYOR", totals.conveyorModules);
+  push("EL_STATIC", totals.staticModules);
 
   if (fabricProCompatible) {
-    push("busbar", totals.totalModules);
-    push("rail", totals.totalModules);
+    push("EL_BUSBAR", totals.totalModules);
+    push("EL_RAIL", totals.totalModules);
   }
 
   return derived;
-}
-
-/**
- * Every option code this item's layout owns. Used to tell the manager's own
- * selections (roll holder, sync feature, crate) apart from the derived rows
- * when rewriting them, and to render the derived rows read-only in the
- * options editor -- editing a number the builder recomputes on the next
- * click would only ever be undone.
- */
-export function derivedEasyLoaderCodes(itemCode: string): Set<string> {
-  return new Set(
-    (Object.keys(EL_OPTION_SUFFIX) as ElOptionKind[]).map((kind) => elOptionCode(itemCode, kind))
-  );
-}
-
-/** Whether `optionCode` is one `itemCode`'s layout owns. */
-export function isDerivedEasyLoaderOption(itemCode: string, optionCode: string): boolean {
-  return derivedEasyLoaderCodes(itemCode).has(optionCode);
 }

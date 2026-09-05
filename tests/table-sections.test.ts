@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   deriveEasyLoaderOptions,
-  derivedEasyLoaderCodes,
-  elOptionCode,
-  isDerivedEasyLoaderOption,
+  EL_MODULE_ROLE_LIST,
+  EL_MODULE_ROLES,
+  isEasyLoaderModuleRole,
   layoutTotals,
   modulesIn,
   unitsToM,
@@ -82,65 +82,58 @@ describe("the owner's worked example", () => {
   });
 
   it("prices as 2 drive, 8 conveyor and 1 static", () => {
-    expect(deriveEasyLoaderOptions("EL-2420", sections, false)).toEqual([
-      { optionCode: "EL-2420 Drive Module (first 1.2M)", qty: 2 },
-      { optionCode: "EL-2420 Additional 1.2M lengths", qty: 8 },
-      { optionCode: "EL-2420 Static table 1.2M lengths", qty: 1 },
+    expect(deriveEasyLoaderOptions(sections, false)).toEqual([
+      { role: "EL_DRIVE", qty: 2 },
+      { role: "EL_CONVEYOR", qty: 8 },
+      { role: "EL_STATIC", qty: 1 },
     ]);
   });
 
   it("adds a busbar and a rail per module when a FabricPro runs the table", () => {
-    const derived = deriveEasyLoaderOptions("EL-2420", sections, true);
-    expect(derived).toContainEqual({
-      optionCode: "EL-2420 Electrical Busbar Per 1.2M Used for Fabric Pro automatic spreader.",
-      qty: 11,
-    });
-    expect(derived).toContainEqual({
-      optionCode: "EL-2420 Travel Platform support rail. Per 1.2m",
-      qty: 11,
-    });
+    const derived = deriveEasyLoaderOptions(sections, true);
+    expect(derived).toContainEqual({ role: "EL_BUSBAR", qty: 11 });
+    expect(derived).toContainEqual({ role: "EL_RAIL", qty: 11 });
   });
 });
 
 describe("deriveEasyLoaderOptions", () => {
   it("writes no row at all for a kind the table has none of", () => {
-    const codes = deriveEasyLoaderOptions("EL-2020", [conveyor(2)], false).map((d) => d.optionCode);
-    expect(codes).not.toContain("EL-2020 Static table 1.2M lengths");
+    const roles = deriveEasyLoaderOptions([conveyor(2)], false).map((d) => d.role);
+    expect(roles).not.toContain("EL_STATIC");
   });
 
   it("prices nothing for an empty table", () => {
-    expect(deriveEasyLoaderOptions("EL-2020", [], true)).toEqual([]);
+    expect(deriveEasyLoaderOptions([], true)).toEqual([]);
   });
 
-  it("scopes every code to the item's own width", () => {
-    const derived = deriveEasyLoaderOptions("EL-3220", [conveyor(2), staticRun(1)], true);
-    for (const { optionCode } of derived) {
-      expect(optionCode.startsWith("EL-3220 "), optionCode).toBe(true);
+  it("only ever writes module roles", () => {
+    const derived = deriveEasyLoaderOptions([conveyor(2), staticRun(1)], true);
+    expect(derived).toHaveLength(5);
+    for (const { role } of derived) {
+      expect(EL_MODULE_ROLES.has(role), role).toBe(true);
     }
   });
 });
 
-describe("derived option codes", () => {
-  it("recognises every kind the builder writes", () => {
-    for (const code of derivedEasyLoaderCodes("EL-2420")) {
-      expect(isDerivedEasyLoaderOption("EL-2420", code), code).toBe(true);
+describe("module roles", () => {
+  it("recognises every role the builder writes", () => {
+    for (const role of EL_MODULE_ROLE_LIST) {
+      expect(isEasyLoaderModuleRole(role), role).toBe(true);
     }
+    expect(new Set(EL_MODULE_ROLE_LIST)).toEqual(EL_MODULE_ROLES);
   });
 
   it("leaves the manager's own accessories alone", () => {
     // The roll holder, sync feature and crate are picked by hand and must
     // survive a redraw of the table.
-    for (const code of [
-      "EL-2420 Syncronisation Feature (same speed sync with cutter)",
-      "Crate-EL",
-      "EL-2420 ST620-2420 Roll Holder- Used to dispense perforated underlay paper. Mounted rear of EasyLoader on lower leg.",
-    ]) {
-      expect(isDerivedEasyLoaderOption("EL-2420", code), code).toBe(false);
+    for (const role of ["EL_SYNC", "CRATE", "EL_ROLL_HOLDER", "EL_ROLL_FEED"] as const) {
+      expect(isEasyLoaderModuleRole(role), role).toBe(false);
     }
   });
 
-  it("does not claim another width's option", () => {
-    expect(isDerivedEasyLoaderOption("EL-2420", elOptionCode("EL-2020", "drive"))).toBe(false);
+  it("treats an option with no role as the manager's own", () => {
+    expect(isEasyLoaderModuleRole(null)).toBe(false);
+    expect(isEasyLoaderModuleRole(undefined)).toBe(false);
   });
 });
 

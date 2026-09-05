@@ -1,10 +1,25 @@
+import type { OptionRole } from "@prisma/client";
 import { easyLoaderSpecSchema } from "@/lib/validation/production-spec";
-import { layoutTotals } from "../table-sections";
+import type { ProductSpecs } from "@/lib/validation/product-specs";
+import { EL_MODULE_ROLE_LIST, layoutTotals } from "../table-sections";
 import type { FormContext, FormSpec } from "../types";
 
-const CODE = /^EL-\d{4}$/;
-/** Only these two have a printed box; everything else ticks Custom. */
-const PRINTED_WIDTHS: Record<string, string> = { "EL-2020": "I31", "EL-2420": "I33" };
+/**
+ * The form prints a box for two table widths and a "Custom ___mm" line for
+ * everything else. Which one an EasyLoader ticks is a fact about its width
+ * (`Product.specs.tableWidthMm`), not its code. Exported for the builder,
+ * which offers the custom-width field exactly when there is no printed box.
+ */
+export function easyLoaderPrintedWidthCell(specs: ProductSpecs): "I31" | "I33" | null {
+  switch (specs.tableWidthMm) {
+    case 2020:
+      return "I31";
+    case 2420:
+      return "I33";
+    default:
+      return null;
+  }
+}
 
 type Section = { lengthM: number; surface: "static" | "conveyor" };
 
@@ -12,15 +27,15 @@ const sections = (ctx: FormContext) => (ctx.item.spec.sections ?? []) as Section
 const spec = (key: string, want: string) => (ctx: FormContext) => ctx.item.spec[key] === want;
 
 /**
- * An option tick. `covers` records the same pattern so `unmatchedOptionCodes`
+ * An option tick. `covers` records the same role so `unmatchedOptions`
  * knows this form has a box for it -- without it, the crate and roll holder
  * would be reported as unmapped and printed a second time on the
  * "Additional items" sheet. Mirrors the helper in specs/m-series.ts.
  */
-const optionTick = (cell: string, pattern: RegExp) => ({
+const optionTick = (cell: string, role: OptionRole) => ({
   cell,
-  when: (ctx: FormContext) => ctx.item.optionCodes.some((code) => pattern.test(code)),
-  covers: pattern,
+  when: (ctx: FormContext) => ctx.item.options.some((option) => option.role === role),
+  covers: role,
 });
 
 /** Length value box and the two surface tick boxes, per table section. */
@@ -35,7 +50,7 @@ export const easyLoaderSpec: FormSpec = {
   title: "EasyLoader Order Form",
   template: "easy-loader-13.xlsx",
   sheetPath: "xl/worksheets/sheet1.xml",
-  matches: (code) => CODE.test(code),
+  form: "EASYLOADER",
   specSchema: easyLoaderSpecSchema,
   // "ui" is not listed: screenSideSchema defaults to -Y, so it can never be
   // missing. "sections" is not listed either: an empty array legitimately
@@ -50,13 +65,7 @@ export const easyLoaderSpec: FormSpec = {
   // sheet, which exists for things the form genuinely cannot express. The
   // busbar and the support rail are here for the same reason -- they are one
   // per module of a table the form already draws.
-  coversOptions: [
-    /Drive Module \(first 1\.2M\)$/i,
-    /Additional 1\.2M lengths$/i,
-    /Static table 1\.2M lengths$/i,
-    /Electrical Busbar Per 1\.2M/i,
-    /Travel Platform support rail\. Per 1\.2m$/i,
-  ],
+  coversOptions: [...EL_MODULE_ROLE_LIST],
 
   values: [
     { cell: "G11", from: (c) => c.distributorName },
@@ -118,9 +127,9 @@ export const easyLoaderSpec: FormSpec = {
   ],
 
   ticks: [
-    { cell: "I31", when: (c) => PRINTED_WIDTHS[c.item.code] === "I31" },
-    { cell: "I33", when: (c) => PRINTED_WIDTHS[c.item.code] === "I33" },
-    { cell: "I35", when: (c) => PRINTED_WIDTHS[c.item.code] === undefined },
+    { cell: "I31", when: (c) => easyLoaderPrintedWidthCell(c.item.specs) === "I31" },
+    { cell: "I33", when: (c) => easyLoaderPrintedWidthCell(c.item.specs) === "I33" },
+    { cell: "I35", when: (c) => easyLoaderPrintedWidthCell(c.item.specs) === null },
 
     { cell: "I38", when: spec("usage", "onload") },
     { cell: "O38", when: spec("usage", "offload") },
@@ -132,13 +141,9 @@ export const easyLoaderSpec: FormSpec = {
       { cell: cells.conveyor, when: (c: FormContext) => sections(c)[index]?.surface === "conveyor" },
     ]),
 
-    optionTick("D56", /Syncronisation/i),
+    optionTick("D56", "EL_SYNC"),
     { cell: "D59", when: (c) => Boolean(c.item.spec.rollFeed) },
-    // The perforated paper roll holder's catalog code differs per width and
-    // is inconsistent about it: "EL-2020 #ST620-2020 Roll Holder..." carries
-    // a stray "#" that "EL-2420 ST620-2420 Roll Holder..." does not. Match on
-    // "Roll Holder" rather than trying to be precise about the prefix.
-    optionTick("D69", /Roll Holder/i),
-    optionTick("D71", /^Crate-EL$/),
+    optionTick("D69", "EL_ROLL_HOLDER"),
+    optionTick("D71", "CRATE"),
   ],
 };

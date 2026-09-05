@@ -15,7 +15,9 @@ export type SeriesOption = { id: string; code: string; name: string };
  * what's currently stored. Rendered as a list of full-width 44px checkbox
  * rows (rather than the compact pill layout used for read-only filters
  * elsewhere) since each row needs a comfortable touch target and room for
- * both the series code and its name.
+ * both the series code and its name. The selection is a set of series
+ * *ids* (`initialSelected` too): the code is printed beside the checkbox
+ * but is a label an admin can rename, so it never identifies anything here.
  */
 export function CompatEditor({
   optionId,
@@ -26,8 +28,9 @@ export function CompatEditor({
 }: {
   optionId: string;
   series: SeriesOption[];
+  /** Series ids currently compatible. */
   initialSelected: string[];
-  action: (optionId: string, seriesCodes: string[]) => Promise<{ error?: string }>;
+  action: (optionId: string, seriesIds: string[]) => Promise<{ error?: string }>;
   readOnly?: boolean;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set(initialSelected));
@@ -35,12 +38,12 @@ export function CompatEditor({
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
 
-  function toggle(code: string) {
+  function toggle(id: string) {
     if (readOnly) return;
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(code)) next.delete(code);
-      else next.add(code);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
     setError(null);
@@ -62,7 +65,7 @@ export function CompatEditor({
     <div className="flex flex-col gap-3">
       <div className="rounded-lg border border-slate-200">
         {series.map((s) => {
-          const active = selected.has(s.code);
+          const active = selected.has(s.id);
           return (
             <label
               key={s.id}
@@ -76,7 +79,7 @@ export function CompatEditor({
                 id={`compat-${s.id}`}
                 type="checkbox"
                 checked={active}
-                onChange={() => toggle(s.code)}
+                onChange={() => toggle(s.id)}
                 disabled={readOnly}
                 className="size-4 shrink-0 rounded border-slate-300 accent-brand disabled:cursor-not-allowed"
               />

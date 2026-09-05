@@ -7,15 +7,18 @@ import { compatDiff } from "@/lib/validation/catalog";
 import type { ActionResult } from "../_shared";
 
 /**
- * Sets an option's series-level compatibility to exactly `seriesCodes`,
+ * Sets an option's series-level compatibility to exactly `seriesIds`,
  * diffing against what's currently stored and only writing the delta.
  * Product-level compatibility rows (out of phase-3 scope) are left alone.
- * Unknown codes in `seriesCodes` are silently ignored (they simply don't
- * resolve to a series id and so are never added).
+ * Series travel as ids, never codes -- a code is a label an admin can
+ * rename while the editor is open (see
+ * docs/plans/2026-09-05-catalog-identity-and-cleanup.md). Unknown ids in
+ * `seriesIds` are silently ignored (they simply don't resolve to a series
+ * row and so are never added).
  */
 export async function setOptionCompatibility(
   optionId: string,
-  seriesCodes: string[]
+  seriesIds: string[]
 ): Promise<ActionResult> {
   await requireAdmin();
 
@@ -25,31 +28,26 @@ export async function setOptionCompatibility(
   const [existingCompat, matchedSeries] = await Promise.all([
     db.optionCompatibility.findMany({
       where: { optionId, seriesId: { not: null }, productId: null },
-      include: { series: true },
+      select: { id: true, seriesId: true },
     }),
-    db.series.findMany({ where: { code: { in: seriesCodes } } }),
+    db.series.findMany({ where: { id: { in: seriesIds } }, select: { id: true } }),
   ]);
 
-  const currentCodes = existingCompat
-    .map((c) => c.series?.code)
-    .filter((code): code is string => Boolean(code));
-  const submittedCodes = matchedSeries.map((s) => s.code);
-  const { toAdd, toRemove } = compatDiff(currentCodes, submittedCodes);
+  const currentIds = existingCompat
+    .map((c) => c.seriesId)
+    .filter((id): id is string => id !== null);
+  const submittedIds = matchedSeries.map((s) => s.id);
+  const { toAdd, toRemove } = compatDiff(currentIds, submittedIds);
 
-  const seriesIdByCode = new Map(matchedSeries.map((s) => [s.code, s.id]));
   const removeIds = existingCompat
-    .filter((c) => c.series && toRemove.includes(c.series.code))
+    .filter((c) => c.seriesId !== null && toRemove.includes(c.seriesId))
     .map((c) => c.id);
 
   await db.$transaction([
     ...(removeIds.length > 0
       ? [db.optionCompatibility.deleteMany({ where: { id: { in: removeIds } } })]
       : []),
-    ...toAdd.map((code) =>
-      db.optionCompatibility.create({
-        data: { optionId, seriesId: seriesIdByCode.get(code) },
-      })
-    ),
+    ...toAdd.map((seriesId) => db.optionCompatibility.create({ data: { optionId, seriesId } })),
   ]);
 
   revalidateOption(optionId);

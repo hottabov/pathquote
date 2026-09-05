@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AlertTriangle, Download, FileText } from "lucide-react";
 import { SectionCard } from "@/components/ui-kit";
 import { buildFormContexts } from "@/lib/production-forms/context";
-import { missingRequirements, resolveForm, unmatchedOptionCodes } from "@/lib/production-forms/resolve";
+import { missingRequirements, resolveForm, unmatchedOptions } from "@/lib/production-forms/resolve";
 import type { FormContext } from "@/lib/production-forms/types";
 import type { DocumentForForms } from "@/lib/queries/documents";
 
@@ -19,7 +19,7 @@ const downloadAllClass =
  * mounted unconditionally at the call site, no status check needed there.
  *
  * `missingRequirements` and the "extras" page count below reuse the same
- * helpers the route calls at request time (`unmatchedOptionCodes`, plus
+ * helpers the route calls at request time (`unmatchedOptions`, plus
  * `document.lines.length` for document-level custom lines) so the "Download
  * all forms (N pages)" label and the disabled state can never promise a page
  * count, or a readiness state, the route wouldn't actually produce.
@@ -48,7 +48,7 @@ function ProductionFormsBody({
   contexts: FormContext[];
 }) {
   const rows = contexts.map((ctx) => {
-    const spec = resolveForm(ctx.item.code)!;
+    const spec = resolveForm(ctx.item.form)!;
     return { ctx, spec, missing: missingRequirements(spec, ctx.item.spec) };
   });
 
@@ -59,11 +59,15 @@ function ProductionFormsBody({
   // promise a page count the PDF does not deliver.
   const extras =
     document.lines.length +
-    rows.reduce((total, row) => total + unmatchedOptionCodes(row.spec, row.ctx).length, 0);
+    rows.reduce((total, row) => total + unmatchedOptions(row.spec, row.ctx).length, 0);
 
+  // A PathWorks module (`specs.pathworksModule`) needs a PathWorks licence
+  // to run in -- either the standalone or the integrated one, which is what
+  // `specs.softwareMode` marks.
+  const software = contexts[0].software;
   const modulesWithoutHost =
-    contexts[0].softwareCodes.some((code) => ["PDG", "WPN", "WPL", "ANT-V5", "ANT-V6"].includes(code)) &&
-    !contexts[0].softwareCodes.some((code) => code === "PTW(I)" || code === "PTW(S)");
+    software.some((s) => s.specs.pathworksModule !== undefined) &&
+    !software.some((s) => s.specs.softwareMode !== undefined);
 
   return (
     <div className="flex flex-col gap-4">

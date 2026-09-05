@@ -139,10 +139,10 @@ describe("per-user scoping (the case this rescope exists for)", () => {
 describe("adding a hidden product is rejected server-side, not merely absent from the UI", () => {
   // `addItem` (src/lib/actions/documents.ts) calls exactly this check --
   // `isProductHidden(product, hiddenCatalogIds)` -- after loading the
-  // product by its submitted code, and returns the same "Product not
-  // found" error a genuinely nonexistent code would, regardless of what
+  // product by its submitted id, and returns the same "Product not
+  // found" error a genuinely nonexistent id would, regardless of what
   // the item picker rendered. This is the actual gate a crafted request
-  // (any productCode, bypassing the UI entirely) still hits.
+  // (any productId, bypassing the UI entirely) still hits.
   it("the gate addItem calls returns true for a product hidden via its series", () => {
     const submittedProduct = { id: "prod_X100", seriesId: "series_X" };
     expect(isProductHidden(submittedProduct, hidden)).toBe(true);
@@ -173,7 +173,7 @@ describe("a hidden product already on a document still renders and totals identi
   // only two call sites that ever invoke `isProductHidden`/
   // `filterHiddenProducts` anywhere in src/ are the item *picker*'s own
   // catalogue tree (choosing a NEW item to add) and `addItem`'s own gate on
-  // a submitted code -- neither one ever runs against an item already on a
+  // a submitted id -- neither one ever runs against an item already on a
   // document. So hiding "X100" today cannot change how an existing document
   // that already contains it renders or totals.
   it("renders the item and the document totals exactly the same whether or not its series is hidden elsewhere", () => {

@@ -20,6 +20,9 @@ import type { VisibilitySeriesRow } from "@/lib/queries/catalog-visibility-admin
  * the series already hides every product under it in every query that
  * reads this (`isProductHidden`), so nothing here needs to keep them in
  * sync, only to explain the overlap.
+ *
+ * Both sets are keyed by id, and ids are what go to the action: the codes
+ * printed beside each checkbox are labels an admin can rename at any time.
  */
 export function CatalogVisibilityEditor({
   userId,
@@ -30,35 +33,35 @@ export function CatalogVisibilityEditor({
   series: VisibilitySeriesRow[];
   action: (
     userId: string,
-    hiddenSeriesCodes: string[],
-    hiddenProductCodes: string[]
+    hiddenSeriesIds: string[],
+    hiddenProductIds: string[]
   ) => Promise<{ error?: string }>;
 }) {
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(
-    () => new Set(series.filter((s) => s.hidden).map((s) => s.code))
+    () => new Set(series.filter((s) => s.hidden).map((s) => s.id))
   );
   const [hiddenProducts, setHiddenProducts] = useState<Set<string>>(
-    () => new Set(series.flatMap((s) => s.products.filter((p) => p.hidden).map((p) => p.code)))
+    () => new Set(series.flatMap((s) => s.products.filter((p) => p.hidden).map((p) => p.id)))
   );
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
 
-  function toggleSeries(code: string) {
+  function toggleSeries(id: string) {
     setHiddenSeries((prev) => {
       const next = new Set(prev);
-      if (next.has(code)) next.delete(code);
-      else next.add(code);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
     setError(null);
   }
 
-  function toggleProduct(code: string) {
+  function toggleProduct(id: string) {
     setHiddenProducts((prev) => {
       const next = new Set(prev);
-      if (next.has(code)) next.delete(code);
-      else next.add(code);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
     setError(null);
@@ -80,7 +83,7 @@ export function CatalogVisibilityEditor({
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-3">
         {series.map((s) => {
-          const seriesHidden = hiddenSeries.has(s.code);
+          const seriesHidden = hiddenSeries.has(s.id);
           return (
             <div key={s.id} className="rounded-lg border border-slate-200">
               <label
@@ -91,7 +94,7 @@ export function CatalogVisibilityEditor({
                   id={`visibility-series-${s.id}`}
                   type="checkbox"
                   checked={seriesHidden}
-                  onChange={() => toggleSeries(s.code)}
+                  onChange={() => toggleSeries(s.id)}
                   className="size-4 shrink-0 rounded border-slate-300 accent-brand"
                 />
                 <span className="font-mono text-xs text-slate-500">{s.code}</span>
@@ -107,7 +110,7 @@ export function CatalogVisibilityEditor({
                 <p className="px-3 py-2 pl-9 text-sm text-slate-400">No products in this series.</p>
               ) : (
                 s.products.map((p) => {
-                  const productHidden = hiddenProducts.has(p.code);
+                  const productHidden = hiddenProducts.has(p.id);
                   return (
                     <label
                       key={p.id}
@@ -121,7 +124,7 @@ export function CatalogVisibilityEditor({
                         id={`visibility-product-${p.id}`}
                         type="checkbox"
                         checked={productHidden}
-                        onChange={() => toggleProduct(p.code)}
+                        onChange={() => toggleProduct(p.id)}
                         className="size-4 shrink-0 rounded border-slate-300 accent-brand"
                       />
                       <span className="font-mono text-xs text-slate-500">{p.code}</span>

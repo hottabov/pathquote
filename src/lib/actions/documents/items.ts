@@ -32,20 +32,28 @@ import { assertStillDraft, mapDraftWriteError, type ActionResult } from "./_inte
  * the *server-side* half of catalogue visibility: the item picker
  * (`getItemPickerCatalog`) already never offers a hidden product, but this
  * is the actual gate, since a crafted request can call this action with any
- * `productCode` regardless of what the picker rendered. Same "Product not
- * found" message as a genuinely nonexistent code — a hidden product must
+ * `productId` regardless of what the picker rendered. Same "Product not
+ * found" message as a genuinely nonexistent id — a hidden product must
  * read as *absent*, not as a product that exists but is refused (Ross: "we
  * don't want him to even see the Excalibur", not "let him see it's there
  * and blocked"). An ADMIN always resolves to no hidden ids (see
  * `catalogVisibilityUserId`) and so is never affected by this check.
+ *
+ * Takes the product's `id`, not its code: a code is a label an admin can
+ * rename at any time (see docs/plans/2026-09-05-catalog-identity-and-cleanup.md),
+ * and a picker left open across such a rename must still add the product it
+ * showed. The code is only ever *snapshotted* onto the item, never used to
+ * find it. An inactive product is treated as absent too -- the picker never
+ * offers one (`getItemPickerCatalog` filters `active: true`), and this is
+ * the server-side half of that.
  */
-export async function addItem(documentId: string, productCode: string): Promise<ActionResult> {
+export async function addItem(documentId: string, productId: string): Promise<ActionResult> {
   const session = await requireSession();
 
   const parsedDocumentId = idSchema.safeParse(documentId);
   if (!parsedDocumentId.success) return { error: NOT_FOUND_ERROR };
-  const code = productCode.trim();
-  if (!code) return { error: "Product not found" };
+  const parsedProductId = idSchema.safeParse(productId);
+  if (!parsedProductId.success) return { error: "Product not found" };
 
   const document = await db.document.findFirst({
     where: { id: parsedDocumentId.data, status: "DRAFT", ...documentWhereForUser(session.user) },
@@ -53,8 +61,8 @@ export async function addItem(documentId: string, productCode: string): Promise<
   });
   if (!document) return { error: NOT_FOUND_ERROR };
 
-  const product = await db.product.findUnique({
-    where: { code },
+  const product = await db.product.findFirst({
+    where: { id: parsedProductId.data, active: true },
     include: { prices: { where: { regionId: document.regionId } } },
   });
   if (!product) return { error: "Product not found" };

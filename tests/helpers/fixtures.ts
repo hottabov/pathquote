@@ -20,7 +20,9 @@ import type {
   ToSheetItemInput,
 } from "../../src/lib/sheet-data";
 import type { QuotationDataDoc, QuotationItemInput } from "../../src/lib/quotation-data";
-import type { FormContext, FormItem } from "../../src/lib/production-forms/types";
+import type { OptionRole } from "@prisma/client";
+import type { FormContext, FormItem, FormItemOption } from "../../src/lib/production-forms/types";
+import { legacyOptionViews } from "../../src/lib/production-forms/context";
 
 /** A client company with no delivery address of its own — the plain case;
  * tests that care about delivery pass `hasDeliveryAddress: true` plus the
@@ -111,11 +113,11 @@ export function sheetDoc(overrides: Partial<ToSheetDataDoc> = {}): ToSheetDataDo
   };
 }
 
-/** An M-Series machine: `sheetItem`'s shape plus the three fields the
- * quotation renderer needs (`serialNumber`, `seriesCode`, `specs`). The
- * stored `specs` deliberately agree with what the code "M5180" parses to,
- * so a test proving code-parsing wins over stored specs has to set them to
- * something different on purpose. */
+/** An M-Series machine: `sheetItem`'s shape plus the fields the quotation
+ * renderer needs (`serialNumber`, `kind`, `seriesName`, `specs`,
+ * `contentBlockKey`). The `specs` deliberately disagree with the code
+ * "M5180" (18cm, not 5cm) so a test can tell the column apart from the
+ * label: the renderer reads the column. */
 export function quotationItem(overrides: Partial<QuotationItemInput> = {}): QuotationItemInput {
   return {
     ...sheetItem({
@@ -126,8 +128,10 @@ export function quotationItem(overrides: Partial<QuotationItemInput> = {}): Quot
       total: "175000.00",
     }),
     serialNumber: null,
-    seriesCode: "M",
+    kind: "MACHINE",
+    seriesName: "M-Series",
     specs: { cutHeightCm: 18, cutWidthCm: 180 },
+    contentBlockKey: "machine.m-series",
     lines: [],
     ...overrides,
   };
@@ -163,30 +167,47 @@ export function quotationDoc(overrides: Partial<QuotationDataDoc> = {}): Quotati
   };
 }
 
-/** One M5220 line on a production form, with no options selected. */
+/** One option line on a form item, qty 1 and no attributes unless given. */
+export function formOption(
+  code: string,
+  role: OptionRole | null,
+  overrides: Partial<Omit<FormItemOption, "code" | "role">> = {}
+): FormItemOption {
+  return { id: `opt-${code}`, code, role, qty: 1, attributes: null, ...overrides };
+}
+
+/** One M5220 line on a production form, with no options selected. The legacy
+ * code views (`optionCodes` etc.) are derived from `options` unless a test
+ * overrides them explicitly, so the two can never disagree by accident. */
 export function formItem(overrides: Partial<FormItem> = {}): FormItem {
+  const options = overrides.options ?? [];
   return {
     id: "item1",
     code: "M5220",
     name: "M-Series",
+    kind: "MACHINE",
+    form: "M_SERIES",
+    specs: { cutHeightCm: 5, cutWidthCm: 227, widthCode: 220, modelTier: "M5" },
     spec: { ui: "+Y", knifeSize: "1.5x5.0", drills: { required: false, detail: "" } },
-    optionCodes: [],
-    optionAttributes: {},
-    optionQtys: [],
+    options,
+    ...legacyOptionViews(options),
     ...overrides,
   };
 }
 
 /** The context a production form is rendered from: who is selling, to whom,
- * and which single item this form covers. */
+ * and which single item this form covers. `softwareCodes` follows
+ * `software` unless overridden, same as the item's option views. */
 export function formContext(overrides: Partial<FormContext> = {}): FormContext {
+  const software = overrides.software ?? [];
   return {
     distributorName: "Pathfinder Australia Pty Ltd",
     authorName: "Vadym H",
     company: { name: "Relaxvanguard", addressLines: ["12 Industrial Dr"], industry: "Automotive" },
     contact: { fullName: "John Smith", position: "Manager", phone: "+61", email: "j@example.com" },
     deliveryAddressLines: ["12 Industrial Dr"],
-    softwareCodes: [],
+    software,
+    softwareCodes: software.map((s) => s.code),
     item: formItem(),
     ...overrides,
   };

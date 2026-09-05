@@ -121,7 +121,7 @@ export default async function OptionEditorPage({ params }: { params: Promise<Par
             <CompatEditor
               optionId={option.id}
               series={visibleSeries.map((s) => ({ id: s.id, code: s.code, name: s.name }))}
-              initialSelected={option.compatSeriesCodes}
+              initialSelected={option.compatSeriesIds}
               action={setOptionCompatibility}
               readOnly={!isAdmin}
             />

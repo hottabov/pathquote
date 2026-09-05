@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import type { OptionRole } from "@prisma/client";
 import { ChevronDown, Minus, Plus, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { fieldInputClass } from "@/components/ui-kit";
 import { formatMoney } from "@/lib/format";
-import { formatMetres, unitLengthMetres } from "@/lib/option-length";
+import { formatMetres } from "@/lib/option-length";
 import { isOptionDisabled } from "@/lib/catalog-compat";
 import { cn } from "@/lib/utils";
 import { setItemOptions } from "@/lib/actions/documents";
@@ -36,22 +37,30 @@ function parseAttributeFields(schema: unknown): AttributeField[] {
 }
 
 type CurrentLine = {
+  /** The option's id (`DocumentLine.refId`) -- what the selection is keyed
+   * by and what goes back to `setItemOptions`. `code` is the snapshot label
+   * shown on the chip, nothing more. */
+  refId: string | null;
   code: string | null;
   qty: number;
   attributes: Record<string, string | number> | null;
+  /** `Option.role`, resolved live (see `BuilderLine.role`). */
+  role: OptionRole | null;
 };
 
 type SelectionState = { qty: number; attributes: Record<string, string> };
 
+/** Selection keyed by option id. A line with no `refId` has no catalogue
+ * row to resubmit, so it is left out -- `save` could not send it anyway. */
 function selectionsFromLines(lines: CurrentLine[]): Map<string, SelectionState> {
   const map = new Map<string, SelectionState>();
   for (const line of lines) {
-    if (!line.code) continue;
+    if (!line.refId) continue;
     const attributes: Record<string, string> = {};
     for (const [key, value] of Object.entries(line.attributes ?? {})) {
       attributes[key] = String(value);
     }
-    map.set(line.code, { qty: line.qty, attributes });
+    map.set(line.refId, { qty: line.qty, attributes });
   }
   return map;
 }
@@ -94,22 +103,22 @@ export function ItemOptionsEditor({
   currency,
   showOptionIcons = true,
   readOnly = false,
-  lockedCodes,
+  lockedRoles,
   startClosed = false,
 }: {
   itemId: string;
   currentLines: CurrentLine[];
   compatibleOptions: CompatibleOption[];
   currency: string;
-  /** Option codes this item's own builder owns, and that a manager must not
-   * hand-edit here. Today that is the EasyLoader's table: its drive modules,
-   * lengths, busbar and rail are computed from the layout drawn in the
-   * production-spec panel (see `deriveEasyLoaderOptions`), so a quantity
-   * typed here would only survive until the next click of a section stepper.
-   * They are shown, and their quantity is shown, but the controls are
-   * inert -- and `save` re-submits them untouched, so opening this panel and
-   * saving can never drop them. */
-  lockedCodes?: Set<string>;
+  /** Option roles this item's own builder owns, and that a manager must not
+   * hand-edit here. Today that is the EasyLoader's table (`EL_MODULE_ROLES`):
+   * its drive modules, lengths, busbar and rail are computed from the layout
+   * drawn in the production-spec panel (see `deriveEasyLoaderOptions`), so a
+   * quantity typed here would only survive until the next click of a section
+   * stepper. They are shown, and their quantity is shown, but the controls
+   * are inert -- and `save` re-submits them untouched, so opening this panel
+   * and saving can never drop them. */
+  lockedRoles?: ReadonlySet<OptionRole>;
   /** Keep the panel closed even for an item with no options yet. Set for an
    * EasyLoader: its modules come from the builder above, so an open list of
    * pickable options is an invitation to do the wrong thing -- what is left
@@ -138,7 +147,17 @@ export function ItemOptionsEditor({
 
   const chips = currentLines.filter((line): line is CurrentLine & { code: string } => Boolean(line.code));
 
-  const isLocked = (code: string) => lockedCodes?.has(code) ?? false;
+  // Selection state is keyed by option id (that is what `setItemOptions`
+  // takes), so locking resolves an id back to its role through the two
+  // lists that carry one: the compatible options and the lines already on
+  // the item.
+  const roleById = new Map<string, OptionRole | null>();
+  for (const line of currentLines) if (line.refId) roleById.set(line.refId, line.role);
+  for (const option of compatibleOptions) roleById.set(option.id, option.role);
+  const isLocked = (id: string) => {
+    const role = roleById.get(id);
+    return role !== null && role !== undefined && (lockedRoles?.has(role) ?? false);
+  };
 
   // Re-sync from the server-confirmed lines only at the moment the panel
   // opens — while it's open, the user's own edits are the source of truth
@@ -167,7 +186,7 @@ export function ItemOptionsEditor({
     setSelected((prev) => {
       const next = new Map(prev);
       for (const option of filteredOptions) {
-        if (next.has(option.code) || isLocked(option.code)) continue;
+        if (next.has(option.id) || isLocked(option.id)) continue;
         // Only the price reason applies here — conflicts aren't checked
         // against the batch being built up by this same click (that would
         // mean "select all" secretly picks a winner between two conflicting
@@ -175,7 +194,7 @@ export function ItemOptionsEditor({
         // save-time error instead, same as if the user had checked both by
         // hand.
         if (isOptionDisabled(option.price) !== null) continue;
-        next.set(option.code, { qty: 1, attributes: {} });
+        next.set(option.id, { qty: 1, attributes: {} });
       }
       return next;
     });
@@ -187,38 +206,38 @@ export function ItemOptionsEditor({
       // "Clear" means the manager's own picks, not the ones the builder
       // computed -- those come back on the next save anyway, so removing
       // them here would only flash them out and back.
-      for (const [code, state] of prev) if (isLocked(code)) next.set(code, state);
+      for (const [id, state] of prev) if (isLocked(id)) next.set(id, state);
       return next;
     });
   }
 
-  function toggle(code: string) {
-    if (isLocked(code)) return;
+  function toggle(id: string) {
+    if (isLocked(id)) return;
     setSelected((prev) => {
       const next = new Map(prev);
-      if (next.has(code)) next.delete(code);
-      else next.set(code, { qty: 1, attributes: {} });
+      if (next.has(id)) next.delete(id);
+      else next.set(id, { qty: 1, attributes: {} });
       return next;
     });
   }
 
-  function setQty(code: string, qty: number) {
-    if (isLocked(code)) return;
+  function setQty(id: string, qty: number) {
+    if (isLocked(id)) return;
     setSelected((prev) => {
-      const current = prev.get(code);
+      const current = prev.get(id);
       if (!current) return prev;
       const next = new Map(prev);
-      next.set(code, { ...current, qty });
+      next.set(id, { ...current, qty });
       return next;
     });
   }
 
-  function setAttribute(code: string, key: string, value: string) {
+  function setAttribute(id: string, key: string, value: string) {
     setSelected((prev) => {
-      const current = prev.get(code);
+      const current = prev.get(id);
       if (!current) return prev;
       const next = new Map(prev);
-      next.set(code, { ...current, attributes: { ...current.attributes, [key]: value } });
+      next.set(id, { ...current, attributes: { ...current.attributes, [key]: value } });
       return next;
     });
   }
@@ -226,9 +245,9 @@ export function ItemOptionsEditor({
   function save() {
     setError(null);
     const selections: OptionSelectionInput[] = compatibleOptions
-      .filter((option) => selected.has(option.code))
+      .filter((option) => selected.has(option.id))
       .map((option) => {
-        const state = selected.get(option.code)!;
+        const state = selected.get(option.id)!;
         const fields = parseAttributeFields(option.attributeSchema);
         const attributes: Record<string, string | number> = {};
         for (const field of fields) {
@@ -242,7 +261,7 @@ export function ItemOptionsEditor({
           }
         }
         return {
-          optionCode: option.code,
+          optionId: option.id,
           qty: state.qty,
           attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
         };
@@ -335,7 +354,7 @@ export function ItemOptionsEditor({
                 ) : (
                   <div className="mt-2 flex flex-col gap-2">
                     {displayOptions.map((option) => {
-                      const state = selected.get(option.code);
+                      const state = selected.get(option.id);
                       const checked = Boolean(state);
                       // Never treat an already-checked option as conflicting
                       // with itself: the options that get disabled are the
@@ -346,12 +365,12 @@ export function ItemOptionsEditor({
                       // sides of the pair locking each other out.
                       const conflictingWith = checked
                         ? null
-                        : (option.conflictsWith.find((c) => selected.has(c.code)) ?? null);
-                      const locked = isLocked(option.code);
+                        : (option.conflictsWith.find((c) => selected.has(c.id)) ?? null);
+                      const locked = isLocked(option.id);
                       const disabledReason = isOptionDisabled(option.price, conflictingWith);
                       const priced = disabledReason === null || disabledReason.type !== "unpriced";
                       const attributeFields = parseAttributeFields(option.attributeSchema);
-                      const unitLength = unitLengthMetres(option.name);
+                      const unitLength = option.unitLengthM;
 
                       return (
                         <div
@@ -363,7 +382,7 @@ export function ItemOptionsEditor({
                               type="checkbox"
                               checked={checked}
                               disabled={locked || disabledReason !== null}
-                              onChange={() => toggle(option.code)}
+                              onChange={() => toggle(option.id)}
                               className="mt-0.5 size-5 shrink-0 rounded border-slate-300 accent-brand"
                             />
                             {showOptionIcons && option.imageUrl ? (
@@ -414,7 +433,7 @@ export function ItemOptionsEditor({
                                   type="button"
                                   aria-label={`Decrease ${option.name} quantity`}
                                   disabled={state!.qty <= 1}
-                                  onClick={() => setQty(option.code, Math.max(1, state!.qty - 1))}
+                                  onClick={() => setQty(option.id, Math.max(1, state!.qty - 1))}
                                   className="group focus-ring flex size-11 shrink-0 items-center justify-center rounded-lg disabled:cursor-not-allowed disabled:opacity-40"
                                 >
                                   <span
@@ -436,7 +455,7 @@ export function ItemOptionsEditor({
                                     aria-label={`${option.name} quantity`}
                                     value={state!.qty}
                                     onChange={(e) =>
-                                      setQty(option.code, Math.max(1, Number(e.target.value) || 1))
+                                      setQty(option.id, Math.max(1, Number(e.target.value) || 1))
                                     }
                                     className={cn(fieldInputClass, "h-9 w-14 text-center")}
                                   />
@@ -444,7 +463,7 @@ export function ItemOptionsEditor({
                                 <button
                                   type="button"
                                   aria-label={`Increase ${option.name} quantity`}
-                                  onClick={() => setQty(option.code, Math.min(999, state!.qty + 1))}
+                                  onClick={() => setQty(option.id, Math.min(999, state!.qty + 1))}
                                   className="group focus-ring flex size-11 shrink-0 items-center justify-center rounded-lg"
                                 >
                                   <span
@@ -455,7 +474,8 @@ export function ItemOptionsEditor({
                                   </span>
                                 </button>
                                 {/* An option sold by the section (the
-                                    EasyLoader's 1.2M lengths) is really a
+                                    EasyLoader's 1.2 m lengths -- see
+                                    `Option.unitLengthM`) is really a
                                     length: four sections is 4.8 m of table,
                                     and that is the figure the customer
                                     asks about. See src/lib/option-length.ts. */}
@@ -475,7 +495,7 @@ export function ItemOptionsEditor({
                                     type={field.type === "number" ? "number" : "text"}
                                     inputMode={field.type === "number" ? "decimal" : undefined}
                                     value={state!.attributes[field.key] ?? ""}
-                                    onChange={(e) => setAttribute(option.code, field.key, e.target.value)}
+                                    onChange={(e) => setAttribute(option.id, field.key, e.target.value)}
                                     className={cn(fieldInputClass, "h-11 w-28 sm:h-9")}
                                   />
                                 </label>

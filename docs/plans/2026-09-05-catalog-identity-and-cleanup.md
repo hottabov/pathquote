@@ -16,33 +16,35 @@ quotation content blocks and machine-spec sentences. Full map: `docs/audit` v1 a
 
 Goal: `code` is a mutable label. Behaviour keys on `id` and explicit attributes.
 
-## Phase 1 — Explicit attributes, no behaviour change
+## Phase 1 — Explicit attributes, no behaviour change ✅ (2026-09-05, branch `catalog-identity`)
 
-- [ ] **1.1** Schema: `enum ProductKind { MACHINE TABLE FEEDER SPREADER SOFTWARE SYSTEM SERVICE CREDIT ACCESSORY }`,
+- [x] **1.1** Schema: `enum ProductKind { MACHINE TABLE FEEDER SPREADER SOFTWARE SYSTEM SERVICE CREDIT ACCESSORY }`,
   `enum ProductionForm { M_SERIES EASYLOADER FABRICPRO }`, `Product.kind`, `Product.form?`,
   `Product.legacyCodes String[]`, `Option.role OptionRole?`, `Option.parentProductId?`,
   `Option.unitLengthM Decimal?`, `Option.legacyCodes String[]`. `DocumentItem.kind/form`
   and `DocumentLine.role` snapshots. Migration `z26_catalog_identity`.
-- [ ] **1.2** Typed `Product.specs`: `{ cutHeightCm?, cutWidthCm?, tableWidthMm?, paperWidthMm?, modelTier?, extended?, belt? }` zod schema in `src/lib/validation/product-specs.ts`.
-- [ ] **1.3** Backfill script `scripts/backfill-catalog-identity.ts`: derives every new column
+- [x] **1.2** Typed `Product.specs`: `{ cutHeightCm?, cutWidthCm?, tableWidthMm?, paperWidthMm?, modelTier?, extended?, belt? }` zod schema in `src/lib/validation/product-specs.ts`.
+- [x] **1.3** Backfill script `scripts/backfill-catalog-identity.ts`: derives every new column
   from the *current* regexes (`resolveForm`, `machine-specs`, `EL_OPTION_SUFFIX`, m-series
   tick regexes). Idempotent. Asserts `resolveForm(code)?.id === form` for every product.
-- [ ] **1.4** Tests: for each product in `catalog.json`, backfilled `kind/form/specs` equals
+- [x] **1.4** Tests: for each product in `catalog.json`, backfilled `kind/form/specs` equals
   what the regex path returns today (parity test — deleted in Phase 4).
 
-## Phase 2 — Readers switch to attributes
+## Phase 2 — Readers switch to attributes ✅ (2026-09-05)
 
-- [ ] **2.1** `production-forms/resolve.ts`: `resolveForm(product: {form})` instead of `(code)`. Callers: route, actions/production, production-forms-section, items-list, production-spec-editor, context.
-- [ ] **2.2** `specs/m-series.ts`, `specs/easyloader.ts`, `specs/fabricpro.ts`: model/width ticks from `specs`; option ticks from `Option.role` (map `role → cell`); `covers` = set of roles.
-- [ ] **2.3** `table-sections.ts`: `elOptionCode` → `findElOption(parentProductId, role)`; `derivedEasyLoaderCodes` → derived by role. `setEasyLoaderLayout` (both copies) rewrites lines by role.
-- [ ] **2.4** `machine-specs.ts`: read `specs.cutHeightCm/cutWidthCm/tableWidthMm/paperWidthMm`; regex only as fallback for `specs == null` (removed in Phase 4).
-- [ ] **2.5** `quotation-data.ts`: content block by `Product.contentBlockId` / `Option.contentBlockId` (add columns + backfill from `option.<code>` keys); `MACHINE_SERIES_CODES` → `kind === MACHINE`; software (S)/(I) by `specs.softwareMode` or role.
-- [ ] **2.6** `option-length.ts` → `Option.unitLengthM`.
-- [ ] **2.7** Wire format: `addItem(documentId, productId)`, `optionSelectionSchema.optionId`, catalog-visibility by ids, compat by seriesId. `DocumentLine.refId` already holds optionId.
-- [ ] **2.8** `production-forms-section.tsx` software-host warning by `kind/role`.
-- [ ] **2.9** Seed: upsert by `code` stays (seed's natural key) but `RETIRED_OPTION_CODES` and
+Known deliberate differences vs. the code-parsing readers: the quotation spec sentence prints the real cut width from `specs` (227cm for the 220 family, 226cm for L-220) where the parser printed the family number; M*300 and L-320E now get a sentence at all; `addItem` refuses an inactive product; unknown-option errors list ids.
+
+- [x] **2.1** `production-forms/resolve.ts`: `resolveForm(product: {form})` instead of `(code)`. Callers: route, actions/production, production-forms-section, items-list, production-spec-editor, context.
+- [x] **2.2** `specs/m-series.ts`, `specs/easyloader.ts`, `specs/fabricpro.ts`: model/width ticks from `specs`; option ticks from `Option.role` (map `role → cell`); `covers` = set of roles.
+- [x] **2.3** `table-sections.ts`: `elOptionCode` → `findElOption(parentProductId, role)`; `derivedEasyLoaderCodes` → derived by role. `setEasyLoaderLayout` (both copies) rewrites lines by role.
+- [x] **2.4** `machine-specs.ts`: read `specs.cutHeightCm/cutWidthCm/tableWidthMm/paperWidthMm`; regex only as fallback for `specs == null` (removed in Phase 4).
+- [x] **2.5** `quotation-data.ts`: content block by `Product.contentBlockId` / `Option.contentBlockId` (add columns + backfill from `option.<code>` keys); `MACHINE_SERIES_CODES` → `kind === MACHINE`; software (S)/(I) by `specs.softwareMode` or role.
+- [x] **2.6** `option-length.ts` → `Option.unitLengthM`.
+- [x] **2.7** Wire format: `addItem(documentId, productId)`, `optionSelectionSchema.optionId`, catalog-visibility by ids, compat by seriesId. `DocumentLine.refId` already holds optionId.
+- [x] **2.8** `production-forms-section.tsx` software-host warning by `kind/role`.
+- [~] **2.9** (RETIRED entry for EL drive modules removed; seed still upserts by legacy code — regenerated catalog.json in phase 3 makes it whole) Seed: upsert by `code` stays (seed's natural key) but `RETIRED_OPTION_CODES` and
   the XC→X / HDRF rewrites move into `legacyCodes`-aware lookup: find by `code` OR `legacyCodes has`.
-- [ ] **2.10** All 1330 tests green; parity test still green.
+- [x] **2.10** All 1330 tests green; parity test still green.
 
 ## Phase 3 — Data: rename, dedupe, add, delete (per decisions file)
 

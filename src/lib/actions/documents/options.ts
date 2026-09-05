@@ -19,11 +19,11 @@ import {
   conflictPartnersByGroup,
 } from "@/lib/catalog-compat";
 import { recalcAndEnforce } from "@/lib/documents/recalc";
-import { resolveForm } from "@/lib/production-forms/resolve";
 import { easyLoaderSpecSchema } from "@/lib/validation/production-spec";
 import {
   deriveEasyLoaderOptions,
-  isDerivedEasyLoaderOption,
+  EL_MODULE_ROLE_LIST,
+  isEasyLoaderModuleRole,
 } from "@/lib/production-forms/table-sections";
 import { idSchema, optionSelectionSchema, type OptionSelectionInput } from "@/lib/validation/documents";
 import { NOT_FOUND_ERROR, flattenZodError } from "../_shared";
@@ -38,14 +38,14 @@ const MAX_OPTION_SELECTIONS = 100;
 
 /**
  * Replaces an item's OPTION lines with exactly `selections`, preserving
- * selection order as `sortOrder`. Every option code must (a) resolve to a
+ * selection order as `sortOrder`. Every option id must (a) resolve to a
  * real, active-or-not `Option` row, (b) be compatible with the item —
  * either via a series-level `OptionCompatibility` row (matching the item's
  * product's series) or a product-level one (matching the item's product
  * directly, e.g. EasyLoader accessories scoped to EL-2020 — see
  * `compatibilityOrFilter`) — and (c) carry a usable price (exists, not
  * `needsReview`) in the *document's* region — otherwise
- * nothing is written at all and the offending codes are named in the
+ * nothing is written at all and the offending options are named in the
  * returned error, checked in that order (unknown, then incompatible, then
  * unpriced, then conflicting — see `findConflictingSelection`) so the caller
  * always gets one actionable message. Delete+create happens in a single
@@ -61,7 +61,7 @@ const MAX_OPTION_SELECTIONS = 100;
  * read (recalc/totals work purely off what's already stored — see
  * `recalcAndEnforce`/`computeTotals`, neither of which touches
  * `OptionConflictGroup` at all). A save that resubmits the same two
- * conflicting codes unchanged is still a save, though, and is rejected
+ * conflicting options unchanged is still a save, though, and is rejected
  * exactly like a brand-new one — the rule is "no new writes with a
  * conflicting pair", not "grandfather whatever was already there".
  */
@@ -105,8 +105,8 @@ async function writeItemOptions(
   const parsedSelections = z.array(optionSelectionSchema).safeParse(selections);
   if (!parsedSelections.success) return { error: flattenZodError(parsedSelections.error) };
 
-  const codes = parsedSelections.data.map((s) => s.optionCode);
-  if (new Set(codes).size !== codes.length) {
+  const ids = parsedSelections.data.map((s) => s.optionId);
+  if (new Set(ids).size !== ids.length) {
     return { error: "Each option can only be selected once" };
   }
 
@@ -120,7 +120,7 @@ async function writeItemOptions(
   if (!item) return { error: NOT_FOUND_ERROR };
   if (!item.product) return { error: "This item has no product to attach options to" };
 
-  if (codes.length === 0) {
+  if (ids.length === 0) {
     let concessionWarning: string | undefined;
     try {
       await db.$transaction(async (tx) => {
@@ -141,41 +141,43 @@ async function writeItemOptions(
   // is never null in practice, but the `?? []` keeps the type honest.
   const compatOr = compatibilityOrFilter(item.product.id, item.product.seriesId) ?? [];
   const options = await db.option.findMany({
-    where: { code: { in: codes } },
+    where: { id: { in: ids } },
     include: {
       prices: { where: { regionId: item.document.regionId } },
       compat: { where: { OR: compatOr } },
       // Every `OptionConflictGroup` this option belongs to -- see that
       // model's comment in schema.prisma. Only fetched for the *submitted*
-      // options (this `where: { code: { in: codes } }` above) -- correct,
+      // options (this `where: { id: { in: ids } }` above) -- correct,
       // since `conflictPartnersByGroup` below only needs to know which
       // *submitted* options share a group with which other submitted
       // options, never who else (outside this submission) is in that group.
       conflictGroupMemberships: { select: { groupId: true } },
     },
   });
-  const optionByCode = new Map(options.map((o) => [o.code, o]));
+  const optionById = new Map(options.map((o) => [o.id, o]));
 
-  const missingCodes: string[] = [];
+  // Errors name options by code -- that is what the manager sees on screen.
+  // An unknown id has no code to show, so it is named as it came.
+  const missingIds: string[] = [];
   const incompatibleCodes: string[] = [];
   const unpricedCodes: string[] = [];
-  for (const code of codes) {
-    const option = optionByCode.get(code);
+  for (const id of ids) {
+    const option = optionById.get(id);
     if (!option) {
-      missingCodes.push(code);
+      missingIds.push(id);
       continue;
     }
     if (option.compat.length === 0) {
-      incompatibleCodes.push(code);
+      incompatibleCodes.push(option.code);
       continue;
     }
     const price = option.prices[0];
     if (!price || price.needsReview) {
-      unpricedCodes.push(code);
+      unpricedCodes.push(option.code);
     }
   }
-  if (missingCodes.length > 0) {
-    return { error: `Unknown option code(s): ${missingCodes.join(", ")}` };
+  if (missingIds.length > 0) {
+    return { error: `Unknown option(s): ${missingIds.join(", ")}` };
   }
   if (incompatibleCodes.length > 0) {
     return {
@@ -186,14 +188,15 @@ async function writeItemOptions(
     return { error: `Price required for: ${unpricedCodes.join(", ")}` };
   }
 
-  const conflictsByCode = conflictPartnersByGroup(
+  const conflictsById = conflictPartnersByGroup(
     options.flatMap((option) =>
-      option.conflictGroupMemberships.map((m) => ({ memberKey: option.code, groupId: m.groupId }))
+      option.conflictGroupMemberships.map((m) => ({ memberKey: option.id, groupId: m.groupId }))
     )
   );
-  const conflictingPair = findConflictingSelection(codes, conflictsByCode);
+  const conflictingPair = findConflictingSelection(ids, conflictsById);
   if (conflictingPair) {
-    const [a, b] = conflictingPair;
+    const a = optionById.get(conflictingPair[0])!.code;
+    const b = optionById.get(conflictingPair[1])!.code;
     return { error: `${a} conflicts with ${b} — remove one before saving` };
   }
 
@@ -216,7 +219,7 @@ async function writeItemOptions(
       // holding the transaction open for one per option.
       await tx.documentLine.createMany({
         data: parsedSelections.data.map((selection, index) => {
-          const option = optionByCode.get(selection.optionCode)!;
+          const option = optionById.get(selection.optionId)!;
           const price = option.prices[0]!;
           return {
             documentId: item.documentId,
@@ -286,36 +289,66 @@ export async function setEasyLoaderLayout(itemId: string, spec: unknown): Promis
       id: true,
       code: true,
       documentId: true,
+      productId: true,
+      product: { select: { code: true, form: true } },
       lines: {
         where: { kind: "OPTION" },
-        select: { code: true, qty: true, attributes: true },
+        select: { qty: true, attributes: true, refId: true },
         orderBy: { sortOrder: "asc" },
       },
     },
   });
   if (!item) return { error: NOT_FOUND_ERROR };
 
-  if (resolveForm(item.code)?.id !== "easyloader") {
+  if (item.product?.form !== "EASYLOADER" || item.productId === null) {
     return { error: "This item is not an EasyLoader" };
   }
 
   const parsed = easyLoaderSpecSchema.safeParse(spec);
   if (!parsed.success) return { error: flattenZodError(parsed.error) };
 
-  const derived = deriveEasyLoaderOptions(
-    item.code,
-    parsed.data.sections,
-    parsed.data.fabricProCompatible
-  );
+  const derived = deriveEasyLoaderOptions(parsed.data.sections, parsed.data.fabricProCompatible);
+
+  // The modules are this width's own options: one per role, scoped to the
+  // product by `parentProductId`. A role the catalogue has no row for is a
+  // catalogue fault the manager can do nothing about from here, so it is
+  // named plainly rather than surfacing as "unknown option" downstream.
+  const lineRefIds = item.lines.map((line) => line.refId).filter((id): id is string => id !== null);
+  const [moduleOptions, lineOptions] = await Promise.all([
+    db.option.findMany({
+      where: { parentProductId: item.productId, role: { in: [...EL_MODULE_ROLE_LIST] } },
+      select: { id: true, role: true },
+    }),
+    lineRefIds.length > 0
+      ? db.option.findMany({ where: { id: { in: lineRefIds } }, select: { id: true, role: true } })
+      : Promise.resolve([]),
+  ]);
+  const moduleByRole = new Map(moduleOptions.map((option) => [option.role, option]));
+  const missingRoles = derived.filter(({ role }) => !moduleByRole.has(role)).map(({ role }) => role);
+  if (missingRoles.length > 0) {
+    return {
+      error: `EasyLoader ${item.product.code} has no ${missingRoles.join(", ")} option in the catalogue`,
+    };
+  }
+  const derivedSelections = derived.map(({ role, qty }) => ({
+    optionId: moduleByRole.get(role)!.id,
+    qty,
+  }));
 
   // The manager's own picks first, in the order they were in, then the
-  // derived rows. Anything in the derived family that is already on the item
-  // is dropped here and re-added from `derived` -- that is what makes a
-  // section deleted in the builder disappear from the quote.
+  // derived rows. Anything in the derived family -- recognised by the
+  // option's role, whichever width it belongs to -- that is already on the
+  // item is dropped here and re-added from `derived`. That is what makes a
+  // section deleted in the builder disappear from the quote. A line is
+  // carried over by its `refId` (the option's id), never by its snapshotted
+  // code: a line with no `refId` has no catalogue row to resubmit and is
+  // dropped, exactly as `writeItemOptions` would reject it.
+  const roleByOptionId = new Map(lineOptions.map((option) => [option.id, option.role]));
   const kept = item.lines
-    .filter((line) => line.code !== null && !isDerivedEasyLoaderOption(item.code, line.code))
+    .filter((line): line is typeof line & { refId: string } => line.refId !== null)
+    .filter((line) => !isEasyLoaderModuleRole(roleByOptionId.get(line.refId)))
     .map((line) => ({
-      optionCode: line.code as string,
+      optionId: line.refId,
       qty: line.qty,
       attributes: (line.attributes ?? undefined) as Record<string, unknown> | undefined,
     }));
@@ -330,7 +363,7 @@ export async function setEasyLoaderLayout(itemId: string, spec: unknown): Promis
   // used to leave priced option lines standing against the previous layout,
   // so the quote charged for one table and the builder drew another, with
   // nothing on either side to reveal the mismatch.
-  const written = await writeItemOptions(session.user, item.id, [...kept, ...derived], async (tx) => {
+  const written = await writeItemOptions(session.user, item.id, [...kept, ...derivedSelections], async (tx) => {
     const specWritten = await tx.documentItem.updateMany({
       where: { id: item.id, document: { status: "DRAFT" } },
       data: { productionSpec: parsed.data as object },

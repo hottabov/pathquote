@@ -26,23 +26,26 @@ export function AddItemPicker({
   catalog: ItemPickerSeries[];
 }) {
   const [open, setOpen] = useState(false);
-  const [seriesCode, setSeriesCode] = useState<string | null>(null);
+  const [seriesId, setSeriesId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
 
-  const activeSeries = catalog.find((s) => s.code === seriesCode) ?? null;
+  const activeSeries = catalog.find((s) => s.id === seriesId) ?? null;
 
   function close() {
     setOpen(false);
-    setSeriesCode(null);
+    setSeriesId(null);
     setError(null);
   }
 
-  function handleAdd(productCode: string, productName: string) {
+  // The product goes to the server by id: its code is a label an admin can
+  // rename, and a picker left open across a rename must still add the
+  // product it showed (see `addItem`).
+  function handleAdd(productId: string, productName: string) {
     setError(null);
     startTransition(async () => {
-      const result = await addItem(documentId, productCode);
+      const result = await addItem(documentId, productId);
       if (result?.error) {
         setError(result.error);
         return;
@@ -72,7 +75,7 @@ export function AddItemPicker({
         {activeSeries ? (
           <button
             type="button"
-            onClick={() => setSeriesCode(null)}
+            onClick={() => setSeriesId(null)}
             className="focus-ring flex min-h-11 items-center gap-1 rounded-md px-1 text-sm font-medium text-brand-dark"
           >
             <ChevronLeft className="size-4" aria-hidden="true" />
@@ -97,9 +100,9 @@ export function AddItemPicker({
         {!activeSeries
           ? catalog.map((series) => (
               <button
-                key={series.code}
+                key={series.id}
                 type="button"
-                onClick={() => setSeriesCode(series.code)}
+                onClick={() => setSeriesId(series.id)}
                 className="focus-ring flex min-h-11 items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors hover:bg-white"
               >
                 <span>{series.name}</span>
@@ -110,10 +113,10 @@ export function AddItemPicker({
             ))
           : activeSeries.products.map((product) => (
               <button
-                key={product.code}
+                key={product.id}
                 type="button"
                 disabled={!product.priced || pending}
-                onClick={() => handleAdd(product.code, product.name)}
+                onClick={() => handleAdd(product.id, product.name)}
                 className={cn(
                   "focus-ring flex min-h-11 items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors hover:bg-white",
                   "disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"

@@ -3,8 +3,6 @@ import {
   buildQuotationData,
   dedupeOptionCode,
   OMIT,
-  optionBlockKey,
-  productBlockKey,
   resolveBlocks,
   substitutePlaceholders,
   type ContentBlockRow,
@@ -38,61 +36,6 @@ describe("resolveBlocks — precedence", () => {
   it("ignores a different region's override entirely", () => {
     const resolved = resolveBlocks(blocks, "region-uk");
     expect(resolved.get("terms.delivery")?.body).toBe("Default delivery body");
-  });
-});
-
-describe("optionBlockKey — fallback", () => {
-  it("returns the exact key first for a code with no series suffix", () => {
-    expect(optionBlockKey("MTS")).toEqual(["option.MTS"]);
-  });
-
-  it("tries the exact code, then the series-suffix-stripped code", () => {
-    expect(optionBlockKey("ABR-M")).toEqual(["option.ABR-M", "option.ABR"]);
-  });
-
-  it("strips only the trailing segment after the last dash", () => {
-    expect(optionBlockKey("ABR-FP")).toEqual(["option.ABR-FP", "option.ABR"]);
-  });
-
-  it("does not duplicate a candidate when stripping yields the same key", () => {
-    // A dash at position 0 (lastIndexOf > 0 guard) never strips.
-    expect(optionBlockKey("-M")).toEqual(["option.-M"]);
-  });
-
-  // FM180 ("Fabric Master") was retired (not sold anymore, owner decision)
-  // and the equipment.fabric-master special-case fallback removed along with
-  // it -- see optionBlockKey's doc comment in src/lib/quotation-data.ts. A
-  // code with an "FM" prefix is no longer treated specially at all.
-  it("does not add an equipment.fabric-master fallback for FM-prefixed codes (special case removed)", () => {
-    expect(optionBlockKey("FM180")).toEqual(["option.FM180"]);
-    expect(optionBlockKey("FM-220")).toEqual(["option.FM-220", "option.FM"]);
-  });
-});
-
-describe("productBlockKey", () => {
-  it("maps M and X series to machine.m-series", () => {
-    expect(productBlockKey("M5180", "M")).toBe("machine.m-series");
-    expect(productBlockKey("X-450", "X")).toBe("machine.m-series");
-  });
-
-  it("maps EL to equipment.easy-loader and FP to equipment.fabric-pro", () => {
-    expect(productBlockKey("EL-2020", "EL")).toBe("equipment.easy-loader");
-    expect(productBlockKey("FP-180", "FP")).toBe("equipment.fabric-pro");
-  });
-
-  it("maps P to equipment.punchline", () => {
-    expect(productBlockKey("P-180", "P")).toBe("equipment.punchline");
-  });
-
-  it("maps SW by (S)/(I) suffix, else null", () => {
-    expect(productBlockKey("PTW(S)", "SW")).toBe("software.pathworks-s");
-    expect(productBlockKey("PTW(I)", "SW")).toBe("software.pathworks-i");
-    expect(productBlockKey("PTW", "SW")).toBeNull();
-  });
-
-  it("returns null for EF (no matching block) and unknown series", () => {
-    expect(productBlockKey("EF-100", "EF")).toBeNull();
-    expect(productBlockKey("X-1", null)).toBeNull();
   });
 });
 
@@ -196,36 +139,68 @@ const rspAgreementBlock: ContentBlockRow = {
   sortOrder: 5,
 };
 
-describe("buildQuotationData — machine spec parsing", () => {
-  it("derives cutHeightCm/cutWidthCm from the product code, overriding stored specs", () => {
-    // M3390 parses to 3cm height / 390cm width per the code — this must win
-    // over the (deliberately different/stale) specs field to prove code
-    // parsing is authoritative, not just a fallback.
-    const doc = quotationDoc({
-      items: [quotationItem({ code: "M3390", seriesCode: "M", specs: { cutHeightCm: 99, cutWidthCm: 99 } })],
-    });
-    const data = buildQuotationData(doc, [machineBlock]);
-    expect(data.machineSections[0].titleBlockHtml).toContain("Height 3cm, width 390cm");
+/** An L-Series cutter: width only, no lay height, no content block of its
+ * own. */
+const lSeriesItem = (overrides: Partial<QuotationItemInput> = {}) =>
+  quotationItem({
+    code: "L-320",
+    name: "L-320 Cutting System",
+    seriesName: "L-Series",
+    specs: { cutWidthCm: 320, widthCode: 320 },
+    contentBlockKey: null,
+    ...overrides,
   });
 
-  it("falls back to the stored specs field when the code doesn't parse", () => {
+describe("buildQuotationData — machine specs", () => {
+  it("reads cutHeightCm/cutWidthCm from the product's specs, never from its code", () => {
+    // The code says "M3390"; the column says 99 x 99. The column wins — the
+    // code is a label now (see src/lib/validation/product-specs.ts).
     const doc = quotationDoc({
-      items: [quotationItem({ code: "M999", seriesCode: "M", specs: { cutHeightCm: 7, cutWidthCm: 220 } })],
+      items: [quotationItem({ code: "M3390", specs: { cutHeightCm: 99, cutWidthCm: 99 } })],
     });
     const data = buildQuotationData(doc, [machineBlock]);
-    expect(data.machineSections[0].titleBlockHtml).toContain("Height 7cm, width 220cm");
+    expect(data.machineSections[0].titleBlockHtml).toContain("Height 99cm, width 99cm");
   });
 
-  it("exposes specSentence on the machine section for a parseable M-Series code", () => {
-    const doc = quotationDoc({ items: [quotationItem({ code: "M3390", seriesCode: "M" })] });
+  it("line-strips the height/width line (never a blank) when the product records no specs", () => {
+    const twoLineBlock: ContentBlockRow = {
+      ...machineBlock,
+      body: "Model {{model}}.\n\nHeight {{cutHeightCm}}cm, width {{cutWidthCm}}cm.",
+    };
+    const doc = quotationDoc({ items: [quotationItem({ code: "M999", specs: null })] });
+    const data = buildQuotationData(doc, [twoLineBlock]);
+    expect(data.machineSections[0].titleBlockHtml).toContain("Model M999");
+    expect(data.machineSections[0].titleBlockHtml).not.toContain("Height");
+    expect(data.machineSections[0].titleBlockHtml).not.toContain("____");
+  });
+
+  it("tolerates specs that fail validation (treated as none)", () => {
+    const doc = quotationDoc({ items: [quotationItem({ specs: { cutHeightCm: "three", bogus: 1 } })] });
+    const data = buildQuotationData(doc, [machineBlock]);
+    expect(data.machineSections[0].titleBlockHtml).not.toContain("Height");
+    expect(data.machineSections[0].specSentence).toBeNull();
+  });
+
+  it("exposes specSentence on the machine section from the specs and the series name", () => {
+    const doc = quotationDoc({ items: [quotationItem({ code: "M3390", specs: { cutHeightCm: 3, cutWidthCm: 390 } })] });
     const data = buildQuotationData(doc, [machineBlock]);
     expect(data.machineSections[0].specSentence).toBe(
       "M-Series Cutting Machine, 3cm compressed lay height, 390cm cutting width"
     );
   });
 
-  it("exposes specSentence for an L-Series code even with no matching content block", () => {
-    const doc = quotationDoc({ items: [quotationItem({ code: "L-320", seriesCode: "L", name: "L-320 Cutting System" })] });
+  it("opens the sentence with the series' own name (X-Calibre), not a code", () => {
+    const doc = quotationDoc({
+      items: [quotationItem({ code: "X-3180", seriesName: "X-Calibre", specs: { cutHeightCm: 3, cutWidthCm: 180 } })],
+    });
+    const data = buildQuotationData(doc, []);
+    expect(data.machineSections[0].specSentence).toBe(
+      "X-Calibre Cutting Machine, 3cm compressed lay height, 180cm cutting width"
+    );
+  });
+
+  it("exposes specSentence for an L-Series machine even with no matching content block", () => {
+    const doc = quotationDoc({ items: [lSeriesItem()] });
     const data = buildQuotationData(doc, []);
     expect(data.machineSections[0].specSentence).toBe("L-Series Cutting Machine with 320cm cutting width");
     // No `machine.*`/etc. content block covers L-Series at all — verify the
@@ -234,10 +209,68 @@ describe("buildQuotationData — machine spec parsing", () => {
     expect(data.machineSections[0].titleBlockHtml).toBeNull();
   });
 
-  it("leaves specSentence null for a non-spec-encoding series (e.g. software)", () => {
-    const doc = quotationDoc({ items: [quotationItem({ code: "PTW(S)", seriesCode: "SW", name: "PathWorks" })] });
+  it("leaves specSentence null for anything that is not a cutting machine (software)", () => {
+    const doc = quotationDoc({
+      items: [
+        quotationItem({
+          code: "PTW(S)",
+          name: "PathWorks",
+          kind: "SOFTWARE",
+          seriesName: "Software",
+          specs: { softwareMode: "standalone" },
+          contentBlockKey: "software.pathworks-s",
+        }),
+      ],
+    });
     const data = buildQuotationData(doc, []);
     expect(data.machineSections[0].specSentence).toBeNull();
+  });
+
+  it("does not introduce a spreader as a cutting machine even though it carries a cutWidthCm", () => {
+    const doc = quotationDoc({
+      items: [
+        quotationItem({
+          code: "FP-180",
+          name: "Fabric Pro 180",
+          kind: "SPREADER",
+          seriesName: "Fabric Pro",
+          specs: { cutWidthCm: 180, widthCode: 180 },
+          contentBlockKey: "equipment.fabric-pro",
+        }),
+      ],
+    });
+    const data = buildQuotationData(doc, []);
+    expect(data.machineSections[0].specSentence).toBeNull();
+  });
+
+  it("leaves specSentence null for a machine whose product no longer resolves a series", () => {
+    const doc = quotationDoc({ items: [quotationItem({ seriesName: null })] });
+    const data = buildQuotationData(doc, []);
+    expect(data.machineSections[0].specSentence).toBeNull();
+  });
+
+  it("substitutes {{tableWidthMm}} / {{paperWidthMm}} from the specs for tables and Punchlines", () => {
+    const elBlock: ContentBlockRow = {
+      key: "equipment.easy-loader",
+      regionId: null,
+      title: "Easy-Loader",
+      body: "Table width {{tableWidthMm}}mm.",
+      sortOrder: 1,
+    };
+    const doc = quotationDoc({
+      items: [
+        quotationItem({
+          code: "EL-2020",
+          name: "EasyLoader 2020",
+          kind: "TABLE",
+          seriesName: "EasyLoader",
+          specs: { tableWidthMm: 2020 },
+          contentBlockKey: "equipment.easy-loader",
+        }),
+      ],
+    });
+    const data = buildQuotationData(doc, [elBlock]);
+    expect(data.machineSections[0].titleBlockHtml).toContain("Table width 2020mm");
   });
 });
 
@@ -254,10 +287,33 @@ describe("buildQuotationData", () => {
     expect(data.machineSections[0].titleBlockHtml).toContain("Height 18cm, width 180cm");
   });
 
-  it("leaves titleBlockHtml null when no block matches the product", () => {
-    const doc = quotationDoc({ items: [quotationItem({ seriesCode: "EF", code: "EF-100" })] });
+  it("leaves titleBlockHtml null for a product with no content block key", () => {
+    const doc = quotationDoc({ items: [quotationItem({ code: "EF-100", kind: "FEEDER", contentBlockKey: null })] });
     const data = buildQuotationData(doc, [machineBlock]);
     expect(data.machineSections[0].titleBlockHtml).toBeNull();
+  });
+
+  it("leaves titleBlockHtml null when the product's content block key matches no block in the library", () => {
+    const doc = quotationDoc({ items: [quotationItem({ contentBlockKey: "equipment.fabric-pro" })] });
+    const data = buildQuotationData(doc, [machineBlock]);
+    expect(data.machineSections[0].titleBlockHtml).toBeNull();
+  });
+
+  it("resolves the title block by the product's contentBlockKey, not by its code or series", () => {
+    const punchlineBlock: ContentBlockRow = {
+      key: "equipment.punchline",
+      regionId: null,
+      title: "Punchline",
+      body: "Paper width {{paperWidthMm}}mm.",
+      sortOrder: 1,
+    };
+    // A machine-series code wearing the punchline key still gets the
+    // punchline block: the key is the whole rule.
+    const doc = quotationDoc({
+      items: [quotationItem({ code: "M5180", contentBlockKey: "equipment.punchline", specs: { paperWidthMm: 1880 } })],
+    });
+    const data = buildQuotationData(doc, [machineBlock, punchlineBlock]);
+    expect(data.machineSections[0].titleBlockHtml).toContain("Paper width 1880mm");
   });
 
   it("strips the entire Price line (never a blank) when both price-display toggles are off", () => {
@@ -360,6 +416,7 @@ describe("buildQuotationData", () => {
               qty: 1,
               unitPrice: "5000.00",
               attributes: { metres: 4, tables: 2 },
+              contentBlockKey: "option.MTS",
               imageUrl: null,
             },
             {
@@ -371,6 +428,7 @@ describe("buildQuotationData", () => {
               qty: 1,
               unitPrice: "0.00",
               attributes: null,
+              contentBlockKey: null,
               imageUrl: null,
             },
           ],
@@ -408,6 +466,7 @@ describe("buildQuotationData", () => {
               qty: 1,
               unitPrice: "5000.00",
               attributes: { metres: 4, tables: 2 },
+              contentBlockKey: "option.MTS",
               imageUrl: null,
             },
             {
@@ -419,6 +478,7 @@ describe("buildQuotationData", () => {
               qty: 2,
               unitPrice: "570.00",
               attributes: null,
+              contentBlockKey: null,
               imageUrl: null,
             },
             {
@@ -430,6 +490,7 @@ describe("buildQuotationData", () => {
               qty: 1,
               unitPrice: "100.00",
               attributes: { colour: "Blue" },
+              contentBlockKey: null,
               imageUrl: null,
             },
           ],
@@ -480,6 +541,7 @@ describe("buildQuotationData", () => {
               qty: 1,
               unitPrice: "100.00",
               attributes: null,
+              contentBlockKey: null,
               imageUrl: null,
             },
           ],
@@ -504,6 +566,7 @@ describe("buildQuotationData", () => {
               qty: 3,
               unitPrice: "5000.00",
               attributes: { metres: 4, tables: 2 },
+              contentBlockKey: "option.MTS",
               imageUrl: null,
             },
           ],
@@ -584,31 +647,38 @@ describe("buildQuotationData", () => {
     expect(data.rsp.coverageRows[0].serialNumber).toBe("");
   });
 
-  it("includes items from every machine series (M, X, L, P, LNS)", () => {
+  it("includes every MACHINE and SYSTEM item (the M / X / L cutters and the LNS system)", () => {
     const doc = quotationDoc({
       items: [
-        quotationItem({ id: "i-m", name: "M item", seriesCode: "M" }),
-        quotationItem({ id: "i-xc", name: "X item", seriesCode: "X" }),
-        quotationItem({ id: "i-l", name: "L item", seriesCode: "L" }),
-        quotationItem({ id: "i-p", name: "P item", seriesCode: "P" }),
-        quotationItem({ id: "i-lns", name: "LNS item", seriesCode: "LNS" }),
+        quotationItem({ id: "i-m", name: "M item", kind: "MACHINE", seriesName: "M-Series" }),
+        quotationItem({ id: "i-xc", name: "X item", kind: "MACHINE", seriesName: "X-Calibre" }),
+        quotationItem({ id: "i-l", name: "L item", kind: "MACHINE", seriesName: "L-Series" }),
+        quotationItem({ id: "i-lns", name: "LNS item", kind: "SYSTEM", seriesName: "Leather Nesting System" }),
       ],
     });
     const data = buildQuotationData(doc, []);
-    expect(data.rsp.coverageRows.map((r) => r.name)).toEqual(["M item", "X item", "L item", "P item", "LNS item"]);
+    expect(data.rsp.coverageRows.map((r) => r.name)).toEqual(["M item", "X item", "L item", "LNS item"]);
   });
 
-  it("excludes a non-machine-series item with no serial number (e.g. an option/accessory/software item)", () => {
+  it("excludes every other kind with no serial number (table, feeder, spreader, software, service, accessory)", () => {
     const doc = quotationDoc({
-      items: [quotationItem({ name: "Easy-Loader", seriesCode: "EL", serialNumber: null })],
+      items: [
+        quotationItem({ id: "i-el", name: "Easy-Loader", kind: "TABLE", serialNumber: null }),
+        quotationItem({ id: "i-ef", name: "Easy-Feeder", kind: "FEEDER", serialNumber: null }),
+        quotationItem({ id: "i-fp", name: "Fabric Pro", kind: "SPREADER", serialNumber: null }),
+        quotationItem({ id: "i-sw", name: "PathWorks", kind: "SOFTWARE", serialNumber: null }),
+        quotationItem({ id: "i-svc", name: "Service", kind: "SERVICE", serialNumber: null }),
+        quotationItem({ id: "i-acc", name: "Roll feeder", kind: "ACCESSORY", serialNumber: null }),
+        quotationItem({ id: "i-cr", name: "Trade-in", kind: "CREDIT", serialNumber: null }),
+      ],
     });
     const data = buildQuotationData(doc, []);
     expect(data.rsp.coverageRows).toEqual([]);
   });
 
-  it("includes a non-machine-series item when it has a serial number", () => {
+  it("includes a non-machine item when it has a serial number", () => {
     const doc = quotationDoc({
-      items: [quotationItem({ name: "Fabric Master", seriesCode: null, serialNumber: "SN-FM-1" })],
+      items: [quotationItem({ name: "Fabric Master", kind: "ACCESSORY", seriesName: null, serialNumber: "SN-FM-1" })],
     });
     const data = buildQuotationData(doc, []);
     expect(data.rsp.coverageRows).toEqual([{ name: "Fabric Master", serialNumber: "SN-FM-1", rspUnitCost: "TBA" }]);
@@ -649,20 +719,23 @@ describe("buildQuotationData — sectionTitle", () => {
       body: "Model {{model}}.",
       sortOrder: 1,
     };
-    const data = buildQuotationData(quotationDoc({ items: [quotationItem({ code: "X-5180", seriesCode: "X" })] }), [
-      modelTitleBlock,
-    ]);
+    const data = buildQuotationData(
+      quotationDoc({ items: [quotationItem({ code: "X-5180", seriesName: "X-Calibre" })] }),
+      [modelTitleBlock]
+    );
     expect(data.machineSections[0].sectionTitle).toBe("Pathfinder X-5180 Cutting System");
   });
 
   it("falls back to the item's name when no content block matches the product", () => {
-    const doc = quotationDoc({ items: [quotationItem({ seriesCode: "EF", code: "EF-100", name: "EF-100 Accessory" })] });
+    const doc = quotationDoc({
+      items: [quotationItem({ code: "EF-100", name: "EF-100 Accessory", kind: "FEEDER", contentBlockKey: null })],
+    });
     const data = buildQuotationData(doc, [machineBlock]);
     expect(data.machineSections[0].sectionTitle).toBe("EF-100 Accessory");
   });
 
-  it("falls back to the item's name for a blockless series (e.g. L-Series)", () => {
-    const doc = quotationDoc({ items: [quotationItem({ code: "L-320", seriesCode: "L", name: "L-320 Cutting System" })] });
+  it("falls back to the item's name for a blockless product (e.g. L-Series)", () => {
+    const doc = quotationDoc({ items: [lSeriesItem()] });
     const data = buildQuotationData(doc, []);
     expect(data.machineSections[0].sectionTitle).toBe("L-320 Cutting System");
   });
@@ -739,6 +812,7 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
               qty: 1,
               unitPrice: "5000.00",
               attributes: null,
+              contentBlockKey: "option.MTS",
               imageUrl: "/api/files/mts-icon.png",
             },
           ],
@@ -765,6 +839,7 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
               qty: 1,
               unitPrice: "5000.00",
               attributes: null,
+              contentBlockKey: "option.MTS",
               imageUrl: null,
             },
           ],
@@ -773,6 +848,53 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
     });
     const data = buildQuotationData(doc, [machineBlock, mtsBlock]);
     expect(data.machineSections[0].optionRows[0].icon).toBeNull();
+  });
+
+  it("resolves the option block by the line's contentBlockKey, not by its code", () => {
+    const abrBlock: ContentBlockRow = {
+      key: "option.ABR",
+      regionId: null,
+      title: "ABR",
+      body: "Automatic blade replacement.",
+      sortOrder: 1,
+    };
+    const doc = quotationDoc({
+      items: [
+        quotationItem({
+          lines: [
+            {
+              id: "line-1",
+              kind: "OPTION",
+              code: "ABR-M", // no "option.ABR-M" block exists; the key says option.ABR
+              name: "Automatic Blade Replacement",
+              description: "Snapshot description",
+              qty: 1,
+              unitPrice: "1000.00",
+              attributes: null,
+              contentBlockKey: "option.ABR",
+              imageUrl: null,
+            },
+            {
+              id: "line-2",
+              kind: "OPTION",
+              code: "MTS", // an option.MTS block exists, but this line's option has no key
+              name: "Machine Transfer System",
+              description: "Snapshot description",
+              qty: 1,
+              unitPrice: "5000.00",
+              attributes: null,
+              contentBlockKey: null,
+              imageUrl: null,
+            },
+          ],
+        }),
+      ],
+    });
+    const data = buildQuotationData(doc, [abrBlock, mtsBlock]);
+    const rows = data.machineSections[0].optionRows;
+    expect(rows[0].descriptionHtml).toContain("Automatic blade replacement");
+    expect(rows[1].descriptionHtml).toContain("Snapshot description");
+    expect(rows[1].descriptionHtml).not.toContain("Travel");
   });
 
   it("dedupes the row's own code when it's redundant with its name", () => {
@@ -789,6 +911,7 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
               qty: 1,
               unitPrice: "0.00",
               attributes: null,
+              contentBlockKey: null,
               imageUrl: null,
             },
           ],
@@ -813,6 +936,7 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
               qty: 1,
               unitPrice: "0.00",
               attributes: null,
+              contentBlockKey: null,
               imageUrl: null,
             },
           ],
@@ -837,6 +961,7 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
               qty: 1,
               unitPrice: "0.00",
               attributes: null,
+              contentBlockKey: null,
               imageUrl: null,
             },
           ],
@@ -861,6 +986,7 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
               qty: 1,
               unitPrice: "5000.00",
               attributes: { metres: 4, tables: 2 },
+              contentBlockKey: "option.MTS",
               imageUrl: null,
             },
             {
@@ -872,6 +998,7 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
               qty: 1,
               unitPrice: "0.00",
               attributes: null,
+              contentBlockKey: null,
               imageUrl: null,
             },
           ],
@@ -894,6 +1021,7 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
       qty: 2,
       unitPrice: "500.00",
       attributes: null,
+      contentBlockKey: "option.MTS",
       imageUrl: null,
     };
 
@@ -934,6 +1062,7 @@ describe("buildQuotationData — baseRow for a product with no price of its own"
     qty: 1,
     unitPrice: "4050.00",
     attributes: null,
+    contentBlockKey: null,
     imageUrl: null,
   };
 
@@ -1014,7 +1143,9 @@ describe("buildQuotationData — sectionPrice / hasInlinePrice", () => {
       body: "Automates fabric loading.",
       sortOrder: 1,
     };
-    const doc = quotationDoc({ items: [quotationItem({ code: "EL-2020", seriesCode: "EL" })] });
+    const doc = quotationDoc({
+      items: [quotationItem({ code: "EL-2020", kind: "TABLE", contentBlockKey: "equipment.easy-loader" })],
+    });
     const data = buildQuotationData(doc, [elBlock]);
     expect(data.machineSections[0].hasInlinePrice).toBe(false);
     // sectionPrice is still exposed structurally even though showItemPrices
@@ -1023,7 +1154,7 @@ describe("buildQuotationData — sectionPrice / hasInlinePrice", () => {
   });
 
   it("hasInlinePrice is false for a blockless section (e.g. L-Series)", () => {
-    const doc = quotationDoc({ items: [quotationItem({ code: "L-320", seriesCode: "L" })] });
+    const doc = quotationDoc({ items: [lSeriesItem()] });
     const data = buildQuotationData(doc, []);
     expect(data.machineSections[0].hasInlinePrice).toBe(false);
     expect(data.machineSections[0].titleBlockHtml).toBeNull();

@@ -1,27 +1,23 @@
+import type { OptionRole } from "@prisma/client";
 import { mSeriesSpecSchema } from "@/lib/validation/production-spec";
+import type { ProductSpecs } from "@/lib/validation/product-specs";
 import type { FormContext, FormSpec } from "../types";
 
-const CODE = /^M(3|5|7|10)(180|220|300|390)$/;
-
-/** Model and width are only recoverable from the code -- Product.specs is null for every row. */
-function parseCode(code: string): { model: string; width: number } | null {
-  const match = CODE.exec(code);
-  if (!match) return null;
-  return { model: `M${match[1]}`, width: Number(match[2]) };
-}
-
-const model = (want: string) => (ctx: FormContext) => parseCode(ctx.item.code)?.model === want;
-const width = (want: number) => (ctx: FormContext) => parseCode(ctx.item.code)?.width === want;
+/** The model row prints M3/M5/M7/M10 boxes; `Product.specs.modelTier` names which. */
+const model = (want: string) => (ctx: FormContext) => ctx.item.specs.modelTier === want;
+/** The width row prints the family (180/220/300/390), which is `specs.widthCode`, not the real cut. */
+const width = (want: number) => (ctx: FormContext) => ctx.item.specs.widthCode === want;
 
 /**
- * An option tick. Catalog codes carry series suffixes (ABR-M) while the form
- * prints base codes, so matching is by pattern. `covers` records the same
- * pattern so `unmatchedOptionCodes` can tell what this form has no box for.
+ * An option tick. The form prints one box per kind of option, and the
+ * catalogue names that kind as `Option.role` (ABR-M and ABR-X both carry
+ * ABR). `covers` records the same role so `unmatchedOptions` can tell
+ * what this form has no box for.
  */
-const optionTick = (cell: string, pattern: RegExp) => ({
+const optionTick = (cell: string, role: OptionRole) => ({
   cell,
-  when: (ctx: FormContext) => ctx.item.optionCodes.some((code) => pattern.test(code)),
-  covers: pattern,
+  when: (ctx: FormContext) => ctx.item.options.some((option) => option.role === role),
+  covers: role,
 });
 
 const spec = (key: string, want: string) => (ctx: FormContext) => ctx.item.spec[key] === want;
@@ -31,15 +27,16 @@ const spec = (key: string, want: string) => (ctx: FormContext) => ctx.item.spec[
  * PathWorks. With the standalone one they belong on the Software Order Form
  * instead -- two different orders, not a duplication. See spec section 6.3.
  */
-const integrated = (moduleCode: string) => (ctx: FormContext) =>
-  ctx.softwareCodes.includes("PTW(I)") && ctx.softwareCodes.includes(moduleCode);
+const integrated = (module: NonNullable<ProductSpecs["pathworksModule"]>) => (ctx: FormContext) =>
+  ctx.software.some((s) => s.specs.softwareMode === "integrated") &&
+  ctx.software.some((s) => s.specs.pathworksModule === module);
 
 export const mSeriesSpec: FormSpec = {
   id: "m-series",
   title: "M-Series Order Form",
   template: "m-series-order-12.xlsx",
   sheetPath: "xl/worksheets/sheet1.xml",
-  matches: (code) => CODE.test(code),
+  form: "M_SERIES",
   specSchema: mSeriesSpecSchema,
   // "ui" is not listed: screenSideSchema defaults to -Y, so it can never be
   // missing -- leaving it here would permanently disable the download button
@@ -67,7 +64,11 @@ export const mSeriesSpec: FormSpec = {
     { cell: "M13", from: (c) => c.deliveryAddressLines[0] },
     { cell: "M14", from: (c) => c.deliveryAddressLines[1] },
     { cell: "M15", from: (c) => c.deliveryAddressLines[2] },
-    { cell: "M73", from: (c) => c.item.optionAttributes["MTS"]?.metres as number | undefined },
+    {
+      cell: "M73",
+      from: (c) =>
+        c.item.options.find((option) => option.role === "MTS")?.attributes?.metres as number | undefined,
+    },
     // Rows 81-82 are the tall hand-writing rows and carry a large font, so
     // very little fits and the drills and notes columns collide. Cells and
     // caps below are the ones measured in the spike -- do not widen them
@@ -93,26 +94,26 @@ export const mSeriesSpec: FormSpec = {
     { cell: "J33", when: spec("ui", "+Y") },
     { cell: "J35", when: spec("ui", "-Y") },
 
-    optionTick("F42", /^VRB/),
-    optionTick("J42", /^OFJ$/),
-    optionTick("O42", /^HFV/),
-    optionTick("F44", /^PM-/),
-    optionTick("J44", /^OFD/),
-    optionTick("O44", /^PRM/),
-    optionTick("F46", /^APM/),
-    optionTick("J46", /^OFP/),
-    optionTick("O46", /^DMT$/),
-    optionTick("F48", /^DRG-3$/),
-    optionTick("J48", /^MRK$/),
-    optionTick("O48", /^Crate/),
-    optionTick("F50", /^DRG-1$/),
-    optionTick("J50", /^IJP$/),
-    optionTick("F52", /^HDC/),
-    optionTick("J52", /^ABR/),
-    optionTick("F55", /^BCR/),
-    optionTick("J55", /^DR2$/),
-    optionTick("F57", /^IKA$/),
-    optionTick("J57", /^AFP$/),
+    optionTick("F42", "VRB"),
+    optionTick("J42", "OFJ"),
+    optionTick("O42", "HFV"),
+    optionTick("F44", "PM"),
+    optionTick("J44", "OFD"),
+    optionTick("O44", "PRM"),
+    optionTick("F46", "APM"),
+    optionTick("J46", "OFP"),
+    optionTick("O46", "DMT"),
+    optionTick("F48", "DRG_3"),
+    optionTick("J48", "MRK"),
+    optionTick("O48", "CRATE"),
+    optionTick("F50", "DRG_1"),
+    optionTick("J50", "IJP"),
+    optionTick("F52", "HDC"),
+    optionTick("J52", "ABR"),
+    optionTick("F55", "BCR"),
+    optionTick("J55", "DR2"),
+    optionTick("F57", "IKA"),
+    optionTick("J57", "AFP"),
 
     // Box-then-label, same as every other tick in this column pair (F/G,
     // J/K, O/P): the tick belongs in O, not in P where the voltage label
@@ -125,13 +126,13 @@ export const mSeriesSpec: FormSpec = {
     { cell: "F62", when: integrated("PDG") },
     { cell: "J62", when: integrated("WPN") },
     { cell: "O62", when: integrated("WPL") },
-    { cell: "F64", when: integrated("ANT-V5") },
-    { cell: "J64", when: integrated("ANT-V6") },
+    { cell: "F64", when: integrated("ANT_V5") },
+    { cell: "J64", when: integrated("ANT_V6") },
 
     { cell: "F68", when: spec("knifeSize", "1.5x5.0") },
     { cell: "J68", when: spec("knifeSize", "1.5x7.0") },
     { cell: "O68", when: spec("knifeSize", "2.0x7.0") },
 
-    optionTick("D72", /^MTS$/),
+    optionTick("D72", "MTS"),
   ],
 };

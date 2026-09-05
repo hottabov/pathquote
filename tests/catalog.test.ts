@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import catalogData from '../prisma/seed-data/catalog.json';
 import { deriveEasyLoaderOptions } from '../src/lib/production-forms/table-sections';
+import { legacyOptionIdentity } from '../src/lib/catalog-identity';
 
 interface CatalogItem {
   code: string;
@@ -244,21 +245,26 @@ describe('Catalog Extraction Validation', () => {
       }
     });
 
-    // The load-bearing one. The EasyLoader builder writes option codes it
-    // assembles from a product code and a fixed suffix, and `setItemOptions`
-    // rejects a code the catalogue does not have -- so a suffix that drifted
-    // from the catalogue would not be a cosmetic bug, it would be a table
-    // that cannot be saved at all. Derive a layout that uses every kind, for
-    // every width, and check the catalogue has all of them.
-    it('every code the EasyLoader builder can write exists in the catalogue', () => {
-      const codes = new Set(catalog.options.map((o) => o.code));
+    // The load-bearing one. The EasyLoader builder writes one option per
+    // module role, looked up as "this width's option with this role"
+    // (`setEasyLoaderLayout`), and refuses the layout when a role has no
+    // row -- so a width missing a role is not a cosmetic gap, it is a table
+    // that cannot be saved at all. Derive a layout that uses every role and
+    // check the catalogue has one for every width. The seed derives role and
+    // parent from the legacy codes (src/lib/catalog-identity.ts) until
+    // catalogue v2 carries them itself.
+    it('every role the EasyLoader builder can write exists for every width', () => {
+      const identities = catalog.options.map((o) => ({ code: o.code, ...legacyOptionIdentity(o.code) }));
       const layout = [
         { lengthM: 3.6, surface: 'conveyor' as const },
         { lengthM: 1.2, surface: 'static' as const },
       ];
+      const derived = deriveEasyLoaderOptions(layout, true);
+      expect(derived.map((d) => d.role)).toEqual(['EL_DRIVE', 'EL_CONVEYOR', 'EL_STATIC', 'EL_BUSBAR', 'EL_RAIL']);
       for (const width of ['EL-2020', 'EL-2420', 'EL-3220', 'EL-4030']) {
-        for (const { optionCode } of deriveEasyLoaderOptions(width, layout, true)) {
-          expect(codes.has(optionCode), optionCode).toBe(true);
+        for (const { role } of derived) {
+          const matches = identities.filter((o) => o.role === role && o.parentProductCode === width);
+          expect(matches.map((o) => o.code), `${width} ${role}`).toHaveLength(1);
         }
       }
     });

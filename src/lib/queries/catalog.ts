@@ -189,9 +189,10 @@ async function seriesProductsResult(
  * `src/app/(app)/catalog/[seriesId]/page.tsx`): a series code is short-lived
  * free text today, but nothing stops an admin editing it, and an id never
  * changes. A code-keyed twin of this used to sit alongside it for the "Add
- * item" picker's sake, which is keyed by code throughout; the picker now
- * reads its whole tree in one query of its own (see `getItemPickerCatalog`,
- * src/lib/queries/documents.ts), leaving nothing that needs the lookup by
+ * item" picker's sake, back when that picker was keyed by code; the picker
+ * now reads its whole tree in one query of its own (see
+ * `getItemPickerCatalog`, src/lib/queries/documents.ts) and identifies
+ * series and products by id, leaving nothing that needs the lookup by
  * code.
  *
  * Request-memoized because `/catalog/[seriesId]` resolves the series in
@@ -263,6 +264,12 @@ export async function listOptions(params: {
     ];
   }
 
+  // `seriesCode` is the `?series=` query parameter on /catalog/options -- a
+  // human-readable filter in a URL, so it stays a code on purpose: the
+  // filter chips render from the live series list on the same request, and
+  // a stale bookmarked code merely filters to nothing, which is the right
+  // outcome for a filter (unlike an identifier a write depends on -- see
+  // docs/plans/2026-09-05-catalog-identity-and-cleanup.md).
   if (seriesCode && seriesCode.trim()) {
     where.compat = { some: { series: { code: seriesCode.trim() } } };
   }
@@ -425,9 +432,10 @@ export type OptionDetail = {
   sortOrder: number;
   imageUrl: string | null;
   prices: RegionPriceRow[];
-  /** Series this option is compatible with at the series level (phase-3
-   * scope excludes product-level compatibility). */
-  compatSeriesCodes: string[];
+  /** Ids of the series this option is compatible with at the series level
+   * (phase-3 scope excludes product-level compatibility) -- what
+   * `CompatEditor` selects by and `setOptionCompatibility` takes. */
+  compatSeriesIds: string[];
   /** `OptionConflictGroup`(s) this option belongs to, sorted by name —
    * read-only here. Membership is managed from
    * `/settings/option-conflict-groups`, not from this page: a group needs a
@@ -456,7 +464,7 @@ export const getOptionDetailById = cache(async function getOptionDetailById(
       where: { id: optionId },
       include: {
         prices: { include: { region: true } },
-        compat: { include: { series: true } },
+        compat: { select: { seriesId: true, productId: true } },
         conflictGroupMemberships: { include: { group: { select: { id: true, name: true } } } },
       },
     }),
@@ -479,11 +487,10 @@ export const getOptionDetailById = cache(async function getOptionDetailById(
     sortOrder: option.sortOrder,
     imageUrl: option.imageUrl,
     prices: toRegionPriceRows(regions, option.prices),
-    compatSeriesCodes: option.compat
-      .filter((c) => c.seriesId !== null && c.productId === null)
-      .map((c) => c.series?.code)
-      .filter((code): code is string => Boolean(code))
-      .sort(),
+    compatSeriesIds: option.compat
+      .filter((c) => c.productId === null)
+      .map((c) => c.seriesId)
+      .filter((id): id is string => id !== null),
     conflictGroups,
   };
 });

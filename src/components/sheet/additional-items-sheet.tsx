@@ -1,7 +1,7 @@
 /**
  * Standalone HTML page for whatever a production form run could not place on
  * a machine form: document-level lines (services, training, custom entries)
- * and any option whose form has no box for it (see `unmatchedOptionCodes`).
+ * and any option whose form has no box for it (see `unmatchedOptions`).
  *
  * Same no-Tailwind, self-contained-`<style>` discipline as `QuotationSheet`
  * (src/components/sheet/quotation-sheet.tsx): this markup is posted to

@@ -171,22 +171,24 @@ describe("conflictPartnersByGroup", () => {
   });
 
   it("combined with findConflictingSelection, rejects a selection containing two members of the same group", () => {
-    // Mirrors what setItemOptions does: build conflictsByCode from the
-    // submitted options' own group memberships, then scan the submission.
-    const conflictsByCode = conflictPartnersByGroup([
-      { memberKey: "DRG-1", groupId: "knife-tools" },
-      { memberKey: "DRG-2", groupId: "knife-tools" },
+    // Mirrors what setItemOptions does: build the partner map from the
+    // submitted options' own group memberships (keyed by option id -- the
+    // keys are opaque to both helpers, so readable stand-ins are used here),
+    // then scan the submission.
+    const conflictsById = conflictPartnersByGroup([
+      { memberKey: "id-drg-1", groupId: "knife-tools" },
+      { memberKey: "id-drg-2", groupId: "knife-tools" },
     ]);
-    expect(findConflictingSelection(["DRG-1", "DRG-2"], conflictsByCode)).toEqual([
-      "DRG-1",
-      "DRG-2",
+    expect(findConflictingSelection(["id-drg-1", "id-drg-2"], conflictsById)).toEqual([
+      "id-drg-1",
+      "id-drg-2",
     ]);
     // A third, unrelated option in the same submission is unaffected.
     const withUnrelated = conflictPartnersByGroup([
-      { memberKey: "DRG-1", groupId: "knife-tools" },
-      { memberKey: "DRG-2", groupId: "knife-tools" },
-      { memberKey: "HFV", groupId: "unrelated-group" },
+      { memberKey: "id-drg-1", groupId: "knife-tools" },
+      { memberKey: "id-drg-2", groupId: "knife-tools" },
+      { memberKey: "id-hfv", groupId: "unrelated-group" },
     ]);
-    expect(findConflictingSelection(["HFV"], withUnrelated)).toBeNull();
+    expect(findConflictingSelection(["id-hfv"], withUnrelated)).toBeNull();
   });
 });

@@ -4,7 +4,7 @@ import { buildPatches, resolveForm } from "../src/lib/production-forms/resolve";
 import { patchWorkbook } from "../src/lib/production-forms/xlsx-patch";
 import { readTemplate } from "../src/lib/production-forms/render";
 import type { FormContext } from "../src/lib/production-forms/types";
-import { formContext, formItem } from "./helpers/fixtures";
+import { formContext, formItem, formOption } from "./helpers/fixtures";
 
 // A fully-loaded order: two software products, two options (one of them
 // carrying an attribute), and drilling requested — every value below is
@@ -18,21 +18,19 @@ const ctx: FormContext = formContext({
   },
   contact: { fullName: "John Smith", position: "Manager", phone: "+61 3 9999 0000", email: "j@e.com" },
   deliveryAddressLines: ["12 Industrial Drive"],
-  softwareCodes: ["PTW(I)", "ANT-V6"],
+  software: [
+    { code: "PTW(I)", specs: { softwareMode: "integrated" } },
+    { code: "ANT-V6", specs: { pathworksModule: "ANT_V6" } },
+  ],
   item: formItem({
     spec: { ui: "+Y", knifeSize: "1.5x5.0", drills: { required: true, detail: "2 x 6mm" } },
-    optionCodes: ["MTS", "ABR-M"],
-    optionAttributes: { MTS: { metres: 14 } },
-    optionQtys: [
-      { code: "MTS", qty: 1 },
-      { code: "ABR-M", qty: 1 },
-    ],
+    options: [formOption("MTS", "MTS", { attributes: { metres: 14 } }), formOption("ABR-M", "ABR")],
   }),
 });
 
 describe("production form pipeline", () => {
   it("produces a workbook carrying every expected value and tick", () => {
-    const spec = resolveForm("M5220")!;
+    const spec = resolveForm("M_SERIES")!;
     const patched = patchWorkbook(readTemplate(spec.template), spec.sheetPath, buildPatches(spec, ctx));
     const xml = strFromU8(unzipSync(patched)[spec.sheetPath]);
 
@@ -50,7 +48,7 @@ describe("production form pipeline", () => {
   });
 
   it("leaves untouched every box the quote did not ask for", () => {
-    const spec = resolveForm("M5220")!;
+    const spec = resolveForm("M_SERIES")!;
     const patched = patchWorkbook(readTemplate(spec.template), spec.sheetPath, buildPatches(spec, ctx));
     const xml = strFromU8(unzipSync(patched)[spec.sheetPath]);
 

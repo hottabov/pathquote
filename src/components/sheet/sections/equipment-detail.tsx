@@ -65,7 +65,7 @@ export function EquipmentDetail({
             ) : (
               // No admin-authored content block matched this item's
               // product (e.g. L-Series has none — see
-              // src/lib/quotation-data.ts's `productBlockKey`) — render
+              // the product's `contentBlockKey`) — render
               // a minimal auto-generated spec line underneath the
               // heading/price above instead of just leaving the
               // section bare.

@@ -41,7 +41,8 @@ export function compatibilityOrFilter(
  *    long for the machine's cut height — see that model's comment in
  *    schema.prisma). Carries that option's code/name plus the shared
  *    group's name so the UI can name both ("Conflicts with DRG-1 — knife
- *    tools, fit one only"), not just say "disabled".
+ *    tools, fit one only"), not just say "disabled". The code here is
+ *    display only -- the caller finds the partner by id.
  *
  * `unpriced` wins when both apply — an option with no price is disabled for
  * its own reason regardless of what else is selected.
@@ -87,8 +88,8 @@ export function isOptionDisabled(
 }
 
 /**
- * Finds the first pair of currently-selected option codes that conflict,
- * given each selected option's own set of codes it conflicts with. Pure and
+ * Finds the first pair of currently-selected option ids that conflict,
+ * given each selected option's own set of ids it conflicts with. Pure and
  * DB-agnostic like `compatibilityOrFilter` above — shared by `setItemOptions`
  * (server-side rejection of a submitted selection) and unit-tested directly
  * so the pairwise-scan logic doesn't have to be exercised through a mocked
@@ -96,19 +97,21 @@ export function isOptionDisabled(
  * option conflict with something selected", a single lookup, not a full scan
  * — see `isOptionDisabled` above. Unchanged by the move from `OptionConflict`
  * to `OptionConflictGroup` — it only ever looks at the precomputed
- * `conflictsByCode` map, never at how that map was built (see
- * `conflictPartnersByGroup` below, which is what changed).
+ * `conflictsById` map, never at how that map was built (see
+ * `conflictPartnersByGroup` below, which is what changed). The keys are
+ * opaque strings to this function: it returns whichever pair it was given,
+ * and the caller turns them into codes for the message it shows.
  */
 export function findConflictingSelection(
-  selectedCodes: string[],
-  conflictsByCode: Map<string, Set<string>>
+  selectedIds: string[],
+  conflictsById: Map<string, Set<string>>
 ): [string, string] | null {
-  for (let i = 0; i < selectedCodes.length; i++) {
-    const a = selectedCodes[i];
-    const aConflicts = conflictsByCode.get(a);
+  for (let i = 0; i < selectedIds.length; i++) {
+    const a = selectedIds[i];
+    const aConflicts = conflictsById.get(a);
     if (!aConflicts || aConflicts.size === 0) continue;
-    for (let j = i + 1; j < selectedCodes.length; j++) {
-      const b = selectedCodes[j];
+    for (let j = i + 1; j < selectedIds.length; j++) {
+      const b = selectedIds[j];
       if (aConflicts.has(b)) return [a, b];
     }
   }
@@ -122,10 +125,10 @@ export function findConflictingSelection(
  * `OptionConflictGroup` model comment in schema.prisma: two options
  * conflict when they share a group, so a plain pairwise conflict is just
  * the two-member case). Pure and DB-agnostic like `compatibilityOrFilter`/
- * `findConflictingSelection` above, and generic over whatever string key
- * the caller keys rows by -- option *id* for the catalogue/builder reads
- * (`listCompatibleOptions`), option *code* for `setItemOptions`, whose
- * result feeds `findConflictingSelection` directly.
+ * `findConflictingSelection` above. `memberKey` is the option's *id*
+ * everywhere -- the catalogue/builder reads (`listCompatibleOptions`) and
+ * `setItemOptions`, whose result feeds `findConflictingSelection` directly.
+ * The function itself treats it as an opaque string.
  *
  * Only the *given* rows matter: if `memberships` covers a subset of a
  * group's real membership (e.g. `setItemOptions` only fetches the

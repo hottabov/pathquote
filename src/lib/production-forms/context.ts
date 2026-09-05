@@ -1,7 +1,8 @@
 import { displayCountry } from "@/lib/countries";
 import type { DocumentForForms } from "@/lib/queries/documents";
+import { readProductSpecs } from "@/lib/validation/product-specs";
 import { resolveForm } from "./resolve";
-import type { FormContext, FormItem } from "./types";
+import type { FormContext, FormItem, FormItemOption } from "./types";
 
 type AddressLike = {
   street: string | null;
@@ -23,10 +24,34 @@ export function companyAddressLines(address: AddressLike): string[] {
 }
 
 /**
- * Flattens the document the builder query already returns into one context
- * per item that prints a form. Items with no form -- software, services --
- * do not get a context; their codes are exposed on every context as
- * `softwareCodes` so a form can ask whether PathWorks Integrated was sold.
+ * The legacy code-keyed views of an item's options (`optionCodes`,
+ * `optionAttributes`, `optionQtys`), derived from the role-carrying list so
+ * the two can never disagree. Consumers that still read codes use these;
+ * the forms themselves read `options`.
+ */
+export function legacyOptionViews(
+  options: FormItemOption[]
+): Pick<FormItem, "optionCodes" | "optionAttributes" | "optionQtys"> {
+  return {
+    optionCodes: options.map((option) => option.code),
+    optionAttributes: Object.fromEntries(
+      options
+        .filter((option) => option.attributes !== null)
+        .map((option) => [option.code, option.attributes as Record<string, unknown>])
+    ),
+    optionQtys: options.map((option) => ({ code: option.code, qty: option.qty })),
+  };
+}
+
+/**
+ * Flattens the document the forms query returns into one context per item
+ * that prints a form -- an item whose product carries a `form`. Items with
+ * no form (software, services, accessories) get no context of their own;
+ * the SOFTWARE ones are exposed on every context as `software` so a form can
+ * ask whether PathWorks Integrated was sold and which modules came with it.
+ *
+ * A custom item with no product resolves to kind ACCESSORY and no form: it
+ * has no catalogue facts to read, and no form has a box for it.
  */
 export function buildFormContexts(document: DocumentForForms): FormContext[] {
   const snapshot = document.entitySnapshot as { entityName?: string } | null;
@@ -46,29 +71,40 @@ export function buildFormContexts(document: DocumentForForms): FormContext[] {
         })
       : addressLines;
 
-  const softwareCodes = document.items
-    .filter((item) => resolveForm(item.code) === null)
-    .map((item) => item.code);
+  const software = document.items
+    .filter((item) => item.product?.kind === "SOFTWARE")
+    .map((item) => ({ code: item.code, specs: readProductSpecs(item.product?.specs) }));
+  const softwareCodes = software.map((s) => s.code);
 
   return document.items
-    .filter((item) => resolveForm(item.code) !== null)
+    .filter((item) => resolveForm(item.product?.form) !== null)
     .map((item) => {
-      const options = item.lines.filter((line) => line.kind === "OPTION");
+      const options: FormItemOption[] = item.lines
+        .filter((line) => line.kind === "OPTION" && line.code !== null)
+        .map((line) => {
+          const row = line.refId !== null ? document.optionsById[line.refId] : undefined;
+          return {
+            id: row?.id ?? line.refId,
+            code: line.code as string,
+            role: row?.role ?? null,
+            qty: line.qty,
+            attributes:
+              line.attributes && typeof line.attributes === "object" && !Array.isArray(line.attributes)
+                ? (line.attributes as Record<string, unknown>)
+                : null,
+          };
+        });
 
       const formItem: FormItem = {
         id: item.id,
         code: item.code,
         name: item.name,
+        kind: item.product?.kind ?? "ACCESSORY",
+        form: item.product?.form ?? null,
+        specs: readProductSpecs(item.product?.specs),
         spec: (item.productionSpec ?? {}) as Record<string, unknown>,
-        optionCodes: options.map((line) => line.code).filter((c): c is string => Boolean(c)),
-        optionAttributes: Object.fromEntries(
-          options
-            .filter((line) => line.code && line.attributes)
-            .map((line) => [line.code as string, line.attributes as Record<string, unknown>]),
-        ),
-        optionQtys: options
-          .filter((line): line is typeof line & { code: string } => Boolean(line.code))
-          .map((line) => ({ code: line.code, qty: line.qty })),
+        options,
+        ...legacyOptionViews(options),
       };
 
       return {
@@ -86,6 +122,7 @@ export function buildFormContexts(document: DocumentForForms): FormContext[] {
           email: document.contact?.email ?? null,
         },
         deliveryAddressLines,
+        software,
         softwareCodes,
         item: formItem,
       };

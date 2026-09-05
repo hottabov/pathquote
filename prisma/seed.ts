@@ -16,6 +16,7 @@ import { Prisma } from "@prisma/client";
 import catalogData from "./seed-data/catalog.json";
 import contentBlocksData from "./seed-data/content-blocks.json";
 import usPricesData from "./seed-data/prices-us.json";
+import { backfillCatalogIdentity } from "../scripts/lib/catalog-identity-backfill";
 import {
   type Catalog,
   type ContentBlocksJson,
@@ -65,9 +66,13 @@ const usPricesJson = usPricesData as UsPricesJson;
  * above, just for "discontinued" rather than "renamed into a product".
  */
 const RETIRED_OPTION_CODES: string[] = [
-  // EasyLoader drive modules -> products EL-2020 / EL-2420.
-  "EL-2020 Drive Module (first 1.2M)",
-  "EL-2420 Drive Module (first 1.2M)",
+  // The EasyLoader drive modules used to be listed here ("-> products
+  // EL-2020 / EL-2420"), but catalog.json still carries them as options and
+  // the EasyLoader builder writes them as option lines (table-sections.ts),
+  // so every seed run deleted them in this step and recreated them with a
+  // new id in step 6 -- orphaning any document line that referenced the old
+  // row. Owner (2026-09-05): the EasyLoader is a product assembled from its
+  // options; the drive module stays an option.
   // EasyFeeder -> products EF-2020 / EF-2420 / EF-4030.
   "EasyFeeder- 2020",
   "EasyFeeder- 2420",
@@ -526,8 +531,20 @@ async function main() {
   console.log(`  retired options: ${retiredCount} deleted, ${deactivatedCount} deactivated`);
   console.log(`  renamed XC->X product codes: ${renamedXCount}`);
   console.log(`  renamed HDRF->HDRF-180: ${renamedHdrfCount}`);
+  // 10. Identity columns (migration z31_catalog_identity): kind, form,
+  // specs, role, parent, unit length, content block. catalog.json carries
+  // only legacy codes, so these are derived from the codes by the rules in
+  // src/lib/catalog-identity.ts -- for rows not classified yet. A row an
+  // admin has already classified keeps what they set. Runs last because the
+  // content-block keys it links to are created in step 9.
+  const identity = await backfillCatalogIdentity(db, "missing");
+
   console.log(`  products:       ${productIdByCode.size}`);
   console.log(`  options:        ${optionIdByCode.size}`);
+  console.log(`  identity:       ${identity.products.written} products, ${identity.options.written} options classified`);
+  if (identity.options.unresolvedParents.length) {
+    console.warn(`  identity: EasyLoader parent not found for ${identity.options.unresolvedParents.join(", ")}`);
+  }
   console.log(`  prices (AU):    ${priceCount}`);
   console.log(`  prices (US):    ${usPriceCount}`);
   console.log(`  compatibility:  ${compatCount} ensured, ${compatDeletedCount} stale removed`);
