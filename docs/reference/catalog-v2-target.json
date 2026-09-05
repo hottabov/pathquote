@@ -1,0 +1,3596 @@
+{
+  "generatedAt": "2026-09-05",
+  "source": "RAW/catalog-dump.json (dumped 2026-09-05) + docs/reference/catalog-v2-decisions.md",
+  "products": [
+    {
+      "id": "cmtfmusj4000reo9ka2r20or3",
+      "action": "rename",
+      "code": "M-3180",
+      "legacyCodes": [
+        "M3180"
+      ],
+      "series": "M",
+      "name": "M-Series Cutting Machine 3cm × 180cm",
+      "description": "Computer controlled cutting machine - 3cm compressed lay height, 180cm cutting width",
+      "prices": {
+        "AU": 175000.0,
+        "US": 163350.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "form": "M_SERIES",
+      "specs": {
+        "cutHeightCm": 3,
+        "cutWidthCm": 180,
+        "modelTier": "M3",
+        "widthCode": 180
+      }
+    },
+    {
+      "id": "cmtfmusj6000seo9kpzwfq2wr",
+      "action": "rename",
+      "code": "M-3220",
+      "legacyCodes": [
+        "M3220"
+      ],
+      "series": "M",
+      "name": "M-Series Cutting Machine 3cm × 227cm",
+      "description": "Computer controlled cutting machine - 3cm compressed lay height, 227cm cutting width",
+      "prices": {
+        "AU": 188000.0,
+        "US": 176715.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "form": "M_SERIES",
+      "specs": {
+        "cutHeightCm": 3,
+        "cutWidthCm": 227,
+        "modelTier": "M3",
+        "widthCode": 220
+      }
+    },
+    {
+      "id": "cmtgjwcz6000utw9kbj9t8736",
+      "action": "rename",
+      "code": "M-3300",
+      "legacyCodes": [
+        "M3300"
+      ],
+      "series": "M",
+      "name": "M-Series Cutting Machine 3cm × 300cm",
+      "description": "Computer controlled cutting machine - 3cm compressed lay height, 300cm cutting width",
+      "prices": {
+        "AU": 0.0,
+        "US": 235950.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "form": "M_SERIES",
+      "specs": {
+        "cutHeightCm": 3,
+        "cutWidthCm": 300,
+        "modelTier": "M3",
+        "widthCode": 300
+      }
+    },
+    {
+      "id": "cmtfmusj7000teo9knd1ppssa",
+      "action": "rename",
+      "code": "M-3390",
+      "legacyCodes": [
+        "M3390"
+      ],
+      "series": "M",
+      "name": "M-Series Cutting Machine 3cm × 390cm",
+      "description": "Computer controlled cutting machine - 3cm compressed lay height, 390cm cutting width",
+      "prices": {
+        "AU": 0.0,
+        "US": 247500.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "form": "M_SERIES",
+      "specs": {
+        "cutHeightCm": 3,
+        "cutWidthCm": 390,
+        "modelTier": "M3",
+        "widthCode": 390
+      }
+    },
+    {
+      "id": "cmtfmusj8000ueo9knacqvzp9",
+      "action": "rename",
+      "code": "M-5180",
+      "legacyCodes": [
+        "M5180"
+      ],
+      "series": "M",
+      "name": "M-Series Cutting Machine 5cm × 180cm",
+      "description": "Computer controlled cutting machine - 5cm compressed lay height, 180cm cutting width",
+      "prices": {
+        "AU": 195000.0,
+        "US": 170775.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "form": "M_SERIES",
+      "specs": {
+        "cutHeightCm": 5,
+        "cutWidthCm": 180,
+        "modelTier": "M5",
+        "widthCode": 180
+      }
+    },
+    {
+      "id": "cmtfmusja000veo9kr5c1wka2",
+      "action": "rename",
+      "code": "M-5220",
+      "legacyCodes": [
+        "M5220"
+      ],
+      "series": "M",
+      "name": "M-Series Cutting Machine 5cm × 227cm",
+      "description": "Computer controlled cutting machine - 5cm compressed lay height, 227cm cutting width",
+      "prices": {
+        "AU": 208000.0,
+        "US": 184140.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "form": "M_SERIES",
+      "specs": {
+        "cutHeightCm": 5,
+        "cutWidthCm": 227,
+        "modelTier": "M5",
+        "widthCode": 220
+      }
+    },
+    {
+      "id": "cmtgjwd0c000ytw9k3o3xxjsj",
+      "action": "rename",
+      "code": "M-5300",
+      "legacyCodes": [
+        "M5300"
+      ],
+      "series": "M",
+      "name": "M-Series Cutting Machine 5cm × 300cm",
+      "description": "Computer controlled cutting machine - 5cm compressed lay height, 300cm cutting width",
+      "prices": {
+        "AU": 0.0,
+        "US": 246748.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "form": "M_SERIES",
+      "specs": {
+        "cutHeightCm": 5,
+        "cutWidthCm": 300,
+        "modelTier": "M5",
+        "widthCode": 300
+      }
+    },
+    {
+      "id": "cmtfmusjb000weo9kkacu0f7a",
+      "action": "rename",
+      "code": "M-5390",
+      "legacyCodes": [
+        "M5390"
+      ],
+      "series": "M",
+      "name": "M-Series Cutting Machine 5cm × 390cm",
+      "description": "Computer controlled cutting machine - 5cm compressed lay height, 390cm cutting width",
+      "prices": {
+        "AU": 245000.0,
+        "US": 289575.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "form": "M_SERIES",
+      "specs": {
+        "cutHeightCm": 5,
+        "cutWidthCm": 390,
+        "modelTier": "M5",
+        "widthCode": 390
+      }
+    },
+    {
+      "id": "cmtfmusjd000xeo9kyuksux3i",
+      "action": "rename",
+      "code": "M-7180",
+      "legacyCodes": [
+        "M7180"
+      ],
+      "series": "M",
+      "name": "M-Series Cutting Machine 7cm × 180cm",
+      "description": "Computer controlled cutting machine - 7cm compressed lay height, 180cm cutting width",
+      "prices": {
+        "AU": 207500.0,
+        "US": 178200.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "form": "M_SERIES",
+      "specs": {
+        "cutHeightCm": 7,
+        "cutWidthCm": 180,
+        "modelTier": "M7",
+        "widthCode": 180
+      }
+    },
+    {
+      "id": "cmtfmusjf000yeo9ke2ks3dpl",
+      "action": "rename",
+      "code": "M-7220",
+      "legacyCodes": [
+        "M7220"
+      ],
+      "series": "M",
+      "name": "M-Series Cutting Machine 7cm × 227cm",
+      "description": "Computer controlled cutting machine - 7cm compressed lay height, 227cm cutting width",
+      "prices": {
+        "AU": 220500.0,
+        "US": 191565.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "form": "M_SERIES",
+      "specs": {
+        "cutHeightCm": 7,
+        "cutWidthCm": 227,
+        "modelTier": "M7",
+        "widthCode": 220
+      }
+    },
+    {
+      "id": "cmtgjwd0o0012tw9kcjlo14kd",
+      "action": "rename",
+      "code": "M-7300",
+      "legacyCodes": [
+        "M7300"
+      ],
+      "series": "M",
+      "name": "M-Series Cutting Machine 7cm × 300cm",
+      "description": "Computer controlled cutting machine - 7cm compressed lay height, 300cm cutting width",
+      "prices": {
+        "AU": 0.0,
+        "US": 256697.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "form": "M_SERIES",
+      "specs": {
+        "cutHeightCm": 7,
+        "cutWidthCm": 300,
+        "modelTier": "M7",
+        "widthCode": 300
+      }
+    },
+    {
+      "id": "cmtfmusjg000zeo9ktdv7nzp6",
+      "action": "rename",
+      "code": "M-7390",
+      "legacyCodes": [
+        "M7390"
+      ],
+      "series": "M",
+      "name": "M-Series Cutting Machine 7cm × 390cm",
+      "description": "Computer controlled cutting machine - 7cm compressed lay height, 390cm cutting width",
+      "prices": {
+        "AU": 257000.0,
+        "US": 297000.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "form": "M_SERIES",
+      "specs": {
+        "cutHeightCm": 7,
+        "cutWidthCm": 390,
+        "modelTier": "M7",
+        "widthCode": 390
+      }
+    },
+    {
+      "id": "cmtfmusj1000oeo9kadyumm13",
+      "action": "rename",
+      "code": "M-10180",
+      "legacyCodes": [
+        "M10180"
+      ],
+      "series": "M",
+      "name": "M-Series Cutting Machine 10cm × 180cm",
+      "description": "Computer controlled cutting machine - 10cm compressed lay height, 180cm cutting width",
+      "prices": {
+        "AU": 212500.0,
+        "US": 185625.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "form": "M_SERIES",
+      "specs": {
+        "cutHeightCm": 10,
+        "cutWidthCm": 180,
+        "modelTier": "M10",
+        "widthCode": 180
+      }
+    },
+    {
+      "id": "cmtfmusj2000peo9kvau1k8kd",
+      "action": "rename",
+      "code": "M-10220",
+      "legacyCodes": [
+        "M10220"
+      ],
+      "series": "M",
+      "name": "M-Series Cutting Machine 10cm × 227cm",
+      "description": "Computer controlled cutting machine - 10cm compressed lay height, 227cm cutting width",
+      "prices": {
+        "AU": 225500.0,
+        "US": 198990.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "form": "M_SERIES",
+      "specs": {
+        "cutHeightCm": 10,
+        "cutWidthCm": 227,
+        "modelTier": "M10",
+        "widthCode": 220
+      }
+    },
+    {
+      "id": "cmtgjwcyo000qtw9kgy5t9ktq",
+      "action": "rename",
+      "code": "M-10300",
+      "legacyCodes": [
+        "M10300"
+      ],
+      "series": "M",
+      "name": "M-Series Cutting Machine 10cm × 300cm",
+      "description": "Computer controlled cutting machine - 10cm compressed lay height, 300cm cutting width",
+      "prices": {
+        "AU": 0.0,
+        "US": 266647.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "form": "M_SERIES",
+      "specs": {
+        "cutHeightCm": 10,
+        "cutWidthCm": 300,
+        "modelTier": "M10",
+        "widthCode": 300
+      }
+    },
+    {
+      "id": "cmtfmusj3000qeo9k3hwsf2li",
+      "action": "rename",
+      "code": "M-10390",
+      "legacyCodes": [
+        "M10390"
+      ],
+      "series": "M",
+      "name": "M-Series Cutting Machine 10cm × 390cm",
+      "description": "Computer controlled cutting machine - 10cm compressed lay height, 390cm cutting width",
+      "prices": {
+        "AU": 262000.0,
+        "US": 304425.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "form": "M_SERIES",
+      "specs": {
+        "cutHeightCm": 10,
+        "cutWidthCm": 390,
+        "modelTier": "M10",
+        "widthCode": 390
+      }
+    },
+    {
+      "id": "cmtfmusil000ceo9kbcbbe8rk",
+      "action": "keep",
+      "code": "X-10180",
+      "legacyCodes": [],
+      "series": "X",
+      "name": "X-Calibre Cutting Machine 10cm × 180cm",
+      "description": "Computer controlled cutting machine - 10cm compressed lay height, 180cm cutting width",
+      "prices": {
+        "AU": 0,
+        "US": 248000.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "form": "M_SERIES",
+      "specs": {
+        "cutHeightCm": 10,
+        "cutWidthCm": 180,
+        "modelTier": "X10",
+        "widthCode": 180
+      },
+      "needsReviewAU": true
+    },
+    {
+      "id": "cmtfmusin000deo9k9i9ywtga",
+      "action": "keep",
+      "code": "X-10220",
+      "legacyCodes": [],
+      "series": "X",
+      "name": "X-Calibre Cutting Machine 10cm × 227cm",
+      "description": "Computer controlled cutting machine - 10cm compressed lay height, 227cm cutting width",
+      "prices": {
+        "AU": 0,
+        "US": 262000.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "form": "M_SERIES",
+      "specs": {
+        "cutHeightCm": 10,
+        "cutWidthCm": 227,
+        "modelTier": "X10",
+        "widthCode": 220
+      },
+      "needsReviewAU": true
+    },
+    {
+      "id": "cmtmo4nym000fdi9kd01ndhf5",
+      "action": "delete",
+      "code": "X-10390",
+      "legacyCodes": [],
+      "series": "X",
+      "name": "Computer controlled cutting machine - 10cm compressed lay height, 390cm cutting width",
+      "description": "Computer controlled cutting machine - 10cm compressed lay height, 390cm cutting width",
+      "prices": {
+        "AU": 262000.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "reason": "not in US list"
+    },
+    {
+      "id": "cmtmo4nyo000gdi9kcibsugvj",
+      "action": "delete",
+      "code": "X-3180",
+      "legacyCodes": [],
+      "series": "X",
+      "name": "Computer controlled cutting machine - 3cm compressed lay height, 180cm cutting width",
+      "description": "Computer controlled cutting machine - 3cm compressed lay height, 180cm cutting width",
+      "prices": {
+        "AU": 175000.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "reason": "not in US list"
+    },
+    {
+      "id": "cmtmo4nyq000hdi9k3n62ac97",
+      "action": "delete",
+      "code": "X-3220",
+      "legacyCodes": [],
+      "series": "X",
+      "name": "Computer controlled cutting machine - 3cm compressed lay height, 227cm cutting width",
+      "description": "Computer controlled cutting machine - 3cm compressed lay height, 227cm cutting width",
+      "prices": {
+        "AU": 188000.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "reason": "not in US list"
+    },
+    {
+      "id": "cmtmo4nyr000idi9ky0hkhc7j",
+      "action": "delete",
+      "code": "X-3390",
+      "legacyCodes": [],
+      "series": "X",
+      "name": "Computer controlled cutting machine - 3cm compressed lay height, 390cm cutting width",
+      "description": "Computer controlled cutting machine - 3cm compressed lay height, 390cm cutting width",
+      "prices": {
+        "AU": 0.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "reason": "not in US list"
+    },
+    {
+      "id": "cmtmo4nys000jdi9khzsme9zm",
+      "action": "delete",
+      "code": "X-5180",
+      "legacyCodes": [],
+      "series": "X",
+      "name": "Computer controlled cutting machine - 5cm compressed lay height, 180cm cutting width",
+      "description": "Computer controlled cutting machine - 5cm compressed lay height, 180cm cutting width",
+      "prices": {
+        "AU": 195000.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "reason": "not in US list"
+    },
+    {
+      "id": "cmtmo4nyv000kdi9k20j5kjhq",
+      "action": "delete",
+      "code": "X-5220",
+      "legacyCodes": [],
+      "series": "X",
+      "name": "Computer controlled cutting machine - 5cm compressed lay height, 227cm cutting width",
+      "description": "Computer controlled cutting machine - 5cm compressed lay height, 227cm cutting width",
+      "prices": {
+        "AU": 208000.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "reason": "not in US list"
+    },
+    {
+      "id": "cmtmo4nyw000ldi9kqhkmqxc7",
+      "action": "delete",
+      "code": "X-5390",
+      "legacyCodes": [],
+      "series": "X",
+      "name": "Computer controlled cutting machine - 5cm compressed lay height, 390cm cutting width",
+      "description": "Computer controlled cutting machine - 5cm compressed lay height, 390cm cutting width",
+      "prices": {
+        "AU": 245000.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "reason": "not in US list"
+    },
+    {
+      "id": "cmtmo4nyy000mdi9kugnis9cy",
+      "action": "delete",
+      "code": "X-7180",
+      "legacyCodes": [],
+      "series": "X",
+      "name": "Computer controlled cutting machine - 7cm compressed lay height, 180cm cutting width",
+      "description": "Computer controlled cutting machine - 7cm compressed lay height, 180cm cutting width",
+      "prices": {
+        "AU": 207500.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "reason": "not in US list"
+    },
+    {
+      "id": "cmtmo4nyz000ndi9kvk5ki29w",
+      "action": "delete",
+      "code": "X-7220",
+      "legacyCodes": [],
+      "series": "X",
+      "name": "Computer controlled cutting machine - 7cm compressed lay height, 227cm cutting width",
+      "description": "Computer controlled cutting machine - 7cm compressed lay height, 227cm cutting width",
+      "prices": {
+        "AU": 220500.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "reason": "not in US list"
+    },
+    {
+      "id": "cmtmo4nz0000odi9k7f0k0q3t",
+      "action": "delete",
+      "code": "X-7390",
+      "legacyCodes": [],
+      "series": "X",
+      "name": "Computer controlled cutting machine - 7cm compressed lay height, 390cm cutting width",
+      "description": "Computer controlled cutting machine - 7cm compressed lay height, 390cm cutting width",
+      "prices": {
+        "AU": 257000.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "reason": "not in US list"
+    },
+    {
+      "id": "cmtfmusjh0010eo9kqxj3nvct",
+      "action": "keep",
+      "code": "L-180",
+      "legacyCodes": [],
+      "series": "L",
+      "name": "L-Series Cutting Machine 180cm",
+      "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 180cm. Cutting belt perforated flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included.",
+      "prices": {
+        "AU": 135000.0,
+        "US": 118029.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "specs": {
+        "cutWidthCm": 180,
+        "extended": false,
+        "belt": "urethane"
+      }
+    },
+    {
+      "id": "cmtfmusji0011eo9khpun742d",
+      "action": "keep",
+      "code": "L-180F",
+      "legacyCodes": [],
+      "series": "L",
+      "name": "L-Series Cutting Machine 180cm, Felt",
+      "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 180cm. Cutting belt Porous felt flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included.",
+      "prices": {
+        "AU": 130000.0,
+        "US": 113657.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "specs": {
+        "cutWidthCm": 180,
+        "extended": false,
+        "belt": "felt"
+      }
+    },
+    {
+      "id": "cmtfmusjj0012eo9kk908ganm",
+      "action": "keep",
+      "code": "L-220",
+      "legacyCodes": [],
+      "series": "L",
+      "name": "L-Series Cutting Machine 226cm",
+      "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 226cm. Cutting belt perforated flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included.",
+      "prices": {
+        "AU": 150000.0,
+        "US": 131143.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "specs": {
+        "cutWidthCm": 226,
+        "extended": false,
+        "belt": "urethane"
+      }
+    },
+    {
+      "id": "cmtfmusjk0013eo9k327rgodg",
+      "action": "keep",
+      "code": "L-220F",
+      "legacyCodes": [],
+      "series": "L",
+      "name": "L-Series Cutting Machine 226cm, Felt",
+      "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 226cm. Cutting belt Porous felt flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included.",
+      "prices": {
+        "AU": 145000.0,
+        "US": 126771.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "specs": {
+        "cutWidthCm": 226,
+        "extended": false,
+        "belt": "felt"
+      }
+    },
+    {
+      "id": "cmtmo4nzw0019di9k3mskt4kw",
+      "action": "keep",
+      "code": "L-320",
+      "legacyCodes": [],
+      "series": "L",
+      "name": "L-Series Cutting Machine 320cm",
+      "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 320cm. Cutting belt perforated flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included.",
+      "prices": {
+        "AU": 170000.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "specs": {
+        "cutWidthCm": 320,
+        "extended": false,
+        "belt": "urethane"
+      }
+    },
+    {
+      "id": "cmtgjwd1b0019tw9ki3ob6ob3",
+      "action": "keep",
+      "code": "L-320E",
+      "legacyCodes": [],
+      "series": "L",
+      "name": "L-Series Cutting Machine 320cm, Extended",
+      "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 320cm. Cutting belt perforated flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included. Extended length.",
+      "prices": {
+        "AU": 0.0,
+        "US": 159235.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "specs": {
+        "cutWidthCm": 320,
+        "extended": true,
+        "belt": "urethane"
+      }
+    },
+    {
+      "id": "cmtmo4nzz001bdi9kiu8x49iv",
+      "action": "keep",
+      "code": "L-320F",
+      "legacyCodes": [],
+      "series": "L",
+      "name": "L-Series Cutting Machine 320cm, Felt",
+      "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 320cm. Cutting belt Porous felt flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included.",
+      "prices": {
+        "AU": 165000.0,
+        "US": 0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "MACHINE",
+      "specs": {
+        "cutWidthCm": 320,
+        "extended": false,
+        "belt": "felt"
+      },
+      "note": "US 154864 moved to L-320EF"
+    },
+    {
+      "id": null,
+      "action": "add",
+      "code": "L-320EF",
+      "legacyCodes": [],
+      "kind": "MACHINE",
+      "series": "L",
+      "name": "L-Series Cutting Machine 320cm, Extended, Felt",
+      "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 320cm. Cutting belt Porous felt flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included. Extended length.",
+      "specs": {
+        "cutWidthCm": 320,
+        "extended": true,
+        "belt": "felt"
+      },
+      "prices": {
+        "AU": 0,
+        "US": 154864
+      },
+      "noCommission": false,
+      "isCredit": false
+    },
+    {
+      "id": "cmtfq1k8j0018xy9kw9mdaap4",
+      "action": "keep",
+      "code": "ANT-V5",
+      "legacyCodes": [],
+      "series": "SW",
+      "name": "Automatic Nester V5",
+      "description": "Automatic Nester V5",
+      "prices": {
+        "AU": 8320.0,
+        "US": 6429.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "SOFTWARE"
+    },
+    {
+      "id": "cmtfq1k8k0019xy9kydfy43d3",
+      "action": "keep",
+      "code": "ANT-V6",
+      "legacyCodes": [],
+      "series": "SW",
+      "name": "Automatic Nester V6",
+      "description": "Automatic Nester V6 (Faster results, higher level nesting algorithm) Includes edge buffer function (container)",
+      "prices": {
+        "AU": 11720.0,
+        "US": 9054.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "SOFTWARE"
+    },
+    {
+      "id": "cmtfq1k8p001cxy9kbc8oeuvq",
+      "action": "keep",
+      "code": "PDG",
+      "legacyCodes": [],
+      "series": "SW",
+      "name": "PhotoDigitiser",
+      "description": "PhotoDigitiser-Digitizing of photo patterns using tools available within PathWorks",
+      "prices": {
+        "AU": 1800.0,
+        "US": 2089.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "SOFTWARE"
+    },
+    {
+      "id": "cmtfq1k8r001dxy9k8ulbmd8j",
+      "action": "keep",
+      "code": "PRA",
+      "legacyCodes": [],
+      "series": "SW",
+      "name": "Production Analyst",
+      "description": "Production Analyst is a stand alone software that enables remote manipulation of Production Manager data.",
+      "prices": {
+        "AU": 3500.0,
+        "US": 2250.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "SOFTWARE"
+    },
+    {
+      "id": "cmtfq1k8u001gxy9kj3olxoxm",
+      "action": "keep",
+      "code": "WPL",
+      "legacyCodes": [],
+      "series": "SW",
+      "name": "PoolLiner Wizard",
+      "description": "PoolLiner Wizard - automatic creation of flat shapes (unfolding) based on 3D point measurements.",
+      "prices": {
+        "AU": 5850.0,
+        "US": 5432.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "SOFTWARE"
+    },
+    {
+      "id": "cmtfq1k8v001hxy9kkqzkvi3u",
+      "action": "keep",
+      "code": "WPN",
+      "legacyCodes": [],
+      "series": "SW",
+      "name": "Panel Wizard",
+      "description": "Panel Wizard-Automatic creation of panels based with automatic tool path optimisation.",
+      "prices": {
+        "AU": 500.0,
+        "US": 696.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "SOFTWARE"
+    },
+    {
+      "id": "cmtfq1k8o001bxy9kvpyvtmbu",
+      "action": "rename",
+      "code": "LSC",
+      "legacyCodes": [
+        "LS Convert"
+      ],
+      "series": "SW",
+      "name": "LS Convert",
+      "description": "LS Convert software module (dongle protected)",
+      "prices": {
+        "AU": 9018,
+        "US": 9750.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "SOFTWARE"
+    },
+    {
+      "id": "cmtgjwd1s001ktw9ker6f4ygn",
+      "action": "rename",
+      "code": "PTW-I",
+      "legacyCodes": [
+        "PTW(I)"
+      ],
+      "series": "SW",
+      "name": "PathWorks Integrated",
+      "description": "PathWorks Integrated software module within PathCut™ . Pathworks features include, pattern creation tools, piece shredder, magnetic nesting, importing and exporting of standard DXF and G-code.",
+      "prices": {
+        "AU": 3500,
+        "US": 2786.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "SOFTWARE",
+      "specs": {
+        "softwareMode": "integrated"
+      }
+    },
+    {
+      "id": "cmtfq1k8t001fxy9k5wzrg2g3",
+      "action": "rename",
+      "code": "PTW-S",
+      "legacyCodes": [
+        "PTW(S)"
+      ],
+      "series": "SW",
+      "name": "PathWorks Standalone",
+      "description": "PathWorks Standalone software module. Pathworks features include, pattern creation tools, piece shredder, magnetic nesting, importing and exporting of standard DXF and G-code.",
+      "prices": {
+        "AU": 4000.0,
+        "US": 3621.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "SOFTWARE",
+      "specs": {
+        "softwareMode": "standalone"
+      }
+    },
+    {
+      "id": "cmtfq1k8s001exy9kmvyf94rx",
+      "action": "delete",
+      "code": "PTN",
+      "legacyCodes": [],
+      "series": "SW",
+      "name": "Photo Nesting (Note: option only, does NOT include hardware or ANT)",
+      "description": "Photo Nesting (Note: option only, does NOT include hardware or ANT)",
+      "prices": {
+        "AU": 20577.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "reason": "AU only"
+    },
+    {
+      "id": "cmtfq1k8n001axy9kcquwtccm",
+      "action": "delete",
+      "code": "EDG",
+      "legacyCodes": [],
+      "series": "SW",
+      "name": "External Digitizer- enabling software functionality to connect an external digitizer.",
+      "description": "External Digitizer - enabling software functionality to connect an external digitizer.",
+      "prices": {
+        "AU": 1114.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "reason": "AU only"
+    },
+    {
+      "id": "cmtfmusjq0018eo9k6jcw286m",
+      "action": "keep",
+      "code": "LNS-2020",
+      "legacyCodes": [],
+      "series": "LNS",
+      "name": "Leather Nesting System 2020",
+      "description": "Camera Nesting System Comprises: a) Operator console with utility drawer (With Mounting bracket onto Pathfinder EasyLoader side frame) b) Windows computer, keyboard, mouse & Microsoft surface dial. c) Digital SLR camera & stand. d) PathWorks (standalone) software. e) ANT - automatic nesting licence optioned within PathWorks f) WHD Leather Hide Wizard",
+      "prices": {
+        "AU": 36712.0,
+        "US": 27534.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "SYSTEM"
+    },
+    {
+      "id": "cmtfmusjr0019eo9kag2a7bpw",
+      "action": "keep",
+      "code": "LNS-2420",
+      "legacyCodes": [],
+      "series": "LNS",
+      "name": "Leather Nesting System 2420",
+      "description": "Camera Nesting System Comprises: a) Operator console with utility drawer (With Mounting bracket onto Pathfinder EasyLoader side frame) b) Windows computer, keyboard, mouse & Microsoft surface dial. c) Digital SLR camera & stand. d) PathWorks (standalone) software. e) ANT - automatic nesting licence optioned within PathWorks f) WHD Leather Hide Wizard",
+      "prices": {
+        "AU": 38547.6,
+        "US": 28911.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "SYSTEM"
+    },
+    {
+      "id": "cmtfmusjs001aeo9km42qno4u",
+      "action": "keep",
+      "code": "LNS-3220",
+      "legacyCodes": [],
+      "series": "LNS",
+      "name": "Leather Nesting System 3220",
+      "description": "Camera Nesting System Comprises: a) Operator console with utility drawer (With Mounting bracket onto Pathfinder EasyLoader side frame) b) Windows computer, keyboard, mouse & Microsoft surface dial. c) Digital SLR camera & stand. d) PathWorks (standalone) software. e) ANT - automatic nesting licence optioned within PathWorks f) WHD Leather Hide Wizard",
+      "prices": {
+        "AU": 40474.98,
+        "US": 30356.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "SYSTEM"
+    },
+    {
+      "id": "cmtfq1k8z001lxy9krcl3om17",
+      "action": "keep",
+      "code": "EL-2020",
+      "legacyCodes": [],
+      "series": "EL",
+      "name": "EasyLoader 2020",
+      "description": "2020mm width, to suit FM180/FabricPro-180. Base: drive module, first 1.2M.",
+      "prices": {
+        "AU": 0.0,
+        "US": 0.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "TABLE",
+      "form": "EASYLOADER",
+      "specs": {
+        "tableWidthMm": 2020
+      }
+    },
+    {
+      "id": "cmtfq1k91001nxy9k4m8qvscl",
+      "action": "keep",
+      "code": "EF-2020",
+      "legacyCodes": [],
+      "series": "EF",
+      "name": "EasyFeeder 2020",
+      "description": "1200mm length, functionality for synchronisation with the M and L series. Electronic Edge Control including Edge control sensors. Includes roll keeper and plastic roll holder.",
+      "prices": {
+        "AU": 10400.0,
+        "US": 16714.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "FEEDER",
+      "specs": {
+        "tableWidthMm": 2020
+      }
+    },
+    {
+      "id": "cmtfq1k90001mxy9k1h05aea2",
+      "action": "keep",
+      "code": "EL-2420",
+      "legacyCodes": [],
+      "series": "EL",
+      "name": "EasyLoader 2420",
+      "description": "2420mm width, to suit FM220/FabricPro220. Base: drive module, first 1.2M.",
+      "prices": {
+        "AU": 0.0,
+        "US": 0.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "TABLE",
+      "form": "EASYLOADER",
+      "specs": {
+        "tableWidthMm": 2420
+      }
+    },
+    {
+      "id": "cmtfq1k92001oxy9k22h7sv1d",
+      "action": "keep",
+      "code": "EF-2420",
+      "legacyCodes": [],
+      "series": "EF",
+      "name": "EasyFeeder 2420",
+      "description": "1200mm length, functionality for synchronisation with the M and L series. Electronic Edge Control including Edge control sensors. Includes roll keeper and plastic roll holder.",
+      "prices": {
+        "AU": 10860.0,
+        "US": 17829.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "FEEDER",
+      "specs": {
+        "tableWidthMm": 2420
+      }
+    },
+    {
+      "id": "cmtgjwd27001ttw9ki4jbsvh9",
+      "action": "keep",
+      "code": "EL-3220",
+      "legacyCodes": [],
+      "series": "EL",
+      "name": "EasyLoader 3220",
+      "description": "3220mm width, to suit Mx300, L320 & FabricPro300. Base: drive module, first 1.2M.",
+      "prices": {
+        "AU": 0.0,
+        "US": 0.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "TABLE",
+      "form": "EASYLOADER",
+      "specs": {
+        "tableWidthMm": 3220
+      }
+    },
+    {
+      "id": "cmtgjwd2b001xtw9kl33nq440",
+      "action": "keep",
+      "code": "EF-3220",
+      "legacyCodes": [],
+      "series": "EF",
+      "name": "EasyFeeder 3220",
+      "description": "1200mm length, functionality for synchronisation with the M and L series. Electronic Edge Control including Edge control sensors. Includes roll keeper and plastic roll holder.",
+      "prices": {
+        "AU": 0.0,
+        "US": 27161.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "FEEDER",
+      "specs": {
+        "tableWidthMm": 3220
+      }
+    },
+    {
+      "id": "cmtgjwd28001utw9kiu99zald",
+      "action": "keep",
+      "code": "EL-4030",
+      "legacyCodes": [],
+      "series": "EL",
+      "name": "EasyLoader 4030",
+      "description": "4030mm width, to suit Mx390 & FabricPro390. Base: drive module, first 1.2M.",
+      "prices": {
+        "AU": 0.0,
+        "US": 0.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "TABLE",
+      "form": "EASYLOADER",
+      "specs": {
+        "tableWidthMm": 4030
+      }
+    },
+    {
+      "id": "cmtfq1k93001pxy9k8qxcidl6",
+      "action": "keep",
+      "code": "EF-4030",
+      "legacyCodes": [],
+      "series": "EF",
+      "name": "EasyFeeder 4030",
+      "description": "1200mm length, functionality for synchronisation with the M and L series. Electronic Edge Control including Edge control sensors. Includes roll keeper and plastic roll holder.",
+      "prices": {
+        "AU": 17540.0,
+        "US": 29250.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "FEEDER",
+      "specs": {
+        "tableWidthMm": 4030
+      }
+    },
+    {
+      "id": "cmtghiide001q1i9kctgwob7j",
+      "action": "keep",
+      "code": "HDRF-180",
+      "legacyCodes": [],
+      "series": "HDRF",
+      "name": "Heavy Duty Roll Feeder 180",
+      "description": "Heavy duty roll feeder for rolls up to 500kg, roll diameters up to 900mm and widths up to 1800mm. Adjustable core support 70-80mm (option up to 200mm), adjustable disk brake prevents roll run-away, heavy-duty lockable castors. Compatible with all Pathfinder automatic cutting machines.",
+      "prices": {
+        "AU": 17500.0,
+        "US": 12500.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "ACCESSORY"
+    },
+    {
+      "id": "cmtgnnc1o00214o9k3xr7dapn",
+      "action": "keep",
+      "code": "HDRF-220",
+      "legacyCodes": [],
+      "series": "HDRF",
+      "name": "Heavy Duty Roll Feeder 220",
+      "description": "Heavy duty roll feeder for rolls up to 500kg, roll diameters up to 900mm and widths up to 2200mm. Adjustable core support 70-80mm (option up to 200mm), adjustable disk brake prevents roll run-away, heavy-duty lockable castors. Compatible with all Pathfinder automatic cutting machines.",
+      "prices": {
+        "AU": 19500.0,
+        "US": 13900.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "ACCESSORY"
+    },
+    {
+      "id": "cmtgnnc1r00224o9krjjz2ycb",
+      "action": "keep",
+      "code": "HDRF-320",
+      "legacyCodes": [],
+      "series": "HDRF",
+      "name": "Heavy Duty Roll Feeder 320",
+      "description": "Heavy duty roll feeder for rolls up to 500kg, roll diameters up to 900mm and widths up to 3200mm. Adjustable core support 70-80mm (option up to 200mm), adjustable disk brake prevents roll run-away, heavy-duty lockable castors. Compatible with all Pathfinder automatic cutting machines.",
+      "prices": {
+        "AU": 21400.0,
+        "US": 15290.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "ACCESSORY"
+    },
+    {
+      "id": "cmtfmusjt001beo9knxf0j5zv",
+      "action": "keep",
+      "code": "FP-180",
+      "legacyCodes": [],
+      "series": "FP",
+      "name": "FabricPro Spreader 180cm",
+      "description": "FabricPro Automatic Spreading Machine (maximum fabric width=180 cm)",
+      "prices": {
+        "AU": 64000.0,
+        "US": 42000.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "SPREADER",
+      "form": "FABRICPRO",
+      "specs": {
+        "cutWidthCm": 180
+      }
+    },
+    {
+      "id": "cmtfmusju001ceo9kwgf3rck9",
+      "action": "keep",
+      "code": "FP-220",
+      "legacyCodes": [],
+      "series": "FP",
+      "name": "FabricPro Spreader 220cm",
+      "description": "FabricPro Automatic Spreading Machine (maximum fabric width=220 cm)",
+      "prices": {
+        "AU": 67000.0,
+        "US": 50250.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "SPREADER",
+      "form": "FABRICPRO",
+      "specs": {
+        "cutWidthCm": 220
+      }
+    },
+    {
+      "id": "cmtgjwd2i0022tw9kb49t6e3c",
+      "action": "keep",
+      "code": "FP-300",
+      "legacyCodes": [],
+      "series": "FP",
+      "name": "FabricPro Spreader 300cm",
+      "description": "FabricPro Automatic Spreading Machine (maximum fabric width=300 cm)",
+      "prices": {
+        "AU": 0.0,
+        "US": 68000.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "SPREADER",
+      "form": "FABRICPRO",
+      "specs": {
+        "cutWidthCm": 300
+      }
+    },
+    {
+      "id": "cmtghiidj001t1i9k2hnxu0fj",
+      "action": "keep",
+      "code": "FP-TROLLEY",
+      "legacyCodes": [],
+      "series": "FP",
+      "name": "Fabric Roll Trolley",
+      "description": "Ergonomic fabric roll trolley designed for seamless use with the FabricPro spreading system. Direct roll transfer from storage to FabricPro with no intermediate handling or bulky roll-lifting devices. Carries up to 2 fabric rolls; 2 lockable castor wheels; welded steel construction; compatible with EasyLoader tables (880-940mm height); compact flat-packed design.",
+      "prices": {
+        "AU": 0.0
+      },
+      "noCommission": false,
+      "isCredit": false,
+      "kind": "ACCESSORY"
+    },
+    {
+      "id": "cmtjiy8b8000g0q9k9z6jj0za",
+      "action": "keep",
+      "code": "RSP",
+      "legacyCodes": [],
+      "series": "SVC",
+      "name": "Remote Support Program",
+      "description": "<p></p>",
+      "prices": {
+        "AU": 5500.0
+      },
+      "noCommission": true,
+      "isCredit": false,
+      "kind": "SERVICE"
+    },
+    {
+      "id": "cmtl4xoco0002ob9kud7zole7",
+      "action": "keep",
+      "code": "RSP+",
+      "legacyCodes": [],
+      "series": "SVC",
+      "name": "Remote Support Program Plus",
+      "description": "<p>Same as RSP with additional preventitive maintance (one per year)</p>",
+      "prices": {
+        "AU": 7500.0
+      },
+      "noCommission": true,
+      "isCredit": false,
+      "kind": "SERVICE"
+    },
+    {
+      "id": "cmtgnnc1y00274o9kby224ssn",
+      "action": "keep",
+      "code": "SERVICE",
+      "legacyCodes": [],
+      "series": "SVC",
+      "name": "Service",
+      "description": "Installation, training and support services.",
+      "prices": {
+        "AU": 0.0
+      },
+      "noCommission": true,
+      "isCredit": false,
+      "kind": "SERVICE"
+    },
+    {
+      "id": "cmtkui88s0025r49ky9if9ghi",
+      "action": "keep",
+      "code": "TRADE-IN",
+      "legacyCodes": [],
+      "series": "SVC",
+      "name": "Trade-in",
+      "description": "The customer is responsible for removing the traded-in machine and disposing of (trashing) it. The customer agrees that neither the machine nor its parts may be re-entered into the market, whether as parts or as a machine. Before the machine is trashed, Pathfinder's engineers have the opportunity to remove or destroy its components.",
+      "prices": {
+        "AU": 20000.0
+      },
+      "noCommission": true,
+      "isCredit": true,
+      "kind": "CREDIT"
+    }
+  ],
+  "options": [
+    {
+      "id": "cmtfmusk8001oeo9kueojp2ik",
+      "action": "keep",
+      "code": "ABR-M",
+      "legacyCodes": [],
+      "name": "Air Brush",
+      "description": "Air Brush - air brush including ink/paint reservoir.",
+      "prices": {
+        "AU": 1950.0,
+        "US": 2507.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "ABR"
+    },
+    {
+      "id": "cmtfmusk9001peo9knefgl4cl",
+      "action": "keep",
+      "code": "AFP",
+      "legacyCodes": [],
+      "name": "Automatic Foot Pressure",
+      "description": "Automatic Foot Pressure - 2 pressure settings preset by pressure regulators. Accessible by preset parameters (not fully digitally controlled)",
+      "prices": {
+        "AU": 1560.0,
+        "US": 1671.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "AFP"
+    },
+    {
+      "id": "cmtfmuskd001teo9kl2fzes0t",
+      "action": "keep",
+      "code": "APM-M",
+      "legacyCodes": [],
+      "name": "Adaptive Pattern Matching",
+      "description": "Adaptive Pattern Matching - various modes including bow & skew matching software, (HDC is required with this option)",
+      "prices": {
+        "AU": 15000.0,
+        "US": 19500.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "APM"
+    },
+    {
+      "id": "cmtfmuskf001veo9k7l9wuvkj",
+      "action": "keep",
+      "code": "BCR-M",
+      "legacyCodes": [],
+      "name": "Barcode Scanner",
+      "description": "Barcode scanner - input of marker name via barcode",
+      "prices": {
+        "AU": 2500.0,
+        "US": 1462.5
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "BCR"
+    },
+    {
+      "id": "cmtfmusko0024eo9kd0dtc5c4",
+      "action": "keep",
+      "code": "DR2",
+      "legacyCodes": [],
+      "name": "Secondary Drill Unit",
+      "description": "Secondary Drill Unit",
+      "prices": {
+        "AU": 6200.0,
+        "US": 5850.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "DR2"
+    },
+    {
+      "id": "cmtfmuskr0027eo9k6vluwsps",
+      "action": "keep",
+      "code": "DRG-1",
+      "legacyCodes": [],
+      "name": "Drag Knife, Olfa 45°",
+      "description": "Drag Knife - to suit standard Olfa 'snap-off' blade(#380010). Cutting angle 45deg. Maximum cutting depth 7mm",
+      "prices": {
+        "AU": 2535.0,
+        "US": 2674.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "DRG"
+    },
+    {
+      "id": "cmtfmusks0028eo9kzf362n9b",
+      "action": "keep",
+      "code": "DRG-2",
+      "legacyCodes": [],
+      "name": "Drag Knife, Excellite 21°",
+      "description": "Drag Knife - to suit Excellite blade (#380011). Cutting angle 21deg. Maximum cutting depth 20mm.",
+      "prices": {
+        "AU": 2496.0,
+        "US": 2674.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "DRG"
+    },
+    {
+      "id": "cmtfmuskt0029eo9k7yvwv50z",
+      "action": "keep",
+      "code": "DRG-3",
+      "legacyCodes": [],
+      "name": "Drag Knife, Carbide 45°",
+      "description": "Drag Knife - to suit carbide blade (#380012). Cutting angle 45deg. Maximum cutting depth 8mm.",
+      "prices": {
+        "AU": 2496.0,
+        "US": 2674.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "DRG"
+    },
+    {
+      "id": "cmtfmuslo0032eo9kzp0pe3e8",
+      "action": "keep",
+      "code": "HDC-M",
+      "legacyCodes": [],
+      "name": "HeadCam",
+      "description": "HeadCam:Camera in cutting head - Dynamic interaction with PathCut",
+      "prices": {
+        "AU": 5000.0,
+        "US": 2785.71
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "HDC"
+    },
+    {
+      "id": "cmtfmuslp0034eo9kuno10epu",
+      "action": "keep",
+      "code": "HFV-M",
+      "legacyCodes": [],
+      "name": "High Flow Vacuum 22kW",
+      "description": "High Flow Vacuum system 22KW",
+      "prices": {
+        "AU": 4400.0,
+        "US": 6129.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "HFV"
+    },
+    {
+      "id": "cmtfmuslq0035eo9k6vex2lsy",
+      "action": "keep",
+      "code": "IJP",
+      "legacyCodes": [],
+      "name": "Ink Jet Printer",
+      "description": "Ink Jet Printer: Integrated within the cutting head. Uses standard Black HP45 ink cartridge. 1/2inch(12mm) single line, 7/32'(5mm) two lines of print.",
+      "prices": {
+        "AU": 6552.0,
+        "US": 7020.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "IJP"
+    },
+    {
+      "id": "cmtfmuslr0036eo9k8thnes0v",
+      "action": "keep",
+      "code": "IKA",
+      "legacyCodes": [],
+      "name": "IceKnife Air",
+      "description": "IceKnife-Knife cooling by Air,controlled by Pathcut",
+      "prices": {
+        "AU": 3800.0,
+        "US": 3970.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "IKA"
+    },
+    {
+      "id": "cmtfmuslu003aeo9kobyfipmw",
+      "action": "keep",
+      "code": "MRK",
+      "legacyCodes": [],
+      "name": "Marking Tool",
+      "description": "Marking tool includes standard Bic biro pen holder (After sales: Head cover replacement is at extra cost)",
+      "prices": {
+        "AU": 1950.0,
+        "US": 2507.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "MRK"
+    },
+    {
+      "id": "cmtfmuslv003beo9kljyn1t5b",
+      "action": "keep",
+      "code": "MTS",
+      "legacyCodes": [],
+      "name": "Machine Transfer System",
+      "description": "Machine Transfer System - Not available for Mx390. For more than 9 mtrs of travel see additional price.",
+      "prices": {
+        "AU": 15000.0,
+        "US": 10446.43
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "MTS"
+    },
+    {
+      "id": "cmtfmusly003feo9k79rmv6yx",
+      "action": "keep",
+      "code": "OFD-M",
+      "legacyCodes": [],
+      "name": "Offload Display",
+      "description": "Offload Display",
+      "prices": {
+        "AU": 3200.0,
+        "US": 1950.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "OFD"
+    },
+    {
+      "id": "cmtfmuslz003geo9k84g80f9w",
+      "action": "keep",
+      "code": "OFJ",
+      "legacyCodes": [],
+      "name": "Offload Projector",
+      "description": "Offload Projector (Available Mx180 & Mx220 )",
+      "prices": {
+        "AU": 7200.0,
+        "US": 3907.5
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "OFJ"
+    },
+    {
+      "id": "cmtfmusm0003ieo9ks28jctim",
+      "action": "keep",
+      "code": "OFP-M",
+      "legacyCodes": [],
+      "name": "Offload Printer",
+      "description": "Offload Printer - synchronised with PathCut & OFD",
+      "prices": {
+        "AU": 3900.0,
+        "US": 3133.93
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "OFP"
+    },
+    {
+      "id": "cmtfmusm3003leo9ksilhib0p",
+      "action": "keep",
+      "code": "PM-M",
+      "legacyCodes": [],
+      "name": "Pattern Match",
+      "description": "Pattern Match - spot light pattern match software",
+      "prices": {
+        "AU": 2786.0,
+        "US": 2089.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "PM"
+    },
+    {
+      "id": "cmtfmusmb003peo9kx0uqbby5",
+      "action": "keep",
+      "code": "PRM-M",
+      "legacyCodes": [],
+      "name": "Production Manager",
+      "description": "Production Manager software",
+      "prices": {
+        "AU": 5000.0,
+        "US": 3214.29
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "PRM"
+    },
+    {
+      "id": "cmtfmuslw003ceo9k13rz4vvw",
+      "action": "rename",
+      "code": "MTS-M",
+      "legacyCodes": [
+        "MTS- additional travel p/Metre"
+      ],
+      "name": "MTS Additional Travel, per metre",
+      "description": "Additional travel p/metre",
+      "prices": {
+        "AU": 585.0,
+        "US": 626.79
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "role": "MTS_TRAVEL",
+      "unitLengthM": 1
+    },
+    {
+      "id": "cmtfmusmh003veo9kjo5hztwo",
+      "action": "delete",
+      "code": "VRB-180",
+      "legacyCodes": [],
+      "name": "Vacuum Resealing Blind - maintains max vacuum when cutting numerous small pieces",
+      "description": "Vacuum Resealing Blind - maintains max vacuum when cutting numerous small pieces",
+      "prices": {
+        "AU": 4100.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "reason": "AU only"
+    },
+    {
+      "id": "cmtfmusmi003weo9kukltgzm3",
+      "action": "delete",
+      "code": "VRB-200",
+      "legacyCodes": [],
+      "name": "Vacuum Resealing Blind - maintains max vacuum when cutting numerous small pieces",
+      "description": "Vacuum Resealing Blind - maintains max vacuum when cutting numerous small pieces",
+      "prices": {
+        "AU": 4200.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "reason": "AU only"
+    },
+    {
+      "id": "cmtfmusmj003xeo9kjex9njwq",
+      "action": "delete",
+      "code": "VRB-220",
+      "legacyCodes": [],
+      "name": "Vacuum Resealing Blind - maintains max vacuum when cutting numerous small pieces",
+      "description": "Vacuum Resealing Blind - maintains max vacuum when cutting numerous small pieces",
+      "prices": {
+        "AU": 4300.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "reason": "AU only"
+    },
+    {
+      "id": "cmtfmusll002zeo9kjpfdam8m",
+      "action": "delete",
+      "code": "EXH",
+      "legacyCodes": [],
+      "name": "Exhaust option - diverts exhaust outlet verticaly",
+      "description": "Exhaust option - diverts exhaust outlet vertically",
+      "prices": {
+        "AU": 1000.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "reason": "AU only"
+    },
+    {
+      "id": "cmtfmusmk003yeo9kkjd7d6j7",
+      "action": "delete",
+      "code": "Waste Bin-180",
+      "legacyCodes": [],
+      "name": "Waste bin on castors for Mx180 only",
+      "description": "Waste bin on castors for Mx180 only",
+      "prices": {
+        "AU": 963.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "reason": "AU only"
+    },
+    {
+      "id": "cmtfmusls0037eo9kbifsy825",
+      "action": "delete",
+      "code": "IKP",
+      "legacyCodes": [],
+      "name": "IceKnife-Knife cooling by Liquid,controlled by Pathcut. (not compatible with Alternating Sharpener)",
+      "description": "IceKnife-Knife cooling by Liquid,controlled by Pathcut. (not compatible with Alternating Sharpener)",
+      "prices": {
+        "AU": 4940.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "reason": "AU only"
+    },
+    {
+      "id": "cmtfmuskg001weo9k2orhzbuk",
+      "action": "delete",
+      "code": "BED",
+      "legacyCodes": [],
+      "name": "Bed Projector",
+      "description": "Bed Projector",
+      "prices": {
+        "AU": 10000.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "reason": "AU only"
+    },
+    {
+      "id": "cmtfmusl3002heo9kwzcvokmr",
+      "action": "delete",
+      "code": "EDS-500",
+      "legacyCodes": [],
+      "name": "Edge sealer Static- clip on blanking panel 500mm width. This can be trimmed by customer if narrower required.",
+      "description": "Edge sealer Static - clip on blanking panel 500mm width. This can be trimmed by customer if narrower required.",
+      "prices": {
+        "AU": 850.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "reason": "AU only"
+    },
+    {
+      "id": "cmtfmusl4002ieo9kfjfzgpwq",
+      "action": "delete",
+      "code": "EDS-800",
+      "legacyCodes": [],
+      "name": "Edge sealer Static- clip on blanking panel 800mm width. This can be trimmed by customer if narrower required.",
+      "description": "Edge sealer Static - clip on blanking panel 800mm width. This can be trimmed by customer if narrower required.",
+      "prices": {
+        "AU": 950.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "reason": "AU only"
+    },
+    {
+      "id": "cmtfmuskm0023eo9kuc2gdtoz",
+      "action": "delete",
+      "code": "DMT",
+      "legacyCodes": [],
+      "name": "Ductmaster- option designed for cutting semi-rigid board up to 30mm thickness. Ten (10) tool locations included. Four tools provided, ‘V’ profile, 45 deg through cut, straight cut and creasing. Confirmation of the tools provided will be discussed. (180mm reduction cutting width)",
+      "description": "Ductmaster - option designed for cutting semi-rigid board up to 30mm thickness. Ten (10) tool locations included. Four tools provided, ‘V’ profile, 45 deg through cut, straight cut and creasing. Confirmation of the tools provided will be discussed. (180mm reduction cutting width)",
+      "prices": {
+        "AU": 18240.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "reason": "AU only"
+    },
+    {
+      "id": "cmtfmusku002aeo9kc5etzbab",
+      "action": "rename",
+      "code": "DRL-6",
+      "legacyCodes": [
+        "Drills included"
+      ],
+      "name": "Drill Set 2301071-7-6",
+      "description": "Drill set, part 2301071-7-6.",
+      "prices": {
+        "AU": 350.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "pending": "F14 says delete (AU only), Q7 says keep"
+    },
+    {
+      "id": "cmtfmuskv002beo9k3mjzc62j",
+      "action": "rename",
+      "code": "DRL-10",
+      "legacyCodes": [
+        "Drills included 2301071-7-10"
+      ],
+      "name": "Drill Set 2301071-7-10",
+      "description": "Drill set, part 2301071-7-10.",
+      "prices": {
+        "AU": 375.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "pending": "F14 says delete (AU only), Q7 says keep"
+    },
+    {
+      "id": "cmtfmusmd003reo9kd1d4zmyr",
+      "action": "delete",
+      "code": "PTW",
+      "legacyCodes": [],
+      "name": "PathWorks Integrated software module within PathCutTM . Pathworks features include, pattern creation tools, piece shredder, digitising using the Pathfinder cutter controls, magnetic nesting, importing and exporting of standard DXF and G-code.",
+      "description": "PathWorks Integrated software module within PathCut™ . Pathworks features include, pattern creation tools, piece shredder, digitising using the Pathfinder cutter controls, magnetic nesting, importing and exporting of standard DXF and G-code.",
+      "prices": {
+        "AU": 3500.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "M",
+        "X",
+        "L"
+      ],
+      "compatProducts": [],
+      "reason": "software is a product (PTW-I)"
+    },
+    {
+      "id": null,
+      "action": "add",
+      "code": "TR480",
+      "legacyCodes": [],
+      "name": "Transformer 480V→380V, Integrated",
+      "role": "TRANSFORMER",
+      "description": "Transformer 30kVA, 60Hz, autotransformer, three phase. 480V (input) to 380V (output). Integrated and wired.",
+      "compatSeries": [
+        "M"
+      ],
+      "compatProducts": [],
+      "prices": {
+        "AU": 0,
+        "US": 2716
+      },
+      "noCommission": false
+    },
+    {
+      "id": null,
+      "action": "add",
+      "code": "TR220",
+      "legacyCodes": [],
+      "name": "Transformer 220V→380/415V, Standalone",
+      "role": "TRANSFORMER",
+      "description": "Transformer 30kVA, 60Hz, autotransformer, three phase. 220V (input) to 380V/415V (output). Standalone unit.",
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "prices": {
+        "AU": 0,
+        "US": 5036
+      },
+      "noCommission": false
+    },
+    {
+      "id": "cmtfmuskl0021eo9kf45hemvr",
+      "action": "delete",
+      "code": "Crate-M",
+      "legacyCodes": [],
+      "name": "Wooden Crate (required when standard shipping container not used)",
+      "description": "Wooden Crate (required when standard shipping container not used)",
+      "prices": {
+        "AU": 3000.0
+      },
+      "noCommission": true,
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "reason": "split by width"
+    },
+    {
+      "id": null,
+      "action": "add",
+      "code": "Crate-M-180",
+      "legacyCodes": [],
+      "name": "Wooden Crate, Mx180",
+      "role": "CRATE",
+      "description": "Wooden crate for an Mx180 (required when standard shipping container not used).",
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "prices": {
+        "AU": 3000,
+        "US": 2507
+      },
+      "noCommission": true
+    },
+    {
+      "id": null,
+      "action": "add",
+      "code": "Crate-M-220",
+      "legacyCodes": [],
+      "name": "Wooden Crate, Mx220",
+      "role": "CRATE",
+      "description": "Wooden crate for an Mx220 (required when standard shipping container not used).",
+      "compatSeries": [
+        "M",
+        "X"
+      ],
+      "compatProducts": [],
+      "prices": {
+        "AU": 3000,
+        "US": 2786
+      },
+      "noCommission": true
+    },
+    {
+      "id": "cmtfmusjv001deo9koy4xnm2x",
+      "action": "rename",
+      "code": "PCH-1.0",
+      "legacyCodes": [
+        "1.0mm dia punch"
+      ],
+      "name": "Punch 1.0mm",
+      "description": "1.0mm dia punch",
+      "prices": {
+        "AU": 100.0,
+        "US": 80.0
+      },
+      "noCommission": true,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "L_TOOL"
+    },
+    {
+      "id": "cmtfmusjy001feo9k8bah7wlm",
+      "action": "rename",
+      "code": "PCH-2.0",
+      "legacyCodes": [
+        "2.0mm dia punch"
+      ],
+      "name": "Punch 2.0mm",
+      "description": "2.0mm dia punch",
+      "prices": {
+        "AU": 100.0,
+        "US": 80.0
+      },
+      "noCommission": true,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "L_TOOL"
+    },
+    {
+      "id": "cmtfmusk1001ieo9k57nu63ko",
+      "action": "rename",
+      "code": "PCH-3.0",
+      "legacyCodes": [
+        "3.0mm dia punch"
+      ],
+      "name": "Punch 3.0mm",
+      "description": "3.0mm dia punch",
+      "prices": {
+        "AU": 100.0,
+        "US": 80.0
+      },
+      "noCommission": true,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "L_TOOL"
+    },
+    {
+      "id": "cmtfmusk3001keo9ko0b7guof",
+      "action": "rename",
+      "code": "PCH-4.0",
+      "legacyCodes": [
+        "4.0mm dia punch"
+      ],
+      "name": "Punch 4.0mm",
+      "description": "4.0mm dia punch",
+      "prices": {
+        "AU": 100.0,
+        "US": 80.0
+      },
+      "noCommission": true,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "L_TOOL"
+    },
+    {
+      "id": "cmtfmusk5001meo9k7w2qum45",
+      "action": "rename",
+      "code": "PCH-5.0",
+      "legacyCodes": [
+        "5.0mm dia punch"
+      ],
+      "name": "Punch 5.0mm",
+      "description": "5.0mm dia punch",
+      "prices": {
+        "AU": 100.0,
+        "US": 80.0
+      },
+      "noCommission": true,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "L_TOOL"
+    },
+    {
+      "id": "cmtfmusmg003teo9k4p4so18s",
+      "action": "rename",
+      "code": "PCH-QR",
+      "legacyCodes": [
+        "Punch Tool- Quick Release (to suit Hollow dia 1mm/2mm/3mm/4mm/5mm purchased seperately)"
+      ],
+      "name": "Punch Tool, Quick Release",
+      "description": "Punch Tool - Quick Release (to suit Hollow dia 1mm/2mm/3mm/4mm/5mm purchased separately)",
+      "prices": {
+        "AU": 450.0,
+        "US": 362.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "L_TOOL"
+    },
+    {
+      "id": "cmtfmusk0001heo9k17ry9zhl",
+      "action": "rename",
+      "code": "RKT-28",
+      "legacyCodes": [
+        "28 Dia. Round Knife Tool- Patented Quick release mechanism (Not used on Felt bed) 2x10 sided blades included std"
+      ],
+      "name": "Round Knife Tool 28mm",
+      "description": "28 Dia. Round Knife Tool - Patented Quick release mechanism (Not used on Felt bed) 2x10 sided blades included std",
+      "prices": {
+        "AU": 580.0,
+        "US": 466.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "L_TOOL"
+    },
+    {
+      "id": "cmtfmusk4001leo9kiamthhlq",
+      "action": "rename",
+      "code": "RKT-40",
+      "legacyCodes": [
+        "40 Dia. Round Knife Tool- Quick release (Not available yet)"
+      ],
+      "name": "Round Knife Tool 40mm",
+      "description": "40 Dia. Round Knife Tool - Quick release (Not used on Felt bed).",
+      "prices": {
+        "AU": 630.0,
+        "US": 506.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "L_TOOL"
+    },
+    {
+      "id": "cmtfmuskp0025eo9kgrggevvf",
+      "action": "rename",
+      "code": "DKT-30",
+      "legacyCodes": [
+        "Drag Knife Tool- Quick Release (to suit carbide knife 1.0mm x 7mm purchased seperately) 30 deg"
+      ],
+      "name": "Drag Knife Tool 30°, Quick Release",
+      "description": "Drag Knife Tool - Quick Release (to suit carbide knife 1.0mm x 7mm purchased separately) 30 deg",
+      "prices": {
+        "AU": 730.0,
+        "US": 587.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "L_TOOL"
+    },
+    {
+      "id": "cmtfmuskq0026eo9kihogwu8l",
+      "action": "rename",
+      "code": "DKT-45",
+      "legacyCodes": [
+        "Drag Knife Tool- Quick Release (to suit carbide knife 1.0mm x 7mm purchased seperately) 45 deg?"
+      ],
+      "name": "Drag Knife Tool 45°, Quick Release",
+      "description": "Drag Knife Tool - Quick Release (to suit carbide knife 1.0mm x 7mm purchased separately) 45 deg",
+      "prices": {
+        "AU": 730.0,
+        "US": 587.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "L_TOOL"
+    },
+    {
+      "id": "cmtfmuskw002ceo9kwbstpvcr",
+      "action": "rename",
+      "code": "DRV-28",
+      "legacyCodes": [
+        "Driven- Electrically driven. Suit 28mm Carbide Octagonal blade."
+      ],
+      "name": "Driven Knife 28mm",
+      "description": "Driven - Electrically driven. Suit 28mm Carbide Octagonal blade. Only used with machine optioned with Felt cutting belt.",
+      "prices": {
+        "AU": 6400.0,
+        "US": 5143.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "L_TOOL"
+    },
+    {
+      "id": "cmtfmuslw003deo9kegs413x6",
+      "action": "rename",
+      "code": "NTT",
+      "legacyCodes": [
+        "Notch Tool- Quick Release (to suit carbide knife 1.0mm x 7mm)"
+      ],
+      "name": "Notch Tool, Quick Release",
+      "description": "Notch Tool - Quick Release (to suit carbide knife 1.0mm x 7mm)",
+      "prices": {
+        "AU": 950.0,
+        "US": 763.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "L_TOOL"
+    },
+    {
+      "id": "cmtfmusjx001eeo9khd2th9al",
+      "action": "keep",
+      "code": "180-E",
+      "legacyCodes": [],
+      "name": "Extended Length, L-180",
+      "description": "Extended length for L-180",
+      "prices": {
+        "AU": 6000.0,
+        "US": 5304.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "L_EXTENDED"
+    },
+    {
+      "id": "cmtfmusjz001geo9ka0pta8u3",
+      "action": "keep",
+      "code": "220-E",
+      "legacyCodes": [],
+      "name": "Extended Length, L-220",
+      "description": "Extended length for L-220",
+      "prices": {
+        "AU": 8000.0,
+        "US": 7071.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "L_EXTENDED"
+    },
+    {
+      "id": "cmtfmusk2001jeo9kbwm74sa0",
+      "action": "delete",
+      "code": "320-E",
+      "legacyCodes": [],
+      "name": "Extended length for L-320",
+      "description": "Extended length for L-320",
+      "prices": {
+        "AU": 12000.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "reason": "AU only; L-320E is a product"
+    },
+    {
+      "id": "cmtfmuskh001xeo9kgycckn0y",
+      "action": "rename",
+      "code": "Crate-L-180",
+      "legacyCodes": [
+        "Crate-180"
+      ],
+      "name": "Wooden Crate, L-180",
+      "description": "Wooden crate for transport.",
+      "prices": {
+        "AU": 1200.0,
+        "US": 2507.0
+      },
+      "noCommission": true,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "CRATE"
+    },
+    {
+      "id": "cmtfmuski001yeo9kd97rkk7e",
+      "action": "rename",
+      "code": "Crate-L-220",
+      "legacyCodes": [
+        "Crate-220"
+      ],
+      "name": "Wooden Crate, L-220",
+      "description": "Wooden crate for transport.",
+      "prices": {
+        "AU": 1500.0,
+        "US": 2786.0
+      },
+      "noCommission": true,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "CRATE"
+    },
+    {
+      "id": "cmtfmuskj001zeo9k5w2t2g8n",
+      "action": "rename",
+      "code": "Crate-L-320",
+      "legacyCodes": [
+        "Crate-320"
+      ],
+      "name": "Wooden Crate, L-320",
+      "description": "Wooden crate for transport.",
+      "prices": {
+        "AU": 1800.0,
+        "US": 3000.0
+      },
+      "noCommission": true,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "CRATE"
+    },
+    {
+      "id": "cmtfmusk7001neo9kz8a4m7ex",
+      "action": "keep",
+      "code": "ABR-L",
+      "legacyCodes": [],
+      "name": "Air Brush",
+      "description": "Air Brush - air brush including ink/paint reservoir.",
+      "prices": {
+        "AU": 2100.0,
+        "US": 2507.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "ABR"
+    },
+    {
+      "id": "cmtfmuskc001seo9kj0usavja",
+      "action": "keep",
+      "code": "APM-L",
+      "legacyCodes": [],
+      "name": "Adaptive Pattern Matching",
+      "description": "Adaptive Pattern Matching (Bow & Skew - HDC option required)",
+      "prices": {
+        "AU": 8000.0,
+        "US": 19500.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "APM"
+    },
+    {
+      "id": "cmtfmuske001ueo9krkvj414v",
+      "action": "keep",
+      "code": "BCR-L",
+      "legacyCodes": [],
+      "name": "Barcode Scanner",
+      "description": "Barcode Scanner - input of marker name via barcode",
+      "prices": {
+        "AU": 1050.0,
+        "US": 1463.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "BCR"
+    },
+    {
+      "id": "cmtfmusln0031eo9kmp4gk1cp",
+      "action": "keep",
+      "code": "HDC-L",
+      "legacyCodes": [],
+      "name": "HeadCam",
+      "description": "HeadCam:Camera in cutting head - Dynamic interaction with PathCut",
+      "prices": {
+        "AU": 2000.0,
+        "US": 2786.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "HDC"
+    },
+    {
+      "id": "cmtfmuslp0033eo9kf315d13l",
+      "action": "keep",
+      "code": "HFV-L",
+      "legacyCodes": [],
+      "name": "High Flow Vacuum 15kW",
+      "description": "High Flow Vacuum system - THIS REQUIRES 3PHASE POWER - Recommended for ALL Extended and standard 220 & 320 models. Specific application to be discussed with Pathfinder.(Replacement for standard Vac unit)",
+      "prices": {
+        "AU": 16000.0,
+        "US": 17143.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "HFV"
+    },
+    {
+      "id": "cmtfmuslx003eeo9kawtdzwap",
+      "action": "keep",
+      "code": "OFD-L",
+      "legacyCodes": [],
+      "name": "Offload Display",
+      "description": "Offload Display",
+      "prices": {
+        "AU": 1400.0,
+        "US": 1950.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "OFD"
+    },
+    {
+      "id": "cmtfmusm0003heo9klsea6kij",
+      "action": "keep",
+      "code": "OFP-L",
+      "legacyCodes": [],
+      "name": "Offload Printer",
+      "description": "Offload Printer - synchronised with PathCut & OFD",
+      "prices": {
+        "AU": 2250.0,
+        "US": 3134.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "OFP"
+    },
+    {
+      "id": "cmtfmusm2003keo9kq6go2ksu",
+      "action": "keep",
+      "code": "PM-L",
+      "legacyCodes": [],
+      "name": "Pattern Match",
+      "description": "Pattern Match - spot light pattern match software",
+      "prices": {
+        "AU": 1500.0,
+        "US": 2089.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "PM"
+    },
+    {
+      "id": "cmtfmusm7003oeo9kqksz78ts",
+      "action": "keep",
+      "code": "PRM-L",
+      "legacyCodes": [],
+      "name": "Production Manager",
+      "description": "Production Manager software",
+      "prices": {
+        "AU": 2620.0,
+        "US": 3214.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "PRM"
+    },
+    {
+      "id": "cmtgnnc3q003v4o9k5umx74h8",
+      "action": "keep",
+      "code": "JTP",
+      "legacyCodes": [],
+      "name": "JetPen Marking Tool",
+      "description": "JetPen marking tool - non-contact high speed ink marking. Replaces the standard marking tool.",
+      "prices": {
+        "AU": 7500,
+        "US": 7500
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "role": "JTP"
+    },
+    {
+      "id": "cmtfmuslt0038eo9kz3osdx9o",
+      "action": "delete",
+      "code": "JetPen",
+      "legacyCodes": [],
+      "name": "Jetpen Marking Tool (this replaces the standard marking tool)",
+      "description": "Jetpen Marking Tool (this replaces the standard marking tool)",
+      "prices": {
+        "AU": 7500.0,
+        "US": 7500.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "reason": "duplicate of JTP"
+    },
+    {
+      "id": "cmtfmusm4003meo9k542i5nfs",
+      "action": "delete",
+      "code": "PRA-L",
+      "legacyCodes": [],
+      "name": "Production Analyst is a stand alone software that enables remote manipulation of Production Manager data.",
+      "description": "Production Analyst is a stand alone software that enables remote manipulation of Production Manager data.",
+      "prices": {
+        "AU": 2200.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "L"
+      ],
+      "compatProducts": [],
+      "reason": "software is a product (PRA)"
+    },
+    {
+      "id": "cmtmo7dix0039mc9ke087ek6p",
+      "action": "rename",
+      "code": "EL-2020-DM1",
+      "legacyCodes": [
+        "EL-2020 Drive Module (first 1.2M)"
+      ],
+      "name": "Drive Module, first 1.2m",
+      "description": "Drive Module (first 1.2M)",
+      "prices": {
+        "US": 6936,
+        "AU": 4050.0
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-2020"
+      ],
+      "role": "EL_DRIVE",
+      "parentProductCode": "EL-2020",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtfmusl6002keo9k5mwdxlhg",
+      "action": "rename",
+      "code": "EL-2020-DM12",
+      "legacyCodes": [
+        "EL-2020 Additional 1.2M lengths"
+      ],
+      "name": "Conveyor Module 1.2m",
+      "description": "Additional 1.2M lengths",
+      "prices": {
+        "AU": 1200.0,
+        "US": 1337
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-2020"
+      ],
+      "role": "EL_CONVEYOR",
+      "parentProductCode": "EL-2020",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtfmusla002oeo9krqkfbuxx",
+      "action": "rename",
+      "code": "EL-2020-ST12",
+      "legacyCodes": [
+        "EL-2020 Static table 1.2M lengths"
+      ],
+      "name": "Static Table 1.2m",
+      "description": "Static table 1.2M lengths",
+      "prices": {
+        "AU": 743.0,
+        "US": 557
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-2020"
+      ],
+      "role": "EL_STATIC",
+      "parentProductCode": "EL-2020",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtfmusl8002meo9kyceuv5my",
+      "action": "rename",
+      "code": "EL-2020-BB12",
+      "legacyCodes": [
+        "EL-2020 Electrical Busbar Per 1.2M Used for Fabric Pro automatic spreader."
+      ],
+      "name": "Electrical Busbar 1.2m",
+      "description": "Electrical busbar per 1.2m. Required for use with FabricPro automatic spreader.",
+      "prices": {
+        "AU": 120.0,
+        "US": 209
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-2020"
+      ],
+      "role": "EL_BUSBAR",
+      "parentProductCode": "EL-2020",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtfmuslc002qeo9k0ycfewqg",
+      "action": "rename",
+      "code": "EL-2020-RL12",
+      "legacyCodes": [
+        "EL-2020 Travel Platform support rail. Per 1.2m"
+      ],
+      "name": "Platform Support Rail 1.2m",
+      "description": "Travel platform support rail per 1.2m, including mounting brackets. Required for use with FabricPro.",
+      "prices": {
+        "AU": 45.0,
+        "US": 161
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-2020"
+      ],
+      "role": "EL_RAIL",
+      "parentProductCode": "EL-2020",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtfmusl9002neo9k4pf03o2n",
+      "action": "rename",
+      "code": "EL-2020-RF",
+      "legacyCodes": [
+        "EL-2020 Single Roll feed attachment (L & R clip attachment with cross bar & pair of keeper)"
+      ],
+      "name": "Single Roll Feed Attachment",
+      "description": "Single Roll feed attachment (L & R clip attachment with cross bar & pair of keeper)",
+      "prices": {
+        "AU": 735.0,
+        "US": 613
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-2020"
+      ],
+      "role": "EL_ROLL_FEED",
+      "parentProductCode": "EL-2020",
+      "unitLengthM": null
+    },
+    {
+      "id": "cmtfmuslb002peo9k25zppkwl",
+      "action": "delete",
+      "code": "EL-2020 Syncronisation Feature (same speed sync with cutter)",
+      "legacyCodes": [],
+      "name": "Syncronisation Feature (same speed sync with cutter)",
+      "description": "Synchronisation Feature (same speed sync with cutter)",
+      "prices": {
+        "AU": 1500.0
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-2020"
+      ],
+      "reason": "AU only"
+    },
+    {
+      "id": "cmtmo7dj5003gmc9keh5ttsf2",
+      "action": "rename",
+      "code": "EL-2420-DM1",
+      "legacyCodes": [
+        "EL-2420 Drive Module (first 1.2M)"
+      ],
+      "name": "Drive Module, first 1.2m",
+      "description": "Drive Module (first 1.2M)",
+      "prices": {
+        "US": 7340,
+        "AU": 4455.0
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-2420"
+      ],
+      "role": "EL_DRIVE",
+      "parentProductCode": "EL-2420",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtfmuslc002reo9kwonm3w9a",
+      "action": "rename",
+      "code": "EL-2420-DM12",
+      "legacyCodes": [
+        "EL-2420 Additional 1.2M lengths"
+      ],
+      "name": "Conveyor Module 1.2m",
+      "description": "Additional 1.2M lengths",
+      "prices": {
+        "AU": 1320.0,
+        "US": 1741
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-2420"
+      ],
+      "role": "EL_CONVEYOR",
+      "parentProductCode": "EL-2420",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtfmusli002weo9khczgq39u",
+      "action": "rename",
+      "code": "EL-2420-ST12",
+      "legacyCodes": [
+        "EL-2420 Static table 1.2M lengths"
+      ],
+      "name": "Static Table 1.2m",
+      "description": "Static table 1.2M lengths",
+      "prices": {
+        "AU": 780.0,
+        "US": 585
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-2420"
+      ],
+      "role": "EL_STATIC",
+      "parentProductCode": "EL-2420",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtfmuslf002teo9kckerswn3",
+      "action": "rename",
+      "code": "EL-2420-BB12",
+      "legacyCodes": [
+        "EL-2420 Electrical Busbar Per 1.2M Used for Fabric Pro automatic spreader."
+      ],
+      "name": "Electrical Busbar 1.2m",
+      "description": "Electrical busbar per 1.2m. Required for use with FabricPro automatic spreader.",
+      "prices": {
+        "AU": 120.0,
+        "US": 209
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-2420"
+      ],
+      "role": "EL_BUSBAR",
+      "parentProductCode": "EL-2420",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtfmuslk002yeo9kflk3ee29",
+      "action": "rename",
+      "code": "EL-2420-RL12",
+      "legacyCodes": [
+        "EL-2420 Travel Platform support rail. Per 1.2m"
+      ],
+      "name": "Platform Support Rail 1.2m",
+      "description": "Travel platform support rail per 1.2m, including mounting brackets. Required for use with FabricPro.",
+      "prices": {
+        "AU": 45.0,
+        "US": 161
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-2420"
+      ],
+      "role": "EL_RAIL",
+      "parentProductCode": "EL-2420",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtfmuslg002ueo9kcp5li59c",
+      "action": "rename",
+      "code": "EL-2420-RF",
+      "legacyCodes": [
+        "EL-2420 Single Roll feed attachment (L & R clip attachment with cross bar & pair of keeper)"
+      ],
+      "name": "Single Roll Feed Attachment",
+      "description": "Single Roll feed attachment (L & R clip attachment with cross bar & pair of keeper)",
+      "prices": {
+        "AU": 780.0,
+        "US": 641
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-2420"
+      ],
+      "role": "EL_ROLL_FEED",
+      "parentProductCode": "EL-2420",
+      "unitLengthM": null
+    },
+    {
+      "id": "cmtfmuslj002xeo9kvmmt0d2m",
+      "action": "delete",
+      "code": "EL-2420 Syncronisation Feature (same speed sync with cutter)",
+      "legacyCodes": [],
+      "name": "Syncronisation Feature (same speed sync with cutter)",
+      "description": "Synchronisation Feature (same speed sync with cutter)",
+      "prices": {
+        "AU": 1500.0
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-2420"
+      ],
+      "reason": "AU only"
+    },
+    {
+      "id": "cmtmo4o2l003odi9k4o1wjaak",
+      "action": "rename",
+      "code": "EL-3220-DM1",
+      "legacyCodes": [
+        "EL-3220 Drive Module (first 1.2M)"
+      ],
+      "name": "Drive Module, first 1.2m",
+      "description": "Drive Module (first 1.2M)",
+      "prices": {
+        "AU": 0.0,
+        "US": 12480
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-3220"
+      ],
+      "role": "EL_DRIVE",
+      "parentProductCode": "EL-3220",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtkui8a7003kr49k5xr2vpao",
+      "action": "rename",
+      "code": "EL-3220-DM12",
+      "legacyCodes": [
+        "EL-3220 Additional 1.2M lengths"
+      ],
+      "name": "Conveyor Module 1.2m",
+      "description": "Additional 1.2M lengths",
+      "prices": {
+        "AU": 0.0,
+        "US": 2406
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-3220"
+      ],
+      "role": "EL_CONVEYOR",
+      "parentProductCode": "EL-3220",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtkui8a8003lr49kv5manzje",
+      "action": "rename",
+      "code": "EL-3220-ST12",
+      "legacyCodes": [
+        "EL-3220 Static table 1.2M lengths"
+      ],
+      "name": "Static Table 1.2m",
+      "description": "Static table 1.2M lengths",
+      "prices": {
+        "AU": 0.0,
+        "US": 1003
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-3220"
+      ],
+      "role": "EL_STATIC",
+      "parentProductCode": "EL-3220",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtmo4o2m003pdi9kgaoud2ic",
+      "action": "rename",
+      "code": "EL-3220-BB12",
+      "legacyCodes": [
+        "EL-3220 Electrical Busbar Per 1.2M Used for Fabric Pro automatic spreader."
+      ],
+      "name": "Electrical Busbar 1.2m",
+      "description": "Electrical busbar per 1.2m. Required for use with FabricPro automatic spreader.",
+      "prices": {
+        "AU": 0.0,
+        "US": 209
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-3220"
+      ],
+      "role": "EL_BUSBAR",
+      "parentProductCode": "EL-3220",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtmo4o2o003rdi9kev5fzipt",
+      "action": "rename",
+      "code": "EL-3220-RL12",
+      "legacyCodes": [
+        "EL-3220 Travel Platform support rail. Per 1.2m"
+      ],
+      "name": "Platform Support Rail 1.2m",
+      "description": "Travel platform support rail per 1.2m, including mounting brackets. Required for use with FabricPro.",
+      "prices": {
+        "AU": 0.0,
+        "US": 161
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-3220"
+      ],
+      "role": "EL_RAIL",
+      "parentProductCode": "EL-3220",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtmo4o2p003tdi9kqzsh97rk",
+      "action": "rename",
+      "code": "EL-4030-DM1",
+      "legacyCodes": [
+        "EL-4030 Drive Module (first 1.2M)"
+      ],
+      "name": "Drive Module, first 1.2m",
+      "description": "Drive Module (first 1.2M)",
+      "prices": {
+        "AU": 0.0,
+        "US": 12480
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-4030"
+      ],
+      "role": "EL_DRIVE",
+      "parentProductCode": "EL-4030",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtkui8a9003mr49ktryuyiq0",
+      "action": "rename",
+      "code": "EL-4030-DM12",
+      "legacyCodes": [
+        "EL-4030 Additional 1.2M lengths"
+      ],
+      "name": "Conveyor Module 1.2m",
+      "description": "Additional 1.2M lengths",
+      "prices": {
+        "AU": 0.0,
+        "US": 2406
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-4030"
+      ],
+      "role": "EL_CONVEYOR",
+      "parentProductCode": "EL-4030",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtkui8aa003nr49kg4rlkcgl",
+      "action": "rename",
+      "code": "EL-4030-ST12",
+      "legacyCodes": [
+        "EL-4030 Static table 1.2M lengths"
+      ],
+      "name": "Static Table 1.2m",
+      "description": "Static table 1.2M lengths",
+      "prices": {
+        "AU": 0.0,
+        "US": 1003
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-4030"
+      ],
+      "role": "EL_STATIC",
+      "parentProductCode": "EL-4030",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtmo4o2q003udi9kieter6cn",
+      "action": "rename",
+      "code": "EL-4030-BB12",
+      "legacyCodes": [
+        "EL-4030 Electrical Busbar Per 1.2M Used for Fabric Pro automatic spreader."
+      ],
+      "name": "Electrical Busbar 1.2m",
+      "description": "Electrical busbar per 1.2m. Required for use with FabricPro automatic spreader.",
+      "prices": {
+        "AU": 0.0,
+        "US": 209
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-4030"
+      ],
+      "role": "EL_BUSBAR",
+      "parentProductCode": "EL-4030",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtmo4o2s003wdi9ka16ruxt3",
+      "action": "rename",
+      "code": "EL-4030-RL12",
+      "legacyCodes": [
+        "EL-4030 Travel Platform support rail. Per 1.2m"
+      ],
+      "name": "Platform Support Rail 1.2m",
+      "description": "Travel platform support rail per 1.2m, including mounting brackets. Required for use with FabricPro.",
+      "prices": {
+        "AU": 0.0,
+        "US": 161
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-4030"
+      ],
+      "role": "EL_RAIL",
+      "parentProductCode": "EL-4030",
+      "unitLengthM": 1.2
+    },
+    {
+      "id": "cmtfmusl5002jeo9k242gcft0",
+      "action": "rename",
+      "code": "ST620-2020",
+      "legacyCodes": [
+        "EL-2020 #ST620-2020 Roll Holder- Used to dispense perforated underlay paper. Mounted rear of EasyLoader on lower leg."
+      ],
+      "name": "Paper Roll Holder",
+      "description": "ST620-2020 Roll Holder - used to dispense perforated underlay paper. Mounted rear of EasyLoader on lower leg.",
+      "prices": {
+        "AU": 1040.0,
+        "US": 1003.0
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-2020"
+      ],
+      "role": "EL_ROLL_HOLDER",
+      "parentProductCode": "EL-2020"
+    },
+    {
+      "id": "cmtfmuslh002veo9k1afy3uzl",
+      "action": "rename",
+      "code": "ST620-2420",
+      "legacyCodes": [
+        "EL-2420 ST620-2420 Roll Holder- Used to dispense perforated underlay paper. Mounted rear of EasyLoader on lower leg."
+      ],
+      "name": "Paper Roll Holder",
+      "description": "ST620-2420 Roll Holder - used to dispense perforated underlay paper. Mounted rear of EasyLoader on lower leg.",
+      "prices": {
+        "AU": 1080.0,
+        "US": 1031.0
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "EL-2420"
+      ],
+      "role": "EL_ROLL_HOLDER",
+      "parentProductCode": "EL-2420"
+    },
+    {
+      "id": "cmtkui89f002rr49kq1xtyat0",
+      "action": "keep",
+      "code": "Crate-EL",
+      "legacyCodes": [],
+      "name": "Wooden Crate",
+      "description": "Wooden crate for transport.",
+      "prices": {
+        "AU": 1400.0,
+        "US": 1125
+      },
+      "noCommission": true,
+      "compatSeries": [
+        "EL"
+      ],
+      "compatProducts": [],
+      "role": "CRATE"
+    },
+    {
+      "id": "cmtfmuskk0020eo9kj40xh06n",
+      "action": "delete",
+      "code": "Crate-FP",
+      "legacyCodes": [],
+      "name": "Crate- Wooden Crate for transport",
+      "description": "Crate - Wooden Crate for transport",
+      "prices": {
+        "AU": 1200.0,
+        "US": 1254.0
+      },
+      "noCommission": true,
+      "compatSeries": [
+        "FP"
+      ],
+      "compatProducts": [],
+      "reason": "split by width"
+    },
+    {
+      "id": null,
+      "action": "add",
+      "code": "Crate-FP-180",
+      "legacyCodes": [],
+      "name": "Wooden Crate, FP-180",
+      "role": "CRATE",
+      "description": "Wooden crate for transport.",
+      "compatSeries": [],
+      "compatProducts": [
+        "FP-180"
+      ],
+      "prices": {
+        "AU": 1200,
+        "US": 1254
+      },
+      "noCommission": true
+    },
+    {
+      "id": null,
+      "action": "add",
+      "code": "Crate-FP-220",
+      "legacyCodes": [],
+      "name": "Wooden Crate, FP-220",
+      "role": "CRATE",
+      "description": "Wooden crate for transport.",
+      "compatSeries": [],
+      "compatProducts": [
+        "FP-220"
+      ],
+      "prices": {
+        "AU": 1200,
+        "US": 1400
+      },
+      "noCommission": true
+    },
+    {
+      "id": null,
+      "action": "add",
+      "code": "Crate-FP-300",
+      "legacyCodes": [],
+      "name": "Wooden Crate, FP-300",
+      "role": "CRATE",
+      "description": "Wooden crate for transport.",
+      "compatSeries": [],
+      "compatProducts": [
+        "FP-300"
+      ],
+      "prices": {
+        "AU": 1200,
+        "US": 1600
+      },
+      "noCommission": true
+    },
+    {
+      "id": "cmtkui8af003rr49koa6latn4",
+      "action": "rename",
+      "code": "Crate-HDRF-180",
+      "legacyCodes": [
+        "HDRF-180 Crate"
+      ],
+      "name": "Wooden Crate, HDRF-180",
+      "description": "Wooden crate for transport.",
+      "prices": {
+        "US": 1254.0,
+        "AU": 1800.0
+      },
+      "noCommission": true,
+      "compatSeries": [],
+      "compatProducts": [
+        "HDRF-180"
+      ],
+      "role": "CRATE"
+    },
+    {
+      "id": "cmtmo4o2w0040di9kgv0pjyop",
+      "action": "delete",
+      "code": "HDRF-180 Crate- Wooden Crate for transport",
+      "legacyCodes": [],
+      "name": "Crate- Wooden Crate for transport",
+      "description": "Crate - Wooden Crate for transport",
+      "prices": {
+        "AU": 1800.0,
+        "US": 1254.0
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "HDRF-180"
+      ],
+      "reason": "duplicate"
+    },
+    {
+      "id": "cmtkui8ag003sr49k77wjz0sp",
+      "action": "rename",
+      "code": "Crate-HDRF-220",
+      "legacyCodes": [
+        "HDRF-220 Crate"
+      ],
+      "name": "Wooden Crate, HDRF-220",
+      "description": "Wooden crate for transport.",
+      "prices": {
+        "AU": 2000.0,
+        "US": 1400.0
+      },
+      "noCommission": true,
+      "compatSeries": [],
+      "compatProducts": [
+        "HDRF-220"
+      ],
+      "role": "CRATE"
+    },
+    {
+      "id": "cmtmo4o2x0041di9klwhorytw",
+      "action": "delete",
+      "code": "HDRF-220 Crate- Wooden Crate for transport",
+      "legacyCodes": [],
+      "name": "Crate- Wooden Crate for transport",
+      "description": "Crate - Wooden Crate for transport",
+      "prices": {
+        "AU": 2000.0,
+        "US": 1400.0
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "HDRF-220"
+      ],
+      "reason": "duplicate"
+    },
+    {
+      "id": "cmtkui8ah003tr49kxlyxi29v",
+      "action": "rename",
+      "code": "Crate-HDRF-320",
+      "legacyCodes": [
+        "HDRF-320 Crate"
+      ],
+      "name": "Wooden Crate, HDRF-320",
+      "description": "Wooden crate for transport.",
+      "prices": {
+        "AU": 2300.0,
+        "US": 1600.0
+      },
+      "noCommission": true,
+      "compatSeries": [],
+      "compatProducts": [
+        "HDRF-320"
+      ],
+      "role": "CRATE"
+    },
+    {
+      "id": "cmtmo4o2y0042di9khfnqmonb",
+      "action": "delete",
+      "code": "HDRF-320 Crate- Wooden Crate for transport",
+      "legacyCodes": [],
+      "name": "Crate- Wooden Crate for transport",
+      "description": "Crate - Wooden Crate for transport",
+      "prices": {
+        "AU": 2300.0,
+        "US": 1600.0
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "HDRF-320"
+      ],
+      "reason": "duplicate"
+    },
+    {
+      "id": "cmtfmusmg003ueo9k0160z7pw",
+      "action": "keep",
+      "code": "TPL",
+      "legacyCodes": [],
+      "name": "Travelling Operator Platform",
+      "description": "Travelling operator Platform (Standard Equipment)",
+      "prices": {
+        "AU": 0.0
+      },
+      "noCommission": false,
+      "compatSeries": [
+        "FP"
+      ],
+      "compatProducts": [],
+      "role": "TPL"
+    },
+    {
+      "id": "cmtgnnc49004f4o9kozbxg8rg",
+      "action": "rename",
+      "code": "SVC-L-INSTALL-S",
+      "legacyCodes": [
+        "SVC-L-INSTALL"
+      ],
+      "name": "L-Series Installation & Training (L-180, L-180E, L-220)",
+      "description": "1 day installation, 3 days training. L-180, L-180E, L-220.",
+      "prices": {
+        "AU": 0.0,
+        "US": 6900.0
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "SERVICE"
+      ],
+      "role": "INSTALL"
+    },
+    {
+      "id": "cmtgnnc4a004g4o9kn0yfqr1b",
+      "action": "rename",
+      "code": "SVC-L-INSTALL-L",
+      "legacyCodes": [
+        "SVC-L-INSTALL-MTS"
+      ],
+      "name": "L-Series Installation & Training (L-220E, L-320E)",
+      "description": "2 day installation, 3 days training. L-220E, L-320E, L-320EF.",
+      "prices": {
+        "AU": 0.0,
+        "US": 8820.0
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "SERVICE"
+      ],
+      "role": "INSTALL"
+    },
+    {
+      "id": "cmtgnnc47004c4o9ktjebh8b1",
+      "action": "keep",
+      "code": "SVC-EL-INSTALL",
+      "legacyCodes": [],
+      "name": "EasyLoader Installation",
+      "description": "EasyLoader installation (Drive Module + Additional Modules) with Cutter installation.",
+      "prices": {
+        "US": 180.0,
+        "AU": 0.0
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "SERVICE"
+      ],
+      "role": "INSTALL"
+    },
+    {
+      "id": "cmtgnnc47004d4o9k3wjh3iuk",
+      "action": "keep",
+      "code": "SVC-FP-INSTALL",
+      "legacyCodes": [],
+      "name": "FabricPro Installation & Training (1 day)",
+      "description": "FabricPro Installation & Training, 1 day (with Cutter installation).",
+      "prices": {
+        "US": 960.0,
+        "AU": 0.0
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "SERVICE"
+      ],
+      "role": "INSTALL"
+    },
+    {
+      "id": "cmtgnnc48004e4o9knyeuw48b",
+      "action": "keep",
+      "code": "SVC-HDRF-INSTALL",
+      "legacyCodes": [],
+      "name": "HDRF Installation (2 hours)",
+      "description": "Heavy Duty Roll Feeder installation, 2 hours.",
+      "prices": {
+        "AU": 300.0,
+        "US": 180.0
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "SERVICE"
+      ],
+      "role": "INSTALL"
+    },
+    {
+      "id": "cmtgnnc4b004h4o9k0x8pyh31",
+      "action": "keep",
+      "code": "SVC-LNS-INSTALL",
+      "legacyCodes": [],
+      "name": "Installation/Training — Leather Nesting System (with cutter)",
+      "description": "Installation/Training — Leather Nesting System (with cutter installation), 2 days.",
+      "prices": {
+        "AU": 0.0,
+        "US": 2600.0
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "SERVICE"
+      ],
+      "role": "INSTALL"
+    },
+    {
+      "id": "cmtgnnc4c004i4o9k1db4g60k",
+      "action": "keep",
+      "code": "SVC-M-INSTALL",
+      "legacyCodes": [],
+      "name": "M-Series Installation & Training (Static, no MTS)",
+      "description": "1 day installation, 3 days training (Static -- no MTS).",
+      "prices": {
+        "AU": 0.0,
+        "US": 6900.0
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "SERVICE"
+      ],
+      "role": "INSTALL"
+    },
+    {
+      "id": "cmtgnnc4d004j4o9kffdfeb9q",
+      "action": "keep",
+      "code": "SVC-M-INSTALL-MTS",
+      "legacyCodes": [],
+      "name": "M-Series Installation & Training (with MTS, up to 6m travel)",
+      "description": "2 day installation, 3 days training, with MTS up to 6m travel.",
+      "prices": {
+        "AU": 0.0,
+        "US": 8820.0
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "SERVICE"
+      ],
+      "role": "INSTALL"
+    },
+    {
+      "id": "cmtgnnc4e004k4o9kj92ssr6o",
+      "action": "keep",
+      "code": "SVC-SW-TRAINING",
+      "legacyCodes": [],
+      "name": "Software Remote Training Support",
+      "description": "Remote training support for PathWorks/PathCut software modules.",
+      "prices": {
+        "AU": 0.0,
+        "US": 480.0
+      },
+      "noCommission": false,
+      "compatSeries": [],
+      "compatProducts": [
+        "SERVICE"
+      ],
+      "role": "TRAINING"
+    },
+    {
+      "id": null,
+      "action": "add",
+      "code": "SVC-EF-INSTALL",
+      "legacyCodes": [],
+      "name": "EasyFeeder Installation (3 hrs)",
+      "role": "INSTALL",
+      "description": "EasyFeeder installation, 3 hours, with cutter installation.",
+      "compatSeries": [],
+      "compatProducts": [
+        "SERVICE"
+      ],
+      "prices": {
+        "AU": 0,
+        "US": 360
+      },
+      "noCommission": true,
+      "pending": "US price: 360 or 720 (owner said one price)"
+    }
+  ]
+}
