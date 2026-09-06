@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import * as XLSX from "xlsx";
@@ -80,7 +80,10 @@ function snapshotFromDump(dump: Dump): CatalogExportSnapshot {
   };
 }
 
-const dump = JSON.parse(readFileSync(path.join(ROOT, "RAW/catalog-dump.json"), "utf8")) as Dump;
+const dumpPath = existsSync(path.join(ROOT, "tests/fixtures/catalog-dump.json"))
+  ? path.join(ROOT, "tests/fixtures/catalog-dump.json")
+  : path.join(ROOT, "RAW/catalog-dump.json");
+const dump = JSON.parse(readFileSync(dumpPath, "utf8")) as Dump;
 const snapshot = snapshotFromDump(dump);
 
 /** Small hand-built snapshot exercising every column shape. */

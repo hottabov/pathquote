@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
   type CatalogSnapshot,
@@ -16,7 +16,10 @@ import {
 const ROOT = path.resolve(__dirname, "..");
 const target = JSON.parse(readFileSync(path.join(ROOT, "docs/reference/catalog-v2-target.json"), "utf8")) as CatalogTarget;
 /** Snapshot of the live database taken before the migration (scripts/dump-catalog.ts). */
-const dump = JSON.parse(readFileSync(path.join(ROOT, "RAW/catalog-dump.json"), "utf8")) as CatalogSnapshot;
+const dumpPath = existsSync(path.join(ROOT, "tests/fixtures/catalog-dump.json"))
+  ? path.join(ROOT, "tests/fixtures/catalog-dump.json")
+  : path.join(ROOT, "RAW/catalog-dump.json");
+const dump = JSON.parse(readFileSync(dumpPath, "utf8")) as CatalogSnapshot;
 
 /**
  * In-memory reducer mirroring what scripts/migrate-catalog-v2.ts does to the
