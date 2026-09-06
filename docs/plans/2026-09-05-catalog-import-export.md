@@ -32,7 +32,7 @@ live. This is what makes the owner's "don't touch finalized quotes" rule cheap t
 | 1 | Machine specs parsed out of the code digits (`M3390` → 3cm × 390cm) | `lib/machine-specs.ts` |
 | 2 | EasyLoader derived option codes **constructed** as `` `${itemCode} ${suffix}` `` | `lib/production-forms/table-sections.ts:55` |
 | 3 | Which production form a product gets | `production-forms/resolve.ts` |
-| 4 | `PRINTED_WIDTHS[item.code]` | `production-forms/specs/easyloader.ts:121` |
+| 4 | EasyLoader printed-width box picked by a code-keyed map | `production-forms/specs/easyloader.ts:121` |
 | 5 | Content-block key derived from code | `lib/quotation-data.ts:177` |
 | 6 | Hardcoded `["EL-2020", "EL-2420"]` | `components/builder/production-spec-editor.tsx:557` |
 
@@ -44,6 +44,14 @@ option code changes with it, so existing layouts stop matching.
 **Conclusion that shapes v1:** matching import rows by `id` makes the *import mechanism*
 safe today. What is not safe is letting the file change `code`. Those are separable, so
 v1 ships with `code` read-only and full editing of everything else.
+
+> **Superseded 2026-09-06.** All six mechanisms were removed by
+> `docs/plans/2026-09-05-catalog-identity-and-cleanup.md` (phases 2 and 4): behaviour
+> now keys on `Product.kind/form/specs/contentBlockKey` and
+> `Option.role/parentProductId/unitLengthM/contentBlockKey`, and `code` is a mutable
+> label. An import may therefore let the file change `code` (the old code goes to
+> `legacyCodes`, as `scripts/lib/catalog-v2-plan.ts` does) — revisit the "code
+> read-only" scoping below before building v1.
 
 ---
 

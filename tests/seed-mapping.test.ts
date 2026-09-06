@@ -15,6 +15,8 @@ import {
   mapPrices,
   mapCompatibility,
   mapContentBlocks,
+  resolveOptionIdentity,
+  resolveProductIdentity,
   shouldMigrateBlock,
   BLOCK_BODY_MIGRATIONS,
   M_SERIES_OLD_BODY,
@@ -37,6 +39,12 @@ const contentBlocksJson = contentBlocksData as ContentBlocksJson;
  * checked against known pairs, and one product-scoped (compatibleSeries: [],
  * compatibleProducts: ["A-100"]) mirroring EasyLoader-style accessories, so
  * mapCompatibility's product fan-out is exercised too.
+ *
+ * Every entry carries its identity explicitly (kind/form/specs/
+ * contentBlockKey on products, role/parentProductCode/unitLengthM/
+ * contentBlockKey on options): the seed has no rule that derives any of
+ * them from a code, and refuses an entry that omits `kind` or the `role`
+ * key (see the "refuses" tests below).
  */
 const FIXTURE: Catalog = {
   extractedAt: "2026-01-01T00:00:00.000Z",
@@ -46,8 +54,28 @@ const FIXTURE: Catalog = {
       seriesName: "Series A",
       maxDiscountPct: 10,
       products: [
-        { code: "A-100", name: "Widget", description: "A widget", price: 500, needsReview: false },
-        { code: "A-200", name: "Gadget", description: "A gadget", price: null, needsReview: true },
+        {
+          code: "A-100",
+          name: "Widget",
+          description: "A widget",
+          price: 500,
+          needsReview: false,
+          kind: "MACHINE",
+          form: "M_SERIES",
+          specs: { cutHeightCm: 3, cutWidthCm: 180, modelTier: "M3", widthCode: 180 },
+          contentBlockKey: "machine.m-series",
+        },
+        {
+          code: "A-200",
+          name: "Gadget",
+          description: "A gadget",
+          price: null,
+          needsReview: true,
+          kind: "ACCESSORY",
+          form: null,
+          specs: null,
+          contentBlockKey: null,
+        },
       ],
     },
     {
@@ -55,7 +83,17 @@ const FIXTURE: Catalog = {
       seriesName: "Series B",
       maxDiscountPct: null,
       products: [
-        { code: "B-100", name: "Doohickey", description: "A doohickey", price: 1000, needsReview: false },
+        {
+          code: "B-100",
+          name: "Doohickey",
+          description: "A doohickey",
+          price: 1000,
+          needsReview: false,
+          kind: "TABLE",
+          form: "EASYLOADER",
+          specs: { tableWidthMm: 2000 },
+          contentBlockKey: "equipment.easy-loader",
+        },
       ],
     },
   ],
@@ -67,6 +105,10 @@ const FIXTURE: Catalog = {
       price: 50,
       needsReview: false,
       compatibleSeries: ["A", "B"],
+      role: "MTS",
+      parentProductCode: null,
+      unitLengthM: null,
+      contentBlockKey: "option.MTS",
     },
     {
       code: "OPT-2",
@@ -75,6 +117,10 @@ const FIXTURE: Catalog = {
       price: 0,
       needsReview: true,
       compatibleSeries: ["B"],
+      role: null,
+      parentProductCode: null,
+      unitLengthM: null,
+      contentBlockKey: null,
     },
     {
       code: "OPT-3",
@@ -84,6 +130,10 @@ const FIXTURE: Catalog = {
       needsReview: false,
       compatibleSeries: [],
       compatibleProducts: ["A-100"],
+      role: "EL_CONVEYOR",
+      parentProductCode: "A-100",
+      unitLengthM: 1.2,
+      contentBlockKey: null,
     },
   ],
 };
@@ -96,19 +146,54 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
     ]);
   });
 
-  // Identity defaults for an entry with no `kind`: the legacy code rules on
-  // an unknown series give ACCESSORY / no form / no specs.
-  const IDENTITY = { legacyCodes: [], noCommission: false, kind: "ACCESSORY", form: null, specs: null } as const;
-
   it("mapProducts produces the exact product payload with per-series sortOrder", () => {
     expect(mapProducts(FIXTURE)).toEqual([
-      { code: "A-100", name: "Widget", description: "A widget", seriesCode: "A", sortOrder: 0, isCredit: false, ...IDENTITY },
-      { code: "A-200", name: "Gadget", description: "A gadget", seriesCode: "A", sortOrder: 1, isCredit: false, ...IDENTITY },
-      { code: "B-100", name: "Doohickey", description: "A doohickey", seriesCode: "B", sortOrder: 0, isCredit: false, ...IDENTITY },
+      {
+        code: "A-100",
+        legacyCodes: [],
+        name: "Widget",
+        description: "A widget",
+        seriesCode: "A",
+        sortOrder: 0,
+        isCredit: false,
+        noCommission: false,
+        kind: "MACHINE",
+        form: "M_SERIES",
+        specs: { cutHeightCm: 3, cutWidthCm: 180, modelTier: "M3", widthCode: 180 },
+        contentBlockKey: "machine.m-series",
+      },
+      {
+        code: "A-200",
+        legacyCodes: [],
+        name: "Gadget",
+        description: "A gadget",
+        seriesCode: "A",
+        sortOrder: 1,
+        isCredit: false,
+        noCommission: false,
+        kind: "ACCESSORY",
+        form: null,
+        specs: null,
+        contentBlockKey: null,
+      },
+      {
+        code: "B-100",
+        legacyCodes: [],
+        name: "Doohickey",
+        description: "A doohickey",
+        seriesCode: "B",
+        sortOrder: 0,
+        isCredit: false,
+        noCommission: false,
+        kind: "TABLE",
+        form: "EASYLOADER",
+        specs: { tableWidthMm: 2000 },
+        contentBlockKey: "equipment.easy-loader",
+      },
     ]);
   });
 
-  it("mapProducts prefers the entry's explicit kind/form/specs/legacyCodes/noCommission over the legacy rules", () => {
+  it("mapProducts passes legacyCodes/noCommission through and normalises absent form/specs/contentBlockKey to null", () => {
     const explicit: Catalog = {
       ...FIXTURE,
       series: [
@@ -126,22 +211,41 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
               kind: "MACHINE",
               form: "M_SERIES",
               specs: { cutHeightCm: 3, cutWidthCm: 180 },
+              contentBlockKey: "machine.m-series",
             },
-            // No `kind`: classified by the legacy rules from legacyCodes[0].
-            { code: "PTW-S", legacyCodes: ["PTW(S)"], name: "PW", description: "", price: 1, needsReview: false },
+            // Only `kind` given: form/specs/contentBlockKey absent (not null)
+            // and an empty specs object all map to null.
+            { code: "PTW-S", legacyCodes: ["PTW(S)"], name: "PW", description: "", price: 1, needsReview: false, kind: "SOFTWARE" },
+            { code: "EMPTY", name: "E", description: "", price: 1, needsReview: false, kind: "ACCESSORY", specs: {} },
           ],
         },
       ],
     };
-    const [m, ptw] = mapProducts({ ...explicit, series: [{ ...explicit.series[0], seriesCode: "SW" }] });
+    const [m, ptw, empty] = mapProducts(explicit);
     expect(m).toMatchObject({
       legacyCodes: ["M3180"],
       noCommission: true,
       kind: "MACHINE",
       form: "M_SERIES",
       specs: { cutHeightCm: 3, cutWidthCm: 180 },
+      contentBlockKey: "machine.m-series",
     });
-    expect(ptw).toMatchObject({ kind: "SOFTWARE", form: null, specs: { softwareMode: "standalone" } });
+    expect(ptw).toMatchObject({ legacyCodes: ["PTW(S)"], kind: "SOFTWARE", form: null, specs: null, contentBlockKey: null });
+    expect(empty).toMatchObject({ legacyCodes: [], noCommission: false, kind: "ACCESSORY", specs: null });
+  });
+
+  it("mapProducts refuses a product without a kind, naming the code and series", () => {
+    const missingKind: Catalog = {
+      ...FIXTURE,
+      series: [
+        {
+          ...FIXTURE.series[0],
+          products: [{ code: "NO-KIND", name: "x", description: "", price: 1, needsReview: false, form: null, specs: null }],
+        },
+      ],
+    };
+    expect(() => mapProducts(missingKind)).toThrow(/product NO-KIND \(series A\) has no kind/);
+    expect(() => resolveProductIdentity(missingKind.series[0].products[0], "A")).toThrow(/NO-KIND/);
   });
 
   it("mapProducts defaults isCredit to false when the catalog entry omits it, and passes it through when set", () => {
@@ -152,7 +256,7 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
           ...FIXTURE.series[0],
           products: [
             ...FIXTURE.series[0].products,
-            { code: "A-300", name: "Trade-in", description: "Terms.", price: 999, needsReview: false, isCredit: true },
+            { code: "A-300", name: "Trade-in", description: "Terms.", price: 999, needsReview: false, isCredit: true, kind: "CREDIT" },
           ],
         },
         FIXTURE.series[1],
@@ -164,15 +268,47 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
   });
 
   it("mapOptions produces the exact option payload", () => {
-    const identity = { legacyCodes: [], noCommission: false, role: null, parentProductCode: null, unitLengthM: null };
     expect(mapOptions(FIXTURE)).toEqual([
-      { code: "OPT-1", name: "Option One", shortDescription: "First option", sortOrder: 0, ...identity },
-      { code: "OPT-2", name: "Option Two", shortDescription: "Second option", sortOrder: 1, ...identity },
-      { code: "OPT-3", name: "Widget Accessory", shortDescription: "Product-scoped accessory", sortOrder: 2, ...identity },
+      {
+        code: "OPT-1",
+        legacyCodes: [],
+        name: "Option One",
+        shortDescription: "First option",
+        sortOrder: 0,
+        noCommission: false,
+        role: "MTS",
+        parentProductCode: null,
+        unitLengthM: null,
+        contentBlockKey: "option.MTS",
+      },
+      {
+        code: "OPT-2",
+        legacyCodes: [],
+        name: "Option Two",
+        shortDescription: "Second option",
+        sortOrder: 1,
+        noCommission: false,
+        role: null,
+        parentProductCode: null,
+        unitLengthM: null,
+        contentBlockKey: null,
+      },
+      {
+        code: "OPT-3",
+        legacyCodes: [],
+        name: "Widget Accessory",
+        shortDescription: "Product-scoped accessory",
+        sortOrder: 2,
+        noCommission: false,
+        role: "EL_CONVEYOR",
+        parentProductCode: "A-100",
+        unitLengthM: 1.2,
+        contentBlockKey: null,
+      },
     ]);
   });
 
-  it("mapOptions prefers an explicit role (even null) and falls back to the legacy rules on the legacy code", () => {
+  it("mapOptions takes role/parentProductCode/unitLengthM/contentBlockKey from the entry, with absent ones as null", () => {
     const opts: Catalog = {
       ...FIXTURE,
       options: [
@@ -188,15 +324,28 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
           role: "EL_CONVEYOR",
           parentProductCode: "EL-2020",
           unitLengthM: 1.2,
+          contentBlockKey: null,
         },
-        { code: "MTS-M", legacyCodes: ["MTS- additional travel p/Metre"], name: "x", description: "", price: 1, needsReview: false, compatibleSeries: ["M"] },
-        { code: "ABR-M", name: "x", description: "", price: 1, needsReview: false, compatibleSeries: ["M"], role: null },
+        // Only the `role` key: nothing is inferred from the legacy code.
+        { code: "MTS-M", legacyCodes: ["MTS- additional travel p/Metre"], name: "x", description: "", price: 1, needsReview: false, compatibleSeries: ["M"], role: "MTS_TRAVEL" },
+        { code: "ABR-M", name: "x", description: "", price: 1, needsReview: false, compatibleSeries: ["M"], role: null, noCommission: true },
       ],
     };
     const [dm12, mts, abr] = mapOptions(opts);
-    expect(dm12).toMatchObject({ role: "EL_CONVEYOR", parentProductCode: "EL-2020", unitLengthM: 1.2 });
-    expect(mts).toMatchObject({ role: "MTS_TRAVEL", parentProductCode: null, unitLengthM: 1 });
-    expect(abr).toMatchObject({ role: null, parentProductCode: null, unitLengthM: null });
+    expect(dm12).toMatchObject({ legacyCodes: ["EL-2020 Additional 1.2M lengths"], role: "EL_CONVEYOR", parentProductCode: "EL-2020", unitLengthM: 1.2, contentBlockKey: null });
+    expect(mts).toMatchObject({ role: "MTS_TRAVEL", parentProductCode: null, unitLengthM: null, contentBlockKey: null });
+    expect(abr).toMatchObject({ role: null, parentProductCode: null, unitLengthM: null, contentBlockKey: null, noCommission: true });
+  });
+
+  it("mapOptions refuses an option without a role key (null is fine, absent is not), naming the code", () => {
+    const missingRole: Catalog = {
+      ...FIXTURE,
+      options: [{ code: "NO-ROLE", name: "x", description: "", price: 1, needsReview: false, compatibleSeries: ["A"] }],
+    };
+    expect(() => mapOptions(missingRole)).toThrow(/option NO-ROLE has no role key/);
+    expect(() => resolveOptionIdentity(missingRole.options[0])).toThrow(/NO-ROLE/);
+    const nullRole: Catalog = { ...missingRole, options: [{ ...missingRole.options[0], role: null }] };
+    expect(mapOptions(nullRole)[0].role).toBeNull();
   });
 
   it("mapPrices produces the exact price payload, incl. null-price -> amount 0 + needsReview true", () => {
@@ -226,9 +375,8 @@ describe("seed-lib: smoke assertions against the real catalog.json (counts only)
   });
 
   // 9 -> 10: HDRF was split out of the EasyFeeder ("EF") series into its own
-  // "HDRF" series (owner decision -- see MANUAL_PRODUCTS.HDRF in
-  // scripts/extract-catalog.ts and tests/catalog.test.ts's "Series Structure"
-  // describe block).
+  // "HDRF" series (owner decision -- see docs/reference/catalog-v2-decisions.md
+  // and tests/catalog.test.ts's "catalog.json: series" describe block).
   it("has exactly 10 series", () => {
     expect(mapSeries(catalog)).toHaveLength(10);
   });
@@ -416,8 +564,8 @@ describe("Spot Price Validation (USD)", () => {
   });
 
   // HDRF was split into three width variants -- HDRF-180 is the one that
-  // absorbed the old width-less "HDRF" code's US price (see extractHDRF in
-  // scripts/extract-us-prices.ts).
+  // absorbed the old width-less "HDRF" code's US price (see
+  // docs/reference/catalog-v2-decisions.md).
   it("HDRF-180 = 12500", () => {
     expect(byCode.get("HDRF-180")).toBe(12500);
   });

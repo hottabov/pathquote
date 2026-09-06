@@ -30,9 +30,9 @@ import {
  * then products. Deleting a product nulls DocumentItem.productId (optional
  * relation, default SetNull) and cascades its prices and visibility rows;
  * DocumentLine.refId is a plain string and is left alone (documents keep
- * their frozen snapshot). Content-block keys are not touched: renamed rows
- * keep the one the identity backfill gave them, and none of the added rows
- * has a block.
+ * their frozen snapshot). `contentBlockKey` is carried like any other
+ * scalar: the target names the block for every surviving row (null for
+ * none), so a row whose key already matches plans nothing.
  */
 
 type Tx = Prisma.TransactionClient | PrismaClient;
@@ -65,6 +65,7 @@ async function readSnapshot(db: Tx): Promise<CatalogSnapshot> {
       noCommission: p.noCommission,
       kind: p.kind,
       form: p.form,
+      contentBlockKey: p.contentBlockKey,
       prices: prices(p.prices),
     })),
     options: options.map((o) => ({
@@ -77,6 +78,7 @@ async function readSnapshot(db: Tx): Promise<CatalogSnapshot> {
       role: o.role,
       parentProductCode: o.parentProduct?.code ?? null,
       unitLengthM: o.unitLengthM === null ? null : o.unitLengthM.toNumber(),
+      contentBlockKey: o.contentBlockKey,
       compatSeries: o.compat.flatMap((c) => (c.series ? [c.series.code] : [])),
       compatProducts: o.compat.flatMap((c) => (c.product ? [c.product.code] : [])),
       prices: prices(o.prices),
@@ -120,6 +122,7 @@ async function apply(tx: Tx, operations: Operation[]) {
         kind: c.kind?.to,
         form: c.form?.to,
         specs: c.specs ? ((c.specs.to ?? Prisma.DbNull) as Prisma.InputJsonValue | typeof Prisma.DbNull) : undefined,
+        contentBlockKey: c.contentBlockKey?.to,
         isCredit: c.isCredit?.to,
         noCommission: c.noCommission?.to,
       },
@@ -143,6 +146,7 @@ async function apply(tx: Tx, operations: Operation[]) {
         kind: o.data.kind,
         form: o.data.form,
         specs: (o.data.specs ?? undefined) as Prisma.InputJsonValue | undefined,
+        contentBlockKey: o.data.contentBlockKey,
         isCredit: o.data.isCredit,
         noCommission: o.data.noCommission,
         sortOrder,
@@ -168,6 +172,7 @@ async function apply(tx: Tx, operations: Operation[]) {
             : null
           : undefined,
         unitLengthM: c.unitLengthM?.to,
+        contentBlockKey: c.contentBlockKey?.to,
         noCommission: c.noCommission?.to,
       },
     });
@@ -187,6 +192,7 @@ async function apply(tx: Tx, operations: Operation[]) {
         role: o.data.role,
         parentProductId: o.data.parentProductCode ? need(productIdByCode, o.data.parentProductCode, "parent product") : null,
         unitLengthM: o.data.unitLengthM,
+        contentBlockKey: o.data.contentBlockKey,
         noCommission: o.data.noCommission,
         sortOrder: maxOptionSort,
       },

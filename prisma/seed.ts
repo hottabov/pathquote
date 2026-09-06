@@ -17,13 +17,8 @@ import catalogData from "./seed-data/catalog.json";
 import contentBlocksData from "./seed-data/content-blocks.json";
 import usPricesData from "./seed-data/prices-us.json";
 import catalogV2Target from "../docs/reference/catalog-v2-target.json";
-import { backfillCatalogIdentity } from "../scripts/lib/catalog-identity-backfill";
 import type { CatalogTarget } from "../scripts/lib/catalog-v2-plan";
-import {
-  legacyOptionContentBlockKeyCandidates,
-  legacyProductContentBlockKey,
-  whereAnyCode,
-} from "../src/lib/catalog-identity";
+import { whereAnyCode } from "../src/lib/catalog-identity";
 import {
   type Catalog,
   type ContentBlocksJson,
@@ -50,8 +45,8 @@ const v2Target = catalogV2Target as CatalogTarget;
  * Rows catalogue v2 deletes (docs/reference/catalog-v2-target.json, action
  * "delete"): AU-only options, software sold as options, duplicates, the
  * X-Calibre widths not on the US list. scripts/migrate-catalog-v2.ts
- * removes them from a live database; the seed retires them too (same
- * delete-or-deactivate rule as RETIRED_OPTION_CODES) so a database seeded
+ * removes them from a live database; the seed retires them too (delete, or
+ * deactivate when a document still references the row) so a database seeded
  * from the pre-v2 catalog.json and never migrated still converges. Matched
  * by exact current code only -- a deleted row was never renamed, and a
  * legacy-code match could hit a surviving row.
@@ -64,60 +59,6 @@ const V2_DELETED_PRODUCT_CODES = v2Target.products.filter((p) => p.action === "d
 function whereAnyOfCodes(codes: string[]) {
   return { OR: codes.flatMap((c) => whereAnyCode(c).OR) };
 }
-
-/**
- * Option codes retired from the catalog -- either reclassified as products
- * (the EasyLoader/EasyFeeder/Software fix below) or genuinely discontinued
- * (FM180). A retired code's Option row is never left seeded alongside its
- * replacement/discontinuation: see the retirement loop in main() for how
- * each one is actually removed (delete, or deactivate if still referenced).
- *
- * EasyLoader/EasyFeeder/Software reclassification: these sheets' rows were
- * originally (incorrectly) extracted entirely as options, leaving their
- * series with 0 products. They're now products (see
- * scripts/extract-catalog.ts), so any pre-existing Option row seeded under
- * the old code must be removed -- otherwise it lingers alongside its new
- * product-equivalent, duplicating the item in the catalog UI.
- *
- * Exact old codes, as they existed in prisma/seed-data/catalog.json before
- * this fix (captured from the pre-change catalog, not regenerated):
- *  - the 2 EasyLoader drive-module options -> now products EL-2020 / EL-2420
- *  - the 3 EasyFeeder options -> now products EF-2020 / EF-2420 / EF-4030
- *  - the 10 Software options (incl. PRA-SW) -> now SW-series products of the
- *    same codes (PRA-SW's SW-sheet counterpart is now product code "PRA";
- *    L-Series' differently-priced "PRA-L" option is unaffected and stays).
- *
- * FM180 ("Fabric Master"): not sold anymore (owner decision) -- dropped from
- * extraction entirely (scripts/extract-catalog.ts skips its M-series sheet
- * row), so it needs the same existing-DB cleanup as the reclassified codes
- * above, just for "discontinued" rather than "renamed into a product".
- */
-const RETIRED_OPTION_CODES: string[] = [
-  // The EasyLoader drive modules used to be listed here ("-> products
-  // EL-2020 / EL-2420"), but catalog.json still carries them as options and
-  // the EasyLoader builder writes them as option lines (table-sections.ts),
-  // so every seed run deleted them in this step and recreated them with a
-  // new id in step 6 -- orphaning any document line that referenced the old
-  // row. Owner (2026-09-05): the EasyLoader is a product assembled from its
-  // options; the drive module stays an option.
-  // EasyFeeder -> products EF-2020 / EF-2420 / EF-4030.
-  "EasyFeeder- 2020",
-  "EasyFeeder- 2420",
-  "EasyFeeder- 4030",
-  // Software -> products of the same codes.
-  "ANT-V5",
-  "ANT-V6",
-  "EDG",
-  "LS Convert",
-  "PDG",
-  "PRA-SW",
-  "PTN",
-  "PTW(S)",
-  "WPL",
-  "WPN",
-  // Discontinued -- not a reclassification, just retired outright.
-  "FM180",
-];
 
 async function main() {
   // Import db module only after dotenv has loaded DATABASE_URL.
@@ -155,29 +96,6 @@ async function main() {
     regionIdByCode.set(r.code, region.id);
   }
 
-  // 1b. Rename legacy Series.code "XC" -> "X" -- X-Calibre's *series code*
-  // changed from "XC" to "X" (owner: the catalog UI showed "XC" but should
-  // read "X"; see scripts/extract-catalog.ts's compatibleSeriesFor). Product
-  // codes were already "X-####" before this rename and are unaffected --
-  // that's the separate "legacy XC-####" product-code migration further
-  // down (step 4). Renaming in place (not delete+recreate) preserves the
-  // series' id and every relation to it (Products, OptionCompatibility rows,
-  // etc). Must run before the series upsert loop below, which upserts by
-  // code and would otherwise create a brand new "X" series row alongside an
-  // untouched legacy "XC" one on every existing DB. P2002-tolerant: if a "X"
-  // series row already exists (shouldn't happen -- this migration only ever
-  // needs to run once per DB), log a warning and skip rather than crashing
-  // the whole seed run.
-  let renamedSeriesCount = 0;
-  try {
-    const result = await db.series.updateMany({ where: { code: "XC" }, data: { code: "X" } });
-    renamedSeriesCount = result.count;
-  } catch (e) {
-    const isDuplicate = e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
-    if (!isDuplicate) throw e;
-    console.warn(`seed: cannot rename series "XC" -> "X" -- a series with code "X" already exists; skipped`);
-  }
-
   // 2. Series
   const seriesIdByCode = new Map<string, string>();
   for (const s of mapSeries(catalog)) {
@@ -189,8 +107,7 @@ async function main() {
     seriesIdByCode.set(s.code, series.id);
   }
 
-  // 3. Retire options reclassified as products, or otherwise removed
-  // (discontinued), by this catalog revision -- see RETIRED_OPTION_CODES
+  // 3. Retire the options catalogue v2 deletes -- see V2_DELETED_OPTION_CODES
   // above. Delete an option outright when no DocumentLine snapshot
   // references it; when one does (a document that already used the option),
   // deleting would break that document's history, so instead the option is
@@ -202,7 +119,7 @@ async function main() {
   let retiredCount = 0;
   let deactivatedCount = 0;
   const survivingOptionCodes = new Set(catalog.options.flatMap((o) => [o.code, ...(o.legacyCodes ?? [])]));
-  for (const code of [...RETIRED_OPTION_CODES, ...V2_DELETED_OPTION_CODES]) {
+  for (const code of V2_DELETED_OPTION_CODES) {
     if (survivingOptionCodes.has(code)) continue; // the file still carries it (as a code or legacy code) -- not retired
     const existing = await db.option.findUnique({ where: { code } });
     if (!existing) continue; // never seeded under this code (e.g. fresh DB) -- nothing to retire
@@ -254,78 +171,15 @@ async function main() {
     retiredProductCount++;
   }
 
-  // 4. Rename legacy "XC-####" product codes to "X-####" (the X-Calibre
-  // product-code prefix changed from "XC-" to "X-" -- see
-  // scripts/extract-catalog.ts; this is unrelated to step 1b's *series*
-  // code rename above, which is a separate field on a separate row).
-  // Existing DBs (local and the future VPS) may already contain products
-  // seeded under the old "XC-####" codes, and some may already be referenced by
-  // DocumentItems (e.g. a finalized quote) -- those rows can never be
-  // deleted, and duplicating them under the new code is unacceptable, so
-  // this renames the code string in place instead. Renaming (rather than
-  // delete+recreate) preserves the product's id and every relation to it
-  // (DocumentItems, Prices, OptionCompatibility, etc). If a product already
-  // exists under the target "X-####" code (shouldn't happen — codes are
-  // unique and this migration only ever needs to run once per row), the
-  // update hits the unique-code constraint (P2002); log a warning and skip
-  // rather than crashing the whole seed run.
-  let renamedXCount = 0;
-  const legacyXCProducts = await db.product.findMany({
-    where: { code: { startsWith: "XC-" } },
-  });
-  for (const product of legacyXCProducts) {
-    const match = /^XC-(\d+)$/.exec(product.code);
-    if (!match) continue; // not a plain "XC-####" code -- leave untouched
-    const newCode = `X-${match[1]}`;
-    try {
-      await db.product.update({
-        where: { id: product.id },
-        data: { code: newCode },
-      });
-      renamedXCount++;
-    } catch (e) {
-      const isDuplicate = e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
-      if (!isDuplicate) throw e;
-      console.warn(
-        `seed: cannot rename product "${product.code}" -> "${newCode}" -- a product with code "${newCode}" already exists; skipped`
-      );
-    }
-  }
-
-  // 4b. Rename legacy "HDRF" product code to "HDRF-180" -- the single
-  // width-less "HDRF" product was split into three real width variants,
-  // HDRF-180/220/320 (owner decision, model like EasyLoader's own per-width
-  // products -- see MANUAL_PRODUCTS.EF in scripts/extract-catalog.ts).
-  // Existing DBs may already have a product seeded under the old "HDRF"
-  // code, possibly with an image and/or a Price row already attached (and
-  // possibly referenced by a DocumentItem) -- renaming in place (rather than
-  // delete+recreate) preserves all of that instead of orphaning it. HDRF-180
-  // is the target (not HDRF-220/320) because it's the width the retired
-  // "HDRF" product's own description matched (up to 1800mm) and the one the
-  // old AU price, if any, was seeded against. The step 5 upsert loop below
-  // then creates HDRF-220/HDRF-320 as brand new products, same as any other
-  // catalog addition. P2002-tolerant, same convention as every other rename
-  // step in this file.
-  let renamedHdrfCount = 0;
-  const legacyHdrf = await db.product.findUnique({ where: { code: "HDRF" } });
-  if (legacyHdrf) {
-    try {
-      await db.product.update({ where: { id: legacyHdrf.id }, data: { code: "HDRF-180" } });
-      renamedHdrfCount = 1;
-    } catch (e) {
-      const isDuplicate = e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
-      if (!isDuplicate) throw e;
-      console.warn(`seed: cannot rename product "HDRF" -> "HDRF-180" -- a product with code "HDRF-180" already exists; skipped`);
-    }
-  }
-
-  // 5. Products. Not an upsert by code: catalogue v2 renamed codes, so a
+  // 4. Products. Not an upsert by code: catalogue v2 renamed codes, so a
   // database that was migrated (or seeded before the rename) holds the row
   // under a code the file now lists in `legacyCodes`. Find by any code --
   // current or legacy, on either side -- and update in place (setting the
   // file's code and merging legacyCodes), create only when nothing matches.
-  // Identity columns (kind/form/specs) come from the file, or from the
-  // legacy code rules when the entry has none (see resolveProductIdentity).
+  // Identity columns (kind/form/specs/contentBlockKey) come from the file
+  // and nowhere else (see resolveProductIdentity). The content block is
+  // linked by key; the row is created in step 8, so the key is a plain
+  // string here and a missing block simply renders no section.
   const productIdByCode = new Map<string, string>();
   let productRenamed = 0;
   for (const p of mapProducts(catalog)) {
@@ -342,6 +196,7 @@ async function main() {
       kind: p.kind,
       form: p.form,
       specs: p.specs ?? Prisma.DbNull,
+      contentBlockKey: p.contentBlockKey,
     };
     let productId: string;
     if (existing) {
@@ -358,7 +213,7 @@ async function main() {
     productIdByCode.set(p.code, productId);
   }
 
-  // 6. Options -- same any-code matching as products. parentProductId is
+  // 5. Options -- same any-code matching as products. parentProductId is
   // resolved from the file's parentProductCode through the map built above.
   const optionIdByCode = new Map<string, string>();
   let optionRenamed = 0;
@@ -376,6 +231,7 @@ async function main() {
       role: o.role,
       parentProductId,
       unitLengthM: o.unitLengthM,
+      contentBlockKey: o.contentBlockKey,
     };
     let optionId: string;
     if (existing) {
@@ -392,7 +248,7 @@ async function main() {
     optionIdByCode.set(o.code, optionId);
   }
 
-  // 7. Prices (AU only — the other regions have no pricing data yet)
+  // 6. Prices (AU only — the other regions have no pricing data yet)
   let priceCount = 0;
   for (const price of mapPrices(catalog, "AU")) {
     const regionId = regionIdByCode.get(price.regionCode);
@@ -418,9 +274,9 @@ async function main() {
     priceCount++;
   }
 
-  // 7b. Prices (US region) -- from prisma/seed-data/prices-us.json, written
-  // by `npm run extract:us-prices` (RAW/Price List North America
-  // (01-06-2026).xlsx). Unlike step 7's AU prices, these are always
+  // 6b. Prices (US region) -- from prisma/seed-data/prices-us.json, written
+  // by `npm run catalog:build-seed-data` from the US figures in
+  // docs/reference/catalog-v2-target.json. Unlike step 6's AU prices, these are always
   // upserted regardless of whether a row already exists: the US price list
   // is the authoritative source for every code it covers, never a
   // provisional/needsReview placeholder, so a re-run always brings the DB
@@ -456,15 +312,14 @@ async function main() {
     usPriceCount++;
   }
   // Purely informational: catalog codes that simply have no US price yet
-  // (services/new-width variants etc. that scripts/extract-us-prices.ts
-  // deliberately left out of prices-us.json's `prices` array are not
-  // catalog codes at all, so they never appear here).
+  // (the target file has no US figure for them, so prices-us.json omits
+  // them).
   const missingUs = missingUsPriceCodes(catalog, usPricesJson);
   if (missingUs.length) {
     console.warn(`seed: ${missingUs.length} catalog code(s) have no US price yet: ${missingUs.join(", ")}`);
   }
 
-  // 8. Option <-> Series/Product compatibility. Each row is series-level
+  // 7. Option <-> Series/Product compatibility. Each row is series-level
   // (seriesId set, productId null) or product-level (productId set, seriesId
   // null) — never both, mirroring the two partial unique indexes in
   // schema.prisma. Both are partial ("WHERE the other column IS NULL"), so
@@ -536,7 +391,7 @@ async function main() {
     compatCount++;
   }
 
-  // 8b. Compatibility sync: delete every existing OptionCompatibility row,
+  // 7b. Compatibility sync: delete every existing OptionCompatibility row,
   // for an option catalog.json still knows about, whose pair isn't in that
   // option's desired set built above. Deliberately scoped to
   // `optionIdByCode` (options seeded from catalog.json) rather than every
@@ -558,7 +413,7 @@ async function main() {
     console.log(`seed: compatibility sync removed ${compatDeletedCount} stale OptionCompatibility row(s)`);
   }
 
-  // 9. Content blocks -- one regionId:null "default" row per key from
+  // 8. Content blocks -- one regionId:null "default" row per key from
   // prisma/seed-data/content-blocks.json. Create if the key has never been
   // seeded before; if a default row already exists, leave it entirely alone
   // (never overwrite title/body/sortOrder) so an admin's edits made via
@@ -597,8 +452,8 @@ async function main() {
     }
   }
 
-  // 9b. Targeted content-block body migrations -- see `BLOCK_BODY_MIGRATIONS`
-  // (prisma/seed-lib.ts) for why this is separate from step 9's "never
+  // 8b. Targeted content-block body migrations -- see `BLOCK_BODY_MIGRATIONS`
+  // (prisma/seed-lib.ts) for why this is separate from step 8's "never
   // overwrite an existing row" rule. Handles the "machine.m-series" case
   // today: commit 315e089 removed a duplicate inline heading from its body
   // (the quotation renderer already prints its own heading from the block's
@@ -613,7 +468,7 @@ async function main() {
     const newBlock = contentBlocksJson.blocks.find((b) => b.key === key);
     if (!newBlock) continue; // shouldn't happen -- defensive, content-blocks.json always has every migrated key
     const existing = await db.contentBlock.findFirst({ where: { key, regionId: null } });
-    if (!existing) continue; // never seeded on this DB, or just created fresh (with the new body) by step 9 above
+    if (!existing) continue; // never seeded on this DB, or just created fresh (with the new body) by step 8 above
     if (!shouldMigrateBlock(existing.body, migration.oldBody)) {
       if (existing.body !== newBlock.body) {
         console.warn(`seed: content block "${key}" was admin-edited -- skipped body migration`);
@@ -628,64 +483,26 @@ async function main() {
     blockMigratedCount++;
   }
 
+  // A seeded row's content block is a key set in step 4/5 from the file;
+  // warn when the file names a block content-blocks.json does not seed, so
+  // a typo in the target file shows up here rather than as a silently
+  // missing quotation section.
+  const blockKeys = new Set((await db.contentBlock.findMany({ select: { key: true } })).map((b) => b.key));
+  const danglingBlockKeys = [...mapProducts(catalog), ...mapOptions(catalog)]
+    .filter((row) => row.contentBlockKey !== null && !blockKeys.has(row.contentBlockKey))
+    .map((row) => `${row.code} -> ${row.contentBlockKey}`);
+  if (danglingBlockKeys.length) {
+    console.warn(`seed: ${danglingBlockKeys.length} row(s) name a content block that does not exist: ${danglingBlockKeys.join(", ")}`);
+  }
+
   console.log("seed: done");
   console.log(`  regions:        ${regionIdByCode.size}`);
-  console.log(`  renamed XC->X series: ${renamedSeriesCount}`);
   console.log(`  series:         ${seriesIdByCode.size}`);
   console.log(`  retired options: ${retiredCount} deleted, ${deactivatedCount} deactivated`);
   console.log(`  retired products: ${retiredProductCount} deleted, ${deactivatedProductCount} deactivated`);
   console.log(`  renamed to v2 codes: ${productRenamed} products, ${optionRenamed} options`);
-  console.log(`  renamed XC->X product codes: ${renamedXCount}`);
-  console.log(`  renamed HDRF->HDRF-180: ${renamedHdrfCount}`);
-  // 10. Identity columns (migration z31_catalog_identity) for rows the
-  // steps above did not classify -- catalogue rows outside catalog.json
-  // (hand-created) that are still at the column defaults. Rows seeded from
-  // the file already carry kind/form/specs/role/parent/unitLengthM from
-  // steps 5 and 6, so the backfill skips them; what they still need is the
-  // content block, linked in 10b. Runs after step 9 because the keys it
-  // links to are created there.
-  const identity = await backfillCatalogIdentity(db, "missing");
-
-  // 10b. Content blocks for seeded rows with none yet: the quotation block
-  // a product/option is described by (Product/Option.contentBlockKey).
-  // Derived by the legacy rules from the code the rules understand -- the
-  // entry's first legacy code when it has one (PTW-S was "PTW(S)"), else
-  // its code -- and set only when the row has no block yet, so an admin's
-  // choice is never overwritten.
-  const blockKeys = new Set((await db.contentBlock.findMany({ select: { key: true } })).map((b) => b.key));
-  let blocksLinked = 0;
-  for (const p of mapProducts(catalog)) {
-    const productId = productIdByCode.get(p.code);
-    if (!productId) continue;
-    const row = await db.product.findUnique({ where: { id: productId }, select: { contentBlockKey: true } });
-    if (!row || row.contentBlockKey !== null) continue;
-    const key = [p.legacyCodes[0] ?? p.code, p.code]
-      .map((code) => legacyProductContentBlockKey(p.seriesCode, code))
-      .find((k): k is string => k !== null && blockKeys.has(k));
-    if (!key) continue;
-    await db.product.update({ where: { id: productId }, data: { contentBlockKey: key } });
-    blocksLinked++;
-  }
-  for (const o of mapOptions(catalog)) {
-    const optionId = optionIdByCode.get(o.code);
-    if (!optionId) continue;
-    const row = await db.option.findUnique({ where: { id: optionId }, select: { contentBlockKey: true } });
-    if (!row || row.contentBlockKey !== null) continue;
-    const key = [o.legacyCodes[0] ?? o.code, o.code]
-      .flatMap((code) => legacyOptionContentBlockKeyCandidates(code))
-      .find((k) => blockKeys.has(k));
-    if (!key) continue;
-    await db.option.update({ where: { id: optionId }, data: { contentBlockKey: key } });
-    blocksLinked++;
-  }
-
   console.log(`  products:       ${productIdByCode.size}`);
   console.log(`  options:        ${optionIdByCode.size}`);
-  console.log(`  identity:       ${identity.products.written} products, ${identity.options.written} options classified`);
-  console.log(`  content blocks linked: ${blocksLinked}`);
-  if (identity.options.unresolvedParents.length) {
-    console.warn(`  identity: EasyLoader parent not found for ${identity.options.unresolvedParents.join(", ")}`);
-  }
   console.log(`  prices (AU):    ${priceCount}`);
   console.log(`  prices (US):    ${usPriceCount}`);
   console.log(`  compatibility:  ${compatCount} ensured, ${compatDeletedCount} stale removed`);

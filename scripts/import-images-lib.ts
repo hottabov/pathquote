@@ -35,7 +35,7 @@ export const SERIES_IMAGES: Record<string, string> = {
   LNS: "leather-nesting.png",
   EF: "easyfeeder.png",
   // HDRF was split out of the EF series into its own catalogue series (see
-  // MANUAL_PRODUCTS.HDRF in scripts/extract-catalog.ts) but never had its
+  // docs/reference/catalog-v2-decisions.md) but never had its
   // own separate series photo -- it reuses "hdrf.png", the same photo
   // already assigned to each width variant individually via PRODUCT_IMAGES
   // below, so the /catalog series card shows the same art the products do.
@@ -49,8 +49,9 @@ export const SERIES_IMAGES: Record<string, string> = {
  * below is an exact `code` present there. Most are SW-series software
  * modules sharing PathWorks' screenshot or Production Analyst's own image
  * ("PTW(S)", "ANT-V5", "ANT-V6" etc. match catalog.json byte-for-byte);
- * FP-TROLLEY and HDRF-180/220/320 are the hand-authored manual products (see
- * MANUAL_PRODUCTS in scripts/extract-catalog.ts) -- FP-TROLLEY with its own
+ * FP-TROLLEY and HDRF-180/220/320 are the products that never came from a
+ * price list (owner-added, see docs/reference/catalog-v2-decisions.md) --
+ * FP-TROLLEY with its own
  * standalone photo, and all three HDRF width variants sharing the one
  * pre-split "hdrf.png" photo (there's no per-width product photo in the
  * source material, same "one shot per line" convention SERIES_IMAGES uses).
@@ -150,9 +151,8 @@ export const ICON_PRODUCT_TARGETS: Record<string, string[]> = {
  * deliberately unmapped -- no catalog option or product code identified for
  * them. Surfaced in the import script's summary (logged as skipped), not
  * used in any lookup or copied to uploads. JTP used to sit here (no catalog
- * option existed for it yet) but now maps to the new "JTP" ("JetPen") option
- * -- see ICON_OPTION_TARGETS above and MANUAL_OPTIONS in
- * scripts/extract-catalog.ts.
+ * option existed for it yet) but now maps to the "JTP" ("JetPen") option --
+ * see ICON_OPTION_TARGETS above.
  */
 export const UNMAPPED_ICONS: string[] = [];
 

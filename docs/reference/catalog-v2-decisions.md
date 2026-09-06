@@ -38,4 +38,4 @@ Source of truth for `catalog-v2-target.json`. Audit: `docs/audit/` (proposal v1,
 | OFJ | M/X only (not L). |
 | X compat | Only what the US X-sheet lists: MTS, MTS-M, PRM, OFD, OFP, OFJ, HDC, BCR, TR220, Crate-M-180/220 (+ install). IKA/HFV/AFP are standard on X, not options. X prints no production form (the M-Series form has no X model box). |
 | Crate noCommission | true for every crate (Crate-220 was false). |
-| EL Drive Module | Stays an option (`EL-xxxx-DM1`); EL product price 0. Seed's `RETIRED_OPTION_CODES` entry removed. |
+| EL Drive Module | Stays an option (`EL-xxxx-DM1`); EL product price 0. The seed's old "retire this code" list that used to drop it is gone (phase 4): deletions come only from the target's `delete` rows. |

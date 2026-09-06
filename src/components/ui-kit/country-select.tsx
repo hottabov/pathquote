@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * A plain native `<select>` over the full ISO 3166-1 country list (see
- * `src/lib/countries.ts`), styled with `fieldInputClass` for parity with
+ * `src/lib/countries.ts`), styled with `fieldInputClass` to match
  * every other field control. Deliberately a native select rather than a
  * custom combobox — owner constraint was "no free typing (typos)", not
  * "must be searchable"; a native select is keyboard-searchable by typing a

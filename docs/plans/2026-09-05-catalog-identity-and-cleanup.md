@@ -4,6 +4,11 @@ Date: 2026-09-05. Owner decisions recorded in `docs/reference/catalog-v2-decisio
 Target data in `docs/reference/catalog-v2-target.json` (generated from the live DB dump
 `RAW/catalog-dump.json` + decisions; the data-migration script reads it).
 
+> **Done — 2026-09-06.** All five phases complete. Migration applied to the local DB and
+> seed verified (3.5); the old code contract is gone (4.x); the director's export exists
+> (5.1). What remains is outside this plan: the director's code review via the export, and
+> the import half in `docs/plans/2026-09-05-catalog-import-export.md`.
+
 Status: `[ ]` not started · `[~]` in progress · `[x]` done.
 
 ## Why
@@ -24,11 +29,12 @@ Goal: `code` is a mutable label. Behaviour keys on `id` and explicit attributes.
   `Option.unitLengthM Decimal?`, `Option.legacyCodes String[]`. `DocumentItem.kind/form`
   and `DocumentLine.role` snapshots. Migration `z26_catalog_identity`.
 - [x] **1.2** Typed `Product.specs`: `{ cutHeightCm?, cutWidthCm?, tableWidthMm?, paperWidthMm?, modelTier?, extended?, belt? }` zod schema in `src/lib/validation/product-specs.ts`.
-- [x] **1.3** Backfill script `scripts/backfill-catalog-identity.ts`: derives every new column
-  from the *current* regexes (`resolveForm`, `machine-specs`, `EL_OPTION_SUFFIX`, m-series
-  tick regexes). Idempotent. Asserts `resolveForm(code)?.id === form` for every product.
-- [x] **1.4** Tests: for each product in `catalog.json`, backfilled `kind/form/specs` equals
-  what the regex path returns today (parity test — deleted in Phase 4).
+- [x] **1.3** Backfill script (deleted in Phase 4 along with its library and test): derived every
+  new column from the then-current code regexes (form resolver, machine-specs parser, EasyLoader
+  option-suffix map, m-series tick regexes). Idempotent. Asserted that the derived form matched
+  the regex path for every product.
+- [x] **1.4** Tests: for each product in `catalog.json`, backfilled `kind/form/specs` equalled
+  what the regex path returned at the time (deleted in Phase 4 with the regexes).
 
 ## Phase 2 — Readers switch to attributes ✅ (2026-09-05)
 
@@ -38,13 +44,15 @@ Known deliberate differences vs. the code-parsing readers: the quotation spec se
 - [x] **2.2** `specs/m-series.ts`, `specs/easyloader.ts`, `specs/fabricpro.ts`: model/width ticks from `specs`; option ticks from `Option.role` (map `role → cell`); `covers` = set of roles.
 - [x] **2.3** `table-sections.ts`: `elOptionCode` → `findElOption(parentProductId, role)`; `derivedEasyLoaderCodes` → derived by role. `setEasyLoaderLayout` (both copies) rewrites lines by role.
 - [x] **2.4** `machine-specs.ts`: read `specs.cutHeightCm/cutWidthCm/tableWidthMm/paperWidthMm`; regex only as fallback for `specs == null` (removed in Phase 4).
-- [x] **2.5** `quotation-data.ts`: content block by `Product.contentBlockId` / `Option.contentBlockId` (add columns + backfill from `option.<code>` keys); `MACHINE_SERIES_CODES` → `kind === MACHINE`; software (S)/(I) by `specs.softwareMode` or role.
+- [x] **2.5** `quotation-data.ts`: content block by `Product.contentBlockKey` / `Option.contentBlockKey` (add columns + backfill from `option.<code>` keys); the machine-series code list → `kind === MACHINE`; software (S)/(I) by `specs.softwareMode` or role.
 - [x] **2.6** `option-length.ts` → `Option.unitLengthM`.
 - [x] **2.7** Wire format: `addItem(documentId, productId)`, `optionSelectionSchema.optionId`, catalog-visibility by ids, compat by seriesId. `DocumentLine.refId` already holds optionId.
 - [x] **2.8** `production-forms-section.tsx` software-host warning by `kind/role`.
-- [~] **2.9** (RETIRED entry for EL drive modules removed; seed still upserts by legacy code — regenerated catalog.json in phase 3 makes it whole) Seed: upsert by `code` stays (seed's natural key) but `RETIRED_OPTION_CODES` and
-  the XC→X / HDRF rewrites move into `legacyCodes`-aware lookup: find by `code` OR `legacyCodes has`.
-- [x] **2.10** All 1330 tests green; parity test still green.
+- [x] **2.9** Seed: `code` stays the seed's natural key, but the row is found by `code` OR
+  `legacyCodes has` (`whereAnyCode`), so a database seeded under an old code is renamed in
+  place. The seed's own retire list and the XC→X / HDRF one-off rewrites are gone (2026-09-06):
+  deletions come only from the target's `delete` rows, renames only from `legacyCodes`.
+- [x] **2.10** All 1330 tests green; identity test (1.4) still green at the time.
 
 ## Phase 3 — Data: rename, dedupe, add, delete (per decisions file)
 
@@ -54,31 +62,44 @@ Known deliberate differences vs. the code-parsing readers: the quotation spec se
   old code → `legacyCodes`; deletes listed rows (options, then products); adds new rows;
   `--dry-run` prints the diff; idempotent (second plan is empty). Not yet run on the live DB.
 - [x] **3.2** `scripts/build-seed-data-from-target.ts` regenerated `catalog.json` + `prices-us.json`
-  (new codes, `kind/form/specs`, `role/parentProductCode/unitLengthM`, `legacyCodes`);
-  `prisma/seed.ts` matches rows by any code and retires the target's deletes. `extract-*.ts`
-  carry a deprecation note.
+  (new codes, `kind/form/specs`, `role/parentProductCode/unitLengthM`, `legacyCodes`,
+  `contentBlockKey`); `prisma/seed.ts` matches rows by any code and retires the target's
+  deletes. The spreadsheet extractors that used to write the two files are deleted (Phase 4).
 - [x] **3.3** `content-blocks.json` keys unchanged (`option.MTS`, `machine.m-series`, …) — they are
   block ids, not catalogue codes; rows link to them through `contentBlockKey` (backfilled,
   carried through renames, linked by the seed for fresh rows). Nothing in `src/` derives a key from a code.
 - [x] **3.4** Image maps (`import-images-lib.ts`) keyed by new codes; `import-product-images.ts`
   matches rows by any code (`whereAnyCode`).
-- [ ] **3.5** Run on local DB, `db:verify-seed`, manual smoke: M-3180 quote → M-Series form;
-  EL-2020 builder → DM1/DM12/ST12/BB12/RL12 lines; L-320EF quote → correct US price.
+- [x] **3.5** (owner, 2026-09-06) Migration applied to the local DB, `db:verify-seed` clean, manual
+  smoke OK: M-3180 quote → M-Series form; EL-2020 builder → DM1/DM12/ST12/BB12/RL12 lines;
+  L-320EF quote → correct US price.
 
-## Phase 4 — Remove the old contract
+## Phase 4 — Remove the old contract ✅ (2026-09-06)
 
-- [ ] **4.1** Delete regexes, `EL_OPTION_SUFFIX`, `PRINTED_WIDTHS`, `MACHINE_SERIES_CODES`,
-  `RETIRED_OPTION_CODES`, `(S)/(I)` parsing, parity tests.
-- [ ] **4.2** Tests rewritten as invariants (audit plan 8.4).
+- [x] **4.1** Deleted: the code regexes, the EasyLoader option-suffix map, the printed-width map,
+  the machine-series code list, the seed's retire list, `(S)/(I)` parsing, the backfill script +
+  library, the identity test from 1.4, and the two spreadsheet extractors (`extract-*.ts` and
+  their `npm run extract:*` entries). `src/lib/catalog-identity.ts` keeps only `whereAnyCode`.
+  `prisma/seed-lib.ts` requires an explicit `kind` (products) and `role` key (options) and
+  throws naming the code otherwise. The planner (`catalog-v2-plan.ts`) carries `contentBlockKey`
+  like every other scalar.
+- [x] **4.2** Tests rewritten as invariants (audit plan 8.4): `tests/catalog.test.ts` asserts
+  structural rules over `catalog.json` (unique codes, character rule, explicit identity, one
+  option per EL role per width, …); `tests/seed-mapping.test.ts` uses fixtures with explicit
+  identity and asserts exact payloads plus the missing-`kind`/missing-`role` errors;
+  `tests/catalog-v2-plan.test.ts` checks the planner carries `contentBlockKey` and stays idempotent.
 
-## Phase 5 — Export for the director
+## Phase 5 — Export for the director ✅ (2026-09-06)
 
-- [ ] **5.1** `scripts/export-catalog.ts` → xlsx: one row per product/option, code / name /
-  description / AU / US / compat / role. Director reviews codes; corrections come back as
-  edits to `catalog-v2-target.json` and a re-run of 3.1.
+- [x] **5.1** `scripts/export-catalog.ts` (`npm run catalog:export`) → xlsx with `Products`,
+  `Options`, `Prices` sheets; builder in `scripts/lib/catalog-export.ts`, tested in
+  `tests/catalog-export.test.ts`; usage in `docs/reference/catalog-export.md`. Director reviews
+  codes; corrections come back as edits to `catalog-v2-target.json`, a re-run of 3.1 and of
+  `npm run catalog:build-seed-data`.
 
-## Ordering constraint
+## Ordering constraint (historical)
 
-Phase 3 **must not** run before Phase 2: `M3180 → M-3180` breaks `/^M(3|5|7|10)…$/` in
-`specs/m-series.ts:4`; `EL-2020 Additional 1.2M lengths → EL-2020-DM12` breaks
-`EL_OPTION_SUFFIX`. Existing documents are demo data (owner) — snapshots are not migrated.
+Phase 3 **must not** have run before Phase 2: `M3180 → M-3180` would have broken the
+model regex in `specs/m-series.ts`; `EL-2020 Additional 1.2M lengths → EL-2020-DM12` would have
+broken the EasyLoader option-suffix map. Both are gone now. Existing documents are demo data
+(owner) — snapshots are not migrated.

@@ -9,7 +9,6 @@
 
 import type { OptionRole, ProductKind, ProductionForm } from "@prisma/client";
 import type { ProductSpecs } from "../src/lib/validation/product-specs";
-import { legacyOptionIdentity, legacyProductIdentity } from "../src/lib/catalog-identity";
 
 export interface CatalogItem {
   code: string;
@@ -30,16 +29,21 @@ export interface CatalogItem {
    * `mapProducts` below defaults it to `false`, so nothing about any
    * existing catalog.json entry needs to change for this field to exist.
    * PROVISIONAL WORDING: the TRADE-IN entry's own `description` is
-   * transcribed from a meeting, not the agreed legal redaction — see the
-   * fuller note on it in scripts/extract-catalog.ts's `MANUAL_PRODUCTS.SVC`. */
+   * transcribed from a meeting, not the agreed legal redaction — the
+   * director reviews it at export (docs/reference/catalog-export.md). */
   isCredit?: boolean;
   /** Product identity (Product.kind/form/specs). Written by
-   * scripts/build-seed-data-from-target.ts from the target file. When an
-   * entry has no `kind` the seed falls back to the legacy code rules
-   * (src/lib/catalog-identity.ts) applied to `legacyCodes[0] ?? code`. */
+   * scripts/build-seed-data-from-target.ts from the target file. `kind` is
+   * required on a product entry -- the seed refuses an entry without one
+   * (see `resolveProductIdentity`); it is optional in the type only because
+   * an option entry shares this shape. */
   kind?: ProductKind;
   form?: ProductionForm | null;
   specs?: ProductSpecs | null;
+  /** `Product.contentBlockKey` / `Option.contentBlockKey`: the quotation
+   * content block (prisma/seed-data/content-blocks.json key) that describes
+   * this row, or null for none. Absent = null. */
+  contentBlockKey?: string | null;
 }
 
 export interface CatalogSeries {
@@ -55,9 +59,10 @@ export interface CatalogOption extends CatalogItem {
    *  (e.g. an EasyLoader accessory tied to one drive-module product) rather
    *  than a whole series -- in that case compatibleSeries is `[]`. */
   compatibleProducts?: string[];
-  /** Option identity (Option.role/parentProductId/unitLengthM). Same
-   * fallback rule as the product fields: an entry with no `role` key is
-   * classified by the legacy code rules. */
+  /** Option identity (Option.role/parentProductId/unitLengthM). The `role`
+   * key must be present (null is a valid value: an option with no box on
+   * any form) -- the seed refuses an entry without it (see
+   * `resolveOptionIdentity`). */
   role?: OptionRole | null;
   /** Code of the product this option belongs to (EasyLoader modules). */
   parentProductCode?: string | null;
@@ -167,27 +172,28 @@ export interface ProductPayload {
   form: ProductionForm | null;
   /** `null` = no specs (the column stays NULL). */
   specs: ProductSpecs | null;
-}
-
-/** The code the legacy rules understand: the one the row had before v2. */
-function legacyCodeOf(item: { code: string; legacyCodes?: string[] }): string {
-  return item.legacyCodes?.[0] ?? item.code;
+  contentBlockKey: string | null;
 }
 
 /**
- * Product identity for a catalog entry: the entry's own `kind`/`form`/
- * `specs` when it carries a `kind`, otherwise what the legacy code rules
- * say about its pre-v2 code. Pure, so a fresh seed and the tests agree.
+ * Product identity for a catalog entry: its explicit `kind`/`form`/`specs`/
+ * `contentBlockKey`. The file is the only source -- an entry without a
+ * `kind` is a broken file, not a row to guess at, so this throws naming the
+ * code. Pure, so a fresh seed and the tests agree.
  */
 export function resolveProductIdentity(
   p: CatalogItem,
   seriesCode: string
-): { kind: ProductKind; form: ProductionForm | null; specs: ProductSpecs | null } {
-  if (p.kind) {
-    return { kind: p.kind, form: p.form ?? null, specs: p.specs && Object.keys(p.specs).length ? p.specs : null };
+): { kind: ProductKind; form: ProductionForm | null; specs: ProductSpecs | null; contentBlockKey: string | null } {
+  if (!p.kind) {
+    throw new Error(`seed: product ${p.code} (series ${seriesCode}) has no kind in catalog.json`);
   }
-  const legacy = legacyProductIdentity(seriesCode, legacyCodeOf(p), p.isCredit ?? false);
-  return { kind: legacy.kind, form: legacy.form, specs: Object.keys(legacy.specs).length ? legacy.specs : null };
+  return {
+    kind: p.kind,
+    form: p.form ?? null,
+    specs: p.specs && Object.keys(p.specs).length ? p.specs : null,
+    contentBlockKey: p.contentBlockKey ?? null,
+  };
 }
 
 export function mapProducts(catalog: Catalog): ProductPayload[] {
@@ -221,19 +227,28 @@ export interface OptionPayload {
   /** Product code (current, as in catalog.json) -- resolved to an id by the seed. */
   parentProductCode: string | null;
   unitLengthM: number | null;
+  contentBlockKey: string | null;
 }
 
-/** Same rule as resolveProductIdentity, keyed on the presence of `role`. */
+/**
+ * Option identity for a catalog entry: its explicit `role`/
+ * `parentProductCode`/`unitLengthM`/`contentBlockKey`. Same rule as
+ * `resolveProductIdentity`, keyed on the presence of the `role` key (null
+ * is a valid role; a missing key is a broken file and throws).
+ */
 export function resolveOptionIdentity(o: CatalogOption): {
   role: OptionRole | null;
   parentProductCode: string | null;
   unitLengthM: number | null;
+  contentBlockKey: string | null;
 } {
-  if ("role" in o) {
-    return { role: o.role ?? null, parentProductCode: o.parentProductCode ?? null, unitLengthM: o.unitLengthM ?? null };
-  }
-  const legacy = legacyOptionIdentity(legacyCodeOf(o));
-  return { role: legacy.role, parentProductCode: legacy.parentProductCode, unitLengthM: legacy.unitLengthM };
+  if (!("role" in o)) throw new Error(`seed: option ${o.code} has no role key in catalog.json`);
+  return {
+    role: o.role ?? null,
+    parentProductCode: o.parentProductCode ?? null,
+    unitLengthM: o.unitLengthM ?? null,
+    contentBlockKey: o.contentBlockKey ?? null,
+  };
 }
 
 export function mapOptions(catalog: Catalog): OptionPayload[] {
@@ -321,9 +336,11 @@ export function mapCompatibility(catalog: Catalog): CompatPayload[] {
 // --- US region prices (prisma/seed-data/prices-us.json) -----------------
 
 /** Shape of prisma/seed-data/prices-us.json, written by
- *  scripts/extract-us-prices.ts. `unmatched` isn't consumed here -- it's
- *  purely informational (services, per-width crate rows, etc. with no
- *  catalog code to attach to) and stays in the JSON file for the report. */
+ *  scripts/build-seed-data-from-target.ts from the US figures in
+ *  docs/reference/catalog-v2-target.json. `unmatched` isn't consumed here
+ *  -- it is a leftover of the spreadsheet extractor that used to write the
+ *  file (rows with no catalog code to attach to) and is always `[]` now;
+ *  kept so the file's shape is stable. */
 export interface UsPricesJson {
   extractedAt: string;
   prices: { code: string; amountUsd: number }[];
@@ -338,11 +355,10 @@ export interface UsPricesMapping {
    *  covers, so there's no "amount 0, flagged for review" case here. */
   payloads: PricePayload[];
   /** prices-us.json codes that don't exist in the given catalog at all --
-   *  should be empty in practice (scripts/extract-us-prices.ts already
-   *  validates every code it writes against the catalog it was run
-   *  against), but the catalog and the price file can drift apart if one is
-   *  regenerated without the other, so this is surfaced rather than
-   *  silently dropped. */
+   *  should be empty in practice (both files are written together from the
+   *  same target by scripts/build-seed-data-from-target.ts), but the
+   *  catalog and the price file can drift apart if one is edited without
+   *  the other, so this is surfaced rather than silently dropped. */
   unknownCodes: string[];
 }
 
@@ -376,9 +392,8 @@ export function mapUsPrices(catalog: Catalog, usPrices: UsPricesJson): UsPricesM
 
 /** Every product/option code in the catalog that prices-us.json's matched
  *  entries don't cover -- i.e. it simply has no US price yet. Purely
- *  informational (mirrors scripts/extract-us-prices.ts's own "catalog codes
- *  with no US price" summary line), used by prisma/seed.ts to log a warning
- *  per missing code rather than leave the gap silent. */
+ *  informational, used by prisma/seed.ts to log a warning per missing code
+ *  rather than leave the gap silent. */
 export function missingUsPriceCodes(catalog: Catalog, usPrices: UsPricesJson): string[] {
   const pricedCodes = new Set(usPrices.prices.map((p) => p.code));
   const allCodes = [

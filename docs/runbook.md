@@ -551,11 +551,12 @@ cd /opt/pathquote
 docker compose run --rm tools npm run db:seed
 ```
 
-Skipping it is not cosmetic. The EasyLoader builder, for one, writes option
-codes it assembles from the product code (see `EL_OPTION_SUFFIX`), and
-`setItemOptions` rejects a code the database does not have — so an unseeded
-production would refuse to save an EasyLoader at all, with an error naming
-a code that exists perfectly well in the repository.
+Skipping it is not cosmetic. The EasyLoader builder, for one, writes one
+option line per module role, looked up as "this width's option with this
+role" (`Option.role` + `Option.parentProductId`, seeded from
+`catalog.json`), and refuses the layout when a role has no row — so an
+unseeded production would refuse to save an EasyLoader at all, with an
+error naming an option that exists perfectly well in the repository.
 
 - SSH in and repeat the same commands manually (`docker compose run --rm
   tools npx prisma migrate deploy`, then `curl -fsS

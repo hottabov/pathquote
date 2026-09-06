@@ -1,5 +1,13 @@
 # PathQuote Phase 1-2: Foundation Implementation Plan
 
+> **Historical (2026-09-06).** The Excel → JSON extractors this plan creates
+> (`scripts/extract-catalog.ts`, `scripts/extract-us-prices.ts` and their `npm run
+> extract:*` entries) were deleted with the old code contract; `prisma/seed-data/*.json`
+> is now written by `npm run catalog:build-seed-data` from
+> `docs/reference/catalog-v2-target.json` (see
+> `docs/plans/2026-09-05-catalog-identity-and-cleanup.md`). Everything else below is the
+> record of what was built.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Running PathQuote skeleton on q.pathfindercut.com: login (email+password, magic link), full DB schema, catalog seeded from the Excel price list, CI auto-deploy.

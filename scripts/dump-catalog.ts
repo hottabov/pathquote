@@ -3,8 +3,9 @@ import { writeFileSync } from "node:fs";
 
 /**
  * Read-only snapshot of the live catalogue for offline reconciliation
- * (products, options, prices per region, compatibility). Writes
- * RAW/catalog-dump.json. Changes nothing.
+ * (products, options, identity columns, prices per region, compatibility).
+ * Writes RAW/catalog-dump.json in the `CatalogSnapshot` shape
+ * scripts/lib/catalog-v2-plan.ts plans against. Changes nothing.
  *
  *   npx tsx scripts/dump-catalog.ts
  */
@@ -19,6 +20,7 @@ async function main() {
     }),
     db.option.findMany({
       include: {
+        parentProduct: { select: { code: true } },
         prices: { include: { region: true } },
         compat: { include: { series: true, product: true } },
       },
@@ -34,10 +36,14 @@ async function main() {
     products: products.map((p) => ({
       id: p.id,
       code: p.code,
+      legacyCodes: p.legacyCodes,
       series: p.series.code,
       name: p.name,
       description: p.description,
+      kind: p.kind,
+      form: p.form,
       specs: p.specs,
+      contentBlockKey: p.contentBlockKey,
       active: p.active,
       isCredit: p.isCredit,
       noCommission: p.noCommission,
@@ -49,8 +55,13 @@ async function main() {
     options: options.map((o) => ({
       id: o.id,
       code: o.code,
+      legacyCodes: o.legacyCodes,
       name: o.name,
       shortDescription: o.shortDescription,
+      role: o.role,
+      parentProductCode: o.parentProduct?.code ?? null,
+      unitLengthM: o.unitLengthM === null ? null : o.unitLengthM.toNumber(),
+      contentBlockKey: o.contentBlockKey,
       attributeSchema: o.attributeSchema,
       active: o.active,
       noCommission: o.noCommission,

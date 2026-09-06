@@ -63,3 +63,7 @@ docker-compose.override.yml
 
 # Second checkout used for feature work alongside main (git worktree).
 .worktrees/
+
+# AI 
+.claude/
+skills/

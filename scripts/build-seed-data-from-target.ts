@@ -14,9 +14,10 @@ import type { Catalog } from "../prisma/seed-lib";
  *
  *   npx tsx scripts/build-seed-data-from-target.ts
  *
- * The spreadsheet extractors (scripts/extract-catalog.ts,
- * scripts/extract-us-prices.ts) are superseded by the target file and must
- * not be re-run over the files this writes. Pure logic lives in
+ * This is the only writer of the two files: the spreadsheet extractors
+ * that used to produce them from RAW/*.xlsx were deleted with the old code
+ * contract (catalogue v2, phase 4). Corrections go into the target file,
+ * then this is re-run. Pure logic lives in
  * scripts/lib/catalog-v2-seed-data.ts (tested in tests/catalog-v2-target.test.ts).
  */
 function main() {

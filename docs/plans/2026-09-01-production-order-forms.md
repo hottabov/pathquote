@@ -15,6 +15,14 @@
 > the reconciliation gate this plan describes is gone: the mismatch it caught
 > can no longer be expressed. The machine itself now prices at 0, since every
 > part of it is an option.
+>
+> **Superseded, 2026-09-06 — codes are labels.** The specs below read facts
+> out of the product code (`/^EL-\d{4}$/`, the printed-width map keyed by
+> code, `/^M(3|5|7|10)…$/`, option codes assembled as `${itemCode} ${suffix}`).
+> All of that is gone: forms now read `Product.form/specs` and `Option.role`
+> (`docs/plans/2026-09-05-catalog-identity-and-cleanup.md`). The code
+> listings that follow are the record of the first implementation, not the
+> current one.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

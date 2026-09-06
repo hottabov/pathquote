@@ -61,6 +61,7 @@ export function buildSeedDataFromTarget(
             kind: p.kind ?? "ACCESSORY",
             form: p.form ?? null,
             specs: p.specs && Object.keys(p.specs).length ? (p.specs as CatalogItem["specs"]) : null,
+            contentBlockKey: p.contentBlockKey ?? null,
           },
           {
             legacyCodes: p.legacyCodes.length ? p.legacyCodes : undefined,
@@ -82,6 +83,7 @@ export function buildSeedDataFromTarget(
         role: o.role ?? null,
         parentProductCode: o.parentProductCode ?? null,
         unitLengthM: o.unitLengthM ?? null,
+        contentBlockKey: o.contentBlockKey ?? null,
       },
       {
         compatibleProducts: o.compatProducts.length ? [...o.compatProducts] : undefined,

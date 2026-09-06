@@ -25,7 +25,8 @@
         "cutWidthCm": 180,
         "modelTier": "M3",
         "widthCode": 180
-      }
+      },
+      "contentBlockKey": "machine.m-series"
     },
     {
       "id": "cmtfmusj6000seo9kpzwfq2wr",
@@ -50,7 +51,8 @@
         "cutWidthCm": 227,
         "modelTier": "M3",
         "widthCode": 220
-      }
+      },
+      "contentBlockKey": "machine.m-series"
     },
     {
       "id": "cmtgjwcz6000utw9kbj9t8736",
@@ -75,7 +77,8 @@
         "cutWidthCm": 300,
         "modelTier": "M3",
         "widthCode": 300
-      }
+      },
+      "contentBlockKey": "machine.m-series"
     },
     {
       "id": "cmtfmusj7000teo9knd1ppssa",
@@ -100,7 +103,8 @@
         "cutWidthCm": 390,
         "modelTier": "M3",
         "widthCode": 390
-      }
+      },
+      "contentBlockKey": "machine.m-series"
     },
     {
       "id": "cmtfmusj8000ueo9knacqvzp9",
@@ -125,7 +129,8 @@
         "cutWidthCm": 180,
         "modelTier": "M5",
         "widthCode": 180
-      }
+      },
+      "contentBlockKey": "machine.m-series"
     },
     {
       "id": "cmtfmusja000veo9kr5c1wka2",
@@ -150,7 +155,8 @@
         "cutWidthCm": 227,
         "modelTier": "M5",
         "widthCode": 220
-      }
+      },
+      "contentBlockKey": "machine.m-series"
     },
     {
       "id": "cmtgjwd0c000ytw9k3o3xxjsj",
@@ -175,7 +181,8 @@
         "cutWidthCm": 300,
         "modelTier": "M5",
         "widthCode": 300
-      }
+      },
+      "contentBlockKey": "machine.m-series"
     },
     {
       "id": "cmtfmusjb000weo9kkacu0f7a",
@@ -200,7 +207,8 @@
         "cutWidthCm": 390,
         "modelTier": "M5",
         "widthCode": 390
-      }
+      },
+      "contentBlockKey": "machine.m-series"
     },
     {
       "id": "cmtfmusjd000xeo9kyuksux3i",
@@ -225,7 +233,8 @@
         "cutWidthCm": 180,
         "modelTier": "M7",
         "widthCode": 180
-      }
+      },
+      "contentBlockKey": "machine.m-series"
     },
     {
       "id": "cmtfmusjf000yeo9ke2ks3dpl",
@@ -250,7 +259,8 @@
         "cutWidthCm": 227,
         "modelTier": "M7",
         "widthCode": 220
-      }
+      },
+      "contentBlockKey": "machine.m-series"
     },
     {
       "id": "cmtgjwd0o0012tw9kcjlo14kd",
@@ -275,7 +285,8 @@
         "cutWidthCm": 300,
         "modelTier": "M7",
         "widthCode": 300
-      }
+      },
+      "contentBlockKey": "machine.m-series"
     },
     {
       "id": "cmtfmusjg000zeo9ktdv7nzp6",
@@ -300,7 +311,8 @@
         "cutWidthCm": 390,
         "modelTier": "M7",
         "widthCode": 390
-      }
+      },
+      "contentBlockKey": "machine.m-series"
     },
     {
       "id": "cmtfmusj1000oeo9kadyumm13",
@@ -325,7 +337,8 @@
         "cutWidthCm": 180,
         "modelTier": "M10",
         "widthCode": 180
-      }
+      },
+      "contentBlockKey": "machine.m-series"
     },
     {
       "id": "cmtfmusj2000peo9kvau1k8kd",
@@ -350,7 +363,8 @@
         "cutWidthCm": 227,
         "modelTier": "M10",
         "widthCode": 220
-      }
+      },
+      "contentBlockKey": "machine.m-series"
     },
     {
       "id": "cmtgjwcyo000qtw9kgy5t9ktq",
@@ -375,7 +389,8 @@
         "cutWidthCm": 300,
         "modelTier": "M10",
         "widthCode": 300
-      }
+      },
+      "contentBlockKey": "machine.m-series"
     },
     {
       "id": "cmtfmusj3000qeo9k3hwsf2li",
@@ -400,7 +415,8 @@
         "cutWidthCm": 390,
         "modelTier": "M10",
         "widthCode": 390
-      }
+      },
+      "contentBlockKey": "machine.m-series"
     },
     {
       "id": "cmtfmusil000ceo9kbcbbe8rk",
@@ -424,7 +440,8 @@
         "modelTier": "X10",
         "widthCode": 180
       },
-      "needsReviewAU": true
+      "needsReviewAU": true,
+      "contentBlockKey": "machine.m-series"
     },
     {
       "id": "cmtfmusin000deo9k9i9ywtga",
@@ -448,7 +465,8 @@
         "modelTier": "X10",
         "widthCode": 220
       },
-      "needsReviewAU": true
+      "needsReviewAU": true,
+      "contentBlockKey": "machine.m-series"
     },
     {
       "id": "cmtmo4nym000fdi9kd01ndhf5",
@@ -620,7 +638,8 @@
         "widthCode": 180,
         "extended": false,
         "belt": "urethane"
-      }
+      },
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusji0011eo9khpun742d",
@@ -642,7 +661,8 @@
         "widthCode": 180,
         "extended": false,
         "belt": "felt"
-      }
+      },
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusjj0012eo9kk908ganm",
@@ -664,7 +684,8 @@
         "widthCode": 220,
         "extended": false,
         "belt": "urethane"
-      }
+      },
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusjk0013eo9k327rgodg",
@@ -686,7 +707,8 @@
         "widthCode": 220,
         "extended": false,
         "belt": "felt"
-      }
+      },
+      "contentBlockKey": null
     },
     {
       "id": "cmtmo4nzw0019di9k3mskt4kw",
@@ -707,7 +729,8 @@
         "widthCode": 320,
         "extended": false,
         "belt": "urethane"
-      }
+      },
+      "contentBlockKey": null
     },
     {
       "id": "cmtgjwd1b0019tw9ki3ob6ob3",
@@ -729,7 +752,8 @@
         "widthCode": 320,
         "extended": true,
         "belt": "urethane"
-      }
+      },
+      "contentBlockKey": null
     },
     {
       "id": "cmtmo4nzz001bdi9kiu8x49iv",
@@ -752,7 +776,8 @@
         "extended": false,
         "belt": "felt"
       },
-      "note": "US 154864 moved to L-320EF"
+      "note": "US 154864 moved to L-320EF",
+      "contentBlockKey": null
     },
     {
       "id": null,
@@ -774,7 +799,8 @@
         "US": 154864
       },
       "noCommission": false,
-      "isCredit": false
+      "isCredit": false,
+      "contentBlockKey": null
     },
     {
       "id": "cmtfq1k8j0018xy9kw9mdaap4",
@@ -793,7 +819,8 @@
       "kind": "SOFTWARE",
       "specs": {
         "pathworksModule": "ANT_V5"
-      }
+      },
+      "contentBlockKey": null
     },
     {
       "id": "cmtfq1k8k0019xy9kydfy43d3",
@@ -812,7 +839,8 @@
       "kind": "SOFTWARE",
       "specs": {
         "pathworksModule": "ANT_V6"
-      }
+      },
+      "contentBlockKey": null
     },
     {
       "id": "cmtfq1k8p001cxy9kbc8oeuvq",
@@ -831,7 +859,8 @@
       "kind": "SOFTWARE",
       "specs": {
         "pathworksModule": "PDG"
-      }
+      },
+      "contentBlockKey": null
     },
     {
       "id": "cmtfq1k8r001dxy9k8ulbmd8j",
@@ -848,7 +877,8 @@
       "noCommission": false,
       "isCredit": false,
       "kind": "SOFTWARE",
-      "specs": null
+      "specs": null,
+      "contentBlockKey": null
     },
     {
       "id": "cmtfq1k8u001gxy9kj3olxoxm",
@@ -867,7 +897,8 @@
       "kind": "SOFTWARE",
       "specs": {
         "pathworksModule": "WPL"
-      }
+      },
+      "contentBlockKey": null
     },
     {
       "id": "cmtfq1k8v001hxy9kkqzkvi3u",
@@ -886,7 +917,8 @@
       "kind": "SOFTWARE",
       "specs": {
         "pathworksModule": "WPN"
-      }
+      },
+      "contentBlockKey": null
     },
     {
       "id": "cmtfq1k8o001bxy9kvpyvtmbu",
@@ -904,7 +936,8 @@
       },
       "noCommission": false,
       "isCredit": false,
-      "kind": "SOFTWARE"
+      "kind": "SOFTWARE",
+      "contentBlockKey": null
     },
     {
       "id": "cmtgjwd1s001ktw9ker6f4ygn",
@@ -925,7 +958,8 @@
       "kind": "SOFTWARE",
       "specs": {
         "softwareMode": "integrated"
-      }
+      },
+      "contentBlockKey": "software.pathworks-i"
     },
     {
       "id": "cmtfq1k8t001fxy9k5wzrg2g3",
@@ -946,7 +980,8 @@
       "kind": "SOFTWARE",
       "specs": {
         "softwareMode": "standalone"
-      }
+      },
+      "contentBlockKey": "software.pathworks-s"
     },
     {
       "id": "cmtfq1k8s001exy9kmvyf94rx",
@@ -992,7 +1027,8 @@
       },
       "noCommission": false,
       "isCredit": false,
-      "kind": "SYSTEM"
+      "kind": "SYSTEM",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusjr0019eo9kag2a7bpw",
@@ -1008,7 +1044,8 @@
       },
       "noCommission": false,
       "isCredit": false,
-      "kind": "SYSTEM"
+      "kind": "SYSTEM",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusjs001aeo9km42qno4u",
@@ -1024,7 +1061,8 @@
       },
       "noCommission": false,
       "isCredit": false,
-      "kind": "SYSTEM"
+      "kind": "SYSTEM",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfq1k8z001lxy9krcl3om17",
@@ -1046,7 +1084,8 @@
         "tableWidthMm": 2020
       },
       "needsReviewAU": false,
-      "note": "price 0 by design: assembled from options"
+      "note": "price 0 by design: assembled from options",
+      "contentBlockKey": "equipment.easy-loader"
     },
     {
       "id": "cmtfq1k91001nxy9k4m8qvscl",
@@ -1065,7 +1104,8 @@
       "kind": "FEEDER",
       "specs": {
         "tableWidthMm": 2020
-      }
+      },
+      "contentBlockKey": null
     },
     {
       "id": "cmtfq1k90001mxy9k1h05aea2",
@@ -1087,7 +1127,8 @@
         "tableWidthMm": 2420
       },
       "needsReviewAU": false,
-      "note": "price 0 by design: assembled from options"
+      "note": "price 0 by design: assembled from options",
+      "contentBlockKey": "equipment.easy-loader"
     },
     {
       "id": "cmtfq1k92001oxy9k22h7sv1d",
@@ -1106,7 +1147,8 @@
       "kind": "FEEDER",
       "specs": {
         "tableWidthMm": 2420
-      }
+      },
+      "contentBlockKey": null
     },
     {
       "id": "cmtgjwd27001ttw9ki4jbsvh9",
@@ -1128,7 +1170,8 @@
         "tableWidthMm": 3220
       },
       "needsReviewAU": false,
-      "note": "price 0 by design: assembled from options"
+      "note": "price 0 by design: assembled from options",
+      "contentBlockKey": "equipment.easy-loader"
     },
     {
       "id": "cmtgjwd2b001xtw9kl33nq440",
@@ -1147,7 +1190,8 @@
       "kind": "FEEDER",
       "specs": {
         "tableWidthMm": 3220
-      }
+      },
+      "contentBlockKey": null
     },
     {
       "id": "cmtgjwd28001utw9kiu99zald",
@@ -1169,7 +1213,8 @@
         "tableWidthMm": 4030
       },
       "needsReviewAU": false,
-      "note": "price 0 by design: assembled from options"
+      "note": "price 0 by design: assembled from options",
+      "contentBlockKey": "equipment.easy-loader"
     },
     {
       "id": "cmtfq1k93001pxy9k8qxcidl6",
@@ -1188,7 +1233,8 @@
       "kind": "FEEDER",
       "specs": {
         "tableWidthMm": 4030
-      }
+      },
+      "contentBlockKey": null
     },
     {
       "id": "cmtghiide001q1i9kctgwob7j",
@@ -1204,7 +1250,8 @@
       },
       "noCommission": false,
       "isCredit": false,
-      "kind": "ACCESSORY"
+      "kind": "ACCESSORY",
+      "contentBlockKey": null
     },
     {
       "id": "cmtgnnc1o00214o9k3xr7dapn",
@@ -1220,7 +1267,8 @@
       },
       "noCommission": false,
       "isCredit": false,
-      "kind": "ACCESSORY"
+      "kind": "ACCESSORY",
+      "contentBlockKey": null
     },
     {
       "id": "cmtgnnc1r00224o9krjjz2ycb",
@@ -1236,7 +1284,8 @@
       },
       "noCommission": false,
       "isCredit": false,
-      "kind": "ACCESSORY"
+      "kind": "ACCESSORY",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusjt001beo9knxf0j5zv",
@@ -1257,7 +1306,8 @@
       "specs": {
         "cutWidthCm": 180,
         "widthCode": 180
-      }
+      },
+      "contentBlockKey": "equipment.fabric-pro"
     },
     {
       "id": "cmtfmusju001ceo9kwgf3rck9",
@@ -1278,7 +1328,8 @@
       "specs": {
         "cutWidthCm": 220,
         "widthCode": 220
-      }
+      },
+      "contentBlockKey": "equipment.fabric-pro"
     },
     {
       "id": "cmtgjwd2i0022tw9kb49t6e3c",
@@ -1299,7 +1350,8 @@
       "specs": {
         "cutWidthCm": 300,
         "widthCode": 300
-      }
+      },
+      "contentBlockKey": "equipment.fabric-pro"
     },
     {
       "id": "cmtghiidj001t1i9k2hnxu0fj",
@@ -1314,7 +1366,8 @@
       },
       "noCommission": false,
       "isCredit": false,
-      "kind": "ACCESSORY"
+      "kind": "ACCESSORY",
+      "contentBlockKey": null
     },
     {
       "id": "cmtjiy8b8000g0q9k9z6jj0za",
@@ -1329,7 +1382,8 @@
       },
       "noCommission": true,
       "isCredit": false,
-      "kind": "SERVICE"
+      "kind": "SERVICE",
+      "contentBlockKey": null
     },
     {
       "id": "cmtl4xoco0002ob9kud7zole7",
@@ -1344,7 +1398,8 @@
       },
       "noCommission": true,
       "isCredit": false,
-      "kind": "SERVICE"
+      "kind": "SERVICE",
+      "contentBlockKey": null
     },
     {
       "id": "cmtgnnc1y00274o9kby224ssn",
@@ -1361,7 +1416,8 @@
       "isCredit": false,
       "kind": "SERVICE",
       "needsReviewAU": false,
-      "note": "price 0 by design: container for SVC-* options"
+      "note": "price 0 by design: container for SVC-* options",
+      "contentBlockKey": null
     },
     {
       "id": "cmtkui88s0025r49ky9if9ghi",
@@ -1376,7 +1432,8 @@
       },
       "noCommission": true,
       "isCredit": true,
-      "kind": "CREDIT"
+      "kind": "CREDIT",
+      "contentBlockKey": null
     }
   ],
   "options": [
@@ -1397,7 +1454,8 @@
       ],
       "compatProducts": [],
       "role": "ABR",
-      "note": "X removed: not on US X-sheet"
+      "note": "X removed: not on US X-sheet",
+      "contentBlockKey": "option.ABR"
     },
     {
       "id": "cmtfmusk9001peo9knefgl4cl",
@@ -1416,7 +1474,8 @@
       ],
       "compatProducts": [],
       "role": "AFP",
-      "note": "X removed: not on US X-sheet"
+      "note": "X removed: not on US X-sheet",
+      "contentBlockKey": "option.AFP"
     },
     {
       "id": "cmtfmuskd001teo9kl2fzes0t",
@@ -1435,7 +1494,8 @@
       ],
       "compatProducts": [],
       "role": "APM",
-      "note": "X removed: not on US X-sheet"
+      "note": "X removed: not on US X-sheet",
+      "contentBlockKey": "option.APM"
     },
     {
       "id": "cmtfmuskf001veo9k7l9wuvkj",
@@ -1454,7 +1514,8 @@
         "X"
       ],
       "compatProducts": [],
-      "role": "BCR"
+      "role": "BCR",
+      "contentBlockKey": "option.BCR"
     },
     {
       "id": "cmtfmusko0024eo9kd0dtc5c4",
@@ -1473,7 +1534,8 @@
       ],
       "compatProducts": [],
       "role": "DR2",
-      "note": "X removed: not on US X-sheet"
+      "note": "X removed: not on US X-sheet",
+      "contentBlockKey": "option.DR2"
     },
     {
       "id": "cmtfmuskr0027eo9k6vluwsps",
@@ -1492,7 +1554,8 @@
       ],
       "compatProducts": [],
       "role": "DRG_1",
-      "note": "X removed: not on US X-sheet"
+      "note": "X removed: not on US X-sheet",
+      "contentBlockKey": "option.DRG"
     },
     {
       "id": "cmtfmusks0028eo9kzf362n9b",
@@ -1511,7 +1574,8 @@
       ],
       "compatProducts": [],
       "role": "DRG_2",
-      "note": "X removed: not on US X-sheet"
+      "note": "X removed: not on US X-sheet",
+      "contentBlockKey": "option.DRG"
     },
     {
       "id": "cmtfmuskt0029eo9k7yvwv50z",
@@ -1530,7 +1594,8 @@
       ],
       "compatProducts": [],
       "role": "DRG_3",
-      "note": "X removed: not on US X-sheet"
+      "note": "X removed: not on US X-sheet",
+      "contentBlockKey": "option.DRG"
     },
     {
       "id": "cmtfmuslo0032eo9kzp0pe3e8",
@@ -1549,7 +1614,8 @@
         "X"
       ],
       "compatProducts": [],
-      "role": "HDC"
+      "role": "HDC",
+      "contentBlockKey": "option.HDC"
     },
     {
       "id": "cmtfmuslp0034eo9kuno10epu",
@@ -1568,7 +1634,8 @@
       ],
       "compatProducts": [],
       "role": "HFV",
-      "note": "X removed: not on US X-sheet"
+      "note": "X removed: not on US X-sheet",
+      "contentBlockKey": "option.HFV"
     },
     {
       "id": "cmtfmuslq0035eo9k6vex2lsy",
@@ -1587,7 +1654,8 @@
       ],
       "compatProducts": [],
       "role": "IJP",
-      "note": "X removed: not on US X-sheet"
+      "note": "X removed: not on US X-sheet",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmuslr0036eo9k8thnes0v",
@@ -1606,7 +1674,8 @@
       ],
       "compatProducts": [],
       "role": "IKA",
-      "note": "X removed: not on US X-sheet"
+      "note": "X removed: not on US X-sheet",
+      "contentBlockKey": "option.IKA"
     },
     {
       "id": "cmtfmuslu003aeo9kobyfipmw",
@@ -1625,7 +1694,8 @@
       ],
       "compatProducts": [],
       "role": "MRK",
-      "note": "X removed: not on US X-sheet"
+      "note": "X removed: not on US X-sheet",
+      "contentBlockKey": "option.MRK"
     },
     {
       "id": "cmtfmuslv003beo9kljyn1t5b",
@@ -1644,7 +1714,8 @@
         "X"
       ],
       "compatProducts": [],
-      "role": "MTS"
+      "role": "MTS",
+      "contentBlockKey": "option.MTS"
     },
     {
       "id": "cmtfmusly003feo9k79rmv6yx",
@@ -1663,7 +1734,8 @@
         "X"
       ],
       "compatProducts": [],
-      "role": "OFD"
+      "role": "OFD",
+      "contentBlockKey": "option.OFD"
     },
     {
       "id": "cmtfmuslz003geo9k84g80f9w",
@@ -1682,7 +1754,8 @@
         "X"
       ],
       "compatProducts": [],
-      "role": "OFJ"
+      "role": "OFJ",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusm0003ieo9ks28jctim",
@@ -1701,7 +1774,8 @@
         "X"
       ],
       "compatProducts": [],
-      "role": "OFP"
+      "role": "OFP",
+      "contentBlockKey": "option.OFP"
     },
     {
       "id": "cmtfmusm3003leo9ksilhib0p",
@@ -1720,7 +1794,8 @@
       ],
       "compatProducts": [],
       "role": "PM",
-      "note": "X removed: not on US X-sheet"
+      "note": "X removed: not on US X-sheet",
+      "contentBlockKey": "option.PM"
     },
     {
       "id": "cmtfmusmb003peo9kx0uqbby5",
@@ -1739,7 +1814,8 @@
         "X"
       ],
       "compatProducts": [],
-      "role": "PRM"
+      "role": "PRM",
+      "contentBlockKey": "option.PRM"
     },
     {
       "id": "cmtfmuslw003ceo9k13rz4vvw",
@@ -1761,7 +1837,8 @@
       ],
       "compatProducts": [],
       "role": "MTS_TRAVEL",
-      "unitLengthM": 1
+      "unitLengthM": 1,
+      "contentBlockKey": "option.MTS"
     },
     {
       "id": "cmtfmusmh003veo9kjo5hztwo",
@@ -2014,7 +2091,8 @@
         "AU": 0,
         "US": 2716
       },
-      "noCommission": false
+      "noCommission": false,
+      "contentBlockKey": null
     },
     {
       "id": null,
@@ -2033,7 +2111,8 @@
         "AU": 0,
         "US": 5036
       },
-      "noCommission": false
+      "noCommission": false,
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmuskl0021eo9kf45hemvr",
@@ -2070,7 +2149,8 @@
         "AU": 3000,
         "US": 2507
       },
-      "noCommission": true
+      "noCommission": true,
+      "contentBlockKey": null
     },
     {
       "id": null,
@@ -2089,7 +2169,8 @@
         "AU": 3000,
         "US": 2786
       },
-      "noCommission": true
+      "noCommission": true,
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusjv001deo9koy4xnm2x",
@@ -2109,7 +2190,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "L_TOOL"
+      "role": "L_TOOL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusjy001feo9k8bah7wlm",
@@ -2129,7 +2211,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "L_TOOL"
+      "role": "L_TOOL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusk1001ieo9k57nu63ko",
@@ -2149,7 +2232,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "L_TOOL"
+      "role": "L_TOOL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusk3001keo9ko0b7guof",
@@ -2169,7 +2253,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "L_TOOL"
+      "role": "L_TOOL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusk5001meo9k7w2qum45",
@@ -2189,7 +2274,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "L_TOOL"
+      "role": "L_TOOL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusmg003teo9k4p4so18s",
@@ -2209,7 +2295,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "L_TOOL"
+      "role": "L_TOOL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusk0001heo9k17ry9zhl",
@@ -2229,7 +2316,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "L_TOOL"
+      "role": "L_TOOL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusk4001leo9kiamthhlq",
@@ -2249,7 +2337,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "L_TOOL"
+      "role": "L_TOOL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmuskp0025eo9kgrggevvf",
@@ -2269,7 +2358,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "L_TOOL"
+      "role": "L_TOOL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmuskq0026eo9kihogwu8l",
@@ -2289,7 +2379,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "L_TOOL"
+      "role": "L_TOOL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmuskw002ceo9kwbstpvcr",
@@ -2309,7 +2400,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "L_TOOL"
+      "role": "L_TOOL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmuslw003deo9kegs413x6",
@@ -2329,7 +2421,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "L_TOOL"
+      "role": "L_TOOL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusjx001eeo9khd2th9al",
@@ -2347,7 +2440,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "L_EXTENDED"
+      "role": "L_EXTENDED",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusjz001geo9ka0pta8u3",
@@ -2365,7 +2459,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "L_EXTENDED"
+      "role": "L_EXTENDED",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusk2001jeo9kbwm74sa0",
@@ -2402,7 +2497,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "CRATE"
+      "role": "CRATE",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmuski001yeo9kd97rkk7e",
@@ -2422,7 +2518,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "CRATE"
+      "role": "CRATE",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmuskj001zeo9k5w2t2g8n",
@@ -2442,7 +2539,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "CRATE"
+      "role": "CRATE",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusk7001neo9kz8a4m7ex",
@@ -2460,7 +2558,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "ABR"
+      "role": "ABR",
+      "contentBlockKey": "option.ABR"
     },
     {
       "id": "cmtfmuskc001seo9kj0usavja",
@@ -2478,7 +2577,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "APM"
+      "role": "APM",
+      "contentBlockKey": "option.APM"
     },
     {
       "id": "cmtfmuske001ueo9krkvj414v",
@@ -2496,7 +2596,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "BCR"
+      "role": "BCR",
+      "contentBlockKey": "option.BCR"
     },
     {
       "id": "cmtfmusln0031eo9kmp4gk1cp",
@@ -2514,7 +2615,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "HDC"
+      "role": "HDC",
+      "contentBlockKey": "option.HDC"
     },
     {
       "id": "cmtfmuslp0033eo9kf315d13l",
@@ -2532,7 +2634,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "HFV"
+      "role": "HFV",
+      "contentBlockKey": "option.HFV"
     },
     {
       "id": "cmtfmuslx003eeo9kawtdzwap",
@@ -2550,7 +2653,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "OFD"
+      "role": "OFD",
+      "contentBlockKey": "option.OFD"
     },
     {
       "id": "cmtfmusm0003heo9klsea6kij",
@@ -2568,7 +2672,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "OFP"
+      "role": "OFP",
+      "contentBlockKey": "option.OFP"
     },
     {
       "id": "cmtfmusm2003keo9kq6go2ksu",
@@ -2586,7 +2691,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "PM"
+      "role": "PM",
+      "contentBlockKey": "option.PM"
     },
     {
       "id": "cmtfmusm7003oeo9kqksz78ts",
@@ -2604,7 +2710,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "PRM"
+      "role": "PRM",
+      "contentBlockKey": "option.PRM"
     },
     {
       "id": "cmtgnnc3q003v4o9k5umx74h8",
@@ -2622,7 +2729,8 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "JTP"
+      "role": "JTP",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmuslt0038eo9kz3osdx9o",
@@ -2679,7 +2787,8 @@
       ],
       "role": "EL_DRIVE",
       "parentProductCode": "EL-2020",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusl6002keo9k5mwdxlhg",
@@ -2701,7 +2810,8 @@
       ],
       "role": "EL_CONVEYOR",
       "parentProductCode": "EL-2020",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusla002oeo9krqkfbuxx",
@@ -2723,7 +2833,8 @@
       ],
       "role": "EL_STATIC",
       "parentProductCode": "EL-2020",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusl8002meo9kyceuv5my",
@@ -2745,7 +2856,8 @@
       ],
       "role": "EL_BUSBAR",
       "parentProductCode": "EL-2020",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmuslc002qeo9k0ycfewqg",
@@ -2767,7 +2879,8 @@
       ],
       "role": "EL_RAIL",
       "parentProductCode": "EL-2020",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusl9002neo9k4pf03o2n",
@@ -2789,7 +2902,8 @@
       ],
       "role": "EL_ROLL_FEED",
       "parentProductCode": "EL-2020",
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmuslb002peo9k25zppkwl",
@@ -2828,7 +2942,8 @@
       ],
       "role": "EL_DRIVE",
       "parentProductCode": "EL-2420",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmuslc002reo9kwonm3w9a",
@@ -2850,7 +2965,8 @@
       ],
       "role": "EL_CONVEYOR",
       "parentProductCode": "EL-2420",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusli002weo9khczgq39u",
@@ -2872,7 +2988,8 @@
       ],
       "role": "EL_STATIC",
       "parentProductCode": "EL-2420",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmuslf002teo9kckerswn3",
@@ -2894,7 +3011,8 @@
       ],
       "role": "EL_BUSBAR",
       "parentProductCode": "EL-2420",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmuslk002yeo9kflk3ee29",
@@ -2916,7 +3034,8 @@
       ],
       "role": "EL_RAIL",
       "parentProductCode": "EL-2420",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmuslg002ueo9kcp5li59c",
@@ -2938,7 +3057,8 @@
       ],
       "role": "EL_ROLL_FEED",
       "parentProductCode": "EL-2420",
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmuslj002xeo9kvmmt0d2m",
@@ -2977,7 +3097,8 @@
       ],
       "role": "EL_DRIVE",
       "parentProductCode": "EL-3220",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtkui8a7003kr49k5xr2vpao",
@@ -2999,7 +3120,8 @@
       ],
       "role": "EL_CONVEYOR",
       "parentProductCode": "EL-3220",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtkui8a8003lr49kv5manzje",
@@ -3021,7 +3143,8 @@
       ],
       "role": "EL_STATIC",
       "parentProductCode": "EL-3220",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtmo4o2m003pdi9kgaoud2ic",
@@ -3043,7 +3166,8 @@
       ],
       "role": "EL_BUSBAR",
       "parentProductCode": "EL-3220",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtmo4o2o003rdi9kev5fzipt",
@@ -3065,7 +3189,8 @@
       ],
       "role": "EL_RAIL",
       "parentProductCode": "EL-3220",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtmo4o2p003tdi9kqzsh97rk",
@@ -3087,7 +3212,8 @@
       ],
       "role": "EL_DRIVE",
       "parentProductCode": "EL-4030",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtkui8a9003mr49ktryuyiq0",
@@ -3109,7 +3235,8 @@
       ],
       "role": "EL_CONVEYOR",
       "parentProductCode": "EL-4030",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtkui8aa003nr49kg4rlkcgl",
@@ -3131,7 +3258,8 @@
       ],
       "role": "EL_STATIC",
       "parentProductCode": "EL-4030",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtmo4o2q003udi9kieter6cn",
@@ -3153,7 +3281,8 @@
       ],
       "role": "EL_BUSBAR",
       "parentProductCode": "EL-4030",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtmo4o2s003wdi9ka16ruxt3",
@@ -3175,7 +3304,8 @@
       ],
       "role": "EL_RAIL",
       "parentProductCode": "EL-4030",
-      "unitLengthM": 1.2
+      "unitLengthM": 1.2,
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmusl5002jeo9k242gcft0",
@@ -3196,7 +3326,8 @@
         "EL-2020"
       ],
       "role": "EL_ROLL_HOLDER",
-      "parentProductCode": "EL-2020"
+      "parentProductCode": "EL-2020",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmuslh002veo9k1afy3uzl",
@@ -3217,7 +3348,8 @@
         "EL-2420"
       ],
       "role": "EL_ROLL_HOLDER",
-      "parentProductCode": "EL-2420"
+      "parentProductCode": "EL-2420",
+      "contentBlockKey": null
     },
     {
       "id": "cmtkui89f002rr49kq1xtyat0",
@@ -3235,7 +3367,8 @@
         "EL"
       ],
       "compatProducts": [],
-      "role": "CRATE"
+      "role": "CRATE",
+      "contentBlockKey": null
     },
     {
       "id": "cmtfmuskk0020eo9kj40xh06n",
@@ -3271,7 +3404,8 @@
         "AU": 1200,
         "US": 1254
       },
-      "noCommission": true
+      "noCommission": true,
+      "contentBlockKey": null
     },
     {
       "id": null,
@@ -3289,7 +3423,8 @@
         "AU": 1200,
         "US": 1400
       },
-      "noCommission": true
+      "noCommission": true,
+      "contentBlockKey": null
     },
     {
       "id": null,
@@ -3307,7 +3442,8 @@
         "AU": 1200,
         "US": 1600
       },
-      "noCommission": true
+      "noCommission": true,
+      "contentBlockKey": null
     },
     {
       "id": "cmtkui8af003rr49koa6latn4",
@@ -3327,7 +3463,8 @@
       "compatProducts": [
         "HDRF-180"
       ],
-      "role": "CRATE"
+      "role": "CRATE",
+      "contentBlockKey": null
     },
     {
       "id": "cmtmo4o2w0040di9kgv0pjyop",
@@ -3365,7 +3502,8 @@
       "compatProducts": [
         "HDRF-220"
       ],
-      "role": "CRATE"
+      "role": "CRATE",
+      "contentBlockKey": null
     },
     {
       "id": "cmtmo4o2x0041di9klwhorytw",
@@ -3403,7 +3541,8 @@
       "compatProducts": [
         "HDRF-320"
       ],
-      "role": "CRATE"
+      "role": "CRATE",
+      "contentBlockKey": null
     },
     {
       "id": "cmtmo4o2y0042di9khfnqmonb",
@@ -3438,7 +3577,8 @@
         "FP"
       ],
       "compatProducts": [],
-      "role": "TPL"
+      "role": "TPL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtgnnc49004f4o9kozbxg8rg",
@@ -3458,7 +3598,8 @@
       "compatProducts": [
         "SERVICE"
       ],
-      "role": "INSTALL"
+      "role": "INSTALL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtgnnc4a004g4o9kn0yfqr1b",
@@ -3478,7 +3619,8 @@
       "compatProducts": [
         "SERVICE"
       ],
-      "role": "INSTALL"
+      "role": "INSTALL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtgnnc47004c4o9ktjebh8b1",
@@ -3496,7 +3638,8 @@
       "compatProducts": [
         "SERVICE"
       ],
-      "role": "INSTALL"
+      "role": "INSTALL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtgnnc47004d4o9k3wjh3iuk",
@@ -3514,7 +3657,8 @@
       "compatProducts": [
         "SERVICE"
       ],
-      "role": "INSTALL"
+      "role": "INSTALL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtgnnc48004e4o9knyeuw48b",
@@ -3532,7 +3676,8 @@
       "compatProducts": [
         "SERVICE"
       ],
-      "role": "INSTALL"
+      "role": "INSTALL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtgnnc4b004h4o9k0x8pyh31",
@@ -3550,7 +3695,8 @@
       "compatProducts": [
         "SERVICE"
       ],
-      "role": "INSTALL"
+      "role": "INSTALL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtgnnc4c004i4o9k1db4g60k",
@@ -3568,7 +3714,8 @@
       "compatProducts": [
         "SERVICE"
       ],
-      "role": "INSTALL"
+      "role": "INSTALL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtgnnc4d004j4o9kffdfeb9q",
@@ -3586,7 +3733,8 @@
       "compatProducts": [
         "SERVICE"
       ],
-      "role": "INSTALL"
+      "role": "INSTALL",
+      "contentBlockKey": null
     },
     {
       "id": "cmtgnnc4e004k4o9kj92ssr6o",
@@ -3604,7 +3752,8 @@
       "compatProducts": [
         "SERVICE"
       ],
-      "role": "TRAINING"
+      "role": "TRAINING",
+      "contentBlockKey": null
     },
     {
       "id": null,
@@ -3623,7 +3772,8 @@
         "US": 360
       },
       "noCommission": true,
-      "note": "owner: one demo price regardless of width (US sheet: 360 for 2020/2420, 720 for 3220/4030)"
+      "note": "owner: one demo price regardless of width (US sheet: 360 for 2020/2420, 720 for 3220/4030)",
+      "contentBlockKey": null
     }
   ]
 }

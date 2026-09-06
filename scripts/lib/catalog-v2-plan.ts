@@ -40,6 +40,9 @@ export interface TargetProduct {
   kind?: ProductKind;
   form?: ProductionForm | null;
   specs?: Record<string, unknown> | null;
+  /** Key of the quotation content block (prisma/seed-data/content-blocks.json)
+   *  that describes the row; null/absent = none. */
+  contentBlockKey?: string | null;
   needsReviewAU?: boolean;
   note?: string;
   reason?: string;
@@ -57,6 +60,7 @@ export interface TargetOption {
   role?: OptionRole | null;
   parentProductCode?: string | null;
   unitLengthM?: number | null;
+  contentBlockKey?: string | null;
   compatSeries: string[];
   compatProducts: string[];
   needsReviewAU?: boolean;
@@ -81,9 +85,12 @@ export interface SnapshotPrice {
 }
 
 /**
- * The shape scripts/dump-catalog.ts writes, plus the identity columns the
- * dump predates (optional so an old dump still plans; a missing column is
- * treated as "unknown" and written). Product `series` and option
+ * The shape scripts/dump-catalog.ts writes, plus the identity columns an
+ * old dump (RAW/catalog-dump.json) predates -- optional so it still plans.
+ * A missing `kind`/`form`/`role`/`parentProductCode`/`unitLengthM` is
+ * treated as "unknown" and written; a missing `contentBlockKey` is treated
+ * as null (the column is nullable and most rows have no block, so only the
+ * rows the target gives a key to are planned). Product `series` and option
  * `compatSeries`/`compatProducts`/`parentProductCode` are codes -- the
  * migration script resolves them to ids when it applies the plan.
  */
@@ -99,6 +106,7 @@ export interface SnapshotProduct {
   noCommission: boolean;
   kind?: ProductKind;
   form?: ProductionForm | null;
+  contentBlockKey?: string | null;
   prices: Record<string, SnapshotPrice>;
 }
 
@@ -112,6 +120,7 @@ export interface SnapshotOption {
   role?: OptionRole | null;
   parentProductCode?: string | null;
   unitLengthM?: number | null;
+  contentBlockKey?: string | null;
   compatSeries: string[];
   compatProducts: string[];
   prices: Record<string, SnapshotPrice>;
@@ -134,6 +143,7 @@ export interface ProductFields {
   kind: ProductKind;
   form: ProductionForm | null;
   specs: Record<string, unknown> | null;
+  contentBlockKey: string | null;
   isCredit: boolean;
   noCommission: boolean;
 }
@@ -147,6 +157,7 @@ export interface OptionFields {
   /** New product code (resolved to parentProductId by the script). */
   parentProductCode: string | null;
   unitLengthM: number | null;
+  contentBlockKey: string | null;
   noCommission: boolean;
 }
 
@@ -350,6 +361,7 @@ export function planCatalogV2(target: CatalogTarget, snapshot: CatalogSnapshot):
       kind: t.kind ?? "ACCESSORY",
       form: t.form ?? null,
       specs: t.specs && Object.keys(t.specs).length ? t.specs : null,
+      contentBlockKey: t.contentBlockKey ?? null,
       isCredit: t.isCredit,
       noCommission: t.noCommission,
     };
@@ -374,6 +386,7 @@ export function planCatalogV2(target: CatalogTarget, snapshot: CatalogSnapshot):
       set("kind", existing.kind, existing.kind !== fields.kind);
       set("form", existing.form, existing.form === undefined || (existing.form ?? null) !== fields.form);
       set("specs", existing.specs as ProductFields["specs"], !sameJson(existing.specs ?? null, fields.specs));
+      set("contentBlockKey", existing.contentBlockKey, (existing.contentBlockKey ?? null) !== fields.contentBlockKey);
       set("isCredit", existing.isCredit, existing.isCredit !== fields.isCredit);
       set("noCommission", existing.noCommission, existing.noCommission !== fields.noCommission);
       if (Object.keys(changes).length) {
@@ -416,6 +429,7 @@ export function planCatalogV2(target: CatalogTarget, snapshot: CatalogSnapshot):
       role: t.role ?? null,
       parentProductCode: t.parentProductCode ?? null,
       unitLengthM: t.unitLengthM ?? null,
+      contentBlockKey: t.contentBlockKey ?? null,
       noCommission: t.noCommission,
     };
     if (!existing) {
@@ -450,6 +464,7 @@ export function planCatalogV2(target: CatalogTarget, snapshot: CatalogSnapshot):
         existing.unitLengthM,
         existing.unitLengthM === undefined || Number(existing.unitLengthM ?? null) !== Number(fields.unitLengthM)
       );
+      set("contentBlockKey", existing.contentBlockKey, (existing.contentBlockKey ?? null) !== fields.contentBlockKey);
       set("noCommission", existing.noCommission, existing.noCommission !== fields.noCommission);
       if (Object.keys(changes).length) {
         const rename = changes.code !== undefined;
@@ -572,10 +587,14 @@ export function renderOperation(o: Operation): string {
         .map(([k, v]) => `      ${k}: ${fmt(v?.from)} -> ${fmt(v?.to)}`);
       return [head, ...details].join("\n");
     }
-    case "product.create":
-      return `product add ${fmt(o.code)} (${o.data.seriesCode}, ${o.data.kind}) ${fmt(o.data.name)}`;
-    case "option.create":
-      return `option add ${fmt(o.code)} (${o.data.role ?? "no role"}) ${fmt(o.data.name)}`;
+    case "product.create": {
+      const block = o.data.contentBlockKey ? ` block ${fmt(o.data.contentBlockKey)}` : "";
+      return `product add ${fmt(o.code)} (${o.data.seriesCode}, ${o.data.kind}) ${fmt(o.data.name)}${block}`;
+    }
+    case "option.create": {
+      const block = o.data.contentBlockKey ? ` block ${fmt(o.data.contentBlockKey)}` : "";
+      return `option add ${fmt(o.code)} (${o.data.role ?? "no role"}) ${fmt(o.data.name)}${block}`;
+    }
     case "product.delete":
       return `product delete ${fmt(o.code)} [${o.id}] -- ${o.reason}`;
     case "option.delete":

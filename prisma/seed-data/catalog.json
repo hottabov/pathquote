@@ -1,5 +1,5 @@
 {
-  "extractedAt": "2026-09-06T07:04:56.511Z",
+  "extractedAt": "2026-09-06T08:22:16.563Z",
   "series": [
     {
       "seriesCode": "X",
@@ -19,7 +19,8 @@
             "cutWidthCm": 180,
             "modelTier": "X10",
             "widthCode": 180
-          }
+          },
+          "contentBlockKey": "machine.m-series"
         },
         {
           "code": "X-10220",
@@ -34,7 +35,8 @@
             "cutWidthCm": 227,
             "modelTier": "X10",
             "widthCode": 220
-          }
+          },
+          "contentBlockKey": "machine.m-series"
         }
       ]
     },
@@ -57,6 +59,7 @@
             "modelTier": "M3",
             "widthCode": 180
           },
+          "contentBlockKey": "machine.m-series",
           "legacyCodes": [
             "M3180"
           ]
@@ -75,6 +78,7 @@
             "modelTier": "M3",
             "widthCode": 220
           },
+          "contentBlockKey": "machine.m-series",
           "legacyCodes": [
             "M3220"
           ]
@@ -93,6 +97,7 @@
             "modelTier": "M3",
             "widthCode": 300
           },
+          "contentBlockKey": "machine.m-series",
           "legacyCodes": [
             "M3300"
           ]
@@ -111,6 +116,7 @@
             "modelTier": "M3",
             "widthCode": 390
           },
+          "contentBlockKey": "machine.m-series",
           "legacyCodes": [
             "M3390"
           ]
@@ -129,6 +135,7 @@
             "modelTier": "M5",
             "widthCode": 180
           },
+          "contentBlockKey": "machine.m-series",
           "legacyCodes": [
             "M5180"
           ]
@@ -147,6 +154,7 @@
             "modelTier": "M5",
             "widthCode": 220
           },
+          "contentBlockKey": "machine.m-series",
           "legacyCodes": [
             "M5220"
           ]
@@ -165,6 +173,7 @@
             "modelTier": "M5",
             "widthCode": 300
           },
+          "contentBlockKey": "machine.m-series",
           "legacyCodes": [
             "M5300"
           ]
@@ -183,6 +192,7 @@
             "modelTier": "M5",
             "widthCode": 390
           },
+          "contentBlockKey": "machine.m-series",
           "legacyCodes": [
             "M5390"
           ]
@@ -201,6 +211,7 @@
             "modelTier": "M7",
             "widthCode": 180
           },
+          "contentBlockKey": "machine.m-series",
           "legacyCodes": [
             "M7180"
           ]
@@ -219,6 +230,7 @@
             "modelTier": "M7",
             "widthCode": 220
           },
+          "contentBlockKey": "machine.m-series",
           "legacyCodes": [
             "M7220"
           ]
@@ -237,6 +249,7 @@
             "modelTier": "M7",
             "widthCode": 300
           },
+          "contentBlockKey": "machine.m-series",
           "legacyCodes": [
             "M7300"
           ]
@@ -255,6 +268,7 @@
             "modelTier": "M7",
             "widthCode": 390
           },
+          "contentBlockKey": "machine.m-series",
           "legacyCodes": [
             "M7390"
           ]
@@ -273,6 +287,7 @@
             "modelTier": "M10",
             "widthCode": 180
           },
+          "contentBlockKey": "machine.m-series",
           "legacyCodes": [
             "M10180"
           ]
@@ -291,6 +306,7 @@
             "modelTier": "M10",
             "widthCode": 220
           },
+          "contentBlockKey": "machine.m-series",
           "legacyCodes": [
             "M10220"
           ]
@@ -309,6 +325,7 @@
             "modelTier": "M10",
             "widthCode": 300
           },
+          "contentBlockKey": "machine.m-series",
           "legacyCodes": [
             "M10300"
           ]
@@ -327,6 +344,7 @@
             "modelTier": "M10",
             "widthCode": 390
           },
+          "contentBlockKey": "machine.m-series",
           "legacyCodes": [
             "M10390"
           ]
@@ -351,7 +369,8 @@
             "widthCode": 180,
             "extended": false,
             "belt": "urethane"
-          }
+          },
+          "contentBlockKey": null
         },
         {
           "code": "L-180F",
@@ -366,7 +385,8 @@
             "widthCode": 180,
             "extended": false,
             "belt": "felt"
-          }
+          },
+          "contentBlockKey": null
         },
         {
           "code": "L-220",
@@ -381,7 +401,8 @@
             "widthCode": 220,
             "extended": false,
             "belt": "urethane"
-          }
+          },
+          "contentBlockKey": null
         },
         {
           "code": "L-220F",
@@ -396,7 +417,8 @@
             "widthCode": 220,
             "extended": false,
             "belt": "felt"
-          }
+          },
+          "contentBlockKey": null
         },
         {
           "code": "L-320",
@@ -411,7 +433,8 @@
             "widthCode": 320,
             "extended": false,
             "belt": "urethane"
-          }
+          },
+          "contentBlockKey": null
         },
         {
           "code": "L-320E",
@@ -426,7 +449,8 @@
             "widthCode": 320,
             "extended": true,
             "belt": "urethane"
-          }
+          },
+          "contentBlockKey": null
         },
         {
           "code": "L-320F",
@@ -441,7 +465,8 @@
             "widthCode": 320,
             "extended": false,
             "belt": "felt"
-          }
+          },
+          "contentBlockKey": null
         },
         {
           "code": "L-320EF",
@@ -456,7 +481,8 @@
             "widthCode": 320,
             "extended": true,
             "belt": "felt"
-          }
+          },
+          "contentBlockKey": null
         }
       ]
     },
@@ -475,7 +501,8 @@
           "form": null,
           "specs": {
             "pathworksModule": "ANT_V5"
-          }
+          },
+          "contentBlockKey": null
         },
         {
           "code": "ANT-V6",
@@ -487,7 +514,8 @@
           "form": null,
           "specs": {
             "pathworksModule": "ANT_V6"
-          }
+          },
+          "contentBlockKey": null
         },
         {
           "code": "PDG",
@@ -499,7 +527,8 @@
           "form": null,
           "specs": {
             "pathworksModule": "PDG"
-          }
+          },
+          "contentBlockKey": null
         },
         {
           "code": "PRA",
@@ -509,7 +538,8 @@
           "needsReview": false,
           "kind": "SOFTWARE",
           "form": null,
-          "specs": null
+          "specs": null,
+          "contentBlockKey": null
         },
         {
           "code": "WPL",
@@ -521,7 +551,8 @@
           "form": null,
           "specs": {
             "pathworksModule": "WPL"
-          }
+          },
+          "contentBlockKey": null
         },
         {
           "code": "WPN",
@@ -533,7 +564,8 @@
           "form": null,
           "specs": {
             "pathworksModule": "WPN"
-          }
+          },
+          "contentBlockKey": null
         },
         {
           "code": "LSC",
@@ -544,6 +576,7 @@
           "kind": "SOFTWARE",
           "form": null,
           "specs": null,
+          "contentBlockKey": null,
           "legacyCodes": [
             "LS Convert"
           ]
@@ -559,6 +592,7 @@
           "specs": {
             "softwareMode": "integrated"
           },
+          "contentBlockKey": "software.pathworks-i",
           "legacyCodes": [
             "PTW(I)"
           ]
@@ -574,6 +608,7 @@
           "specs": {
             "softwareMode": "standalone"
           },
+          "contentBlockKey": "software.pathworks-s",
           "legacyCodes": [
             "PTW(S)"
           ]
@@ -593,7 +628,8 @@
           "needsReview": false,
           "kind": "SYSTEM",
           "form": null,
-          "specs": null
+          "specs": null,
+          "contentBlockKey": null
         },
         {
           "code": "LNS-2420",
@@ -603,7 +639,8 @@
           "needsReview": false,
           "kind": "SYSTEM",
           "form": null,
-          "specs": null
+          "specs": null,
+          "contentBlockKey": null
         },
         {
           "code": "LNS-3220",
@@ -613,7 +650,8 @@
           "needsReview": false,
           "kind": "SYSTEM",
           "form": null,
-          "specs": null
+          "specs": null,
+          "contentBlockKey": null
         }
       ]
     },
@@ -632,7 +670,8 @@
           "form": "EASYLOADER",
           "specs": {
             "tableWidthMm": 2020
-          }
+          },
+          "contentBlockKey": "equipment.easy-loader"
         },
         {
           "code": "EL-2420",
@@ -644,7 +683,8 @@
           "form": "EASYLOADER",
           "specs": {
             "tableWidthMm": 2420
-          }
+          },
+          "contentBlockKey": "equipment.easy-loader"
         },
         {
           "code": "EL-3220",
@@ -656,7 +696,8 @@
           "form": "EASYLOADER",
           "specs": {
             "tableWidthMm": 3220
-          }
+          },
+          "contentBlockKey": "equipment.easy-loader"
         },
         {
           "code": "EL-4030",
@@ -668,7 +709,8 @@
           "form": "EASYLOADER",
           "specs": {
             "tableWidthMm": 4030
-          }
+          },
+          "contentBlockKey": "equipment.easy-loader"
         }
       ]
     },
@@ -687,7 +729,8 @@
           "form": null,
           "specs": {
             "tableWidthMm": 2020
-          }
+          },
+          "contentBlockKey": null
         },
         {
           "code": "EF-2420",
@@ -699,7 +742,8 @@
           "form": null,
           "specs": {
             "tableWidthMm": 2420
-          }
+          },
+          "contentBlockKey": null
         },
         {
           "code": "EF-3220",
@@ -711,7 +755,8 @@
           "form": null,
           "specs": {
             "tableWidthMm": 3220
-          }
+          },
+          "contentBlockKey": null
         },
         {
           "code": "EF-4030",
@@ -723,7 +768,8 @@
           "form": null,
           "specs": {
             "tableWidthMm": 4030
-          }
+          },
+          "contentBlockKey": null
         }
       ]
     },
@@ -740,7 +786,8 @@
           "needsReview": false,
           "kind": "ACCESSORY",
           "form": null,
-          "specs": null
+          "specs": null,
+          "contentBlockKey": null
         },
         {
           "code": "HDRF-220",
@@ -750,7 +797,8 @@
           "needsReview": false,
           "kind": "ACCESSORY",
           "form": null,
-          "specs": null
+          "specs": null,
+          "contentBlockKey": null
         },
         {
           "code": "HDRF-320",
@@ -760,7 +808,8 @@
           "needsReview": false,
           "kind": "ACCESSORY",
           "form": null,
-          "specs": null
+          "specs": null,
+          "contentBlockKey": null
         }
       ]
     },
@@ -780,7 +829,8 @@
           "specs": {
             "cutWidthCm": 180,
             "widthCode": 180
-          }
+          },
+          "contentBlockKey": "equipment.fabric-pro"
         },
         {
           "code": "FP-220",
@@ -793,7 +843,8 @@
           "specs": {
             "cutWidthCm": 220,
             "widthCode": 220
-          }
+          },
+          "contentBlockKey": "equipment.fabric-pro"
         },
         {
           "code": "FP-300",
@@ -806,7 +857,8 @@
           "specs": {
             "cutWidthCm": 300,
             "widthCode": 300
-          }
+          },
+          "contentBlockKey": "equipment.fabric-pro"
         },
         {
           "code": "FP-TROLLEY",
@@ -816,7 +868,8 @@
           "needsReview": true,
           "kind": "ACCESSORY",
           "form": null,
-          "specs": null
+          "specs": null,
+          "contentBlockKey": null
         }
       ]
     },
@@ -834,6 +887,7 @@
           "kind": "SERVICE",
           "form": null,
           "specs": null,
+          "contentBlockKey": null,
           "noCommission": true
         },
         {
@@ -845,6 +899,7 @@
           "kind": "SERVICE",
           "form": null,
           "specs": null,
+          "contentBlockKey": null,
           "noCommission": true
         },
         {
@@ -856,6 +911,7 @@
           "kind": "SERVICE",
           "form": null,
           "specs": null,
+          "contentBlockKey": null,
           "noCommission": true
         },
         {
@@ -867,6 +923,7 @@
           "kind": "CREDIT",
           "form": null,
           "specs": null,
+          "contentBlockKey": null,
           "isCredit": true,
           "noCommission": true
         }
@@ -885,7 +942,8 @@
       ],
       "role": "ABR",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.ABR"
     },
     {
       "code": "AFP",
@@ -898,7 +956,8 @@
       ],
       "role": "AFP",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.AFP"
     },
     {
       "code": "APM-M",
@@ -911,7 +970,8 @@
       ],
       "role": "APM",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.APM"
     },
     {
       "code": "BCR-M",
@@ -925,7 +985,8 @@
       ],
       "role": "BCR",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.BCR"
     },
     {
       "code": "DR2",
@@ -938,7 +999,8 @@
       ],
       "role": "DR2",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.DR2"
     },
     {
       "code": "DRG-1",
@@ -951,7 +1013,8 @@
       ],
       "role": "DRG_1",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.DRG"
     },
     {
       "code": "DRG-2",
@@ -964,7 +1027,8 @@
       ],
       "role": "DRG_2",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.DRG"
     },
     {
       "code": "DRG-3",
@@ -977,7 +1041,8 @@
       ],
       "role": "DRG_3",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.DRG"
     },
     {
       "code": "HDC-M",
@@ -991,7 +1056,8 @@
       ],
       "role": "HDC",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.HDC"
     },
     {
       "code": "HFV-M",
@@ -1004,7 +1070,8 @@
       ],
       "role": "HFV",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.HFV"
     },
     {
       "code": "IJP",
@@ -1017,7 +1084,8 @@
       ],
       "role": "IJP",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": null
     },
     {
       "code": "IKA",
@@ -1030,7 +1098,8 @@
       ],
       "role": "IKA",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.IKA"
     },
     {
       "code": "MRK",
@@ -1043,7 +1112,8 @@
       ],
       "role": "MRK",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.MRK"
     },
     {
       "code": "MTS",
@@ -1057,7 +1127,8 @@
       ],
       "role": "MTS",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.MTS"
     },
     {
       "code": "OFD-M",
@@ -1071,7 +1142,8 @@
       ],
       "role": "OFD",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.OFD"
     },
     {
       "code": "OFJ",
@@ -1085,7 +1157,8 @@
       ],
       "role": "OFJ",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": null
     },
     {
       "code": "OFP-M",
@@ -1099,7 +1172,8 @@
       ],
       "role": "OFP",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.OFP"
     },
     {
       "code": "PM-M",
@@ -1112,7 +1186,8 @@
       ],
       "role": "PM",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.PM"
     },
     {
       "code": "PRM-M",
@@ -1126,7 +1201,8 @@
       ],
       "role": "PRM",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.PRM"
     },
     {
       "code": "MTS-M",
@@ -1141,6 +1217,7 @@
       "role": "MTS_TRAVEL",
       "parentProductCode": null,
       "unitLengthM": 1,
+      "contentBlockKey": "option.MTS",
       "legacyCodes": [
         "MTS- additional travel p/Metre"
       ]
@@ -1156,7 +1233,8 @@
       ],
       "role": "TRANSFORMER",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": null
     },
     {
       "code": "TR220",
@@ -1170,7 +1248,8 @@
       ],
       "role": "TRANSFORMER",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": null
     },
     {
       "code": "Crate-M-180",
@@ -1185,6 +1264,7 @@
       "role": "CRATE",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "noCommission": true
     },
     {
@@ -1200,6 +1280,7 @@
       "role": "CRATE",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "noCommission": true
     },
     {
@@ -1214,6 +1295,7 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "legacyCodes": [
         "1.0mm dia punch"
       ],
@@ -1231,6 +1313,7 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "legacyCodes": [
         "2.0mm dia punch"
       ],
@@ -1248,6 +1331,7 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "legacyCodes": [
         "3.0mm dia punch"
       ],
@@ -1265,6 +1349,7 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "legacyCodes": [
         "4.0mm dia punch"
       ],
@@ -1282,6 +1367,7 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "legacyCodes": [
         "5.0mm dia punch"
       ],
@@ -1299,6 +1385,7 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "legacyCodes": [
         "Punch Tool- Quick Release (to suit Hollow dia 1mm/2mm/3mm/4mm/5mm purchased seperately)"
       ]
@@ -1315,6 +1402,7 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "legacyCodes": [
         "28 Dia. Round Knife Tool- Patented Quick release mechanism (Not used on Felt bed) 2x10 sided blades included std"
       ]
@@ -1331,6 +1419,7 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "legacyCodes": [
         "40 Dia. Round Knife Tool- Quick release (Not available yet)"
       ]
@@ -1347,6 +1436,7 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "legacyCodes": [
         "Drag Knife Tool- Quick Release (to suit carbide knife 1.0mm x 7mm purchased seperately) 30 deg"
       ]
@@ -1363,6 +1453,7 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "legacyCodes": [
         "Drag Knife Tool- Quick Release (to suit carbide knife 1.0mm x 7mm purchased seperately) 45 deg?"
       ]
@@ -1379,6 +1470,7 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "legacyCodes": [
         "Driven- Electrically driven. Suit 28mm Carbide Octagonal blade."
       ]
@@ -1395,6 +1487,7 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "legacyCodes": [
         "Notch Tool- Quick Release (to suit carbide knife 1.0mm x 7mm)"
       ]
@@ -1410,7 +1503,8 @@
       ],
       "role": "L_EXTENDED",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": null
     },
     {
       "code": "220-E",
@@ -1423,7 +1517,8 @@
       ],
       "role": "L_EXTENDED",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": null
     },
     {
       "code": "Crate-L-180",
@@ -1437,6 +1532,7 @@
       "role": "CRATE",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "legacyCodes": [
         "Crate-180"
       ],
@@ -1454,6 +1550,7 @@
       "role": "CRATE",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "legacyCodes": [
         "Crate-220"
       ],
@@ -1471,6 +1568,7 @@
       "role": "CRATE",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "legacyCodes": [
         "Crate-320"
       ],
@@ -1487,7 +1585,8 @@
       ],
       "role": "ABR",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.ABR"
     },
     {
       "code": "APM-L",
@@ -1500,7 +1599,8 @@
       ],
       "role": "APM",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.APM"
     },
     {
       "code": "BCR-L",
@@ -1513,7 +1613,8 @@
       ],
       "role": "BCR",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.BCR"
     },
     {
       "code": "HDC-L",
@@ -1526,7 +1627,8 @@
       ],
       "role": "HDC",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.HDC"
     },
     {
       "code": "HFV-L",
@@ -1539,7 +1641,8 @@
       ],
       "role": "HFV",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.HFV"
     },
     {
       "code": "OFD-L",
@@ -1552,7 +1655,8 @@
       ],
       "role": "OFD",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.OFD"
     },
     {
       "code": "OFP-L",
@@ -1565,7 +1669,8 @@
       ],
       "role": "OFP",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.OFP"
     },
     {
       "code": "PM-L",
@@ -1578,7 +1683,8 @@
       ],
       "role": "PM",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.PM"
     },
     {
       "code": "PRM-L",
@@ -1591,7 +1697,8 @@
       ],
       "role": "PRM",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": "option.PRM"
     },
     {
       "code": "JTP",
@@ -1604,7 +1711,8 @@
       ],
       "role": "JTP",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": null
     },
     {
       "code": "EL-2020-DM1",
@@ -1616,6 +1724,7 @@
       "role": "EL_DRIVE",
       "parentProductCode": "EL-2020",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2020"
       ],
@@ -1633,6 +1742,7 @@
       "role": "EL_CONVEYOR",
       "parentProductCode": "EL-2020",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2020"
       ],
@@ -1650,6 +1760,7 @@
       "role": "EL_STATIC",
       "parentProductCode": "EL-2020",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2020"
       ],
@@ -1667,6 +1778,7 @@
       "role": "EL_BUSBAR",
       "parentProductCode": "EL-2020",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2020"
       ],
@@ -1684,6 +1796,7 @@
       "role": "EL_RAIL",
       "parentProductCode": "EL-2020",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2020"
       ],
@@ -1701,6 +1814,7 @@
       "role": "EL_ROLL_FEED",
       "parentProductCode": "EL-2020",
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2020"
       ],
@@ -1718,6 +1832,7 @@
       "role": "EL_DRIVE",
       "parentProductCode": "EL-2420",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2420"
       ],
@@ -1735,6 +1850,7 @@
       "role": "EL_CONVEYOR",
       "parentProductCode": "EL-2420",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2420"
       ],
@@ -1752,6 +1868,7 @@
       "role": "EL_STATIC",
       "parentProductCode": "EL-2420",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2420"
       ],
@@ -1769,6 +1886,7 @@
       "role": "EL_BUSBAR",
       "parentProductCode": "EL-2420",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2420"
       ],
@@ -1786,6 +1904,7 @@
       "role": "EL_RAIL",
       "parentProductCode": "EL-2420",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2420"
       ],
@@ -1803,6 +1922,7 @@
       "role": "EL_ROLL_FEED",
       "parentProductCode": "EL-2420",
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2420"
       ],
@@ -1820,6 +1940,7 @@
       "role": "EL_DRIVE",
       "parentProductCode": "EL-3220",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-3220"
       ],
@@ -1837,6 +1958,7 @@
       "role": "EL_CONVEYOR",
       "parentProductCode": "EL-3220",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-3220"
       ],
@@ -1854,6 +1976,7 @@
       "role": "EL_STATIC",
       "parentProductCode": "EL-3220",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-3220"
       ],
@@ -1871,6 +1994,7 @@
       "role": "EL_BUSBAR",
       "parentProductCode": "EL-3220",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-3220"
       ],
@@ -1888,6 +2012,7 @@
       "role": "EL_RAIL",
       "parentProductCode": "EL-3220",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-3220"
       ],
@@ -1905,6 +2030,7 @@
       "role": "EL_DRIVE",
       "parentProductCode": "EL-4030",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-4030"
       ],
@@ -1922,6 +2048,7 @@
       "role": "EL_CONVEYOR",
       "parentProductCode": "EL-4030",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-4030"
       ],
@@ -1939,6 +2066,7 @@
       "role": "EL_STATIC",
       "parentProductCode": "EL-4030",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-4030"
       ],
@@ -1956,6 +2084,7 @@
       "role": "EL_BUSBAR",
       "parentProductCode": "EL-4030",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-4030"
       ],
@@ -1973,6 +2102,7 @@
       "role": "EL_RAIL",
       "parentProductCode": "EL-4030",
       "unitLengthM": 1.2,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-4030"
       ],
@@ -1990,6 +2120,7 @@
       "role": "EL_ROLL_HOLDER",
       "parentProductCode": "EL-2020",
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2020"
       ],
@@ -2007,6 +2138,7 @@
       "role": "EL_ROLL_HOLDER",
       "parentProductCode": "EL-2420",
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2420"
       ],
@@ -2026,6 +2158,7 @@
       "role": "CRATE",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "noCommission": true
     },
     {
@@ -2038,6 +2171,7 @@
       "role": "CRATE",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "FP-180"
       ],
@@ -2053,6 +2187,7 @@
       "role": "CRATE",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "FP-220"
       ],
@@ -2068,6 +2203,7 @@
       "role": "CRATE",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "FP-300"
       ],
@@ -2083,6 +2219,7 @@
       "role": "CRATE",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "HDRF-180"
       ],
@@ -2101,6 +2238,7 @@
       "role": "CRATE",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "HDRF-220"
       ],
@@ -2119,6 +2257,7 @@
       "role": "CRATE",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "HDRF-320"
       ],
@@ -2138,7 +2277,8 @@
       ],
       "role": "TPL",
       "parentProductCode": null,
-      "unitLengthM": null
+      "unitLengthM": null,
+      "contentBlockKey": null
     },
     {
       "code": "SVC-L-INSTALL-S",
@@ -2150,6 +2290,7 @@
       "role": "INSTALL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "SERVICE"
       ],
@@ -2167,6 +2308,7 @@
       "role": "INSTALL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "SERVICE"
       ],
@@ -2184,6 +2326,7 @@
       "role": "INSTALL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "SERVICE"
       ]
@@ -2198,6 +2341,7 @@
       "role": "INSTALL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "SERVICE"
       ]
@@ -2212,6 +2356,7 @@
       "role": "INSTALL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "SERVICE"
       ]
@@ -2226,6 +2371,7 @@
       "role": "INSTALL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "SERVICE"
       ]
@@ -2240,6 +2386,7 @@
       "role": "INSTALL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "SERVICE"
       ]
@@ -2254,6 +2401,7 @@
       "role": "INSTALL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "SERVICE"
       ]
@@ -2268,6 +2416,7 @@
       "role": "TRAINING",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "SERVICE"
       ]
@@ -2282,6 +2431,7 @@
       "role": "INSTALL",
       "parentProductCode": null,
       "unitLengthM": null,
+      "contentBlockKey": null,
       "compatibleProducts": [
         "SERVICE"
       ],
