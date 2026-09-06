@@ -197,20 +197,20 @@ describe("region brand logo source file", () => {
 });
 
 describe("image maps <-> catalog.json", () => {
-  // The import script matches rows by current code or legacy code
-  // (whereAnyCode), so a map key is valid when catalog.json lists it either
-  // way; a key matching neither would be silently skipped at import time.
+  // The import script matches rows by their current code, so a map key is
+  // valid only when catalog.json lists it as a code; a key matching nothing
+  // would be silently skipped at import time.
   const catalog = catalogData as Catalog;
-  const productCodes = new Set(catalog.series.flatMap((s) => s.products.flatMap((p) => [p.code, ...(p.legacyCodes ?? [])])));
-  const optionCodes = new Set(catalog.options.flatMap((o) => [o.code, ...(o.legacyCodes ?? [])]));
+  const productCodes = new Set(catalog.series.flatMap((s) => s.products.map((p) => p.code)));
+  const optionCodes = new Set(catalog.options.map((o) => o.code));
 
-  it("every PRODUCT_IMAGES / ICON_PRODUCT_TARGETS code is a current or legacy product code", () => {
+  it("every PRODUCT_IMAGES / ICON_PRODUCT_TARGETS code is a current product code", () => {
     for (const code of [...Object.keys(PRODUCT_IMAGES), ...Object.values(ICON_PRODUCT_TARGETS).flat()]) {
       expect(productCodes.has(code), code).toBe(true);
     }
   });
 
-  it("every ICON_OPTION_TARGETS code is a current or legacy option code", () => {
+  it("every ICON_OPTION_TARGETS code is a current option code", () => {
     for (const code of allIconOptionCodes()) expect(optionCodes.has(code), code).toBe(true);
   });
 

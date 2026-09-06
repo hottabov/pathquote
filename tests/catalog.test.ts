@@ -10,7 +10,7 @@ import { readProductSpecs } from "../src/lib/validation/product-specs";
  * Invariants over prisma/seed-data/catalog.json -- the file
  * scripts/build-seed-data-from-target.ts regenerates from
  * docs/reference/catalog-v2-target.json. These hold whatever the director
- * renames next; the counts and legacy codes the pre-v2 version of this
+ * renames next; the counts and code literals the pre-v2 version of this
  * file asserted are gone with the spreadsheets that produced them.
  */
 
@@ -41,13 +41,6 @@ describe("catalog.json: codes", () => {
 
   it("every code follows the v2 character rule: no spaces, parentheses or #", () => {
     for (const item of allItems) expect(item.code, item.code).toMatch(CODE_PATTERN);
-  });
-
-  it("no legacy code is still in use as a current code", () => {
-    const current = new Set(allItems.map((i) => i.code));
-    for (const item of allItems) {
-      for (const legacy of item.legacyCodes ?? []) expect(current.has(legacy), `${item.code} <- ${legacy}`).toBe(false);
-    }
   });
 
   it("every entry has the required fields", () => {

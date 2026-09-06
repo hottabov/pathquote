@@ -67,6 +67,18 @@ export function revalidateProduct(seriesId: string, productId: string): void {
   revalidatePath(`/catalog/${seriesId}`);
 }
 
+/**
+ * Every catalogue page at once -- the index, every series, every product,
+ * the options list and every option. Only the catalogue import
+ * (src/lib/actions/catalog-import.ts) has any business with this: it can
+ * touch any number of rows in one transaction, so enumerating the pages it
+ * changed would just re-derive "all of them". `'layout'` invalidates the
+ * segment and everything beneath it.
+ */
+export function revalidateCatalogTree(): void {
+  revalidatePath("/catalog", "layout");
+}
+
 export function revalidateOptionList(): void {
   revalidatePath("/catalog/options");
 }
@@ -87,6 +99,10 @@ export function revalidateSpecImages(): void {
 
 export function revalidateSupport(): void {
   revalidatePath("/settings/support");
+}
+
+export function revalidateImportExport(): void {
+  revalidatePath("/settings/import-export");
 }
 
 export function revalidateUserList(): void {

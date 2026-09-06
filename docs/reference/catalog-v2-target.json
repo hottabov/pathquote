@@ -6,9 +6,6 @@
       "id": "cmtfmusj4000reo9ka2r20or3",
       "action": "rename",
       "code": "M-3180",
-      "legacyCodes": [
-        "M3180"
-      ],
       "series": "M",
       "name": "M-Series Cutting Machine 3cm × 180cm",
       "description": "Computer controlled cutting machine - 3cm compressed lay height, 180cm cutting width",
@@ -32,9 +29,6 @@
       "id": "cmtfmusj6000seo9kpzwfq2wr",
       "action": "rename",
       "code": "M-3220",
-      "legacyCodes": [
-        "M3220"
-      ],
       "series": "M",
       "name": "M-Series Cutting Machine 3cm × 227cm",
       "description": "Computer controlled cutting machine - 3cm compressed lay height, 227cm cutting width",
@@ -58,9 +52,6 @@
       "id": "cmtgjwcz6000utw9kbj9t8736",
       "action": "rename",
       "code": "M-3300",
-      "legacyCodes": [
-        "M3300"
-      ],
       "series": "M",
       "name": "M-Series Cutting Machine 3cm × 300cm",
       "description": "Computer controlled cutting machine - 3cm compressed lay height, 300cm cutting width",
@@ -84,9 +75,6 @@
       "id": "cmtfmusj7000teo9knd1ppssa",
       "action": "rename",
       "code": "M-3390",
-      "legacyCodes": [
-        "M3390"
-      ],
       "series": "M",
       "name": "M-Series Cutting Machine 3cm × 390cm",
       "description": "Computer controlled cutting machine - 3cm compressed lay height, 390cm cutting width",
@@ -110,9 +98,6 @@
       "id": "cmtfmusj8000ueo9knacqvzp9",
       "action": "rename",
       "code": "M-5180",
-      "legacyCodes": [
-        "M5180"
-      ],
       "series": "M",
       "name": "M-Series Cutting Machine 5cm × 180cm",
       "description": "Computer controlled cutting machine - 5cm compressed lay height, 180cm cutting width",
@@ -136,9 +121,6 @@
       "id": "cmtfmusja000veo9kr5c1wka2",
       "action": "rename",
       "code": "M-5220",
-      "legacyCodes": [
-        "M5220"
-      ],
       "series": "M",
       "name": "M-Series Cutting Machine 5cm × 227cm",
       "description": "Computer controlled cutting machine - 5cm compressed lay height, 227cm cutting width",
@@ -162,9 +144,6 @@
       "id": "cmtgjwd0c000ytw9k3o3xxjsj",
       "action": "rename",
       "code": "M-5300",
-      "legacyCodes": [
-        "M5300"
-      ],
       "series": "M",
       "name": "M-Series Cutting Machine 5cm × 300cm",
       "description": "Computer controlled cutting machine - 5cm compressed lay height, 300cm cutting width",
@@ -188,9 +167,6 @@
       "id": "cmtfmusjb000weo9kkacu0f7a",
       "action": "rename",
       "code": "M-5390",
-      "legacyCodes": [
-        "M5390"
-      ],
       "series": "M",
       "name": "M-Series Cutting Machine 5cm × 390cm",
       "description": "Computer controlled cutting machine - 5cm compressed lay height, 390cm cutting width",
@@ -214,9 +190,6 @@
       "id": "cmtfmusjd000xeo9kyuksux3i",
       "action": "rename",
       "code": "M-7180",
-      "legacyCodes": [
-        "M7180"
-      ],
       "series": "M",
       "name": "M-Series Cutting Machine 7cm × 180cm",
       "description": "Computer controlled cutting machine - 7cm compressed lay height, 180cm cutting width",
@@ -240,9 +213,6 @@
       "id": "cmtfmusjf000yeo9ke2ks3dpl",
       "action": "rename",
       "code": "M-7220",
-      "legacyCodes": [
-        "M7220"
-      ],
       "series": "M",
       "name": "M-Series Cutting Machine 7cm × 227cm",
       "description": "Computer controlled cutting machine - 7cm compressed lay height, 227cm cutting width",
@@ -266,9 +236,6 @@
       "id": "cmtgjwd0o0012tw9kcjlo14kd",
       "action": "rename",
       "code": "M-7300",
-      "legacyCodes": [
-        "M7300"
-      ],
       "series": "M",
       "name": "M-Series Cutting Machine 7cm × 300cm",
       "description": "Computer controlled cutting machine - 7cm compressed lay height, 300cm cutting width",
@@ -292,9 +259,6 @@
       "id": "cmtfmusjg000zeo9ktdv7nzp6",
       "action": "rename",
       "code": "M-7390",
-      "legacyCodes": [
-        "M7390"
-      ],
       "series": "M",
       "name": "M-Series Cutting Machine 7cm × 390cm",
       "description": "Computer controlled cutting machine - 7cm compressed lay height, 390cm cutting width",
@@ -318,9 +282,6 @@
       "id": "cmtfmusj1000oeo9kadyumm13",
       "action": "rename",
       "code": "M-10180",
-      "legacyCodes": [
-        "M10180"
-      ],
       "series": "M",
       "name": "M-Series Cutting Machine 10cm × 180cm",
       "description": "Computer controlled cutting machine - 10cm compressed lay height, 180cm cutting width",
@@ -344,9 +305,6 @@
       "id": "cmtfmusj2000peo9kvau1k8kd",
       "action": "rename",
       "code": "M-10220",
-      "legacyCodes": [
-        "M10220"
-      ],
       "series": "M",
       "name": "M-Series Cutting Machine 10cm × 227cm",
       "description": "Computer controlled cutting machine - 10cm compressed lay height, 227cm cutting width",
@@ -370,9 +328,6 @@
       "id": "cmtgjwcyo000qtw9kgy5t9ktq",
       "action": "rename",
       "code": "M-10300",
-      "legacyCodes": [
-        "M10300"
-      ],
       "series": "M",
       "name": "M-Series Cutting Machine 10cm × 300cm",
       "description": "Computer controlled cutting machine - 10cm compressed lay height, 300cm cutting width",
@@ -396,9 +351,6 @@
       "id": "cmtfmusj3000qeo9k3hwsf2li",
       "action": "rename",
       "code": "M-10390",
-      "legacyCodes": [
-        "M10390"
-      ],
       "series": "M",
       "name": "M-Series Cutting Machine 10cm × 390cm",
       "description": "Computer controlled cutting machine - 10cm compressed lay height, 390cm cutting width",
@@ -422,7 +374,6 @@
       "id": "cmtfmusil000ceo9kbcbbe8rk",
       "action": "keep",
       "code": "X-10180",
-      "legacyCodes": [],
       "series": "X",
       "name": "X-Calibre Cutting Machine 10cm × 180cm",
       "description": "Computer controlled cutting machine - 10cm compressed lay height, 180cm cutting width",
@@ -447,7 +398,6 @@
       "id": "cmtfmusin000deo9k9i9ywtga",
       "action": "keep",
       "code": "X-10220",
-      "legacyCodes": [],
       "series": "X",
       "name": "X-Calibre Cutting Machine 10cm × 227cm",
       "description": "Computer controlled cutting machine - 10cm compressed lay height, 227cm cutting width",
@@ -472,7 +422,6 @@
       "id": "cmtmo4nym000fdi9kd01ndhf5",
       "action": "delete",
       "code": "X-10390",
-      "legacyCodes": [],
       "series": "X",
       "name": "Computer controlled cutting machine - 10cm compressed lay height, 390cm cutting width",
       "description": "Computer controlled cutting machine - 10cm compressed lay height, 390cm cutting width",
@@ -487,7 +436,6 @@
       "id": "cmtmo4nyo000gdi9kcibsugvj",
       "action": "delete",
       "code": "X-3180",
-      "legacyCodes": [],
       "series": "X",
       "name": "Computer controlled cutting machine - 3cm compressed lay height, 180cm cutting width",
       "description": "Computer controlled cutting machine - 3cm compressed lay height, 180cm cutting width",
@@ -502,7 +450,6 @@
       "id": "cmtmo4nyq000hdi9k3n62ac97",
       "action": "delete",
       "code": "X-3220",
-      "legacyCodes": [],
       "series": "X",
       "name": "Computer controlled cutting machine - 3cm compressed lay height, 227cm cutting width",
       "description": "Computer controlled cutting machine - 3cm compressed lay height, 227cm cutting width",
@@ -517,7 +464,6 @@
       "id": "cmtmo4nyr000idi9ky0hkhc7j",
       "action": "delete",
       "code": "X-3390",
-      "legacyCodes": [],
       "series": "X",
       "name": "Computer controlled cutting machine - 3cm compressed lay height, 390cm cutting width",
       "description": "Computer controlled cutting machine - 3cm compressed lay height, 390cm cutting width",
@@ -532,7 +478,6 @@
       "id": "cmtmo4nys000jdi9khzsme9zm",
       "action": "delete",
       "code": "X-5180",
-      "legacyCodes": [],
       "series": "X",
       "name": "Computer controlled cutting machine - 5cm compressed lay height, 180cm cutting width",
       "description": "Computer controlled cutting machine - 5cm compressed lay height, 180cm cutting width",
@@ -547,7 +492,6 @@
       "id": "cmtmo4nyv000kdi9k20j5kjhq",
       "action": "delete",
       "code": "X-5220",
-      "legacyCodes": [],
       "series": "X",
       "name": "Computer controlled cutting machine - 5cm compressed lay height, 227cm cutting width",
       "description": "Computer controlled cutting machine - 5cm compressed lay height, 227cm cutting width",
@@ -562,7 +506,6 @@
       "id": "cmtmo4nyw000ldi9kqhkmqxc7",
       "action": "delete",
       "code": "X-5390",
-      "legacyCodes": [],
       "series": "X",
       "name": "Computer controlled cutting machine - 5cm compressed lay height, 390cm cutting width",
       "description": "Computer controlled cutting machine - 5cm compressed lay height, 390cm cutting width",
@@ -577,7 +520,6 @@
       "id": "cmtmo4nyy000mdi9kugnis9cy",
       "action": "delete",
       "code": "X-7180",
-      "legacyCodes": [],
       "series": "X",
       "name": "Computer controlled cutting machine - 7cm compressed lay height, 180cm cutting width",
       "description": "Computer controlled cutting machine - 7cm compressed lay height, 180cm cutting width",
@@ -592,7 +534,6 @@
       "id": "cmtmo4nyz000ndi9kvk5ki29w",
       "action": "delete",
       "code": "X-7220",
-      "legacyCodes": [],
       "series": "X",
       "name": "Computer controlled cutting machine - 7cm compressed lay height, 227cm cutting width",
       "description": "Computer controlled cutting machine - 7cm compressed lay height, 227cm cutting width",
@@ -607,7 +548,6 @@
       "id": "cmtmo4nz0000odi9k7f0k0q3t",
       "action": "delete",
       "code": "X-7390",
-      "legacyCodes": [],
       "series": "X",
       "name": "Computer controlled cutting machine - 7cm compressed lay height, 390cm cutting width",
       "description": "Computer controlled cutting machine - 7cm compressed lay height, 390cm cutting width",
@@ -622,7 +562,6 @@
       "id": "cmtfmusjh0010eo9kqxj3nvct",
       "action": "keep",
       "code": "L-180",
-      "legacyCodes": [],
       "series": "L",
       "name": "L-Series Cutting Machine 180cm",
       "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 180cm. Cutting belt perforated flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included.",
@@ -645,7 +584,6 @@
       "id": "cmtfmusji0011eo9khpun742d",
       "action": "keep",
       "code": "L-180F",
-      "legacyCodes": [],
       "series": "L",
       "name": "L-Series Cutting Machine 180cm, Felt",
       "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 180cm. Cutting belt Porous felt flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included.",
@@ -668,7 +606,6 @@
       "id": "cmtfmusjj0012eo9kk908ganm",
       "action": "keep",
       "code": "L-220",
-      "legacyCodes": [],
       "series": "L",
       "name": "L-Series Cutting Machine 226cm",
       "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 226cm. Cutting belt perforated flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included.",
@@ -691,7 +628,6 @@
       "id": "cmtfmusjk0013eo9k327rgodg",
       "action": "keep",
       "code": "L-220F",
-      "legacyCodes": [],
       "series": "L",
       "name": "L-Series Cutting Machine 226cm, Felt",
       "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 226cm. Cutting belt Porous felt flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included.",
@@ -714,7 +650,6 @@
       "id": "cmtmo4nzw0019di9k3mskt4kw",
       "action": "keep",
       "code": "L-320",
-      "legacyCodes": [],
       "series": "L",
       "name": "L-Series Cutting Machine 320cm",
       "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 320cm. Cutting belt perforated flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included.",
@@ -736,7 +671,6 @@
       "id": "cmtgjwd1b0019tw9ki3ob6ob3",
       "action": "keep",
       "code": "L-320E",
-      "legacyCodes": [],
       "series": "L",
       "name": "L-Series Cutting Machine 320cm, Extended",
       "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 320cm. Cutting belt perforated flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included. Extended length.",
@@ -759,7 +693,6 @@
       "id": "cmtmo4nzz001bdi9kiu8x49iv",
       "action": "keep",
       "code": "L-320F",
-      "legacyCodes": [],
       "series": "L",
       "name": "L-Series Cutting Machine 320cm, Felt",
       "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 320cm. Cutting belt Porous felt flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included.",
@@ -783,7 +716,6 @@
       "id": null,
       "action": "add",
       "code": "L-320EF",
-      "legacyCodes": [],
       "kind": "MACHINE",
       "series": "L",
       "name": "L-Series Cutting Machine 320cm, Extended, Felt",
@@ -806,7 +738,6 @@
       "id": "cmtfq1k8j0018xy9kw9mdaap4",
       "action": "keep",
       "code": "ANT-V5",
-      "legacyCodes": [],
       "series": "SW",
       "name": "Automatic Nester V5",
       "description": "Automatic Nester V5",
@@ -826,7 +757,6 @@
       "id": "cmtfq1k8k0019xy9kydfy43d3",
       "action": "keep",
       "code": "ANT-V6",
-      "legacyCodes": [],
       "series": "SW",
       "name": "Automatic Nester V6",
       "description": "Automatic Nester V6 (Faster results, higher level nesting algorithm) Includes edge buffer function (container)",
@@ -846,7 +776,6 @@
       "id": "cmtfq1k8p001cxy9kbc8oeuvq",
       "action": "keep",
       "code": "PDG",
-      "legacyCodes": [],
       "series": "SW",
       "name": "PhotoDigitiser",
       "description": "PhotoDigitiser-Digitizing of photo patterns using tools available within PathWorks",
@@ -866,7 +795,6 @@
       "id": "cmtfq1k8r001dxy9k8ulbmd8j",
       "action": "keep",
       "code": "PRA",
-      "legacyCodes": [],
       "series": "SW",
       "name": "Production Analyst",
       "description": "Production Analyst is a stand alone software that enables remote manipulation of Production Manager data.",
@@ -884,7 +812,6 @@
       "id": "cmtfq1k8u001gxy9kj3olxoxm",
       "action": "keep",
       "code": "WPL",
-      "legacyCodes": [],
       "series": "SW",
       "name": "PoolLiner Wizard",
       "description": "PoolLiner Wizard - automatic creation of flat shapes (unfolding) based on 3D point measurements.",
@@ -904,7 +831,6 @@
       "id": "cmtfq1k8v001hxy9kkqzkvi3u",
       "action": "keep",
       "code": "WPN",
-      "legacyCodes": [],
       "series": "SW",
       "name": "Panel Wizard",
       "description": "Panel Wizard-Automatic creation of panels based with automatic tool path optimisation.",
@@ -924,9 +850,6 @@
       "id": "cmtfq1k8o001bxy9kvpyvtmbu",
       "action": "rename",
       "code": "LSC",
-      "legacyCodes": [
-        "LS Convert"
-      ],
       "series": "SW",
       "name": "LS Convert",
       "description": "LS Convert software module (dongle protected)",
@@ -943,9 +866,6 @@
       "id": "cmtgjwd1s001ktw9ker6f4ygn",
       "action": "rename",
       "code": "PTW-I",
-      "legacyCodes": [
-        "PTW(I)"
-      ],
       "series": "SW",
       "name": "PathWorks Integrated",
       "description": "PathWorks Integrated software module within PathCut™ . Pathworks features include, pattern creation tools, piece shredder, magnetic nesting, importing and exporting of standard DXF and G-code.",
@@ -965,9 +885,6 @@
       "id": "cmtfq1k8t001fxy9k5wzrg2g3",
       "action": "rename",
       "code": "PTW-S",
-      "legacyCodes": [
-        "PTW(S)"
-      ],
       "series": "SW",
       "name": "PathWorks Standalone",
       "description": "PathWorks Standalone software module. Pathworks features include, pattern creation tools, piece shredder, magnetic nesting, importing and exporting of standard DXF and G-code.",
@@ -987,7 +904,6 @@
       "id": "cmtfq1k8s001exy9kmvyf94rx",
       "action": "delete",
       "code": "PTN",
-      "legacyCodes": [],
       "series": "SW",
       "name": "Photo Nesting (Note: option only, does NOT include hardware or ANT)",
       "description": "Photo Nesting (Note: option only, does NOT include hardware or ANT)",
@@ -1002,7 +918,6 @@
       "id": "cmtfq1k8n001axy9kcquwtccm",
       "action": "delete",
       "code": "EDG",
-      "legacyCodes": [],
       "series": "SW",
       "name": "External Digitizer- enabling software functionality to connect an external digitizer.",
       "description": "External Digitizer - enabling software functionality to connect an external digitizer.",
@@ -1017,7 +932,6 @@
       "id": "cmtfmusjq0018eo9k6jcw286m",
       "action": "keep",
       "code": "LNS-2020",
-      "legacyCodes": [],
       "series": "LNS",
       "name": "Leather Nesting System 2020",
       "description": "Camera Nesting System Comprises: a) Operator console with utility drawer (With Mounting bracket onto Pathfinder EasyLoader side frame) b) Windows computer, keyboard, mouse & Microsoft surface dial. c) Digital SLR camera & stand. d) PathWorks (standalone) software. e) ANT - automatic nesting licence optioned within PathWorks f) WHD Leather Hide Wizard",
@@ -1034,7 +948,6 @@
       "id": "cmtfmusjr0019eo9kag2a7bpw",
       "action": "keep",
       "code": "LNS-2420",
-      "legacyCodes": [],
       "series": "LNS",
       "name": "Leather Nesting System 2420",
       "description": "Camera Nesting System Comprises: a) Operator console with utility drawer (With Mounting bracket onto Pathfinder EasyLoader side frame) b) Windows computer, keyboard, mouse & Microsoft surface dial. c) Digital SLR camera & stand. d) PathWorks (standalone) software. e) ANT - automatic nesting licence optioned within PathWorks f) WHD Leather Hide Wizard",
@@ -1051,7 +964,6 @@
       "id": "cmtfmusjs001aeo9km42qno4u",
       "action": "keep",
       "code": "LNS-3220",
-      "legacyCodes": [],
       "series": "LNS",
       "name": "Leather Nesting System 3220",
       "description": "Camera Nesting System Comprises: a) Operator console with utility drawer (With Mounting bracket onto Pathfinder EasyLoader side frame) b) Windows computer, keyboard, mouse & Microsoft surface dial. c) Digital SLR camera & stand. d) PathWorks (standalone) software. e) ANT - automatic nesting licence optioned within PathWorks f) WHD Leather Hide Wizard",
@@ -1068,7 +980,6 @@
       "id": "cmtfq1k8z001lxy9krcl3om17",
       "action": "keep",
       "code": "EL-2020",
-      "legacyCodes": [],
       "series": "EL",
       "name": "EasyLoader 2020",
       "description": "2020mm width, to suit FM180/FabricPro-180. Base: drive module, first 1.2M.",
@@ -1091,7 +1002,6 @@
       "id": "cmtfq1k91001nxy9k4m8qvscl",
       "action": "keep",
       "code": "EF-2020",
-      "legacyCodes": [],
       "series": "EF",
       "name": "EasyFeeder 2020",
       "description": "1200mm length, functionality for synchronisation with the M and L series. Electronic Edge Control including Edge control sensors. Includes roll keeper and plastic roll holder.",
@@ -1111,7 +1021,6 @@
       "id": "cmtfq1k90001mxy9k1h05aea2",
       "action": "keep",
       "code": "EL-2420",
-      "legacyCodes": [],
       "series": "EL",
       "name": "EasyLoader 2420",
       "description": "2420mm width, to suit FM220/FabricPro220. Base: drive module, first 1.2M.",
@@ -1134,7 +1043,6 @@
       "id": "cmtfq1k92001oxy9k22h7sv1d",
       "action": "keep",
       "code": "EF-2420",
-      "legacyCodes": [],
       "series": "EF",
       "name": "EasyFeeder 2420",
       "description": "1200mm length, functionality for synchronisation with the M and L series. Electronic Edge Control including Edge control sensors. Includes roll keeper and plastic roll holder.",
@@ -1154,7 +1062,6 @@
       "id": "cmtgjwd27001ttw9ki4jbsvh9",
       "action": "keep",
       "code": "EL-3220",
-      "legacyCodes": [],
       "series": "EL",
       "name": "EasyLoader 3220",
       "description": "3220mm width, to suit Mx300, L320 & FabricPro300. Base: drive module, first 1.2M.",
@@ -1177,7 +1084,6 @@
       "id": "cmtgjwd2b001xtw9kl33nq440",
       "action": "keep",
       "code": "EF-3220",
-      "legacyCodes": [],
       "series": "EF",
       "name": "EasyFeeder 3220",
       "description": "1200mm length, functionality for synchronisation with the M and L series. Electronic Edge Control including Edge control sensors. Includes roll keeper and plastic roll holder.",
@@ -1197,7 +1103,6 @@
       "id": "cmtgjwd28001utw9kiu99zald",
       "action": "keep",
       "code": "EL-4030",
-      "legacyCodes": [],
       "series": "EL",
       "name": "EasyLoader 4030",
       "description": "4030mm width, to suit Mx390 & FabricPro390. Base: drive module, first 1.2M.",
@@ -1220,7 +1125,6 @@
       "id": "cmtfq1k93001pxy9k8qxcidl6",
       "action": "keep",
       "code": "EF-4030",
-      "legacyCodes": [],
       "series": "EF",
       "name": "EasyFeeder 4030",
       "description": "1200mm length, functionality for synchronisation with the M and L series. Electronic Edge Control including Edge control sensors. Includes roll keeper and plastic roll holder.",
@@ -1240,7 +1144,6 @@
       "id": "cmtghiide001q1i9kctgwob7j",
       "action": "keep",
       "code": "HDRF-180",
-      "legacyCodes": [],
       "series": "HDRF",
       "name": "Heavy Duty Roll Feeder 180",
       "description": "Heavy duty roll feeder for rolls up to 500kg, roll diameters up to 900mm and widths up to 1800mm. Adjustable core support 70-80mm (option up to 200mm), adjustable disk brake prevents roll run-away, heavy-duty lockable castors. Compatible with all Pathfinder automatic cutting machines.",
@@ -1257,7 +1160,6 @@
       "id": "cmtgnnc1o00214o9k3xr7dapn",
       "action": "keep",
       "code": "HDRF-220",
-      "legacyCodes": [],
       "series": "HDRF",
       "name": "Heavy Duty Roll Feeder 220",
       "description": "Heavy duty roll feeder for rolls up to 500kg, roll diameters up to 900mm and widths up to 2200mm. Adjustable core support 70-80mm (option up to 200mm), adjustable disk brake prevents roll run-away, heavy-duty lockable castors. Compatible with all Pathfinder automatic cutting machines.",
@@ -1274,7 +1176,6 @@
       "id": "cmtgnnc1r00224o9krjjz2ycb",
       "action": "keep",
       "code": "HDRF-320",
-      "legacyCodes": [],
       "series": "HDRF",
       "name": "Heavy Duty Roll Feeder 320",
       "description": "Heavy duty roll feeder for rolls up to 500kg, roll diameters up to 900mm and widths up to 3200mm. Adjustable core support 70-80mm (option up to 200mm), adjustable disk brake prevents roll run-away, heavy-duty lockable castors. Compatible with all Pathfinder automatic cutting machines.",
@@ -1291,7 +1192,6 @@
       "id": "cmtfmusjt001beo9knxf0j5zv",
       "action": "keep",
       "code": "FP-180",
-      "legacyCodes": [],
       "series": "FP",
       "name": "FabricPro Spreader 180cm",
       "description": "FabricPro Automatic Spreading Machine (maximum fabric width=180 cm)",
@@ -1313,7 +1213,6 @@
       "id": "cmtfmusju001ceo9kwgf3rck9",
       "action": "keep",
       "code": "FP-220",
-      "legacyCodes": [],
       "series": "FP",
       "name": "FabricPro Spreader 220cm",
       "description": "FabricPro Automatic Spreading Machine (maximum fabric width=220 cm)",
@@ -1335,7 +1234,6 @@
       "id": "cmtgjwd2i0022tw9kb49t6e3c",
       "action": "keep",
       "code": "FP-300",
-      "legacyCodes": [],
       "series": "FP",
       "name": "FabricPro Spreader 300cm",
       "description": "FabricPro Automatic Spreading Machine (maximum fabric width=300 cm)",
@@ -1357,7 +1255,6 @@
       "id": "cmtghiidj001t1i9k2hnxu0fj",
       "action": "keep",
       "code": "FP-TROLLEY",
-      "legacyCodes": [],
       "series": "FP",
       "name": "Fabric Roll Trolley",
       "description": "Ergonomic fabric roll trolley designed for seamless use with the FabricPro spreading system. Direct roll transfer from storage to FabricPro with no intermediate handling or bulky roll-lifting devices. Carries up to 2 fabric rolls; 2 lockable castor wheels; welded steel construction; compatible with EasyLoader tables (880-940mm height); compact flat-packed design.",
@@ -1373,7 +1270,6 @@
       "id": "cmtjiy8b8000g0q9k9z6jj0za",
       "action": "keep",
       "code": "RSP",
-      "legacyCodes": [],
       "series": "SVC",
       "name": "Remote Support Program",
       "description": "<p></p>",
@@ -1389,7 +1285,6 @@
       "id": "cmtl4xoco0002ob9kud7zole7",
       "action": "keep",
       "code": "RSP+",
-      "legacyCodes": [],
       "series": "SVC",
       "name": "Remote Support Program Plus",
       "description": "<p>Same as RSP with additional preventitive maintance (one per year)</p>",
@@ -1405,7 +1300,6 @@
       "id": "cmtgnnc1y00274o9kby224ssn",
       "action": "keep",
       "code": "SERVICE",
-      "legacyCodes": [],
       "series": "SVC",
       "name": "Service",
       "description": "Installation, training and support services.",
@@ -1423,7 +1317,6 @@
       "id": "cmtkui88s0025r49ky9if9ghi",
       "action": "keep",
       "code": "TRADE-IN",
-      "legacyCodes": [],
       "series": "SVC",
       "name": "Trade-in",
       "description": "The customer is responsible for removing the traded-in machine and disposing of (trashing) it. The customer agrees that neither the machine nor its parts may be re-entered into the market, whether as parts or as a machine. Before the machine is trashed, Pathfinder's engineers have the opportunity to remove or destroy its components.",
@@ -1441,7 +1334,6 @@
       "id": "cmtfmusk8001oeo9kueojp2ik",
       "action": "keep",
       "code": "ABR-M",
-      "legacyCodes": [],
       "name": "Air Brush",
       "description": "Air Brush - air brush including ink/paint reservoir.",
       "prices": {
@@ -1461,7 +1353,6 @@
       "id": "cmtfmusk9001peo9knefgl4cl",
       "action": "keep",
       "code": "AFP",
-      "legacyCodes": [],
       "name": "Automatic Foot Pressure",
       "description": "Automatic Foot Pressure - 2 pressure settings preset by pressure regulators. Accessible by preset parameters (not fully digitally controlled)",
       "prices": {
@@ -1481,7 +1372,6 @@
       "id": "cmtfmuskd001teo9kl2fzes0t",
       "action": "keep",
       "code": "APM-M",
-      "legacyCodes": [],
       "name": "Adaptive Pattern Matching",
       "description": "Adaptive Pattern Matching - various modes including bow & skew matching software, (HDC is required with this option)",
       "prices": {
@@ -1501,7 +1391,6 @@
       "id": "cmtfmuskf001veo9k7l9wuvkj",
       "action": "keep",
       "code": "BCR-M",
-      "legacyCodes": [],
       "name": "Barcode Scanner",
       "description": "Barcode scanner - input of marker name via barcode",
       "prices": {
@@ -1521,7 +1410,6 @@
       "id": "cmtfmusko0024eo9kd0dtc5c4",
       "action": "keep",
       "code": "DR2",
-      "legacyCodes": [],
       "name": "Secondary Drill Unit",
       "description": "Secondary Drill Unit",
       "prices": {
@@ -1541,7 +1429,6 @@
       "id": "cmtfmuskr0027eo9k6vluwsps",
       "action": "keep",
       "code": "DRG-1",
-      "legacyCodes": [],
       "name": "Drag Knife, Olfa 45°",
       "description": "Drag Knife - to suit standard Olfa 'snap-off' blade(#380010). Cutting angle 45deg. Maximum cutting depth 7mm",
       "prices": {
@@ -1561,7 +1448,6 @@
       "id": "cmtfmusks0028eo9kzf362n9b",
       "action": "keep",
       "code": "DRG-2",
-      "legacyCodes": [],
       "name": "Drag Knife, Excellite 21°",
       "description": "Drag Knife - to suit Excellite blade (#380011). Cutting angle 21deg. Maximum cutting depth 20mm.",
       "prices": {
@@ -1581,7 +1467,6 @@
       "id": "cmtfmuskt0029eo9k7yvwv50z",
       "action": "keep",
       "code": "DRG-3",
-      "legacyCodes": [],
       "name": "Drag Knife, Carbide 45°",
       "description": "Drag Knife - to suit carbide blade (#380012). Cutting angle 45deg. Maximum cutting depth 8mm.",
       "prices": {
@@ -1601,7 +1486,6 @@
       "id": "cmtfmuslo0032eo9kzp0pe3e8",
       "action": "keep",
       "code": "HDC-M",
-      "legacyCodes": [],
       "name": "HeadCam",
       "description": "HeadCam:Camera in cutting head - Dynamic interaction with PathCut",
       "prices": {
@@ -1621,7 +1505,6 @@
       "id": "cmtfmuslp0034eo9kuno10epu",
       "action": "keep",
       "code": "HFV-M",
-      "legacyCodes": [],
       "name": "High Flow Vacuum 22kW",
       "description": "High Flow Vacuum system 22KW",
       "prices": {
@@ -1641,7 +1524,6 @@
       "id": "cmtfmuslq0035eo9k6vex2lsy",
       "action": "keep",
       "code": "IJP",
-      "legacyCodes": [],
       "name": "Ink Jet Printer",
       "description": "Ink Jet Printer: Integrated within the cutting head. Uses standard Black HP45 ink cartridge. 1/2inch(12mm) single line, 7/32'(5mm) two lines of print.",
       "prices": {
@@ -1661,7 +1543,6 @@
       "id": "cmtfmuslr0036eo9k8thnes0v",
       "action": "keep",
       "code": "IKA",
-      "legacyCodes": [],
       "name": "IceKnife Air",
       "description": "IceKnife-Knife cooling by Air,controlled by Pathcut",
       "prices": {
@@ -1681,7 +1562,6 @@
       "id": "cmtfmuslu003aeo9kobyfipmw",
       "action": "keep",
       "code": "MRK",
-      "legacyCodes": [],
       "name": "Marking Tool",
       "description": "Marking tool includes standard Bic biro pen holder (After sales: Head cover replacement is at extra cost)",
       "prices": {
@@ -1701,7 +1581,6 @@
       "id": "cmtfmuslv003beo9kljyn1t5b",
       "action": "keep",
       "code": "MTS",
-      "legacyCodes": [],
       "name": "Machine Transfer System",
       "description": "Machine Transfer System - Not available for Mx390. For more than 9 mtrs of travel see additional price.",
       "prices": {
@@ -1721,7 +1600,6 @@
       "id": "cmtfmusly003feo9k79rmv6yx",
       "action": "keep",
       "code": "OFD-M",
-      "legacyCodes": [],
       "name": "Offload Display",
       "description": "Offload Display",
       "prices": {
@@ -1741,7 +1619,6 @@
       "id": "cmtfmuslz003geo9k84g80f9w",
       "action": "keep",
       "code": "OFJ",
-      "legacyCodes": [],
       "name": "Offload Projector",
       "description": "Offload Projector (Available Mx180 & Mx220 )",
       "prices": {
@@ -1761,7 +1638,6 @@
       "id": "cmtfmusm0003ieo9ks28jctim",
       "action": "keep",
       "code": "OFP-M",
-      "legacyCodes": [],
       "name": "Offload Printer",
       "description": "Offload Printer - synchronised with PathCut & OFD",
       "prices": {
@@ -1781,7 +1657,6 @@
       "id": "cmtfmusm3003leo9ksilhib0p",
       "action": "keep",
       "code": "PM-M",
-      "legacyCodes": [],
       "name": "Pattern Match",
       "description": "Pattern Match - spot light pattern match software",
       "prices": {
@@ -1801,7 +1676,6 @@
       "id": "cmtfmusmb003peo9kx0uqbby5",
       "action": "keep",
       "code": "PRM-M",
-      "legacyCodes": [],
       "name": "Production Manager",
       "description": "Production Manager software",
       "prices": {
@@ -1821,9 +1695,6 @@
       "id": "cmtfmuslw003ceo9k13rz4vvw",
       "action": "rename",
       "code": "MTS-M",
-      "legacyCodes": [
-        "MTS- additional travel p/Metre"
-      ],
       "name": "MTS Additional Travel, per metre",
       "description": "Additional travel p/metre",
       "prices": {
@@ -1844,7 +1715,6 @@
       "id": "cmtfmusmh003veo9kjo5hztwo",
       "action": "delete",
       "code": "VRB-180",
-      "legacyCodes": [],
       "name": "Vacuum Resealing Blind - maintains max vacuum when cutting numerous small pieces",
       "description": "Vacuum Resealing Blind - maintains max vacuum when cutting numerous small pieces",
       "prices": {
@@ -1862,7 +1732,6 @@
       "id": "cmtfmusmi003weo9kukltgzm3",
       "action": "delete",
       "code": "VRB-200",
-      "legacyCodes": [],
       "name": "Vacuum Resealing Blind - maintains max vacuum when cutting numerous small pieces",
       "description": "Vacuum Resealing Blind - maintains max vacuum when cutting numerous small pieces",
       "prices": {
@@ -1880,7 +1749,6 @@
       "id": "cmtfmusmj003xeo9kjex9njwq",
       "action": "delete",
       "code": "VRB-220",
-      "legacyCodes": [],
       "name": "Vacuum Resealing Blind - maintains max vacuum when cutting numerous small pieces",
       "description": "Vacuum Resealing Blind - maintains max vacuum when cutting numerous small pieces",
       "prices": {
@@ -1898,7 +1766,6 @@
       "id": "cmtfmusll002zeo9kjpfdam8m",
       "action": "delete",
       "code": "EXH",
-      "legacyCodes": [],
       "name": "Exhaust option - diverts exhaust outlet verticaly",
       "description": "Exhaust option - diverts exhaust outlet vertically",
       "prices": {
@@ -1916,7 +1783,6 @@
       "id": "cmtfmusmk003yeo9kkjd7d6j7",
       "action": "delete",
       "code": "Waste Bin-180",
-      "legacyCodes": [],
       "name": "Waste bin on castors for Mx180 only",
       "description": "Waste bin on castors for Mx180 only",
       "prices": {
@@ -1934,7 +1800,6 @@
       "id": "cmtfmusls0037eo9kbifsy825",
       "action": "delete",
       "code": "IKP",
-      "legacyCodes": [],
       "name": "IceKnife-Knife cooling by Liquid,controlled by Pathcut. (not compatible with Alternating Sharpener)",
       "description": "IceKnife-Knife cooling by Liquid,controlled by Pathcut. (not compatible with Alternating Sharpener)",
       "prices": {
@@ -1952,7 +1817,6 @@
       "id": "cmtfmuskg001weo9k2orhzbuk",
       "action": "delete",
       "code": "BED",
-      "legacyCodes": [],
       "name": "Bed Projector",
       "description": "Bed Projector",
       "prices": {
@@ -1970,7 +1834,6 @@
       "id": "cmtfmusl3002heo9kwzcvokmr",
       "action": "delete",
       "code": "EDS-500",
-      "legacyCodes": [],
       "name": "Edge sealer Static- clip on blanking panel 500mm width. This can be trimmed by customer if narrower required.",
       "description": "Edge sealer Static - clip on blanking panel 500mm width. This can be trimmed by customer if narrower required.",
       "prices": {
@@ -1988,7 +1851,6 @@
       "id": "cmtfmusl4002ieo9kfjfzgpwq",
       "action": "delete",
       "code": "EDS-800",
-      "legacyCodes": [],
       "name": "Edge sealer Static- clip on blanking panel 800mm width. This can be trimmed by customer if narrower required.",
       "description": "Edge sealer Static - clip on blanking panel 800mm width. This can be trimmed by customer if narrower required.",
       "prices": {
@@ -2006,7 +1868,6 @@
       "id": "cmtfmuskm0023eo9kuc2gdtoz",
       "action": "delete",
       "code": "DMT",
-      "legacyCodes": [],
       "name": "Ductmaster- option designed for cutting semi-rigid board up to 30mm thickness. Ten (10) tool locations included. Four tools provided, ‘V’ profile, 45 deg through cut, straight cut and creasing. Confirmation of the tools provided will be discussed. (180mm reduction cutting width)",
       "description": "Ductmaster - option designed for cutting semi-rigid board up to 30mm thickness. Ten (10) tool locations included. Four tools provided, ‘V’ profile, 45 deg through cut, straight cut and creasing. Confirmation of the tools provided will be discussed. (180mm reduction cutting width)",
       "prices": {
@@ -2024,7 +1885,6 @@
       "id": "cmtfmusku002aeo9kc5etzbab",
       "action": "delete",
       "code": "Drills included",
-      "legacyCodes": [],
       "name": "2301071-7-6",
       "description": "2301071-7-6",
       "prices": {
@@ -2042,7 +1902,6 @@
       "id": "cmtfmuskv002beo9k3mjzc62j",
       "action": "delete",
       "code": "Drills included 2301071-7-10",
-      "legacyCodes": [],
       "name": "2301071-7-10",
       "description": "2301071-7-10",
       "prices": {
@@ -2060,7 +1919,6 @@
       "id": "cmtfmusmd003reo9kd1d4zmyr",
       "action": "delete",
       "code": "PTW",
-      "legacyCodes": [],
       "name": "PathWorks Integrated software module within PathCutTM . Pathworks features include, pattern creation tools, piece shredder, digitising using the Pathfinder cutter controls, magnetic nesting, importing and exporting of standard DXF and G-code.",
       "description": "PathWorks Integrated software module within PathCut™ . Pathworks features include, pattern creation tools, piece shredder, digitising using the Pathfinder cutter controls, magnetic nesting, importing and exporting of standard DXF and G-code.",
       "prices": {
@@ -2079,7 +1937,6 @@
       "id": null,
       "action": "add",
       "code": "TR480",
-      "legacyCodes": [],
       "name": "Transformer 480V→380V, Integrated",
       "role": "TRANSFORMER",
       "description": "Transformer 30kVA, 60Hz, autotransformer, three phase. 480V (input) to 380V (output). Integrated and wired.",
@@ -2098,7 +1955,6 @@
       "id": null,
       "action": "add",
       "code": "TR220",
-      "legacyCodes": [],
       "name": "Transformer 220V→380/415V, Standalone",
       "role": "TRANSFORMER",
       "description": "Transformer 30kVA, 60Hz, autotransformer, three phase. 220V (input) to 380V/415V (output). Standalone unit.",
@@ -2118,7 +1974,6 @@
       "id": "cmtfmuskl0021eo9kf45hemvr",
       "action": "delete",
       "code": "Crate-M",
-      "legacyCodes": [],
       "name": "Wooden Crate (required when standard shipping container not used)",
       "description": "Wooden Crate (required when standard shipping container not used)",
       "prices": {
@@ -2136,7 +1991,6 @@
       "id": null,
       "action": "add",
       "code": "Crate-M-180",
-      "legacyCodes": [],
       "name": "Wooden Crate, Mx180",
       "role": "CRATE",
       "description": "Wooden crate for an Mx180 (required when standard shipping container not used).",
@@ -2156,7 +2010,6 @@
       "id": null,
       "action": "add",
       "code": "Crate-M-220",
-      "legacyCodes": [],
       "name": "Wooden Crate, Mx220",
       "role": "CRATE",
       "description": "Wooden crate for an Mx220 (required when standard shipping container not used).",
@@ -2176,9 +2029,6 @@
       "id": "cmtfmusjv001deo9koy4xnm2x",
       "action": "rename",
       "code": "PCH-1.0",
-      "legacyCodes": [
-        "1.0mm dia punch"
-      ],
       "name": "Punch 1.0mm",
       "description": "1.0mm dia punch",
       "prices": {
@@ -2197,9 +2047,6 @@
       "id": "cmtfmusjy001feo9k8bah7wlm",
       "action": "rename",
       "code": "PCH-2.0",
-      "legacyCodes": [
-        "2.0mm dia punch"
-      ],
       "name": "Punch 2.0mm",
       "description": "2.0mm dia punch",
       "prices": {
@@ -2218,9 +2065,6 @@
       "id": "cmtfmusk1001ieo9k57nu63ko",
       "action": "rename",
       "code": "PCH-3.0",
-      "legacyCodes": [
-        "3.0mm dia punch"
-      ],
       "name": "Punch 3.0mm",
       "description": "3.0mm dia punch",
       "prices": {
@@ -2239,9 +2083,6 @@
       "id": "cmtfmusk3001keo9ko0b7guof",
       "action": "rename",
       "code": "PCH-4.0",
-      "legacyCodes": [
-        "4.0mm dia punch"
-      ],
       "name": "Punch 4.0mm",
       "description": "4.0mm dia punch",
       "prices": {
@@ -2260,9 +2101,6 @@
       "id": "cmtfmusk5001meo9k7w2qum45",
       "action": "rename",
       "code": "PCH-5.0",
-      "legacyCodes": [
-        "5.0mm dia punch"
-      ],
       "name": "Punch 5.0mm",
       "description": "5.0mm dia punch",
       "prices": {
@@ -2281,9 +2119,6 @@
       "id": "cmtfmusmg003teo9k4p4so18s",
       "action": "rename",
       "code": "PCH-QR",
-      "legacyCodes": [
-        "Punch Tool- Quick Release (to suit Hollow dia 1mm/2mm/3mm/4mm/5mm purchased seperately)"
-      ],
       "name": "Punch Tool, Quick Release",
       "description": "Punch Tool - Quick Release (to suit Hollow dia 1mm/2mm/3mm/4mm/5mm purchased separately)",
       "prices": {
@@ -2302,9 +2137,6 @@
       "id": "cmtfmusk0001heo9k17ry9zhl",
       "action": "rename",
       "code": "RKT-28",
-      "legacyCodes": [
-        "28 Dia. Round Knife Tool- Patented Quick release mechanism (Not used on Felt bed) 2x10 sided blades included std"
-      ],
       "name": "Round Knife Tool 28mm",
       "description": "28 Dia. Round Knife Tool - Patented Quick release mechanism (Not used on Felt bed) 2x10 sided blades included std",
       "prices": {
@@ -2323,9 +2155,6 @@
       "id": "cmtfmusk4001leo9kiamthhlq",
       "action": "rename",
       "code": "RKT-40",
-      "legacyCodes": [
-        "40 Dia. Round Knife Tool- Quick release (Not available yet)"
-      ],
       "name": "Round Knife Tool 40mm",
       "description": "40 Dia. Round Knife Tool - Quick release (Not used on Felt bed).",
       "prices": {
@@ -2344,9 +2173,6 @@
       "id": "cmtfmuskp0025eo9kgrggevvf",
       "action": "rename",
       "code": "DKT-30",
-      "legacyCodes": [
-        "Drag Knife Tool- Quick Release (to suit carbide knife 1.0mm x 7mm purchased seperately) 30 deg"
-      ],
       "name": "Drag Knife Tool 30°, Quick Release",
       "description": "Drag Knife Tool - Quick Release (to suit carbide knife 1.0mm x 7mm purchased separately) 30 deg",
       "prices": {
@@ -2365,9 +2191,6 @@
       "id": "cmtfmuskq0026eo9kihogwu8l",
       "action": "rename",
       "code": "DKT-45",
-      "legacyCodes": [
-        "Drag Knife Tool- Quick Release (to suit carbide knife 1.0mm x 7mm purchased seperately) 45 deg?"
-      ],
       "name": "Drag Knife Tool 45°, Quick Release",
       "description": "Drag Knife Tool - Quick Release (to suit carbide knife 1.0mm x 7mm purchased separately) 45 deg",
       "prices": {
@@ -2386,9 +2209,6 @@
       "id": "cmtfmuskw002ceo9kwbstpvcr",
       "action": "rename",
       "code": "DRV-28",
-      "legacyCodes": [
-        "Driven- Electrically driven. Suit 28mm Carbide Octagonal blade."
-      ],
       "name": "Driven Knife 28mm",
       "description": "Driven - Electrically driven. Suit 28mm Carbide Octagonal blade. Only used with machine optioned with Felt cutting belt.",
       "prices": {
@@ -2407,9 +2227,6 @@
       "id": "cmtfmuslw003deo9kegs413x6",
       "action": "rename",
       "code": "NTT",
-      "legacyCodes": [
-        "Notch Tool- Quick Release (to suit carbide knife 1.0mm x 7mm)"
-      ],
       "name": "Notch Tool, Quick Release",
       "description": "Notch Tool - Quick Release (to suit carbide knife 1.0mm x 7mm)",
       "prices": {
@@ -2428,7 +2245,6 @@
       "id": "cmtfmusjx001eeo9khd2th9al",
       "action": "keep",
       "code": "180-E",
-      "legacyCodes": [],
       "name": "Extended Length, L-180",
       "description": "Extended length for L-180",
       "prices": {
@@ -2447,7 +2263,6 @@
       "id": "cmtfmusjz001geo9ka0pta8u3",
       "action": "keep",
       "code": "220-E",
-      "legacyCodes": [],
       "name": "Extended Length, L-220",
       "description": "Extended length for L-220",
       "prices": {
@@ -2466,7 +2281,6 @@
       "id": "cmtfmusk2001jeo9kbwm74sa0",
       "action": "delete",
       "code": "320-E",
-      "legacyCodes": [],
       "name": "Extended length for L-320",
       "description": "Extended length for L-320",
       "prices": {
@@ -2483,9 +2297,6 @@
       "id": "cmtfmuskh001xeo9kgycckn0y",
       "action": "rename",
       "code": "Crate-L-180",
-      "legacyCodes": [
-        "Crate-180"
-      ],
       "name": "Wooden Crate, L-180",
       "description": "Wooden crate for transport.",
       "prices": {
@@ -2504,9 +2315,6 @@
       "id": "cmtfmuski001yeo9kd97rkk7e",
       "action": "rename",
       "code": "Crate-L-220",
-      "legacyCodes": [
-        "Crate-220"
-      ],
       "name": "Wooden Crate, L-220",
       "description": "Wooden crate for transport.",
       "prices": {
@@ -2525,9 +2333,6 @@
       "id": "cmtfmuskj001zeo9k5w2t2g8n",
       "action": "rename",
       "code": "Crate-L-320",
-      "legacyCodes": [
-        "Crate-320"
-      ],
       "name": "Wooden Crate, L-320",
       "description": "Wooden crate for transport.",
       "prices": {
@@ -2546,7 +2351,6 @@
       "id": "cmtfmusk7001neo9kz8a4m7ex",
       "action": "keep",
       "code": "ABR-L",
-      "legacyCodes": [],
       "name": "Air Brush",
       "description": "Air Brush - air brush including ink/paint reservoir.",
       "prices": {
@@ -2565,7 +2369,6 @@
       "id": "cmtfmuskc001seo9kj0usavja",
       "action": "keep",
       "code": "APM-L",
-      "legacyCodes": [],
       "name": "Adaptive Pattern Matching",
       "description": "Adaptive Pattern Matching (Bow & Skew - HDC option required)",
       "prices": {
@@ -2584,7 +2387,6 @@
       "id": "cmtfmuske001ueo9krkvj414v",
       "action": "keep",
       "code": "BCR-L",
-      "legacyCodes": [],
       "name": "Barcode Scanner",
       "description": "Barcode Scanner - input of marker name via barcode",
       "prices": {
@@ -2603,7 +2405,6 @@
       "id": "cmtfmusln0031eo9kmp4gk1cp",
       "action": "keep",
       "code": "HDC-L",
-      "legacyCodes": [],
       "name": "HeadCam",
       "description": "HeadCam:Camera in cutting head - Dynamic interaction with PathCut",
       "prices": {
@@ -2622,7 +2423,6 @@
       "id": "cmtfmuslp0033eo9kf315d13l",
       "action": "keep",
       "code": "HFV-L",
-      "legacyCodes": [],
       "name": "High Flow Vacuum 15kW",
       "description": "High Flow Vacuum system - THIS REQUIRES 3PHASE POWER - Recommended for ALL Extended and standard 220 & 320 models. Specific application to be discussed with Pathfinder.(Replacement for standard Vac unit)",
       "prices": {
@@ -2641,7 +2441,6 @@
       "id": "cmtfmuslx003eeo9kawtdzwap",
       "action": "keep",
       "code": "OFD-L",
-      "legacyCodes": [],
       "name": "Offload Display",
       "description": "Offload Display",
       "prices": {
@@ -2660,7 +2459,6 @@
       "id": "cmtfmusm0003heo9klsea6kij",
       "action": "keep",
       "code": "OFP-L",
-      "legacyCodes": [],
       "name": "Offload Printer",
       "description": "Offload Printer - synchronised with PathCut & OFD",
       "prices": {
@@ -2679,7 +2477,6 @@
       "id": "cmtfmusm2003keo9kq6go2ksu",
       "action": "keep",
       "code": "PM-L",
-      "legacyCodes": [],
       "name": "Pattern Match",
       "description": "Pattern Match - spot light pattern match software",
       "prices": {
@@ -2698,7 +2495,6 @@
       "id": "cmtfmusm7003oeo9kqksz78ts",
       "action": "keep",
       "code": "PRM-L",
-      "legacyCodes": [],
       "name": "Production Manager",
       "description": "Production Manager software",
       "prices": {
@@ -2717,7 +2513,6 @@
       "id": "cmtgnnc3q003v4o9k5umx74h8",
       "action": "keep",
       "code": "JTP",
-      "legacyCodes": [],
       "name": "JetPen Marking Tool",
       "description": "JetPen marking tool - non-contact high speed ink marking. Replaces the standard marking tool.",
       "prices": {
@@ -2736,7 +2531,6 @@
       "id": "cmtfmuslt0038eo9kz3osdx9o",
       "action": "delete",
       "code": "JetPen",
-      "legacyCodes": [],
       "name": "Jetpen Marking Tool (this replaces the standard marking tool)",
       "description": "Jetpen Marking Tool (this replaces the standard marking tool)",
       "prices": {
@@ -2754,7 +2548,6 @@
       "id": "cmtfmusm4003meo9k542i5nfs",
       "action": "delete",
       "code": "PRA-L",
-      "legacyCodes": [],
       "name": "Production Analyst is a stand alone software that enables remote manipulation of Production Manager data.",
       "description": "Production Analyst is a stand alone software that enables remote manipulation of Production Manager data.",
       "prices": {
@@ -2771,9 +2564,6 @@
       "id": "cmtmo7dix0039mc9ke087ek6p",
       "action": "rename",
       "code": "EL-2020-DM1",
-      "legacyCodes": [
-        "EL-2020 Drive Module (first 1.2M)"
-      ],
       "name": "Drive Module, first 1.2m",
       "description": "Drive Module (first 1.2M)",
       "prices": {
@@ -2794,9 +2584,6 @@
       "id": "cmtfmusl6002keo9k5mwdxlhg",
       "action": "rename",
       "code": "EL-2020-DM12",
-      "legacyCodes": [
-        "EL-2020 Additional 1.2M lengths"
-      ],
       "name": "Conveyor Module 1.2m",
       "description": "Additional 1.2M lengths",
       "prices": {
@@ -2817,9 +2604,6 @@
       "id": "cmtfmusla002oeo9krqkfbuxx",
       "action": "rename",
       "code": "EL-2020-ST12",
-      "legacyCodes": [
-        "EL-2020 Static table 1.2M lengths"
-      ],
       "name": "Static Table 1.2m",
       "description": "Static table 1.2M lengths",
       "prices": {
@@ -2840,9 +2624,6 @@
       "id": "cmtfmusl8002meo9kyceuv5my",
       "action": "rename",
       "code": "EL-2020-BB12",
-      "legacyCodes": [
-        "EL-2020 Electrical Busbar Per 1.2M Used for Fabric Pro automatic spreader."
-      ],
       "name": "Electrical Busbar 1.2m",
       "description": "Electrical busbar per 1.2m. Required for use with FabricPro automatic spreader.",
       "prices": {
@@ -2863,9 +2644,6 @@
       "id": "cmtfmuslc002qeo9k0ycfewqg",
       "action": "rename",
       "code": "EL-2020-RL12",
-      "legacyCodes": [
-        "EL-2020 Travel Platform support rail. Per 1.2m"
-      ],
       "name": "Platform Support Rail 1.2m",
       "description": "Travel platform support rail per 1.2m, including mounting brackets. Required for use with FabricPro.",
       "prices": {
@@ -2886,9 +2664,6 @@
       "id": "cmtfmusl9002neo9k4pf03o2n",
       "action": "rename",
       "code": "EL-2020-RF",
-      "legacyCodes": [
-        "EL-2020 Single Roll feed attachment (L & R clip attachment with cross bar & pair of keeper)"
-      ],
       "name": "Single Roll Feed Attachment",
       "description": "Single Roll feed attachment (L & R clip attachment with cross bar & pair of keeper)",
       "prices": {
@@ -2909,7 +2684,6 @@
       "id": "cmtfmuslb002peo9k25zppkwl",
       "action": "delete",
       "code": "EL-2020 Syncronisation Feature (same speed sync with cutter)",
-      "legacyCodes": [],
       "name": "Syncronisation Feature (same speed sync with cutter)",
       "description": "Synchronisation Feature (same speed sync with cutter)",
       "prices": {
@@ -2926,9 +2700,6 @@
       "id": "cmtmo7dj5003gmc9keh5ttsf2",
       "action": "rename",
       "code": "EL-2420-DM1",
-      "legacyCodes": [
-        "EL-2420 Drive Module (first 1.2M)"
-      ],
       "name": "Drive Module, first 1.2m",
       "description": "Drive Module (first 1.2M)",
       "prices": {
@@ -2949,9 +2720,6 @@
       "id": "cmtfmuslc002reo9kwonm3w9a",
       "action": "rename",
       "code": "EL-2420-DM12",
-      "legacyCodes": [
-        "EL-2420 Additional 1.2M lengths"
-      ],
       "name": "Conveyor Module 1.2m",
       "description": "Additional 1.2M lengths",
       "prices": {
@@ -2972,9 +2740,6 @@
       "id": "cmtfmusli002weo9khczgq39u",
       "action": "rename",
       "code": "EL-2420-ST12",
-      "legacyCodes": [
-        "EL-2420 Static table 1.2M lengths"
-      ],
       "name": "Static Table 1.2m",
       "description": "Static table 1.2M lengths",
       "prices": {
@@ -2995,9 +2760,6 @@
       "id": "cmtfmuslf002teo9kckerswn3",
       "action": "rename",
       "code": "EL-2420-BB12",
-      "legacyCodes": [
-        "EL-2420 Electrical Busbar Per 1.2M Used for Fabric Pro automatic spreader."
-      ],
       "name": "Electrical Busbar 1.2m",
       "description": "Electrical busbar per 1.2m. Required for use with FabricPro automatic spreader.",
       "prices": {
@@ -3018,9 +2780,6 @@
       "id": "cmtfmuslk002yeo9kflk3ee29",
       "action": "rename",
       "code": "EL-2420-RL12",
-      "legacyCodes": [
-        "EL-2420 Travel Platform support rail. Per 1.2m"
-      ],
       "name": "Platform Support Rail 1.2m",
       "description": "Travel platform support rail per 1.2m, including mounting brackets. Required for use with FabricPro.",
       "prices": {
@@ -3041,9 +2800,6 @@
       "id": "cmtfmuslg002ueo9kcp5li59c",
       "action": "rename",
       "code": "EL-2420-RF",
-      "legacyCodes": [
-        "EL-2420 Single Roll feed attachment (L & R clip attachment with cross bar & pair of keeper)"
-      ],
       "name": "Single Roll Feed Attachment",
       "description": "Single Roll feed attachment (L & R clip attachment with cross bar & pair of keeper)",
       "prices": {
@@ -3064,7 +2820,6 @@
       "id": "cmtfmuslj002xeo9kvmmt0d2m",
       "action": "delete",
       "code": "EL-2420 Syncronisation Feature (same speed sync with cutter)",
-      "legacyCodes": [],
       "name": "Syncronisation Feature (same speed sync with cutter)",
       "description": "Synchronisation Feature (same speed sync with cutter)",
       "prices": {
@@ -3081,9 +2836,6 @@
       "id": "cmtmo4o2l003odi9k4o1wjaak",
       "action": "rename",
       "code": "EL-3220-DM1",
-      "legacyCodes": [
-        "EL-3220 Drive Module (first 1.2M)"
-      ],
       "name": "Drive Module, first 1.2m",
       "description": "Drive Module (first 1.2M)",
       "prices": {
@@ -3104,9 +2856,6 @@
       "id": "cmtkui8a7003kr49k5xr2vpao",
       "action": "rename",
       "code": "EL-3220-DM12",
-      "legacyCodes": [
-        "EL-3220 Additional 1.2M lengths"
-      ],
       "name": "Conveyor Module 1.2m",
       "description": "Additional 1.2M lengths",
       "prices": {
@@ -3127,9 +2876,6 @@
       "id": "cmtkui8a8003lr49kv5manzje",
       "action": "rename",
       "code": "EL-3220-ST12",
-      "legacyCodes": [
-        "EL-3220 Static table 1.2M lengths"
-      ],
       "name": "Static Table 1.2m",
       "description": "Static table 1.2M lengths",
       "prices": {
@@ -3150,9 +2896,6 @@
       "id": "cmtmo4o2m003pdi9kgaoud2ic",
       "action": "rename",
       "code": "EL-3220-BB12",
-      "legacyCodes": [
-        "EL-3220 Electrical Busbar Per 1.2M Used for Fabric Pro automatic spreader."
-      ],
       "name": "Electrical Busbar 1.2m",
       "description": "Electrical busbar per 1.2m. Required for use with FabricPro automatic spreader.",
       "prices": {
@@ -3173,9 +2916,6 @@
       "id": "cmtmo4o2o003rdi9kev5fzipt",
       "action": "rename",
       "code": "EL-3220-RL12",
-      "legacyCodes": [
-        "EL-3220 Travel Platform support rail. Per 1.2m"
-      ],
       "name": "Platform Support Rail 1.2m",
       "description": "Travel platform support rail per 1.2m, including mounting brackets. Required for use with FabricPro.",
       "prices": {
@@ -3196,9 +2936,6 @@
       "id": "cmtmo4o2p003tdi9kqzsh97rk",
       "action": "rename",
       "code": "EL-4030-DM1",
-      "legacyCodes": [
-        "EL-4030 Drive Module (first 1.2M)"
-      ],
       "name": "Drive Module, first 1.2m",
       "description": "Drive Module (first 1.2M)",
       "prices": {
@@ -3219,9 +2956,6 @@
       "id": "cmtkui8a9003mr49ktryuyiq0",
       "action": "rename",
       "code": "EL-4030-DM12",
-      "legacyCodes": [
-        "EL-4030 Additional 1.2M lengths"
-      ],
       "name": "Conveyor Module 1.2m",
       "description": "Additional 1.2M lengths",
       "prices": {
@@ -3242,9 +2976,6 @@
       "id": "cmtkui8aa003nr49kg4rlkcgl",
       "action": "rename",
       "code": "EL-4030-ST12",
-      "legacyCodes": [
-        "EL-4030 Static table 1.2M lengths"
-      ],
       "name": "Static Table 1.2m",
       "description": "Static table 1.2M lengths",
       "prices": {
@@ -3265,9 +2996,6 @@
       "id": "cmtmo4o2q003udi9kieter6cn",
       "action": "rename",
       "code": "EL-4030-BB12",
-      "legacyCodes": [
-        "EL-4030 Electrical Busbar Per 1.2M Used for Fabric Pro automatic spreader."
-      ],
       "name": "Electrical Busbar 1.2m",
       "description": "Electrical busbar per 1.2m. Required for use with FabricPro automatic spreader.",
       "prices": {
@@ -3288,9 +3016,6 @@
       "id": "cmtmo4o2s003wdi9ka16ruxt3",
       "action": "rename",
       "code": "EL-4030-RL12",
-      "legacyCodes": [
-        "EL-4030 Travel Platform support rail. Per 1.2m"
-      ],
       "name": "Platform Support Rail 1.2m",
       "description": "Travel platform support rail per 1.2m, including mounting brackets. Required for use with FabricPro.",
       "prices": {
@@ -3311,9 +3036,6 @@
       "id": "cmtfmusl5002jeo9k242gcft0",
       "action": "rename",
       "code": "ST620-2020",
-      "legacyCodes": [
-        "EL-2020 #ST620-2020 Roll Holder- Used to dispense perforated underlay paper. Mounted rear of EasyLoader on lower leg."
-      ],
       "name": "Paper Roll Holder",
       "description": "ST620-2020 Roll Holder - used to dispense perforated underlay paper. Mounted rear of EasyLoader on lower leg.",
       "prices": {
@@ -3333,9 +3055,6 @@
       "id": "cmtfmuslh002veo9k1afy3uzl",
       "action": "rename",
       "code": "ST620-2420",
-      "legacyCodes": [
-        "EL-2420 ST620-2420 Roll Holder- Used to dispense perforated underlay paper. Mounted rear of EasyLoader on lower leg."
-      ],
       "name": "Paper Roll Holder",
       "description": "ST620-2420 Roll Holder - used to dispense perforated underlay paper. Mounted rear of EasyLoader on lower leg.",
       "prices": {
@@ -3355,7 +3074,6 @@
       "id": "cmtkui89f002rr49kq1xtyat0",
       "action": "keep",
       "code": "Crate-EL",
-      "legacyCodes": [],
       "name": "Wooden Crate",
       "description": "Wooden crate for transport.",
       "prices": {
@@ -3374,7 +3092,6 @@
       "id": "cmtfmuskk0020eo9kj40xh06n",
       "action": "delete",
       "code": "Crate-FP",
-      "legacyCodes": [],
       "name": "Crate- Wooden Crate for transport",
       "description": "Crate - Wooden Crate for transport",
       "prices": {
@@ -3392,7 +3109,6 @@
       "id": null,
       "action": "add",
       "code": "Crate-FP-180",
-      "legacyCodes": [],
       "name": "Wooden Crate, FP-180",
       "role": "CRATE",
       "description": "Wooden crate for transport.",
@@ -3411,7 +3127,6 @@
       "id": null,
       "action": "add",
       "code": "Crate-FP-220",
-      "legacyCodes": [],
       "name": "Wooden Crate, FP-220",
       "role": "CRATE",
       "description": "Wooden crate for transport.",
@@ -3430,7 +3145,6 @@
       "id": null,
       "action": "add",
       "code": "Crate-FP-300",
-      "legacyCodes": [],
       "name": "Wooden Crate, FP-300",
       "role": "CRATE",
       "description": "Wooden crate for transport.",
@@ -3449,9 +3163,6 @@
       "id": "cmtkui8af003rr49koa6latn4",
       "action": "rename",
       "code": "Crate-HDRF-180",
-      "legacyCodes": [
-        "HDRF-180 Crate"
-      ],
       "name": "Wooden Crate, HDRF-180",
       "description": "Wooden crate for transport.",
       "prices": {
@@ -3470,7 +3181,6 @@
       "id": "cmtmo4o2w0040di9kgv0pjyop",
       "action": "delete",
       "code": "HDRF-180 Crate- Wooden Crate for transport",
-      "legacyCodes": [],
       "name": "Crate- Wooden Crate for transport",
       "description": "Crate - Wooden Crate for transport",
       "prices": {
@@ -3488,9 +3198,6 @@
       "id": "cmtkui8ag003sr49k77wjz0sp",
       "action": "rename",
       "code": "Crate-HDRF-220",
-      "legacyCodes": [
-        "HDRF-220 Crate"
-      ],
       "name": "Wooden Crate, HDRF-220",
       "description": "Wooden crate for transport.",
       "prices": {
@@ -3509,7 +3216,6 @@
       "id": "cmtmo4o2x0041di9klwhorytw",
       "action": "delete",
       "code": "HDRF-220 Crate- Wooden Crate for transport",
-      "legacyCodes": [],
       "name": "Crate- Wooden Crate for transport",
       "description": "Crate - Wooden Crate for transport",
       "prices": {
@@ -3527,9 +3233,6 @@
       "id": "cmtkui8ah003tr49kxlyxi29v",
       "action": "rename",
       "code": "Crate-HDRF-320",
-      "legacyCodes": [
-        "HDRF-320 Crate"
-      ],
       "name": "Wooden Crate, HDRF-320",
       "description": "Wooden crate for transport.",
       "prices": {
@@ -3548,7 +3251,6 @@
       "id": "cmtmo4o2y0042di9khfnqmonb",
       "action": "delete",
       "code": "HDRF-320 Crate- Wooden Crate for transport",
-      "legacyCodes": [],
       "name": "Crate- Wooden Crate for transport",
       "description": "Crate - Wooden Crate for transport",
       "prices": {
@@ -3566,7 +3268,6 @@
       "id": "cmtfmusmg003ueo9k0160z7pw",
       "action": "keep",
       "code": "TPL",
-      "legacyCodes": [],
       "name": "Travelling Operator Platform",
       "description": "Travelling operator Platform (Standard Equipment)",
       "prices": {
@@ -3584,9 +3285,6 @@
       "id": "cmtgnnc49004f4o9kozbxg8rg",
       "action": "rename",
       "code": "SVC-L-INSTALL-S",
-      "legacyCodes": [
-        "SVC-L-INSTALL"
-      ],
       "name": "L-Series Installation & Training (L-180, L-180E, L-220)",
       "description": "1 day installation, 3 days training. L-180, L-180E, L-220.",
       "prices": {
@@ -3605,9 +3303,6 @@
       "id": "cmtgnnc4a004g4o9kn0yfqr1b",
       "action": "rename",
       "code": "SVC-L-INSTALL-L",
-      "legacyCodes": [
-        "SVC-L-INSTALL-MTS"
-      ],
       "name": "L-Series Installation & Training (L-220E, L-320E)",
       "description": "2 day installation, 3 days training. L-220E, L-320E, L-320EF.",
       "prices": {
@@ -3626,7 +3321,6 @@
       "id": "cmtgnnc47004c4o9ktjebh8b1",
       "action": "keep",
       "code": "SVC-EL-INSTALL",
-      "legacyCodes": [],
       "name": "EasyLoader Installation",
       "description": "EasyLoader installation (Drive Module + Additional Modules) with Cutter installation.",
       "prices": {
@@ -3645,7 +3339,6 @@
       "id": "cmtgnnc47004d4o9k3wjh3iuk",
       "action": "keep",
       "code": "SVC-FP-INSTALL",
-      "legacyCodes": [],
       "name": "FabricPro Installation & Training (1 day)",
       "description": "FabricPro Installation & Training, 1 day (with Cutter installation).",
       "prices": {
@@ -3664,7 +3357,6 @@
       "id": "cmtgnnc48004e4o9knyeuw48b",
       "action": "keep",
       "code": "SVC-HDRF-INSTALL",
-      "legacyCodes": [],
       "name": "HDRF Installation (2 hours)",
       "description": "Heavy Duty Roll Feeder installation, 2 hours.",
       "prices": {
@@ -3683,7 +3375,6 @@
       "id": "cmtgnnc4b004h4o9k0x8pyh31",
       "action": "keep",
       "code": "SVC-LNS-INSTALL",
-      "legacyCodes": [],
       "name": "Installation/Training — Leather Nesting System (with cutter)",
       "description": "Installation/Training — Leather Nesting System (with cutter installation), 2 days.",
       "prices": {
@@ -3702,7 +3393,6 @@
       "id": "cmtgnnc4c004i4o9k1db4g60k",
       "action": "keep",
       "code": "SVC-M-INSTALL",
-      "legacyCodes": [],
       "name": "M-Series Installation & Training (Static, no MTS)",
       "description": "1 day installation, 3 days training (Static -- no MTS).",
       "prices": {
@@ -3721,7 +3411,6 @@
       "id": "cmtgnnc4d004j4o9kffdfeb9q",
       "action": "keep",
       "code": "SVC-M-INSTALL-MTS",
-      "legacyCodes": [],
       "name": "M-Series Installation & Training (with MTS, up to 6m travel)",
       "description": "2 day installation, 3 days training, with MTS up to 6m travel.",
       "prices": {
@@ -3740,7 +3429,6 @@
       "id": "cmtgnnc4e004k4o9kj92ssr6o",
       "action": "keep",
       "code": "SVC-SW-TRAINING",
-      "legacyCodes": [],
       "name": "Software Remote Training Support",
       "description": "Remote training support for PathWorks/PathCut software modules.",
       "prices": {
@@ -3759,7 +3447,6 @@
       "id": null,
       "action": "add",
       "code": "SVC-EF-INSTALL",
-      "legacyCodes": [],
       "name": "EasyFeeder Installation (3 hrs)",
       "role": "INSTALL",
       "description": "EasyFeeder installation, 3 hours, with cutter installation.",

@@ -48,10 +48,20 @@ describe("activeSettingsNavHref", () => {
       "/settings/users",
       "/settings/content",
       "/settings/regions",
+      "/settings/import-export",
       "/settings/support",
     ]) {
       expect(activeSettingsNavHref(path)).toBe(path);
     }
+  });
+
+  it("gates Import / Export behind admin rights -- it deletes catalogue rows", () => {
+    const item = SETTINGS_NAV_ITEMS.find((i) => i.href === "/settings/import-export");
+    expect(item).toBeDefined();
+    expect(item!.label).toBe("Import / Export");
+    expect(item!.adminOnly).toBe(true);
+    expect(visibleSettingsNavItems("MANAGER").map((i) => i.href)).not.toContain("/settings/import-export");
+    expect(visibleSettingsNavItems("ADMIN").map((i) => i.href)).toContain("/settings/import-export");
   });
 
   it("keeps a section active on its own nested routes", () => {

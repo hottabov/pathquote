@@ -9,7 +9,6 @@ import {
   type SnapshotProduct,
   PlanError,
   planCatalogV2,
-  newProductCode,
   renderOperation,
   renderSummary,
 } from "../scripts/lib/catalog-v2-plan";
@@ -44,7 +43,6 @@ function applyToSnapshot(snapshot: CatalogSnapshot, operations: Operation[]): Ca
         products.push({
           id: `new-${nextId++}`,
           code: op.data.code,
-          legacyCodes: op.data.legacyCodes,
           series: op.data.seriesCode,
           name: op.data.name,
           description: op.data.description,
@@ -71,7 +69,6 @@ function applyToSnapshot(snapshot: CatalogSnapshot, operations: Operation[]): Ca
         options.push({
           id: `new-${nextId++}`,
           code: op.data.code,
-          legacyCodes: op.data.legacyCodes,
           name: op.data.name,
           shortDescription: op.data.shortDescription,
           noCommission: op.data.noCommission,
@@ -114,13 +111,12 @@ describe("planCatalogV2 against the pre-migration dump", () => {
     expect(plan.summary.options).toMatchObject({ renamed: 45, deleted: 23, created: 8 });
   });
 
-  it("renames M3180 -> M-3180 and keeps the old code as a legacy code", () => {
+  it("renames M3180 -> M-3180, matched by id", () => {
     const op = ops.find((o) => o.op === "product.update" && o.code === "M-3180");
     expect(op).toBeDefined();
     if (op?.op !== "product.update") throw new Error("unreachable");
     expect(op.rename).toBe(true);
     expect(op.changes.code).toEqual({ from: "M3180", to: "M-3180" });
-    expect(op.changes.legacyCodes?.to).toEqual(["M3180"]);
     expect(op.changes.kind?.to).toBe("MACHINE");
     expect(op.changes.form?.to).toBe("M_SERIES");
   });
@@ -210,8 +206,8 @@ describe("planCatalogV2 against the pre-migration dump", () => {
   it("leaves rows the target does not mention alone", () => {
     const withExtra: CatalogSnapshot = {
       ...dump,
-      products: [...dump.products, { ...dump.products[0], id: "hand-made", code: "HAND-1", legacyCodes: [] }],
-      options: [...dump.options, { ...dump.options[0], id: "hand-opt", code: "HAND-OPT", legacyCodes: [] }],
+      products: [...dump.products, { ...dump.products[0], id: "hand-made", code: "HAND-1" }],
+      options: [...dump.options, { ...dump.options[0], id: "hand-opt", code: "HAND-OPT" }],
     };
     const plan2 = planCatalogV2(target, withExtra);
     expect(plan2.operations.some((o) => "id" in o && (o.id === "hand-made" || o.id === "hand-opt"))).toBe(false);
@@ -226,15 +222,30 @@ describe("planCatalogV2 against the pre-migration dump", () => {
 });
 
 describe("planCatalogV2 matching and errors", () => {
-  it("matches a renamed row by its new code when the id is unknown (a database with different ids)", () => {
+  it("matches by exact current code when the id is unknown (a database with different ids)", () => {
+    // A migrated database whose ids differ from the target's (re-seeded
+    // from scratch, say) already holds every row under its v2 code, so
+    // every keep/rename/add matches by code and nothing is planned.
+    const migrated = applyToSnapshot(dump, planCatalogV2(target, dump).operations);
+    const reIdd: CatalogSnapshot = {
+      ...migrated,
+      products: migrated.products.map((p, i) => ({ ...p, id: `p${i}` })),
+      options: migrated.options.map((o, i) => ({ ...o, id: `o${i}` })),
+    };
+    expect(planCatalogV2(target, reIdd).operations).toEqual([]);
+  });
+
+  it("refuses a rename whose id is unknown and whose new code is not in the database (no old-code history)", () => {
+    // The pre-migration dump under different ids: the rows still carry the
+    // old codes, and with no history of old codes anywhere the planner has
+    // nothing to match a rename on -- an error, never a silent add.
     const reIdd: CatalogSnapshot = {
       ...dump,
       products: dump.products.map((p, i) => ({ ...p, id: `p${i}` })),
       options: dump.options.map((o, i) => ({ ...o, id: `o${i}` })),
     };
-    const plan = planCatalogV2(target, reIdd);
-    expect(plan.summary.products).toMatchObject({ renamed: 19, deleted: 12, created: 1 });
-    expect(plan.summary.options).toMatchObject({ renamed: 45, deleted: 23, created: 8 });
+    expect(() => planCatalogV2(target, reIdd)).toThrow(PlanError);
+    expect(() => planCatalogV2(target, reIdd)).toThrow(/M-3180 \(rename, id cmtfmusj4000reo9ka2r20or3\): not found in the database by id or by code/);
   });
 
   it("refuses a keep/rename that matches nothing rather than adding it", () => {
@@ -246,7 +257,7 @@ describe("planCatalogV2 matching and errors", () => {
   it("refuses a target whose resulting codes collide with a hand-made row", () => {
     const clash: CatalogSnapshot = {
       ...dump,
-      options: [...dump.options, { ...dump.options[0], id: "clash", code: "TR480", legacyCodes: [] }],
+      options: [...dump.options, { ...dump.options[0], id: "clash", code: "TR480" }],
     };
     // TR480 is an add in the target; a hand-made TR480 is matched by code
     // instead (the add becomes an update), so no collision arises...
@@ -255,7 +266,7 @@ describe("planCatalogV2 matching and errors", () => {
     // cannot be reconciled.
     const clash2: CatalogSnapshot = {
       ...dump,
-      products: [...dump.products, { ...dump.products[0], id: "clash", code: "M-3180", legacyCodes: [] }],
+      products: [...dump.products, { ...dump.products[0], id: "clash", code: "M-3180" }],
     };
     expect(() => planCatalogV2(target, clash2)).toThrow(/M-3180/);
   });
@@ -285,9 +296,25 @@ describe("planCatalogV2 matching and errors", () => {
     ]);
   });
 
-  it("newProductCode translates a legacy product code to its v2 code", () => {
-    expect(newProductCode(target, "M3180")).toBe("M-3180");
-    expect(newProductCode(target, "EL-2020")).toBe("EL-2020");
-    expect(newProductCode(target, "unknown")).toBe("unknown");
+  it("compares option compatibility by the product's new code, through the renames it plans", () => {
+    // The dump has no option scoped to a product the target renames, so
+    // build one: ABR-M fitted to M3180 (the pre-rename code) with the target
+    // saying M-3180 -- the same product, so no compat.replace is planned...
+    const abrId = dump.options.find((o) => o.code === "ABR-M")!.id;
+    const abr = target.options.find((o) => o.id === abrId)!;
+    const scoped = (compatProducts: string[]): CatalogSnapshot => ({
+      ...dump,
+      options: dump.options.map((o) => (o.id === abrId ? { ...o, compatSeries: [...abr.compatSeries], compatProducts } : o)),
+    });
+    const scopedTarget: CatalogTarget = {
+      ...target,
+      options: target.options.map((o) => (o.id === abrId ? { ...o, compatProducts: ["M-3180"] } : o)),
+    };
+    const compat = (ops: Operation[]) => ops.filter((o) => o.op === "compat.replace" && o.optionCode === "ABR-M");
+    expect(compat(planCatalogV2(scopedTarget, scoped(["M3180"])).operations)).toEqual([]);
+    // ...whereas a different product (M3220, renamed to M-3220) is a change.
+    expect(compat(planCatalogV2(scopedTarget, scoped(["M3220"])).operations)).toEqual([
+      { op: "compat.replace", optionCode: "ABR-M", series: [...abr.compatSeries], products: ["M-3180"], from: { series: [...abr.compatSeries], products: ["M3220"] } },
+    ]);
   });
 });

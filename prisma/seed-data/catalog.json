@@ -1,5 +1,5 @@
 {
-  "extractedAt": "2026-09-06T08:22:16.563Z",
+  "extractedAt": "2026-09-06T09:04:16.939Z",
   "series": [
     {
       "seriesCode": "X",
@@ -59,10 +59,7 @@
             "modelTier": "M3",
             "widthCode": 180
           },
-          "contentBlockKey": "machine.m-series",
-          "legacyCodes": [
-            "M3180"
-          ]
+          "contentBlockKey": "machine.m-series"
         },
         {
           "code": "M-3220",
@@ -78,10 +75,7 @@
             "modelTier": "M3",
             "widthCode": 220
           },
-          "contentBlockKey": "machine.m-series",
-          "legacyCodes": [
-            "M3220"
-          ]
+          "contentBlockKey": "machine.m-series"
         },
         {
           "code": "M-3300",
@@ -97,10 +91,7 @@
             "modelTier": "M3",
             "widthCode": 300
           },
-          "contentBlockKey": "machine.m-series",
-          "legacyCodes": [
-            "M3300"
-          ]
+          "contentBlockKey": "machine.m-series"
         },
         {
           "code": "M-3390",
@@ -116,10 +107,7 @@
             "modelTier": "M3",
             "widthCode": 390
           },
-          "contentBlockKey": "machine.m-series",
-          "legacyCodes": [
-            "M3390"
-          ]
+          "contentBlockKey": "machine.m-series"
         },
         {
           "code": "M-5180",
@@ -135,10 +123,7 @@
             "modelTier": "M5",
             "widthCode": 180
           },
-          "contentBlockKey": "machine.m-series",
-          "legacyCodes": [
-            "M5180"
-          ]
+          "contentBlockKey": "machine.m-series"
         },
         {
           "code": "M-5220",
@@ -154,10 +139,7 @@
             "modelTier": "M5",
             "widthCode": 220
           },
-          "contentBlockKey": "machine.m-series",
-          "legacyCodes": [
-            "M5220"
-          ]
+          "contentBlockKey": "machine.m-series"
         },
         {
           "code": "M-5300",
@@ -173,10 +155,7 @@
             "modelTier": "M5",
             "widthCode": 300
           },
-          "contentBlockKey": "machine.m-series",
-          "legacyCodes": [
-            "M5300"
-          ]
+          "contentBlockKey": "machine.m-series"
         },
         {
           "code": "M-5390",
@@ -192,10 +171,7 @@
             "modelTier": "M5",
             "widthCode": 390
           },
-          "contentBlockKey": "machine.m-series",
-          "legacyCodes": [
-            "M5390"
-          ]
+          "contentBlockKey": "machine.m-series"
         },
         {
           "code": "M-7180",
@@ -211,10 +187,7 @@
             "modelTier": "M7",
             "widthCode": 180
           },
-          "contentBlockKey": "machine.m-series",
-          "legacyCodes": [
-            "M7180"
-          ]
+          "contentBlockKey": "machine.m-series"
         },
         {
           "code": "M-7220",
@@ -230,10 +203,7 @@
             "modelTier": "M7",
             "widthCode": 220
           },
-          "contentBlockKey": "machine.m-series",
-          "legacyCodes": [
-            "M7220"
-          ]
+          "contentBlockKey": "machine.m-series"
         },
         {
           "code": "M-7300",
@@ -249,10 +219,7 @@
             "modelTier": "M7",
             "widthCode": 300
           },
-          "contentBlockKey": "machine.m-series",
-          "legacyCodes": [
-            "M7300"
-          ]
+          "contentBlockKey": "machine.m-series"
         },
         {
           "code": "M-7390",
@@ -268,10 +235,7 @@
             "modelTier": "M7",
             "widthCode": 390
           },
-          "contentBlockKey": "machine.m-series",
-          "legacyCodes": [
-            "M7390"
-          ]
+          "contentBlockKey": "machine.m-series"
         },
         {
           "code": "M-10180",
@@ -287,10 +251,7 @@
             "modelTier": "M10",
             "widthCode": 180
           },
-          "contentBlockKey": "machine.m-series",
-          "legacyCodes": [
-            "M10180"
-          ]
+          "contentBlockKey": "machine.m-series"
         },
         {
           "code": "M-10220",
@@ -306,10 +267,7 @@
             "modelTier": "M10",
             "widthCode": 220
           },
-          "contentBlockKey": "machine.m-series",
-          "legacyCodes": [
-            "M10220"
-          ]
+          "contentBlockKey": "machine.m-series"
         },
         {
           "code": "M-10300",
@@ -325,10 +283,7 @@
             "modelTier": "M10",
             "widthCode": 300
           },
-          "contentBlockKey": "machine.m-series",
-          "legacyCodes": [
-            "M10300"
-          ]
+          "contentBlockKey": "machine.m-series"
         },
         {
           "code": "M-10390",
@@ -344,10 +299,7 @@
             "modelTier": "M10",
             "widthCode": 390
           },
-          "contentBlockKey": "machine.m-series",
-          "legacyCodes": [
-            "M10390"
-          ]
+          "contentBlockKey": "machine.m-series"
         }
       ]
     },
@@ -576,10 +528,7 @@
           "kind": "SOFTWARE",
           "form": null,
           "specs": null,
-          "contentBlockKey": null,
-          "legacyCodes": [
-            "LS Convert"
-          ]
+          "contentBlockKey": null
         },
         {
           "code": "PTW-I",
@@ -592,10 +541,7 @@
           "specs": {
             "softwareMode": "integrated"
           },
-          "contentBlockKey": "software.pathworks-i",
-          "legacyCodes": [
-            "PTW(I)"
-          ]
+          "contentBlockKey": "software.pathworks-i"
         },
         {
           "code": "PTW-S",
@@ -608,10 +554,7 @@
           "specs": {
             "softwareMode": "standalone"
           },
-          "contentBlockKey": "software.pathworks-s",
-          "legacyCodes": [
-            "PTW(S)"
-          ]
+          "contentBlockKey": "software.pathworks-s"
         }
       ]
     },
@@ -1217,10 +1160,7 @@
       "role": "MTS_TRAVEL",
       "parentProductCode": null,
       "unitLengthM": 1,
-      "contentBlockKey": "option.MTS",
-      "legacyCodes": [
-        "MTS- additional travel p/Metre"
-      ]
+      "contentBlockKey": "option.MTS"
     },
     {
       "code": "TR480",
@@ -1296,9 +1236,6 @@
       "parentProductCode": null,
       "unitLengthM": null,
       "contentBlockKey": null,
-      "legacyCodes": [
-        "1.0mm dia punch"
-      ],
       "noCommission": true
     },
     {
@@ -1314,9 +1251,6 @@
       "parentProductCode": null,
       "unitLengthM": null,
       "contentBlockKey": null,
-      "legacyCodes": [
-        "2.0mm dia punch"
-      ],
       "noCommission": true
     },
     {
@@ -1332,9 +1266,6 @@
       "parentProductCode": null,
       "unitLengthM": null,
       "contentBlockKey": null,
-      "legacyCodes": [
-        "3.0mm dia punch"
-      ],
       "noCommission": true
     },
     {
@@ -1350,9 +1281,6 @@
       "parentProductCode": null,
       "unitLengthM": null,
       "contentBlockKey": null,
-      "legacyCodes": [
-        "4.0mm dia punch"
-      ],
       "noCommission": true
     },
     {
@@ -1368,9 +1296,6 @@
       "parentProductCode": null,
       "unitLengthM": null,
       "contentBlockKey": null,
-      "legacyCodes": [
-        "5.0mm dia punch"
-      ],
       "noCommission": true
     },
     {
@@ -1385,10 +1310,7 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null,
-      "contentBlockKey": null,
-      "legacyCodes": [
-        "Punch Tool- Quick Release (to suit Hollow dia 1mm/2mm/3mm/4mm/5mm purchased seperately)"
-      ]
+      "contentBlockKey": null
     },
     {
       "code": "RKT-28",
@@ -1402,10 +1324,7 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null,
-      "contentBlockKey": null,
-      "legacyCodes": [
-        "28 Dia. Round Knife Tool- Patented Quick release mechanism (Not used on Felt bed) 2x10 sided blades included std"
-      ]
+      "contentBlockKey": null
     },
     {
       "code": "RKT-40",
@@ -1419,10 +1338,7 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null,
-      "contentBlockKey": null,
-      "legacyCodes": [
-        "40 Dia. Round Knife Tool- Quick release (Not available yet)"
-      ]
+      "contentBlockKey": null
     },
     {
       "code": "DKT-30",
@@ -1436,10 +1352,7 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null,
-      "contentBlockKey": null,
-      "legacyCodes": [
-        "Drag Knife Tool- Quick Release (to suit carbide knife 1.0mm x 7mm purchased seperately) 30 deg"
-      ]
+      "contentBlockKey": null
     },
     {
       "code": "DKT-45",
@@ -1453,10 +1366,7 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null,
-      "contentBlockKey": null,
-      "legacyCodes": [
-        "Drag Knife Tool- Quick Release (to suit carbide knife 1.0mm x 7mm purchased seperately) 45 deg?"
-      ]
+      "contentBlockKey": null
     },
     {
       "code": "DRV-28",
@@ -1470,10 +1380,7 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null,
-      "contentBlockKey": null,
-      "legacyCodes": [
-        "Driven- Electrically driven. Suit 28mm Carbide Octagonal blade."
-      ]
+      "contentBlockKey": null
     },
     {
       "code": "NTT",
@@ -1487,10 +1394,7 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null,
-      "contentBlockKey": null,
-      "legacyCodes": [
-        "Notch Tool- Quick Release (to suit carbide knife 1.0mm x 7mm)"
-      ]
+      "contentBlockKey": null
     },
     {
       "code": "180-E",
@@ -1533,9 +1437,6 @@
       "parentProductCode": null,
       "unitLengthM": null,
       "contentBlockKey": null,
-      "legacyCodes": [
-        "Crate-180"
-      ],
       "noCommission": true
     },
     {
@@ -1551,9 +1452,6 @@
       "parentProductCode": null,
       "unitLengthM": null,
       "contentBlockKey": null,
-      "legacyCodes": [
-        "Crate-220"
-      ],
       "noCommission": true
     },
     {
@@ -1569,9 +1467,6 @@
       "parentProductCode": null,
       "unitLengthM": null,
       "contentBlockKey": null,
-      "legacyCodes": [
-        "Crate-320"
-      ],
       "noCommission": true
     },
     {
@@ -1727,9 +1622,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2020"
-      ],
-      "legacyCodes": [
-        "EL-2020 Drive Module (first 1.2M)"
       ]
     },
     {
@@ -1745,9 +1637,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2020"
-      ],
-      "legacyCodes": [
-        "EL-2020 Additional 1.2M lengths"
       ]
     },
     {
@@ -1763,9 +1652,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2020"
-      ],
-      "legacyCodes": [
-        "EL-2020 Static table 1.2M lengths"
       ]
     },
     {
@@ -1781,9 +1667,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2020"
-      ],
-      "legacyCodes": [
-        "EL-2020 Electrical Busbar Per 1.2M Used for Fabric Pro automatic spreader."
       ]
     },
     {
@@ -1799,9 +1682,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2020"
-      ],
-      "legacyCodes": [
-        "EL-2020 Travel Platform support rail. Per 1.2m"
       ]
     },
     {
@@ -1817,9 +1697,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2020"
-      ],
-      "legacyCodes": [
-        "EL-2020 Single Roll feed attachment (L & R clip attachment with cross bar & pair of keeper)"
       ]
     },
     {
@@ -1835,9 +1712,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2420"
-      ],
-      "legacyCodes": [
-        "EL-2420 Drive Module (first 1.2M)"
       ]
     },
     {
@@ -1853,9 +1727,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2420"
-      ],
-      "legacyCodes": [
-        "EL-2420 Additional 1.2M lengths"
       ]
     },
     {
@@ -1871,9 +1742,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2420"
-      ],
-      "legacyCodes": [
-        "EL-2420 Static table 1.2M lengths"
       ]
     },
     {
@@ -1889,9 +1757,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2420"
-      ],
-      "legacyCodes": [
-        "EL-2420 Electrical Busbar Per 1.2M Used for Fabric Pro automatic spreader."
       ]
     },
     {
@@ -1907,9 +1772,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2420"
-      ],
-      "legacyCodes": [
-        "EL-2420 Travel Platform support rail. Per 1.2m"
       ]
     },
     {
@@ -1925,9 +1787,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2420"
-      ],
-      "legacyCodes": [
-        "EL-2420 Single Roll feed attachment (L & R clip attachment with cross bar & pair of keeper)"
       ]
     },
     {
@@ -1943,9 +1802,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-3220"
-      ],
-      "legacyCodes": [
-        "EL-3220 Drive Module (first 1.2M)"
       ]
     },
     {
@@ -1961,9 +1817,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-3220"
-      ],
-      "legacyCodes": [
-        "EL-3220 Additional 1.2M lengths"
       ]
     },
     {
@@ -1979,9 +1832,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-3220"
-      ],
-      "legacyCodes": [
-        "EL-3220 Static table 1.2M lengths"
       ]
     },
     {
@@ -1997,9 +1847,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-3220"
-      ],
-      "legacyCodes": [
-        "EL-3220 Electrical Busbar Per 1.2M Used for Fabric Pro automatic spreader."
       ]
     },
     {
@@ -2015,9 +1862,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-3220"
-      ],
-      "legacyCodes": [
-        "EL-3220 Travel Platform support rail. Per 1.2m"
       ]
     },
     {
@@ -2033,9 +1877,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-4030"
-      ],
-      "legacyCodes": [
-        "EL-4030 Drive Module (first 1.2M)"
       ]
     },
     {
@@ -2051,9 +1892,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-4030"
-      ],
-      "legacyCodes": [
-        "EL-4030 Additional 1.2M lengths"
       ]
     },
     {
@@ -2069,9 +1907,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-4030"
-      ],
-      "legacyCodes": [
-        "EL-4030 Static table 1.2M lengths"
       ]
     },
     {
@@ -2087,9 +1922,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-4030"
-      ],
-      "legacyCodes": [
-        "EL-4030 Electrical Busbar Per 1.2M Used for Fabric Pro automatic spreader."
       ]
     },
     {
@@ -2105,9 +1937,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-4030"
-      ],
-      "legacyCodes": [
-        "EL-4030 Travel Platform support rail. Per 1.2m"
       ]
     },
     {
@@ -2123,9 +1952,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2020"
-      ],
-      "legacyCodes": [
-        "EL-2020 #ST620-2020 Roll Holder- Used to dispense perforated underlay paper. Mounted rear of EasyLoader on lower leg."
       ]
     },
     {
@@ -2141,9 +1967,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "EL-2420"
-      ],
-      "legacyCodes": [
-        "EL-2420 ST620-2420 Roll Holder- Used to dispense perforated underlay paper. Mounted rear of EasyLoader on lower leg."
       ]
     },
     {
@@ -2223,9 +2046,6 @@
       "compatibleProducts": [
         "HDRF-180"
       ],
-      "legacyCodes": [
-        "HDRF-180 Crate"
-      ],
       "noCommission": true
     },
     {
@@ -2242,9 +2062,6 @@
       "compatibleProducts": [
         "HDRF-220"
       ],
-      "legacyCodes": [
-        "HDRF-220 Crate"
-      ],
       "noCommission": true
     },
     {
@@ -2260,9 +2077,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "HDRF-320"
-      ],
-      "legacyCodes": [
-        "HDRF-320 Crate"
       ],
       "noCommission": true
     },
@@ -2293,9 +2107,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "SERVICE"
-      ],
-      "legacyCodes": [
-        "SVC-L-INSTALL"
       ]
     },
     {
@@ -2311,9 +2122,6 @@
       "contentBlockKey": null,
       "compatibleProducts": [
         "SERVICE"
-      ],
-      "legacyCodes": [
-        "SVC-L-INSTALL-MTS"
       ]
     },
     {

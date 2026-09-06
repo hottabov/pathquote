@@ -1,145 +1,46 @@
 /**
- * Pure builder for the director's catalogue workbook (Phase 5 of
+ * Pure builder for the catalogue workbook (Phase 5 of
  * docs/plans/2026-09-05-catalog-identity-and-cleanup.md; the export half of
  * docs/plans/2026-09-05-catalog-import-export.md).
  *
  * Snapshot in, SheetJS workbook out -- no database, no filesystem, so it can
- * be unit-tested against a JSON dump. scripts/export-catalog.ts is the IO
- * shell that reads the DB into `CatalogExportSnapshot` and writes the file.
+ * be unit-tested against a JSON dump. Two IO shells share it:
+ * scripts/export-catalog.ts (writes a file for `npm run catalog:export`) and
+ * src/app/api/catalog/export/route.ts (streams it to an admin's browser from
+ * Settings -> Import / Export).
  *
- * Four sheets: README (first), Products, Options, Prices. Every data row
- * leads with the row's database `id`: that is the join key the import reads
- * back, and it is deliberately visible rather than hidden.
+ * Four sheets: README (first), Products, Options, Prices. The column contract
+ * lives in ./columns.ts, shared with the import parser, and the row types in
+ * ./snapshot.ts.
  */
 import * as XLSX from "xlsx";
+import {
+  LIST_SEPARATOR,
+  OPTION_COLUMNS,
+  PRICE_COLUMNS,
+  PRODUCT_COLUMNS,
+  SHEET_NAMES,
+  type Cell,
+  type ItemType,
+  type OptionColumn,
+  type PriceColumn,
+  type ProductColumn,
+} from "./columns";
+import type { CatalogExportSnapshot, ExportOption, ExportPrice, ExportProduct } from "./snapshot";
 
-// ---------------------------------------------------------------------------
-// Snapshot shape (what the IO shell reads out of Prisma)
-// ---------------------------------------------------------------------------
-
-export type ExportPrice = {
-  /** Decimal as string ("1950.00") or number; converted to a number cell. */
-  amount: string | number;
-  needsReview: boolean;
-};
-
-export type ExportRegion = { code: string; name: string; currency: string };
-
-export type ExportSeries = { id: string; code: string; name: string; sortOrder: number };
-
-export type ExportProduct = {
-  id: string;
-  code: string;
-  legacyCodes: string[];
-  /** Series.code */
-  series: string;
-  name: string;
-  description: string | null;
-  kind: string;
-  form: string | null;
-  specs: unknown;
-  contentBlockKey: string | null;
-  isCredit: boolean;
-  noCommission: boolean;
-  active: boolean;
-  sortOrder: number;
-  imageUrl: string | null;
-  /** keyed by Region.code */
-  prices: Record<string, ExportPrice>;
-};
-
-export type ExportOption = {
-  id: string;
-  code: string;
-  legacyCodes: string[];
-  name: string;
-  shortDescription: string | null;
-  role: string | null;
-  /** Product.code of the owning product, or null */
-  parentProduct: string | null;
-  unitLengthM: string | number | null;
-  compatSeries: string[];
-  compatProducts: string[];
-  contentBlockKey: string | null;
-  noCommission: boolean;
-  active: boolean;
-  sortOrder: number;
-  imageUrl: string | null;
-  attributeSchema: unknown;
-  prices: Record<string, ExportPrice>;
-};
-
-export type CatalogExportSnapshot = {
-  /** ISO timestamp; printed in the README sheet. */
-  generatedAt: string;
-  regions: ExportRegion[];
-  series: ExportSeries[];
-  products: ExportProduct[];
-  options: ExportOption[];
-};
+export { LIST_SEPARATOR, OPTION_COLUMNS, PRICE_COLUMNS, PRODUCT_COLUMNS, SHEET_NAMES, type Cell } from "./columns";
+export type {
+  CatalogExportSnapshot,
+  ExportOption,
+  ExportPrice,
+  ExportProduct,
+  ExportRegion,
+  ExportSeries,
+} from "./snapshot";
 
 // ---------------------------------------------------------------------------
 // Rows
 // ---------------------------------------------------------------------------
-
-/** A cell value. `null` is written as a blank cell (SheetJS skips nulls). */
-export type Cell = string | number | boolean | null;
-
-export const PRODUCT_COLUMNS = [
-  "id",
-  "series",
-  "code",
-  "legacyCodes",
-  "name",
-  "description",
-  "kind",
-  "form",
-  "specs",
-  "contentBlockKey",
-  "isCredit",
-  "noCommission",
-  "active",
-  "sortOrder",
-  "imageUrl",
-] as const;
-
-export const OPTION_COLUMNS = [
-  "id",
-  "code",
-  "legacyCodes",
-  "name",
-  "shortDescription",
-  "role",
-  "parentProduct",
-  "unitLengthM",
-  "compatSeries",
-  "compatProducts",
-  "contentBlockKey",
-  "noCommission",
-  "active",
-  "sortOrder",
-  "imageUrl",
-  "attributeSchema",
-] as const;
-
-export const PRICE_COLUMNS = [
-  "itemType",
-  "itemId",
-  "code",
-  "region",
-  "currency",
-  "amount",
-  "needsReview",
-] as const;
-
-export const SHEET_NAMES = {
-  readme: "README",
-  products: "Products",
-  options: "Options",
-  prices: "Prices",
-} as const;
-
-export const LIST_SEPARATOR = "; ";
 
 function text(v: string | null | undefined): Cell {
   return v == null || v === "" ? null : v;
@@ -164,7 +65,7 @@ const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" })
 const byCode = (a: { code: string }, b: { code: string }) => collator.compare(a.code, b.code);
 
 /** Products ordered by series sortOrder, then product sortOrder, then code. */
-export function orderedProducts(snapshot: CatalogExportSnapshot): ExportProduct[] {
+export function orderedProducts<P extends ExportProduct>(snapshot: { series: { code: string; sortOrder: number }[]; products: P[] }): P[] {
   const seriesOrder = new Map(snapshot.series.map((s) => [s.code, s.sortOrder]));
   const seriesRank = (code: string) => seriesOrder.get(code) ?? Number.MAX_SAFE_INTEGER;
   return [...snapshot.products].sort(
@@ -177,7 +78,7 @@ export function orderedProducts(snapshot: CatalogExportSnapshot): ExportProduct[
 }
 
 /** Options ordered by code. */
-export function orderedOptions(snapshot: CatalogExportSnapshot): ExportOption[] {
+export function orderedOptions<O extends ExportOption>(snapshot: { options: O[] }): O[] {
   return [...snapshot.options].sort(byCode);
 }
 
@@ -186,7 +87,6 @@ export function productRow(p: ExportProduct): Cell[] {
     p.id,
     p.series,
     p.code,
-    list(p.legacyCodes),
     p.name,
     text(p.description),
     p.kind,
@@ -205,7 +105,6 @@ export function optionRow(o: ExportOption): Cell[] {
   return [
     o.id,
     o.code,
-    list(o.legacyCodes),
     o.name,
     text(o.shortDescription),
     text(o.role),
@@ -223,7 +122,7 @@ export function optionRow(o: ExportOption): Cell[] {
 }
 
 export type PriceRow = {
-  itemType: "product" | "option";
+  itemType: ItemType;
   itemId: string;
   code: string;
   region: string;
@@ -236,7 +135,7 @@ export type PriceRow = {
 export function priceRows(snapshot: CatalogExportSnapshot): PriceRow[] {
   const currency = new Map(snapshot.regions.map((r) => [r.code, r.currency]));
   const rows: PriceRow[] = [];
-  const push = (itemType: PriceRow["itemType"], item: { id: string; code: string; prices: Record<string, ExportPrice> }) => {
+  const push = (itemType: ItemType, item: { id: string; code: string; prices: Record<string, ExportPrice> }) => {
     for (const [region, price] of Object.entries(item.prices)) {
       const cur = currency.get(region);
       if (cur === undefined) throw new Error(`catalog-export: unknown region "${region}" on ${itemType} ${item.code}`);
@@ -267,11 +166,11 @@ export function readmeLines(snapshot: CatalogExportSnapshot): string[] {
     "PathQuote catalogue export",
     `Generated ${snapshot.generatedAt} -- ${snapshot.products.length} products, ${snapshot.options.length} options, regions: ${snapshot.regions.map((r) => r.code).join(", ")}.`,
     "Products: one row per catalogue product. Options: one row per option (compatSeries / compatProducts / parentProduct say what it fits). Prices: one row per item x region.",
-    "The id column is the database key and must never be edited -- the import matches rows by id.",
-    "The code column may be edited freely; the old code is kept in legacyCodes automatically.",
-    "Lists (legacyCodes, compatSeries, compatProducts) are separated by '; '. specs and attributeSchema are JSON.",
+    "The id column is the database key and must never be edited -- the import matches rows by id. Leave id blank on a new row.",
+    "The code column may be edited freely; it is a label, and renaming it simply updates the row.",
+    "Lists (compatSeries, compatProducts) are separated by '; '. specs and attributeSchema are JSON.",
     "A row deleted from this file is deleted from the catalogue on import (with confirmation). Finalized quotes are not affected.",
-    "Booleans are TRUE / FALSE. Leave a cell blank to clear the value.",
+    "Booleans are TRUE / FALSE. Leave a cell blank to clear the value. This README sheet is ignored on import.",
   ];
 }
 
@@ -297,11 +196,10 @@ export function buildCatalogSheets(snapshot: CatalogExportSnapshot): {
 // Workbook
 // ---------------------------------------------------------------------------
 
-const PRODUCT_WIDTHS: Record<(typeof PRODUCT_COLUMNS)[number], number> = {
+const PRODUCT_WIDTHS: Record<ProductColumn, number> = {
   id: 28,
   series: 8,
   code: 16,
-  legacyCodes: 18,
   name: 44,
   description: 70,
   kind: 11,
@@ -315,10 +213,9 @@ const PRODUCT_WIDTHS: Record<(typeof PRODUCT_COLUMNS)[number], number> = {
   imageUrl: 36,
 };
 
-const OPTION_WIDTHS: Record<(typeof OPTION_COLUMNS)[number], number> = {
+const OPTION_WIDTHS: Record<OptionColumn, number> = {
   id: 28,
   code: 18,
-  legacyCodes: 18,
   name: 44,
   shortDescription: 70,
   role: 8,
@@ -334,7 +231,7 @@ const OPTION_WIDTHS: Record<(typeof OPTION_COLUMNS)[number], number> = {
   attributeSchema: 40,
 };
 
-const PRICE_WIDTHS: Record<(typeof PRICE_COLUMNS)[number], number> = {
+const PRICE_WIDTHS: Record<PriceColumn, number> = {
   itemType: 10,
   itemId: 28,
   code: 18,
@@ -374,10 +271,20 @@ export function buildCatalogWorkbook(snapshot: CatalogExportSnapshot): XLSX.Work
   return wb;
 }
 
-/** Default output path: RAW/catalog-export-<YYYY-MM-DD>.xlsx (local date). */
-export function defaultExportPath(now: Date = new Date()): string {
+/** The workbook as xlsx bytes -- what the export route sends. */
+export function writeCatalogWorkbook(snapshot: CatalogExportSnapshot): Uint8Array {
+  return XLSX.write(buildCatalogWorkbook(snapshot), { type: "buffer", bookType: "xlsx" }) as Uint8Array;
+}
+
+/** `catalog-<YYYY-MM-DD>.xlsx` (local date) -- the download's file name. */
+export function exportFileName(now: Date = new Date()): string {
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, "0");
   const d = String(now.getDate()).padStart(2, "0");
-  return `RAW/catalog-export-${y}-${m}-${d}.xlsx`;
+  return `catalog-${y}-${m}-${d}.xlsx`;
+}
+
+/** Default output path of the CLI script: RAW/catalog-export-<YYYY-MM-DD>.xlsx (local date). */
+export function defaultExportPath(now: Date = new Date()): string {
+  return `RAW/catalog-export-${exportFileName(now).slice("catalog-".length)}`;
 }

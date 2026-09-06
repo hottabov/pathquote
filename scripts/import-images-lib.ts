@@ -58,8 +58,8 @@ export const SERIES_IMAGES: Record<string, string> = {
  * "LSC" (LS Convert) is the SW series' one other product and is deliberately
  * left unmapped (see UNMAPPED_IMAGE_FILES). Codes are the catalogue v2 codes
  * (docs/reference/catalog-v2-target.json); the import script matches a row
- * by its current code or any legacy code (whereAnyCode), so a database not
- * yet migrated still resolves them. PTN and EDG were deleted in v2.
+ * by its current code, so a renamed row needs its entry here updated. PTN
+ * and EDG were deleted in v2.
  */
 export const PRODUCT_IMAGES: Record<string, string> = {
   PRA: "production-analyst.png",

@@ -194,6 +194,7 @@ model User {
   companiesOwned    Company[]           @relation("CompanyOwner")
   catalogVisibility CatalogVisibility[]
   supportMessages   SupportMessage[]
+  catalogImports    CatalogImport[]
 }
 
 model Account {
@@ -246,11 +247,9 @@ model Product {
   id                String                @id @default(cuid())
   // A label. Unique, printed on quotes, shown in lists -- and free to change:
   // nothing in src/ branches on its value (migration z31_catalog_identity;
-  // see ProductKind above). When it does change, the old value goes into
-  // `legacyCodes` so imports keyed on the old code (price sheets, image maps)
-  // still find the row -- see findProductByAnyCode in src/lib/catalog-identity.ts.
+  // see ProductKind above). Renaming it is a plain update; no history of old
+  // codes is kept (migration z32_drop_legacy_codes).
   code              String                @unique // M-5180
-  legacyCodes       String[]              @default([])
   seriesId          String
   series            Series                @relation(fields: [seriesId], references: [id])
   name              String
@@ -322,7 +321,6 @@ model Option {
   // A label, same contract as Product.code: unique, renameable, never
   // branched on. See migration z31_catalog_identity.
   code             String                @unique // MTS, HFV, VRB-180...
-  legacyCodes      String[]              @default([])
   name             String
   shortDescription String?
   role             OptionRole?
@@ -712,7 +710,18 @@ model DocumentItem {
   documentId     String
   document       Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
   productId      String?
-  product        Product?       @relation(fields: [productId], references: [id])
+  // SetNull is written out rather than left to Prisma's default for an
+  // optional relation (which is also SetNull) because it is a decision, not
+  // an accident: a finalized quote must survive its product being deleted
+  // from the catalogue. Everything the quote prints is snapshotted on this
+  // row (code, name, description, unitPrice, listPrice, imageUrl below), so
+  // losing the link costs a FINAL document nothing. A DRAFT is the other
+  // case -- a nulled link there would be a phantom line, priced and totalled,
+  // pointing at nothing -- which is why the catalogue import
+  // (src/lib/actions/catalog-import.ts) deletes a draft's items and lines
+  // itself, then recalculates, before the product row goes. See
+  // docs/plans/2026-09-05-catalog-import-export.md §1.
+  product        Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
   sortOrder      Int            @default(0)
   code           String // snapshot
   name           String // snapshot
@@ -890,4 +899,40 @@ model SpecImage {
   updatedAt DateTime @updatedAt
 
   @@unique([field, value])
+}
+
+// APPLIED: the transaction committed. FAILED: it rolled back, and `error`
+// says why (a unique-code collision, a re-diff that no longer matched the
+// preview, ...). There is no PENDING: a preview writes nothing, so nothing
+// is recorded until the admin confirms.
+enum CatalogImportStatus {
+  APPLIED
+  FAILED
+}
+
+// One row per confirmed catalogue import from Settings -> Import / Export
+// (docs/plans/2026-09-05-catalog-import-export.md §3.5): who, when, which
+// file, the per-sheet/per-bucket counts, and the full preview diff the admin
+// confirmed. The diff is the point -- an import deletes rows and removes
+// lines from other people's drafts, and without the before/after of every
+// row a bad import could not be reconstructed. `counts` duplicates what
+// `diff.counts` holds so the history list can render without loading the
+// (potentially large) diff column.
+//
+// The user FK is left at Prisma's default (ON DELETE RESTRICT): an audit row
+// must outlive nothing, and the app deactivates users rather than deleting
+// them (User.active).
+model CatalogImport {
+  id        String              @id @default(cuid())
+  createdAt DateTime            @default(now())
+  userId    String
+  user      User                @relation(fields: [userId], references: [id])
+  fileName  String
+  counts    Json
+  diff      Json
+  status    CatalogImportStatus
+  error     String?
+
+  // The history list reads newest-first with no other filter.
+  @@index([createdAt])
 }

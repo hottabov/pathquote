@@ -36,7 +36,6 @@ async function main() {
     products: products.map((p) => ({
       id: p.id,
       code: p.code,
-      legacyCodes: p.legacyCodes,
       series: p.series.code,
       name: p.name,
       description: p.description,
@@ -55,7 +54,6 @@ async function main() {
     options: options.map((o) => ({
       id: o.id,
       code: o.code,
-      legacyCodes: o.legacyCodes,
       name: o.name,
       shortDescription: o.shortDescription,
       role: o.role,

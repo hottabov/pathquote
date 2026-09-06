@@ -6,11 +6,12 @@
  * rows' image/logo URL is pointed at the resulting `/api/files/<name>` URL.
  *
  * Mapping lives in scripts/import-images-lib.ts (pure, unit tested). Product
- * and option codes in the maps are matched against the database by current
- * code OR legacy code (whereAnyCode, src/lib/catalog-identity.ts), so the
- * maps keep resolving on either side of the catalogue v2 rename. The icon
- * base codes (ICON_OPTION_TARGETS keys) name files on disk (iconFilename)
- * and are unaffected by the rename.
+ * and option codes in the maps are matched against the database by their
+ * current code (`findUnique({ where: { code } })`). A code is only a label
+ * -- the row's identity is its id -- but from outside the app it is the one
+ * handle there is, so the maps carry the catalogue's current codes and a
+ * renamed row needs its map entry updated. The icon base codes
+ * (ICON_OPTION_TARGETS keys) name files on disk (iconFilename).
  *  - SERIES_IMAGES: every product in a whole series gets that series'
  *    image (M, X, L, LNS, EF, FP -- one photo per product line), AND the
  *    Series row itself gets the same image as its own imageUrl (only-if-
@@ -83,7 +84,6 @@ import {
 } from "./import-images-lib";
 import catalogData from "../prisma/seed-data/catalog.json";
 import type { Catalog } from "../prisma/seed-lib";
-import { whereAnyCode } from "../src/lib/catalog-identity";
 
 const SOURCE_DIR = path.resolve(__dirname, "..", "prisma", "seed-data", "product-images");
 const ICONS_SOURCE_DIR = path.resolve(__dirname, "..", "prisma", "seed-data", "option-icons");
@@ -115,9 +115,7 @@ async function main() {
   // import-images-lib.ts) has drifted from the catalog -- warn loudly but
   // keep going, since the per-option lookup below already skips missing
   // codes safely.
-  // A code counts whether it is the entry's current code or one it had
-  // before catalogue v2 (legacyCodes) -- the DB lookups below match either.
-  const catalogOptionCodes = new Set(catalog.options.flatMap((o) => [o.code, ...(o.legacyCodes ?? [])]));
+  const catalogOptionCodes = new Set(catalog.options.map((o) => o.code));
   for (const optionCode of allIconOptionCodes()) {
     if (!catalogOptionCodes.has(optionCode)) {
       console.warn(
@@ -253,7 +251,7 @@ async function main() {
       throw new Error(`internal error: built imageUrl "${target.imageUrl}" doesn't match IMAGE_URL_PATTERN`);
     }
 
-    const product = await db.product.findFirst({ where: whereAnyCode(target.code) });
+    const product = await db.product.findUnique({ where: { code: target.code } });
     if (!product) {
       skippedMissingProduct++;
       mismatchedCodes.push(target.code);
@@ -318,7 +316,7 @@ async function main() {
     }
 
     for (const optionCode of optionCodes) {
-      const option = await db.option.findFirst({ where: whereAnyCode(optionCode) });
+      const option = await db.option.findUnique({ where: { code: optionCode } });
       if (!option) {
         optionSkippedMissing++;
         optionMismatches.push(optionCode);
@@ -358,7 +356,7 @@ async function main() {
     const imageUrl = `/api/files/${filename}`;
 
     for (const productCode of productCodes) {
-      const product = await db.product.findFirst({ where: whereAnyCode(productCode) });
+      const product = await db.product.findUnique({ where: { code: productCode } });
       if (!product) {
         iconProductSkippedMissing++;
         iconProductMismatches.push(productCode);

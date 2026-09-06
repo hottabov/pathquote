@@ -37,16 +37,10 @@ describe("catalog-v2-target.json: internal consistency", () => {
     }
   });
 
-  it("every rename lists the code it renames from, and no keep pretends to", () => {
-    for (const row of [...target.products, ...target.options]) {
-      if (row.action === "rename") {
-        expect(row.legacyCodes.length, row.code).toBeGreaterThan(0);
-        expect(row.legacyCodes, row.code).not.toContain(row.code);
-      }
-    }
-  });
-
   it("every add has a null id and every other action a database id", () => {
+    // A rename is detected through the id alone (the planner matches the
+    // row by id and sees a different code), so a rename without one is a
+    // row the planner could never rename -- caught by the second branch.
     for (const row of [...target.products, ...target.options]) {
       if (row.action === "add") expect(row.id, row.code).toBeNull();
       else expect(row.id, row.code).toMatch(/^c[a-z0-9]{20,}$/);
@@ -58,13 +52,6 @@ describe("catalog-v2-target.json: internal consistency", () => {
     const o = target.options.flatMap((x) => (x.id ? [x.id] : []));
     expect(new Set(p).size).toBe(p.length);
     expect(new Set(o).size).toBe(o.length);
-  });
-
-  it("no legacy code of a surviving row is another surviving row's code", () => {
-    const current = new Set([...products, ...options].map((r) => r.code));
-    for (const row of [...products, ...options]) {
-      for (const legacy of row.legacyCodes) expect(current.has(legacy), `${row.code} <- ${legacy}`).toBe(false);
-    }
   });
 
   it("every surviving product has a kind, every surviving option a role, and neither is SOFTWARE-as-option", () => {

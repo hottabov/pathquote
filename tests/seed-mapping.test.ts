@@ -150,7 +150,6 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
     expect(mapProducts(FIXTURE)).toEqual([
       {
         code: "A-100",
-        legacyCodes: [],
         name: "Widget",
         description: "A widget",
         seriesCode: "A",
@@ -164,7 +163,6 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
       },
       {
         code: "A-200",
-        legacyCodes: [],
         name: "Gadget",
         description: "A gadget",
         seriesCode: "A",
@@ -178,7 +176,6 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
       },
       {
         code: "B-100",
-        legacyCodes: [],
         name: "Doohickey",
         description: "A doohickey",
         seriesCode: "B",
@@ -193,7 +190,7 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
     ]);
   });
 
-  it("mapProducts passes legacyCodes/noCommission through and normalises absent form/specs/contentBlockKey to null", () => {
+  it("mapProducts passes noCommission through and normalises absent form/specs/contentBlockKey to null", () => {
     const explicit: Catalog = {
       ...FIXTURE,
       series: [
@@ -202,7 +199,6 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
           products: [
             {
               code: "M-3180",
-              legacyCodes: ["M3180"],
               name: "M",
               description: "",
               price: 1,
@@ -215,7 +211,7 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
             },
             // Only `kind` given: form/specs/contentBlockKey absent (not null)
             // and an empty specs object all map to null.
-            { code: "PTW-S", legacyCodes: ["PTW(S)"], name: "PW", description: "", price: 1, needsReview: false, kind: "SOFTWARE" },
+            { code: "PTW-S", name: "PW", description: "", price: 1, needsReview: false, kind: "SOFTWARE" },
             { code: "EMPTY", name: "E", description: "", price: 1, needsReview: false, kind: "ACCESSORY", specs: {} },
           ],
         },
@@ -223,15 +219,14 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
     };
     const [m, ptw, empty] = mapProducts(explicit);
     expect(m).toMatchObject({
-      legacyCodes: ["M3180"],
       noCommission: true,
       kind: "MACHINE",
       form: "M_SERIES",
       specs: { cutHeightCm: 3, cutWidthCm: 180 },
       contentBlockKey: "machine.m-series",
     });
-    expect(ptw).toMatchObject({ legacyCodes: ["PTW(S)"], kind: "SOFTWARE", form: null, specs: null, contentBlockKey: null });
-    expect(empty).toMatchObject({ legacyCodes: [], noCommission: false, kind: "ACCESSORY", specs: null });
+    expect(ptw).toMatchObject({ kind: "SOFTWARE", form: null, specs: null, contentBlockKey: null });
+    expect(empty).toMatchObject({ noCommission: false, kind: "ACCESSORY", specs: null });
   });
 
   it("mapProducts refuses a product without a kind, naming the code and series", () => {
@@ -271,7 +266,6 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
     expect(mapOptions(FIXTURE)).toEqual([
       {
         code: "OPT-1",
-        legacyCodes: [],
         name: "Option One",
         shortDescription: "First option",
         sortOrder: 0,
@@ -283,7 +277,6 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
       },
       {
         code: "OPT-2",
-        legacyCodes: [],
         name: "Option Two",
         shortDescription: "Second option",
         sortOrder: 1,
@@ -295,7 +288,6 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
       },
       {
         code: "OPT-3",
-        legacyCodes: [],
         name: "Widget Accessory",
         shortDescription: "Product-scoped accessory",
         sortOrder: 2,
@@ -314,7 +306,6 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
       options: [
         {
           code: "EL-2020-DM12",
-          legacyCodes: ["EL-2020 Additional 1.2M lengths"],
           name: "x",
           description: "",
           price: 1,
@@ -326,13 +317,13 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
           unitLengthM: 1.2,
           contentBlockKey: null,
         },
-        // Only the `role` key: nothing is inferred from the legacy code.
-        { code: "MTS-M", legacyCodes: ["MTS- additional travel p/Metre"], name: "x", description: "", price: 1, needsReview: false, compatibleSeries: ["M"], role: "MTS_TRAVEL" },
+        // Only the `role` key: nothing is inferred from the code.
+        { code: "MTS-M", name: "x", description: "", price: 1, needsReview: false, compatibleSeries: ["M"], role: "MTS_TRAVEL" },
         { code: "ABR-M", name: "x", description: "", price: 1, needsReview: false, compatibleSeries: ["M"], role: null, noCommission: true },
       ],
     };
     const [dm12, mts, abr] = mapOptions(opts);
-    expect(dm12).toMatchObject({ legacyCodes: ["EL-2020 Additional 1.2M lengths"], role: "EL_CONVEYOR", parentProductCode: "EL-2020", unitLengthM: 1.2, contentBlockKey: null });
+    expect(dm12).toMatchObject({ role: "EL_CONVEYOR", parentProductCode: "EL-2020", unitLengthM: 1.2, contentBlockKey: null });
     expect(mts).toMatchObject({ role: "MTS_TRAVEL", parentProductCode: null, unitLengthM: null, contentBlockKey: null });
     expect(abr).toMatchObject({ role: null, parentProductCode: null, unitLengthM: null, contentBlockKey: null, noCommission: true });
   });

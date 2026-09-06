@@ -18,7 +18,6 @@ import contentBlocksData from "./seed-data/content-blocks.json";
 import usPricesData from "./seed-data/prices-us.json";
 import catalogV2Target from "../docs/reference/catalog-v2-target.json";
 import type { CatalogTarget } from "../scripts/lib/catalog-v2-plan";
-import { whereAnyCode } from "../src/lib/catalog-identity";
 import {
   type Catalog,
   type ContentBlocksJson,
@@ -48,17 +47,19 @@ const v2Target = catalogV2Target as CatalogTarget;
  * removes them from a live database; the seed retires them too (delete, or
  * deactivate when a document still references the row) so a database seeded
  * from the pre-v2 catalog.json and never migrated still converges. Matched
- * by exact current code only -- a deleted row was never renamed, and a
- * legacy-code match could hit a surviving row.
+ * by exact current code.
+ *
+ * On codes generally: in the database a code is only a label -- the row's
+ * identity is its id, and nothing in src/ branches on a code's value (see
+ * Product.code in schema.prisma). The seed is the one place that keys on
+ * codes, because catalog.json has no other handle on a row: every product
+ * and option below is upserted by its code, so a code renamed in the file
+ * seeds a new row (and leaves the old one in place, unless the target file
+ * lists it as a delete). Rename codes in the catalogue UI, then in the
+ * file.
  */
 const V2_DELETED_OPTION_CODES = v2Target.options.filter((o) => o.action === "delete").map((o) => o.code);
 const V2_DELETED_PRODUCT_CODES = v2Target.products.filter((p) => p.action === "delete").map((p) => p.code);
-
-/** `where` matching a row by its current code or any code it used to have,
- *  including every legacy code the seed entry itself lists. */
-function whereAnyOfCodes(codes: string[]) {
-  return { OR: codes.flatMap((c) => whereAnyCode(c).OR) };
-}
 
 async function main() {
   // Import db module only after dotenv has loaded DATABASE_URL.
@@ -118,9 +119,9 @@ async function main() {
   // deactivated option keeps both (it's not gone, just hidden).
   let retiredCount = 0;
   let deactivatedCount = 0;
-  const survivingOptionCodes = new Set(catalog.options.flatMap((o) => [o.code, ...(o.legacyCodes ?? [])]));
+  const survivingOptionCodes = new Set(catalog.options.map((o) => o.code));
   for (const code of V2_DELETED_OPTION_CODES) {
-    if (survivingOptionCodes.has(code)) continue; // the file still carries it (as a code or legacy code) -- not retired
+    if (survivingOptionCodes.has(code)) continue; // the file still carries it -- not retired
     const existing = await db.option.findUnique({ where: { code } });
     if (!existing) continue; // never seeded under this code (e.g. fresh DB) -- nothing to retire
     const refCount = await db.documentLine.count({ where: { refId: existing.id, kind: "OPTION" } });
@@ -145,9 +146,7 @@ async function main() {
   // product from every picker and leaves the document whole).
   let retiredProductCount = 0;
   let deactivatedProductCount = 0;
-  const survivingProductCodes = new Set(
-    catalog.series.flatMap((s) => s.products.flatMap((p) => [p.code, ...(p.legacyCodes ?? [])]))
-  );
+  const survivingProductCodes = new Set(catalog.series.flatMap((s) => s.products.map((p) => p.code)));
   for (const code of V2_DELETED_PRODUCT_CODES) {
     if (survivingProductCodes.has(code)) continue;
     const existing = await db.product.findUnique({ where: { code } });
@@ -171,21 +170,16 @@ async function main() {
     retiredProductCount++;
   }
 
-  // 4. Products. Not an upsert by code: catalogue v2 renamed codes, so a
-  // database that was migrated (or seeded before the rename) holds the row
-  // under a code the file now lists in `legacyCodes`. Find by any code --
-  // current or legacy, on either side -- and update in place (setting the
-  // file's code and merging legacyCodes), create only when nothing matches.
-  // Identity columns (kind/form/specs/contentBlockKey) come from the file
-  // and nowhere else (see resolveProductIdentity). The content block is
-  // linked by key; the row is created in step 8, so the key is a plain
-  // string here and a missing block simply renders no section.
+  // 4. Products, upserted by code (see the note on codes above). Identity
+  // columns (kind/form/specs/contentBlockKey) come from the file and
+  // nowhere else (see resolveProductIdentity) and are written on every run.
+  // The content block is linked by key; the row is created in step 8, so
+  // the key is a plain string here and a missing block simply renders no
+  // section.
   const productIdByCode = new Map<string, string>();
-  let productRenamed = 0;
   for (const p of mapProducts(catalog)) {
     const seriesId = seriesIdByCode.get(p.seriesCode);
     if (!seriesId) throw new Error(`seed: product ${p.code} references unknown series ${p.seriesCode}`);
-    const existing = await db.product.findFirst({ where: whereAnyOfCodes([p.code, ...p.legacyCodes]) });
     const identity = {
       name: p.name,
       description: p.description,
@@ -198,31 +192,22 @@ async function main() {
       specs: p.specs ?? Prisma.DbNull,
       contentBlockKey: p.contentBlockKey,
     };
-    let productId: string;
-    if (existing) {
-      const legacyCodes = Array.from(
-        new Set([...existing.legacyCodes, ...p.legacyCodes, ...(existing.code !== p.code ? [existing.code] : [])])
-      ).filter((c) => c !== p.code);
-      if (existing.code !== p.code) productRenamed++;
-      await db.product.update({ where: { id: existing.id }, data: { code: p.code, legacyCodes, ...identity } });
-      productId = existing.id;
-    } else {
-      const created = await db.product.create({ data: { code: p.code, legacyCodes: p.legacyCodes, ...identity } });
-      productId = created.id;
-    }
-    productIdByCode.set(p.code, productId);
+    const product = await db.product.upsert({
+      where: { code: p.code },
+      update: identity,
+      create: { code: p.code, ...identity },
+    });
+    productIdByCode.set(p.code, product.id);
   }
 
-  // 5. Options -- same any-code matching as products. parentProductId is
+  // 5. Options -- upserted by code like products. parentProductId is
   // resolved from the file's parentProductCode through the map built above.
   const optionIdByCode = new Map<string, string>();
-  let optionRenamed = 0;
   for (const o of mapOptions(catalog)) {
     const parentProductId = o.parentProductCode ? (productIdByCode.get(o.parentProductCode) ?? null) : null;
     if (o.parentProductCode && !parentProductId) {
       throw new Error(`seed: option ${o.code} references unknown parent product ${o.parentProductCode}`);
     }
-    const existing = await db.option.findFirst({ where: whereAnyOfCodes([o.code, ...o.legacyCodes]) });
     const identity = {
       name: o.name,
       shortDescription: o.shortDescription,
@@ -233,19 +218,12 @@ async function main() {
       unitLengthM: o.unitLengthM,
       contentBlockKey: o.contentBlockKey,
     };
-    let optionId: string;
-    if (existing) {
-      const legacyCodes = Array.from(
-        new Set([...existing.legacyCodes, ...o.legacyCodes, ...(existing.code !== o.code ? [existing.code] : [])])
-      ).filter((c) => c !== o.code);
-      if (existing.code !== o.code) optionRenamed++;
-      await db.option.update({ where: { id: existing.id }, data: { code: o.code, legacyCodes, ...identity } });
-      optionId = existing.id;
-    } else {
-      const created = await db.option.create({ data: { code: o.code, legacyCodes: o.legacyCodes, ...identity } });
-      optionId = created.id;
-    }
-    optionIdByCode.set(o.code, optionId);
+    const option = await db.option.upsert({
+      where: { code: o.code },
+      update: identity,
+      create: { code: o.code, ...identity },
+    });
+    optionIdByCode.set(o.code, option.id);
   }
 
   // 6. Prices (AU only — the other regions have no pricing data yet)
@@ -500,7 +478,6 @@ async function main() {
   console.log(`  series:         ${seriesIdByCode.size}`);
   console.log(`  retired options: ${retiredCount} deleted, ${deactivatedCount} deactivated`);
   console.log(`  retired products: ${retiredProductCount} deleted, ${deactivatedProductCount} deactivated`);
-  console.log(`  renamed to v2 codes: ${productRenamed} products, ${optionRenamed} options`);
   console.log(`  products:       ${productIdByCode.size}`);
   console.log(`  options:        ${optionIdByCode.size}`);
   console.log(`  prices (AU):    ${priceCount}`);

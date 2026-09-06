@@ -17,7 +17,7 @@ import {
   orderedProducts,
   priceRows,
   readmeLines,
-} from "../scripts/lib/catalog-export";
+} from "../src/lib/catalog-xlsx/export";
 
 const ROOT = path.resolve(__dirname, "..");
 
@@ -64,7 +64,6 @@ function snapshotFromDump(dump: Dump): CatalogExportSnapshot {
     series: dump.series,
     products: dump.products.map((p, i) => ({
       ...p,
-      legacyCodes: [],
       kind: "ACCESSORY",
       form: null,
       contentBlockKey: null,
@@ -72,7 +71,6 @@ function snapshotFromDump(dump: Dump): CatalogExportSnapshot {
     })),
     options: dump.options.map((o, i) => ({
       ...o,
-      legacyCodes: [],
       role: null,
       parentProduct: null,
       unitLengthM: null,
@@ -90,7 +88,6 @@ function tiny(): CatalogExportSnapshot {
   const product: ExportProduct = {
     id: "p1",
     code: "M-5180",
-    legacyCodes: ["M5180", "M 5180"],
     series: "M",
     name: "M-Series 5cm x 180cm",
     description: null,
@@ -110,7 +107,6 @@ function tiny(): CatalogExportSnapshot {
     id: "p2",
     code: "EL-2020",
     series: "EL",
-    legacyCodes: [],
     kind: "TABLE",
     form: "EASYLOADER",
     specs: null,
@@ -121,7 +117,6 @@ function tiny(): CatalogExportSnapshot {
   const option: ExportOption = {
     id: "o1",
     code: "EL-2020-DM12",
-    legacyCodes: ["EL-2020 Drive Module (first 1.2M)"],
     name: "Drive module 1.2 m",
     shortDescription: "First module",
     role: "DM",
@@ -141,7 +136,6 @@ function tiny(): CatalogExportSnapshot {
     ...option,
     id: "o2",
     code: "ABR-M",
-    legacyCodes: [],
     role: "ABR",
     parentProduct: null,
     unitLengthM: null,
@@ -191,14 +185,12 @@ describe("catalog export builder — rows", () => {
   it("writes typed cells: booleans, numbers, blanks, joined lists, compact JSON", () => {
     const sheets = buildCatalogSheets(tiny());
     const m = sheets.products[1];
-    expect(m[PRODUCT_COLUMNS.indexOf("legacyCodes")]).toBe("M5180; M 5180");
     expect(m[PRODUCT_COLUMNS.indexOf("description")]).toBeNull();
     expect(m[PRODUCT_COLUMNS.indexOf("specs")]).toBe('{"cutHeightCm":5,"cutWidthCm":180}');
     expect(m[PRODUCT_COLUMNS.indexOf("active")]).toBe(true);
     expect(m[PRODUCT_COLUMNS.indexOf("sortOrder")]).toBe(2);
 
     const el = sheets.products[2];
-    expect(el[PRODUCT_COLUMNS.indexOf("legacyCodes")]).toBeNull();
     expect(el[PRODUCT_COLUMNS.indexOf("specs")]).toBeNull();
 
     const dm = sheets.options.find((r) => r[OPTION_COLUMNS.indexOf("code")] === "EL-2020-DM12")!;

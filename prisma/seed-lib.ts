@@ -11,16 +11,16 @@ import type { OptionRole, ProductKind, ProductionForm } from "@prisma/client";
 import type { ProductSpecs } from "../src/lib/validation/product-specs";
 
 export interface CatalogItem {
+  /** The seed's natural key: prisma/seed.ts upserts the row by it. In the
+   * database a code is only a label (the row's identity is its id, see
+   * Product.code in schema.prisma), but from outside the app it is the one
+   * handle there is -- so renaming a code here and re-seeding creates a new
+   * row rather than renaming the old one. */
   code: string;
   name: string;
   description: string;
   price: number | null;
   needsReview: boolean;
-  /** Codes this row had before catalogue v2 renamed it (see Product/
-   * Option.legacyCodes in schema.prisma). The seed matches an existing row
-   * by its current code OR any of these, so a database seeded under the old
-   * code is renamed in place rather than duplicated. Absent = none. */
-  legacyCodes?: string[];
   /** `Product.noCommission` / `Option.noCommission`; absent = false. */
   noCommission?: boolean;
   /** `Product.isCredit` (see that column's doc comment in schema.prisma) —
@@ -30,7 +30,7 @@ export interface CatalogItem {
    * existing catalog.json entry needs to change for this field to exist.
    * PROVISIONAL WORDING: the TRADE-IN entry's own `description` is
    * transcribed from a meeting, not the agreed legal redaction — the
-   * director reviews it at export (docs/reference/catalog-export.md). */
+   * director reviews it at export (docs/reference/catalog-import-export.md). */
   isCredit?: boolean;
   /** Product identity (Product.kind/form/specs). Written by
    * scripts/build-seed-data-from-target.ts from the target file. `kind` is
@@ -159,7 +159,6 @@ export function mapSeries(catalog: Catalog): SeriesPayload[] {
 
 export interface ProductPayload {
   code: string;
-  legacyCodes: string[];
   name: string;
   description: string | null;
   seriesCode: string;
@@ -202,7 +201,6 @@ export function mapProducts(catalog: Catalog): ProductPayload[] {
     series.products.forEach((p, i) => {
       out.push({
         code: p.code,
-        legacyCodes: p.legacyCodes ?? [],
         name: p.name,
         description: p.description ?? null,
         seriesCode: series.seriesCode,
@@ -218,7 +216,6 @@ export function mapProducts(catalog: Catalog): ProductPayload[] {
 
 export interface OptionPayload {
   code: string;
-  legacyCodes: string[];
   name: string;
   shortDescription: string | null;
   sortOrder: number;
@@ -254,7 +251,6 @@ export function resolveOptionIdentity(o: CatalogOption): {
 export function mapOptions(catalog: Catalog): OptionPayload[] {
   return catalog.options.map((o, i) => ({
     code: o.code,
-    legacyCodes: o.legacyCodes ?? [],
     name: o.name,
     shortDescription: o.description ?? null,
     sortOrder: i,

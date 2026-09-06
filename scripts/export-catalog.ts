@@ -2,7 +2,7 @@ import "dotenv/config";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import * as XLSX from "xlsx";
-import { buildCatalogWorkbook, defaultExportPath, type CatalogExportSnapshot } from "./lib/catalog-export";
+import { buildCatalogWorkbook, defaultExportPath } from "../src/lib/catalog-xlsx/export";
 
 /**
  * Export the live catalogue to an .xlsx for the director to review
@@ -12,8 +12,10 @@ import { buildCatalogWorkbook, defaultExportPath, type CatalogExportSnapshot } f
  *   npm run catalog:export -- --out RAW/review.xlsx
  *
  * Default output: RAW/catalog-export-<YYYY-MM-DD>.xlsx. The sheet layout and
- * editing rules are in docs/reference/catalog-export.md; the builder itself
- * (snapshot -> workbook) is scripts/lib/catalog-export.ts.
+ * editing rules are in docs/reference/catalog-import-export.md; the builder
+ * itself (snapshot -> workbook) is src/lib/catalog-xlsx/export.ts and the
+ * snapshot reader is src/lib/queries/catalog-xlsx.ts -- both shared with the
+ * in-app export at Settings -> Import / Export, which is the same workbook.
  */
 function parseArgs(argv: string[]): { out: string } {
   let out: string | undefined;
@@ -31,77 +33,17 @@ function parseArgs(argv: string[]): { out: string } {
   return { out: out ?? defaultExportPath() };
 }
 
-async function readSnapshot(): Promise<CatalogExportSnapshot> {
+async function main() {
+  const { out } = parseArgs(process.argv.slice(2));
+  // Imported lazily so dotenv above runs before src/lib/db reads DATABASE_URL.
   const { db } = await import("../src/lib/db");
+  const { loadCatalogSnapshot } = await import("../src/lib/queries/catalog-xlsx");
+  let snapshot;
   try {
-    const [regions, series, products, options] = await Promise.all([
-      db.region.findMany({ orderBy: { code: "asc" } }),
-      db.series.findMany({ orderBy: { sortOrder: "asc" } }),
-      db.product.findMany({
-        include: { series: true, prices: { include: { region: true } } },
-      }),
-      db.option.findMany({
-        include: {
-          parentProduct: true,
-          prices: { include: { region: true } },
-          compat: { include: { series: true, product: true } },
-        },
-      }),
-    ]);
-
-    const priceMap = (prices: { region: { code: string }; amount: { toString(): string }; needsReview: boolean }[]) =>
-      Object.fromEntries(prices.map((pr) => [pr.region.code, { amount: pr.amount.toString(), needsReview: pr.needsReview }]));
-
-    return {
-      generatedAt: new Date().toISOString(),
-      regions: regions.map((r) => ({ code: r.code, name: r.name, currency: r.currency })),
-      series: series.map((s) => ({ id: s.id, code: s.code, name: s.name, sortOrder: s.sortOrder })),
-      products: products.map((p) => ({
-        id: p.id,
-        code: p.code,
-        legacyCodes: p.legacyCodes,
-        series: p.series.code,
-        name: p.name,
-        description: p.description,
-        kind: p.kind,
-        form: p.form,
-        specs: p.specs,
-        contentBlockKey: p.contentBlockKey,
-        isCredit: p.isCredit,
-        noCommission: p.noCommission,
-        active: p.active,
-        sortOrder: p.sortOrder,
-        imageUrl: p.imageUrl,
-        prices: priceMap(p.prices),
-      })),
-      options: options.map((o) => ({
-        id: o.id,
-        code: o.code,
-        legacyCodes: o.legacyCodes,
-        name: o.name,
-        shortDescription: o.shortDescription,
-        role: o.role,
-        parentProduct: o.parentProduct?.code ?? null,
-        unitLengthM: o.unitLengthM === null ? null : o.unitLengthM.toString(),
-        compatSeries: o.compat.filter((c) => c.series).map((c) => c.series!.code),
-        compatProducts: o.compat.filter((c) => c.product).map((c) => c.product!.code),
-        contentBlockKey: o.contentBlockKey,
-        noCommission: o.noCommission,
-        active: o.active,
-        sortOrder: o.sortOrder,
-        imageUrl: o.imageUrl,
-        attributeSchema: o.attributeSchema,
-        prices: priceMap(o.prices),
-      })),
-    };
+    snapshot = await loadCatalogSnapshot();
   } finally {
     await db.$disconnect();
   }
-}
-
-async function main() {
-  const { out } = parseArgs(process.argv.slice(2));
-  const snapshot = await readSnapshot();
   const wb = buildCatalogWorkbook(snapshot);
   mkdirSync(path.dirname(out), { recursive: true });
   XLSX.writeFile(wb, out);

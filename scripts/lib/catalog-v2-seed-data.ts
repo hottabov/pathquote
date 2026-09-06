@@ -64,7 +64,6 @@ export function buildSeedDataFromTarget(
             contentBlockKey: p.contentBlockKey ?? null,
           },
           {
-            legacyCodes: p.legacyCodes.length ? p.legacyCodes : undefined,
             isCredit: p.isCredit || undefined,
             noCommission: p.noCommission || undefined,
           }
@@ -87,7 +86,6 @@ export function buildSeedDataFromTarget(
       },
       {
         compatibleProducts: o.compatProducts.length ? [...o.compatProducts] : undefined,
-        legacyCodes: o.legacyCodes.length ? o.legacyCodes : undefined,
         noCommission: o.noCommission || undefined,
       }
     )

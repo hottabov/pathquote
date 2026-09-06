@@ -22,8 +22,8 @@ import {
  * The plan is computed by scripts/lib/catalog-v2-plan.ts (pure, tested
  * against RAW/catalog-dump.json); this file reads the snapshot, prints or
  * applies the operations, and prints a summary. Idempotent: a second run
- * plans zero operations, because every row is matched by id or by any code
- * it has ever had (`legacyCodes`).
+ * plans zero operations, because every row is matched by id (or, for a row
+ * the target has no id for, by its current code).
  *
  * Order of writes: products (update/create), options (update/create,
  * compatibility, prices), product prices, then deletes -- options first,
@@ -56,7 +56,6 @@ async function readSnapshot(db: Tx): Promise<CatalogSnapshot> {
     products: products.map((p) => ({
       id: p.id,
       code: p.code,
-      legacyCodes: p.legacyCodes,
       series: p.series.code,
       name: p.name,
       description: p.description,
@@ -71,7 +70,6 @@ async function readSnapshot(db: Tx): Promise<CatalogSnapshot> {
     options: options.map((o) => ({
       id: o.id,
       code: o.code,
-      legacyCodes: o.legacyCodes,
       name: o.name,
       shortDescription: o.shortDescription,
       noCommission: o.noCommission,
@@ -115,7 +113,6 @@ async function apply(tx: Tx, operations: Operation[]) {
       where: { id: o.id },
       data: {
         code: c.code?.to,
-        legacyCodes: c.legacyCodes?.to,
         seriesId: c.seriesCode ? need(seriesId, c.seriesCode.to, "series") : undefined,
         name: c.name?.to,
         description: c.description?.to,
@@ -139,7 +136,6 @@ async function apply(tx: Tx, operations: Operation[]) {
     const created = await tx.product.create({
       data: {
         code: o.data.code,
-        legacyCodes: o.data.legacyCodes,
         seriesId: sid,
         name: o.data.name,
         description: o.data.description,
@@ -162,7 +158,6 @@ async function apply(tx: Tx, operations: Operation[]) {
       where: { id: o.id },
       data: {
         code: c.code?.to,
-        legacyCodes: c.legacyCodes?.to,
         name: c.name?.to,
         shortDescription: c.shortDescription?.to,
         role: c.role?.to,
@@ -186,7 +181,6 @@ async function apply(tx: Tx, operations: Operation[]) {
     const created = await tx.option.create({
       data: {
         code: o.data.code,
-        legacyCodes: o.data.legacyCodes,
         name: o.data.name,
         shortDescription: o.data.shortDescription,
         role: o.data.role,

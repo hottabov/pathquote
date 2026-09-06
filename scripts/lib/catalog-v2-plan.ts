@@ -7,12 +7,13 @@
  * the database and applies the operations inside one transaction.
  *
  * Matching rule, per target row: by `id` first; when the id is null (an
- * add) or no longer exists, by any code -- the row's current `code`, a
- * `legacyCodes` entry, or the target row's own `legacyCodes` (the code the
- * row had before a rename). A keep/rename that matches nothing is an error,
- * never a silent add. An add that does match (second run) becomes an
- * update, which is what makes the plan idempotent: planning the target
- * against a snapshot that already reflects it yields no operations.
+ * add) or no longer exists, by the row's exact current `code`. A rename is
+ * therefore only ever detected through the id (the target row's id names a
+ * row whose code differs); no history of old codes is kept anywhere
+ * (migration z32_drop_legacy_codes). A keep/rename that matches nothing is
+ * an error, never a silent add. An add that does match (second run)
+ * becomes an update, which is what makes the plan idempotent: planning the
+ * target against a snapshot that already reflects it yields no operations.
  */
 
 import type { OptionRole, ProductKind, ProductionForm } from "@prisma/client";
@@ -30,7 +31,6 @@ export interface TargetProduct {
   id: string | null;
   action: TargetAction;
   code: string;
-  legacyCodes: string[];
   series: string;
   name: string;
   description: string;
@@ -52,7 +52,6 @@ export interface TargetOption {
   id: string | null;
   action: TargetAction;
   code: string;
-  legacyCodes: string[];
   name: string;
   description: string;
   prices: TargetPrices;
@@ -97,7 +96,6 @@ export interface SnapshotPrice {
 export interface SnapshotProduct {
   id: string;
   code: string;
-  legacyCodes?: string[];
   series: string;
   name: string;
   description: string | null;
@@ -113,7 +111,6 @@ export interface SnapshotProduct {
 export interface SnapshotOption {
   id: string;
   code: string;
-  legacyCodes?: string[];
   name: string;
   shortDescription: string | null;
   noCommission: boolean;
@@ -136,7 +133,6 @@ export interface CatalogSnapshot {
 
 export interface ProductFields {
   code: string;
-  legacyCodes: string[];
   seriesCode: string;
   name: string;
   description: string | null;
@@ -150,7 +146,6 @@ export interface ProductFields {
 
 export interface OptionFields {
   code: string;
-  legacyCodes: string[];
   name: string;
   shortDescription: string | null;
   role: OptionRole | null;
@@ -267,14 +262,6 @@ export function pricePayload(
   return { amount, needsReview: amount === 0 && !genuineZero };
 }
 
-function mergeLegacyCodes(existing: readonly string[] | undefined, target: readonly string[], oldCode: string | null, newCode: string) {
-  const out: string[] = [];
-  for (const c of [...(existing ?? []), ...target, ...(oldCode && oldCode !== newCode ? [oldCode] : [])]) {
-    if (c !== newCode && !out.includes(c)) out.push(c);
-  }
-  return out;
-}
-
 // --- Validation ------------------------------------------------------------
 
 /**
@@ -300,9 +287,6 @@ export function validateTarget(target: CatalogTarget): string[] {
     }
   }
   for (const row of [...target.products, ...target.options]) {
-    if (row.action === "rename" && row.legacyCodes.length === 0) {
-      problems.push(`${row.code}: rename without a legacy code`);
-    }
     if (row.action === "add" && row.id !== null) problems.push(`${row.code}: add with a non-null id`);
     if (row.action !== "add" && row.id === null) problems.push(`${row.code}: ${row.action} with a null id`);
   }
@@ -311,19 +295,17 @@ export function validateTarget(target: CatalogTarget): string[] {
 
 // --- Matching --------------------------------------------------------------
 
-type Matchable = { id: string; code: string; legacyCodes?: string[] };
+type Matchable = { id: string; code: string };
 
+/** By id when the target names one that exists; otherwise by exact code. */
 function findMatch<T extends Matchable>(
   rows: T[],
-  target: { id: string | null; code: string; legacyCodes: string[] },
+  target: { id: string | null; code: string },
   claimed: Set<string>
 ): T | undefined {
   const byId = target.id ? rows.find((r) => r.id === target.id) : undefined;
   if (byId && !claimed.has(byId.id)) return byId;
-  const codes = [target.code, ...target.legacyCodes];
-  return rows.find(
-    (r) => !claimed.has(r.id) && (codes.includes(r.code) || (r.legacyCodes ?? []).some((c) => codes.includes(c)))
-  );
+  return rows.find((r) => !claimed.has(r.id) && r.code === target.code);
 }
 
 // --- Planning --------------------------------------------------------------
@@ -345,6 +327,9 @@ export function planCatalogV2(target: CatalogTarget, snapshot: CatalogSnapshot):
   // (a) products keep/rename/add
   const claimedProducts = new Set<string>();
   const productDeletes: TargetProduct[] = [];
+  /** Snapshot product code -> code after this plan, for every product the
+   *  plan renames; used to compare option compatibility below. */
+  const productRenames = new Map<string, string>();
   for (const t of target.products) {
     if (t.action === "delete") {
       productDeletes.push(t);
@@ -354,7 +339,6 @@ export function planCatalogV2(target: CatalogTarget, snapshot: CatalogSnapshot):
     const existing = findMatch(snapshot.products, t, claimedProducts);
     const fields: ProductFields = {
       code: t.code,
-      legacyCodes: mergeLegacyCodes(existing?.legacyCodes, t.legacyCodes, existing?.code ?? null, t.code),
       seriesCode: t.series,
       name: t.name,
       description: t.description || null,
@@ -367,19 +351,19 @@ export function planCatalogV2(target: CatalogTarget, snapshot: CatalogSnapshot):
     };
     if (!existing) {
       if (t.action !== "add") {
-        errors.push(`product ${t.code} (${t.action}, id ${t.id}): not found in the database by id or by any code`);
+        errors.push(`product ${t.code} (${t.action}, id ${t.id}): not found in the database by id or by code`);
         continue;
       }
       operations.push({ op: "product.create", code: t.code, data: fields });
       summary.products.created++;
     } else {
       claimedProducts.add(existing.id);
+      if (existing.code !== fields.code) productRenames.set(existing.code, fields.code);
       const changes: ProductChanges = {};
       const set = <K extends keyof ProductFields>(key: K, from: ProductFields[K] | undefined, changed: boolean) => {
         if (changed) changes[key] = { from, to: fields[key] } as ProductChanges[K];
       };
       set("code", existing.code, existing.code !== fields.code);
-      set("legacyCodes", existing.legacyCodes, !sameSet(existing.legacyCodes, fields.legacyCodes));
       set("seriesCode", existing.series, existing.series !== fields.seriesCode);
       set("name", existing.name, existing.name !== fields.name);
       set("description", existing.description, (existing.description ?? null) !== fields.description);
@@ -423,7 +407,6 @@ export function planCatalogV2(target: CatalogTarget, snapshot: CatalogSnapshot):
     const existing = findMatch(snapshot.options, t, claimedOptions);
     const fields: OptionFields = {
       code: t.code,
-      legacyCodes: mergeLegacyCodes(existing?.legacyCodes, t.legacyCodes, existing?.code ?? null, t.code),
       name: t.name,
       shortDescription: t.description || null,
       role: t.role ?? null,
@@ -434,7 +417,7 @@ export function planCatalogV2(target: CatalogTarget, snapshot: CatalogSnapshot):
     };
     if (!existing) {
       if (t.action !== "add") {
-        errors.push(`option ${t.code} (${t.action}, id ${t.id}): not found in the database by id or by any code`);
+        errors.push(`option ${t.code} (${t.action}, id ${t.id}): not found in the database by id or by code`);
         continue;
       }
       operations.push({ op: "option.create", code: t.code, data: fields });
@@ -446,7 +429,6 @@ export function planCatalogV2(target: CatalogTarget, snapshot: CatalogSnapshot):
         if (changed) changes[key] = { from, to: fields[key] } as OptionChanges[K];
       };
       set("code", existing.code, existing.code !== fields.code);
-      set("legacyCodes", existing.legacyCodes, !sameSet(existing.legacyCodes, fields.legacyCodes));
       set("name", existing.name, existing.name !== fields.name);
       set(
         "shortDescription",
@@ -475,9 +457,10 @@ export function planCatalogV2(target: CatalogTarget, snapshot: CatalogSnapshot):
     }
     // Compatibility: the product side is compared by *new* product code --
     // a snapshot taken before the products are renamed still lists the old
-    // codes, so they are translated through the target's rename map first.
+    // codes, so they are translated through the renames planned in (a)
+    // first.
     const from = existing
-      ? { series: existing.compatSeries, products: existing.compatProducts.map((c) => newProductCode(target, c)) }
+      ? { series: existing.compatSeries, products: existing.compatProducts.map((c) => productRenames.get(c) ?? c) }
       : { series: [], products: [] };
     if (!existing || !sameSet(from.series, t.compatSeries) || !sameSet(from.products, t.compatProducts)) {
       operations.push({
@@ -554,14 +537,6 @@ export function planCatalogV2(target: CatalogTarget, snapshot: CatalogSnapshot):
 
   if (errors.length) throw new PlanError("cannot plan the catalogue v2 migration", errors);
   return { operations, summary };
-}
-
-/** The code a product will have after the migration, given any code it has now. */
-export function newProductCode(target: CatalogTarget, currentCode: string): string {
-  for (const p of surviving(target.products)) {
-    if (p.code === currentCode || p.legacyCodes.includes(currentCode)) return p.code;
-  }
-  return currentCode;
 }
 
 // --- Rendering (for --dry-run) ---------------------------------------------

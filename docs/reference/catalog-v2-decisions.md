@@ -6,7 +6,7 @@ Source of truth for `catalog-v2-target.json`. Audit: `docs/audit/` (proposal v1,
 
 - **Existence**: US price list (`RAW/Price List North America (01-06-2026).xlsx`) decides what exists. Items only in AU are deleted. Items in DB but in neither list were entered by hand by the owner — keep.
 - **AUD prices**: AU price list (`RAW/11 Price List Australia 2026-05-28.xlsx`). Missing AU price → 0 + `needsReview`.
-- **Code**: `LETTER-HYPHEN-NUMBER` (`M-3180`, `X-10390`). `E` = extended length, `F` = felt belt. ≤ 16 chars, `[A-Z0-9-.]`, no spaces/parentheses/`#`. Old code kept in `legacyCodes`.
+- **Code**: `LETTER-HYPHEN-NUMBER` (`M-3180`, `X-10390`). `E` = extended length, `F` = felt belt. ≤ 16 chars, `[A-Z0-9-.]`, no spaces/parentheses/`#`. A code is a label; renaming it is a plain update and no history of old codes is kept (owner, 2026-09-06; migration `z32_drop_legacy_codes`).
 - **Name**: short, ≤ 50 chars. Machines: `M-Series Cutting Machine 3cm × 180cm` (lay height × cutting width), `L-Series Cutting Machine 320cm, Extended, Felt`.
 - **Description**: full price-list text; obvious typos fixed (seperately→separately, verticaly→vertically, cartrige→cartridge, measurments→measurements, PathCutTM→PathCut™, "1200m"→"1200mm", L-320 "Width 226cm"→"320cm"); internal notes removed ("Do we eliminate this…", "jph to discuss…", "Not available for K5380").
 - **Software is never a machine option** — products only. Option `PTW` deleted; its AU 3 500 becomes product `PTW-I` AU price. `PRA-L` deleted; product `PRA` = AU 3 500 / US 2 250.
