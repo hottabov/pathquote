@@ -2,6 +2,15 @@ import { randomUUID } from "crypto";
 import { mkdir, rename, stat, unlink } from "fs/promises";
 import path from "path";
 import { resolveUploadPath, uploadsDir } from "@/lib/uploads";
+import { DERIVATIVE_WIDTHS, type DerivativeWidth } from "@/lib/image-derivative-width";
+
+// Re-exported so every existing import site (this module's own callers, and
+// tests/image-derivatives.test.ts) keeps working unchanged — the closed set
+// itself now lives in image-derivative-width.ts, the half of this file that
+// has no `fs`/`crypto`/`sharp` and is therefore safe for a client component
+// (Avatar, CatalogThumb, ...) to import.
+export { DERIVATIVE_WIDTHS };
+export type { DerivativeWidth };
 
 /**
  * Downscaled, WebP-encoded copies of an uploaded raster image, used by the
@@ -14,17 +23,6 @@ import { resolveUploadPath, uploadsDir } from "@/lib/uploads";
  * independent and a few KB, so `derivativeFilename` refuses it and callers
  * serve the original bytes instead.
  */
-
-/**
- * Widths a caller may ask for, in *device* pixels (so a 64px-wide thumbnail
- * on a 2× display asks for 128). Closed set rather than a free integer:
- * every accepted value writes a file to disk, so an open range would let an
- * unauthenticated-cache-buster or a crawler fill the uploads volume with
- * thousands of near-identical derivatives.
- */
-export const DERIVATIVE_WIDTHS = [64, 128, 256, 512] as const;
-
-export type DerivativeWidth = (typeof DERIVATIVE_WIDTHS)[number];
 
 /** Quality passed to the WebP encoder. 78 is visually lossless at thumbnail
  * scale while cutting a typical 1280×768 product photo to a few KB. */

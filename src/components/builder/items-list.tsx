@@ -16,7 +16,14 @@ import { resolveForm } from "@/lib/production-forms/resolve";
 import { EL_MODULE_ROLES } from "@/lib/production-forms/table-sections";
 import { readProductSpecs } from "@/lib/validation/product-specs";
 import { removeItem, reorderItems, setItemSerialNumber } from "@/lib/actions/documents";
+import { pickDerivativeWidth } from "@/lib/image-derivative-width";
 import type { BuilderItem, CompatibleOption } from "@/lib/queries/documents";
+
+// The card header draws the item's product photo at 48 CSS px (`size-12`) —
+// a print-resolution snapshot (often ~1MB) has no business loading here just
+// to be shrunk by CSS, so it asks for the `?w=` thumbnail derivative instead
+// (src/lib/image-derivatives.ts), same as CatalogThumb.
+const ITEM_THUMB_BOX_PX = 48;
 
 function arrayMove<T>(list: T[], from: number, to: number): T[] {
   const copy = list.slice();
@@ -346,7 +353,11 @@ export function ItemsList({
                 {item.imageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={item.imageUrl}
+                    src={
+                      item.imageUrl.endsWith(".svg")
+                        ? item.imageUrl
+                        : `${item.imageUrl}?w=${pickDerivativeWidth(ITEM_THUMB_BOX_PX * 2)}`
+                    }
                     alt={item.name}
                     className="size-12 shrink-0 rounded-lg border border-slate-200 object-contain"
                   />

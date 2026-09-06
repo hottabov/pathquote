@@ -5,7 +5,12 @@ import { ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ImageUpload } from "@/components/catalog/image-upload";
 import { StatusBadge } from "@/components/ui-kit";
+import { pickDerivativeWidth } from "@/lib/image-derivative-width";
 import type { ActionResult } from "@/lib/actions/catalog";
+
+// Matches CatalogThumb: the box is 64 CSS px, so 2× (retina) needs 128
+// device px, which `pickDerivativeWidth` maps to the 128 derivative.
+const PREVIEW_BOX_PX = 64;
 
 export function SeriesImageCard({
   currentUrl,
@@ -31,9 +36,19 @@ export function SeriesImageCard({
       {!expanded && (
         <div className="flex items-center gap-3">
           {displayUrl ? (
+            // This card previews the exact same product/series photo
+            // CatalogThumb draws elsewhere — full-resolution originals, but
+            // shown here in a 64px box, so it asks for the same `?w=`
+            // thumbnail derivative rather than the print-resolution
+            // original. SVG catalogue art (already vector, no derivative)
+            // is linked as-is.
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={displayUrl}
+              src={
+                displayUrl.endsWith(".svg")
+                  ? displayUrl
+                  : `${displayUrl}?w=${pickDerivativeWidth(PREVIEW_BOX_PX * 2)}`
+              }
               alt={alt}
               className="size-16 shrink-0 rounded border border-slate-200 bg-white object-contain"
             />

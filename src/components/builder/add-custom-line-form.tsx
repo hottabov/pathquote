@@ -6,14 +6,22 @@ import { Button } from "@/components/ui/button";
 import { FieldRow, fieldInputClass } from "@/components/ui-kit";
 import { useToast } from "@/components/ui-kit/client";
 import { addCustomLine, type ActionResult } from "@/lib/actions/documents";
+import { pickDerivativeWidth } from "@/lib/image-derivative-width";
 
 const initialState: ActionResult = {};
 
 // Matches DOCUMENT_LINE_TYPES in src/lib/uploads.ts — the purpose-scoped
 // allow-list `purpose=document-line` enforces server-side (SVG excluded,
 // unlike the catalog uploader, since a salesperson's own upload shouldn't
-// be able to smuggle in script-bearing XML).
+// be able to smuggle in script-bearing XML). SVG being impossible here means
+// the preview below never needs a vector special-case the way CatalogThumb
+// does.
 const ACCEPTED_TYPES = "image/jpeg,image/png,image/webp";
+
+// The preview box is 48 CSS px (`size-12`) — the same "don't ship the
+// print-resolution original just to shrink it with CSS" reasoning as
+// CatalogThumb/ItemsList applies to this just-uploaded photo too.
+const PREVIEW_BOX_PX = 48;
 
 /**
  * The "Extra lines" add form: name, qty, unit price, an optional
@@ -132,7 +140,7 @@ export function AddCustomLineForm({ documentId }: { documentId: string }) {
           {imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={imageUrl}
+              src={`${imageUrl}?w=${pickDerivativeWidth(PREVIEW_BOX_PX * 2)}`}
               alt=""
               className="size-12 shrink-0 rounded-lg border border-slate-200 bg-white object-contain"
             />

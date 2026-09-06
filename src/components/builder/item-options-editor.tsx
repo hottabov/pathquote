@@ -10,8 +10,17 @@ import { formatMetres } from "@/lib/option-length";
 import { isOptionDisabled } from "@/lib/catalog-compat";
 import { cn } from "@/lib/utils";
 import { setItemOptions } from "@/lib/actions/documents";
+import { pickDerivativeWidth } from "@/lib/image-derivative-width";
 import type { CompatibleOption } from "@/lib/queries/documents";
 import type { OptionSelectionInput } from "@/lib/validation/documents";
+
+// The panel draws each option's icon at 24 CSS px (`size-6`) — the same box
+// the PDF's own `.pq-option-icon` fills (see DERIVATIVE_WIDTH_BY_CLASS in
+// src/lib/pdf.ts, which picks a more generous 128 for print quality at
+// 300dpi). Here a plain 2× retina derivative is enough, so this asks for
+// the smallest width that covers that instead of the print-resolution
+// original.
+const OPTION_ICON_BOX_PX = 24;
 
 type AttributeField = { key: string; label: string; type: "number" | "text" };
 
@@ -388,7 +397,11 @@ export function ItemOptionsEditor({
                             {showOptionIcons && option.imageUrl ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img
-                                src={option.imageUrl}
+                                src={
+                                  option.imageUrl.endsWith(".svg")
+                                    ? option.imageUrl
+                                    : `${option.imageUrl}?w=${pickDerivativeWidth(OPTION_ICON_BOX_PX * 2)}`
+                                }
                                 alt=""
                                 className="mt-0.5 size-6 shrink-0 rounded object-contain"
                               />
