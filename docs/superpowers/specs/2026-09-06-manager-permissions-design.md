@@ -179,10 +179,12 @@ Email, role and region stay read-only.
 
 ### What a manager never sees
 
-The user list, other people's roles, and other managers' names. The
-author/owner column is removed from the client and quote lists for a
-manager — for them it is always themselves, and it is the one place a
-foreign name could surface.
+The user list, other people's roles, and other managers' names.
+
+Verified during planning: neither the client list (`listCompanies`) nor the
+quote list (`listDocuments`) selects or renders an owner or author field, so
+there is no column to remove. Both are already ownership-scoped, so a
+manager's list can only contain their own rows regardless.
 
 ## Holes to close
 
@@ -210,7 +212,15 @@ foreign name could surface.
 5. **Admin Settings pages guarded per page.** Replaced by the segment-level
    layouts described above.
 
-6. **Author/owner column** removed from manager-facing lists.
+6. **Global company count on a manager's own client page.**
+   `countCompaniesUsingIndustry` (`src/lib/queries/industries.ts`) runs an
+   unscoped `db.company.count`, and the client card shows the result as
+   "Used by N companies" in the industry-rename confirmation. For a manager
+   that N counts other managers' companies. Scoping the count would fix the
+   leak but lie about the rename's blast radius, which is genuinely global.
+   Fix: keep the number for an admin; for a manager show no number and a
+   qualitative warning instead — "This industry is shared. Renaming it
+   changes it everywhere." True, and it carries no cross-manager data.
 
 ### Reviewed, no change needed
 
@@ -240,19 +250,22 @@ region, and cannot read a price outside their own region.
 
 ## Accepted risks
 
-**Catalogue visibility stays per user.** A newly created manager therefore
-sees the entire catalogue until an admin opens their card and hides what
-should be hidden. This is a silent permission gap that depends on the admin
-remembering.
+**Catalogue visibility stays per user, with no mitigation.** A newly created
+manager sees the entire catalogue until an admin opens their card and hides
+what should be hidden.
 
-Mitigation included in scope: the user-creation screen gains a "copy
-catalogue visibility from…" picker listing managers in the same region. One
-action instead of walking the whole tree by hand, so the default stops being
-"sees everything".
+Accepted deliberately. Hiding a product is the exception, not the rule — a
+few products are not sold in a few regions, and today that means exactly one
+manager who must not see two products. "Sees everything" is the correct
+default for almost every new user, and the admin accounts for the exception
+when creating one. Tooling to copy visibility between users would be
+machinery built for a case that has not yet occurred twice.
 
 ## Out of scope
 
 - Re-scoping `CatalogVisibility` to region (explicitly decided against).
+- Any tooling to seed, copy or bulk-edit catalogue visibility for a new
+  manager (see "Accepted risks").
 - Any new role beyond the three that exist.
 - Sharing clients or quotes between managers, and any admin-side
   re-assignment UI for ownership.
