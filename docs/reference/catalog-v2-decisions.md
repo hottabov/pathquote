@@ -29,13 +29,13 @@ Source of truth for `catalog-v2-target.json`. Audit: `docs/audit/` (proposal v1,
 
 | Decision | Detail |
 |---|---|
-| Delete (AU-only) | VRB-180/200/220, EXH, Waste Bin-180, IKP, BED, EDS-500/800, DMT, 320-E, EL Sync (both widths). Drills — **pending** (F14 vs Q7). |
+| Delete (AU-only) | VRB-180/200/220, EXH, Waste Bin-180, IKP, BED, EDS-500/800, DMT, 320-E, EL Sync (both widths). Drills ×2 (owner 2026-09-05: not in US → delete). |
 | Delete (software) | PTW, PRA-L. |
 | Delete (duplicates) | `HDRF-xxx Crate- Wooden Crate for transport` ×3 (keep `HDRF-xxx Crate` rows → rename `Crate-HDRF-xxx`), `JetPen` (merge into `JTP`, prices 7 500 / 7 500). |
-| Add (US) | `TR480` (M; US 2 716), `TR220` (M, X; US 5 036), `Crate-M-180` / `Crate-M-220` (AU 3 000 both; US 2 507 / 2 786) replacing `Crate-M`, `Crate-FP-180/220/300` (AU 1 200 all; US 1 254 / 1 400 / 1 600) replacing `Crate-FP`, `SVC-EF-INSTALL` (US price **pending**: 360 or 720), `Crate-EL` US 1 125. |
+| Add (US) | `TR480` (M; US 2 716), `TR220` (M, X; US 5 036), `Crate-M-180` / `Crate-M-220` (AU 3 000 both; US 2 507 / 2 786) replacing `Crate-M`, `Crate-FP-180/220/300` (AU 1 200 all; US 1 254 / 1 400 / 1 600) replacing `Crate-FP`, `SVC-EF-INSTALL` (US 360 — owner: one demo price regardless of width), `Crate-EL` US 1 125. |
 | Rename | L tools → `PCH-1.0…5.0`, `PCH-QR`, `RKT-28`, `RKT-40`, `DKT-30`, `DKT-45`, `DRV-28`, `NTT`; `MTS- additional travel p/Metre`→`MTS-M`; EL options → `EL-xxxx-DM1/DM12/ST12/BB12/RL12/RF`, roll holders → `ST620-2020`/`ST620-2420`; `Crate-180/220/320`→`Crate-L-180/220/320`; `SVC-L-INSTALL`→`SVC-L-INSTALL-S` (L-180, L-180E, L-220), `SVC-L-INSTALL-MTS`→`SVC-L-INSTALL-L` (L-220E, L-320E). |
 | EL busbar | Name "Electrical Busbar 1.2m" (AU/Brain), not "Electrical Runner" (US). 2420 roll holder = `ST620-2420`. |
 | OFJ | M/X only (not L). |
-| X compat | **pending** — restrict to US X-sheet list? |
+| X compat | Only what the US X-sheet lists: MTS, MTS-M, PRM, OFD, OFP, OFJ, HDC, BCR, TR220, Crate-M-180/220 (+ install). IKA/HFV/AFP are standard on X, not options. X prints no production form (the M-Series form has no X model box). |
 | Crate noCommission | true for every crate (Crate-220 was false). |
 | EL Drive Module | Stays an option (`EL-xxxx-DM1`); EL product price 0. Seed's `RETIRED_OPTION_CODES` entry removed. |

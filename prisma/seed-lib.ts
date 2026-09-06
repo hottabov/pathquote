@@ -7,12 +7,23 @@
  * these functions and turns the payloads into upserts.
  */
 
+import type { OptionRole, ProductKind, ProductionForm } from "@prisma/client";
+import type { ProductSpecs } from "../src/lib/validation/product-specs";
+import { legacyOptionIdentity, legacyProductIdentity } from "../src/lib/catalog-identity";
+
 export interface CatalogItem {
   code: string;
   name: string;
   description: string;
   price: number | null;
   needsReview: boolean;
+  /** Codes this row had before catalogue v2 renamed it (see Product/
+   * Option.legacyCodes in schema.prisma). The seed matches an existing row
+   * by its current code OR any of these, so a database seeded under the old
+   * code is renamed in place rather than duplicated. Absent = none. */
+  legacyCodes?: string[];
+  /** `Product.noCommission` / `Option.noCommission`; absent = false. */
+  noCommission?: boolean;
   /** `Product.isCredit` (see that column's doc comment in schema.prisma) —
    * only meaningful for a product entry (an `Option` has no such column);
    * absent/`undefined` on every entry except the TRADE-IN product means
@@ -22,6 +33,13 @@ export interface CatalogItem {
    * transcribed from a meeting, not the agreed legal redaction — see the
    * fuller note on it in scripts/extract-catalog.ts's `MANUAL_PRODUCTS.SVC`. */
   isCredit?: boolean;
+  /** Product identity (Product.kind/form/specs). Written by
+   * scripts/build-seed-data-from-target.ts from the target file. When an
+   * entry has no `kind` the seed falls back to the legacy code rules
+   * (src/lib/catalog-identity.ts) applied to `legacyCodes[0] ?? code`. */
+  kind?: ProductKind;
+  form?: ProductionForm | null;
+  specs?: ProductSpecs | null;
 }
 
 export interface CatalogSeries {
@@ -37,6 +55,13 @@ export interface CatalogOption extends CatalogItem {
    *  (e.g. an EasyLoader accessory tied to one drive-module product) rather
    *  than a whole series -- in that case compatibleSeries is `[]`. */
   compatibleProducts?: string[];
+  /** Option identity (Option.role/parentProductId/unitLengthM). Same
+   * fallback rule as the product fields: an entry with no `role` key is
+   * classified by the legacy code rules. */
+  role?: OptionRole | null;
+  /** Code of the product this option belongs to (EasyLoader modules). */
+  parentProductCode?: string | null;
+  unitLengthM?: number | null;
 }
 
 export interface Catalog {
@@ -129,6 +154,7 @@ export function mapSeries(catalog: Catalog): SeriesPayload[] {
 
 export interface ProductPayload {
   code: string;
+  legacyCodes: string[];
   name: string;
   description: string | null;
   seriesCode: string;
@@ -136,6 +162,32 @@ export interface ProductPayload {
   /** See `CatalogItem.isCredit`'s doc comment — defaults to `false` when the
    * catalog entry doesn't set it. */
   isCredit: boolean;
+  noCommission: boolean;
+  kind: ProductKind;
+  form: ProductionForm | null;
+  /** `null` = no specs (the column stays NULL). */
+  specs: ProductSpecs | null;
+}
+
+/** The code the legacy rules understand: the one the row had before v2. */
+function legacyCodeOf(item: { code: string; legacyCodes?: string[] }): string {
+  return item.legacyCodes?.[0] ?? item.code;
+}
+
+/**
+ * Product identity for a catalog entry: the entry's own `kind`/`form`/
+ * `specs` when it carries a `kind`, otherwise what the legacy code rules
+ * say about its pre-v2 code. Pure, so a fresh seed and the tests agree.
+ */
+export function resolveProductIdentity(
+  p: CatalogItem,
+  seriesCode: string
+): { kind: ProductKind; form: ProductionForm | null; specs: ProductSpecs | null } {
+  if (p.kind) {
+    return { kind: p.kind, form: p.form ?? null, specs: p.specs && Object.keys(p.specs).length ? p.specs : null };
+  }
+  const legacy = legacyProductIdentity(seriesCode, legacyCodeOf(p), p.isCredit ?? false);
+  return { kind: legacy.kind, form: legacy.form, specs: Object.keys(legacy.specs).length ? legacy.specs : null };
 }
 
 export function mapProducts(catalog: Catalog): ProductPayload[] {
@@ -144,11 +196,14 @@ export function mapProducts(catalog: Catalog): ProductPayload[] {
     series.products.forEach((p, i) => {
       out.push({
         code: p.code,
+        legacyCodes: p.legacyCodes ?? [],
         name: p.name,
         description: p.description ?? null,
         seriesCode: series.seriesCode,
         sortOrder: i,
         isCredit: p.isCredit ?? false,
+        noCommission: p.noCommission ?? false,
+        ...resolveProductIdentity(p, series.seriesCode),
       });
     });
   }
@@ -157,17 +212,39 @@ export function mapProducts(catalog: Catalog): ProductPayload[] {
 
 export interface OptionPayload {
   code: string;
+  legacyCodes: string[];
   name: string;
   shortDescription: string | null;
   sortOrder: number;
+  noCommission: boolean;
+  role: OptionRole | null;
+  /** Product code (current, as in catalog.json) -- resolved to an id by the seed. */
+  parentProductCode: string | null;
+  unitLengthM: number | null;
+}
+
+/** Same rule as resolveProductIdentity, keyed on the presence of `role`. */
+export function resolveOptionIdentity(o: CatalogOption): {
+  role: OptionRole | null;
+  parentProductCode: string | null;
+  unitLengthM: number | null;
+} {
+  if ("role" in o) {
+    return { role: o.role ?? null, parentProductCode: o.parentProductCode ?? null, unitLengthM: o.unitLengthM ?? null };
+  }
+  const legacy = legacyOptionIdentity(legacyCodeOf(o));
+  return { role: legacy.role, parentProductCode: legacy.parentProductCode, unitLengthM: legacy.unitLengthM };
 }
 
 export function mapOptions(catalog: Catalog): OptionPayload[] {
   return catalog.options.map((o, i) => ({
     code: o.code,
+    legacyCodes: o.legacyCodes ?? [],
     name: o.name,
     shortDescription: o.description ?? null,
     sortOrder: i,
+    noCommission: o.noCommission ?? false,
+    ...resolveOptionIdentity(o),
   }));
 }
 

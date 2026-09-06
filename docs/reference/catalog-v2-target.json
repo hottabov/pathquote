@@ -417,7 +417,7 @@
       "noCommission": false,
       "isCredit": false,
       "kind": "MACHINE",
-      "form": "M_SERIES",
+      "form": null,
       "specs": {
         "cutHeightCm": 10,
         "cutWidthCm": 180,
@@ -441,7 +441,7 @@
       "noCommission": false,
       "isCredit": false,
       "kind": "MACHINE",
-      "form": "M_SERIES",
+      "form": null,
       "specs": {
         "cutHeightCm": 10,
         "cutWidthCm": 227,
@@ -1020,7 +1020,9 @@
       "form": "EASYLOADER",
       "specs": {
         "tableWidthMm": 2020
-      }
+      },
+      "needsReviewAU": false,
+      "note": "price 0 by design: assembled from options"
     },
     {
       "id": "cmtfq1k91001nxy9k4m8qvscl",
@@ -1059,7 +1061,9 @@
       "form": "EASYLOADER",
       "specs": {
         "tableWidthMm": 2420
-      }
+      },
+      "needsReviewAU": false,
+      "note": "price 0 by design: assembled from options"
     },
     {
       "id": "cmtfq1k92001oxy9k22h7sv1d",
@@ -1098,7 +1102,9 @@
       "form": "EASYLOADER",
       "specs": {
         "tableWidthMm": 3220
-      }
+      },
+      "needsReviewAU": false,
+      "note": "price 0 by design: assembled from options"
     },
     {
       "id": "cmtgjwd2b001xtw9kl33nq440",
@@ -1137,7 +1143,9 @@
       "form": "EASYLOADER",
       "specs": {
         "tableWidthMm": 4030
-      }
+      },
+      "needsReviewAU": false,
+      "note": "price 0 by design: assembled from options"
     },
     {
       "id": "cmtfq1k93001pxy9k8qxcidl6",
@@ -1324,7 +1332,9 @@
       },
       "noCommission": true,
       "isCredit": false,
-      "kind": "SERVICE"
+      "kind": "SERVICE",
+      "needsReviewAU": false,
+      "note": "price 0 by design: container for SVC-* options"
     },
     {
       "id": "cmtkui88s0025r49ky9if9ghi",
@@ -1356,11 +1366,11 @@
       },
       "noCommission": false,
       "compatSeries": [
-        "M",
-        "X"
+        "M"
       ],
       "compatProducts": [],
-      "role": "ABR"
+      "role": "ABR",
+      "note": "X removed: not on US X-sheet"
     },
     {
       "id": "cmtfmusk9001peo9knefgl4cl",
@@ -1375,11 +1385,11 @@
       },
       "noCommission": false,
       "compatSeries": [
-        "M",
-        "X"
+        "M"
       ],
       "compatProducts": [],
-      "role": "AFP"
+      "role": "AFP",
+      "note": "X removed: not on US X-sheet"
     },
     {
       "id": "cmtfmuskd001teo9kl2fzes0t",
@@ -1394,11 +1404,11 @@
       },
       "noCommission": false,
       "compatSeries": [
-        "M",
-        "X"
+        "M"
       ],
       "compatProducts": [],
-      "role": "APM"
+      "role": "APM",
+      "note": "X removed: not on US X-sheet"
     },
     {
       "id": "cmtfmuskf001veo9k7l9wuvkj",
@@ -1432,11 +1442,11 @@
       },
       "noCommission": false,
       "compatSeries": [
-        "M",
-        "X"
+        "M"
       ],
       "compatProducts": [],
-      "role": "DR2"
+      "role": "DR2",
+      "note": "X removed: not on US X-sheet"
     },
     {
       "id": "cmtfmuskr0027eo9k6vluwsps",
@@ -1451,11 +1461,11 @@
       },
       "noCommission": false,
       "compatSeries": [
-        "M",
-        "X"
+        "M"
       ],
       "compatProducts": [],
-      "role": "DRG"
+      "role": "DRG",
+      "note": "X removed: not on US X-sheet"
     },
     {
       "id": "cmtfmusks0028eo9kzf362n9b",
@@ -1470,11 +1480,11 @@
       },
       "noCommission": false,
       "compatSeries": [
-        "M",
-        "X"
+        "M"
       ],
       "compatProducts": [],
-      "role": "DRG"
+      "role": "DRG",
+      "note": "X removed: not on US X-sheet"
     },
     {
       "id": "cmtfmuskt0029eo9k7yvwv50z",
@@ -1489,11 +1499,11 @@
       },
       "noCommission": false,
       "compatSeries": [
-        "M",
-        "X"
+        "M"
       ],
       "compatProducts": [],
-      "role": "DRG"
+      "role": "DRG",
+      "note": "X removed: not on US X-sheet"
     },
     {
       "id": "cmtfmuslo0032eo9kzp0pe3e8",
@@ -1527,11 +1537,11 @@
       },
       "noCommission": false,
       "compatSeries": [
-        "M",
-        "X"
+        "M"
       ],
       "compatProducts": [],
-      "role": "HFV"
+      "role": "HFV",
+      "note": "X removed: not on US X-sheet"
     },
     {
       "id": "cmtfmuslq0035eo9k6vex2lsy",
@@ -1546,11 +1556,11 @@
       },
       "noCommission": false,
       "compatSeries": [
-        "M",
-        "X"
+        "M"
       ],
       "compatProducts": [],
-      "role": "IJP"
+      "role": "IJP",
+      "note": "X removed: not on US X-sheet"
     },
     {
       "id": "cmtfmuslr0036eo9k8thnes0v",
@@ -1565,11 +1575,11 @@
       },
       "noCommission": false,
       "compatSeries": [
-        "M",
-        "X"
+        "M"
       ],
       "compatProducts": [],
-      "role": "IKA"
+      "role": "IKA",
+      "note": "X removed: not on US X-sheet"
     },
     {
       "id": "cmtfmuslu003aeo9kobyfipmw",
@@ -1584,11 +1594,11 @@
       },
       "noCommission": false,
       "compatSeries": [
-        "M",
-        "X"
+        "M"
       ],
       "compatProducts": [],
-      "role": "MRK"
+      "role": "MRK",
+      "note": "X removed: not on US X-sheet"
     },
     {
       "id": "cmtfmuslv003beo9kljyn1t5b",
@@ -1679,11 +1689,11 @@
       },
       "noCommission": false,
       "compatSeries": [
-        "M",
-        "X"
+        "M"
       ],
       "compatProducts": [],
-      "role": "PM"
+      "role": "PM",
+      "note": "X removed: not on US X-sheet"
     },
     {
       "id": "cmtfmusmb003peo9kx0uqbby5",
@@ -1908,13 +1918,11 @@
     },
     {
       "id": "cmtfmusku002aeo9kc5etzbab",
-      "action": "rename",
-      "code": "DRL-6",
-      "legacyCodes": [
-        "Drills included"
-      ],
-      "name": "Drill Set 2301071-7-6",
-      "description": "Drill set, part 2301071-7-6.",
+      "action": "delete",
+      "code": "Drills included",
+      "legacyCodes": [],
+      "name": "2301071-7-6",
+      "description": "2301071-7-6",
       "prices": {
         "AU": 350.0
       },
@@ -1924,17 +1932,15 @@
         "X"
       ],
       "compatProducts": [],
-      "pending": "F14 says delete (AU only), Q7 says keep"
+      "reason": "AU only"
     },
     {
       "id": "cmtfmuskv002beo9k3mjzc62j",
-      "action": "rename",
-      "code": "DRL-10",
-      "legacyCodes": [
-        "Drills included 2301071-7-10"
-      ],
-      "name": "Drill Set 2301071-7-10",
-      "description": "Drill set, part 2301071-7-10.",
+      "action": "delete",
+      "code": "Drills included 2301071-7-10",
+      "legacyCodes": [],
+      "name": "2301071-7-10",
+      "description": "2301071-7-10",
       "prices": {
         "AU": 375.0
       },
@@ -1944,7 +1950,7 @@
         "X"
       ],
       "compatProducts": [],
-      "pending": "F14 says delete (AU only), Q7 says keep"
+      "reason": "AU only"
     },
     {
       "id": "cmtfmusmd003reo9kd1d4zmyr",
@@ -3590,7 +3596,7 @@
         "US": 360
       },
       "noCommission": true,
-      "pending": "US price: 360 or 720 (owner said one price)"
+      "note": "owner: one demo price regardless of width (US sheet: 360 for 2020/2420, 720 for 3220/4030)"
     }
   ]
 }

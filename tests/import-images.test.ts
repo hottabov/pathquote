@@ -16,6 +16,8 @@ import {
   allIconOptionCodes,
   findDuplicateOptionTargets,
 } from "../scripts/import-images-lib";
+import catalogData from "../prisma/seed-data/catalog.json";
+import type { Catalog } from "../prisma/seed-lib";
 
 const OPTION_ICONS_DIR = path.resolve(__dirname, "..", "prisma", "seed-data", "option-icons");
 const BRAND_DIR = path.resolve(__dirname, "..", "prisma", "seed-data", "brand");
@@ -177,8 +179,10 @@ describe("allIconOptionCodes", () => {
   it("flattens every option code across ICON_OPTION_TARGETS", () => {
     const codes = allIconOptionCodes();
     expect(codes).toContain("ABR-M");
-    expect(codes).toContain("MTS- additional travel p/Metre");
-    expect(codes).toContain("PRA-L");
+    expect(codes).toContain("MTS-M");
+    // Software is never an option in catalogue v2: PRA-L and PTW are gone.
+    expect(codes).not.toContain("PRA-L");
+    expect(codes).not.toContain("PTW");
     expect(codes.length).toBe(Object.values(ICON_OPTION_TARGETS).flat().length);
   });
 });
@@ -190,5 +194,29 @@ describe("region brand logo source file", () => {
 
   it("no PNG brand logo remains under prisma/seed-data/brand/ (SVG-only now)", () => {
     expect(existsSync(path.join(BRAND_DIR, "pf-logo.png"))).toBe(false);
+  });
+});
+
+describe("image maps <-> catalog.json", () => {
+  // The import script matches rows by current code or legacy code
+  // (whereAnyCode), so a map key is valid when catalog.json lists it either
+  // way; a key matching neither would be silently skipped at import time.
+  const catalog = catalogData as Catalog;
+  const productCodes = new Set(catalog.series.flatMap((s) => s.products.flatMap((p) => [p.code, ...(p.legacyCodes ?? [])])));
+  const optionCodes = new Set(catalog.options.flatMap((o) => [o.code, ...(o.legacyCodes ?? [])]));
+
+  it("every PRODUCT_IMAGES / ICON_PRODUCT_TARGETS code is a current or legacy product code", () => {
+    for (const code of [...Object.keys(PRODUCT_IMAGES), ...Object.values(ICON_PRODUCT_TARGETS).flat()]) {
+      expect(productCodes.has(code), code).toBe(true);
+    }
+  });
+
+  it("every ICON_OPTION_TARGETS code is a current or legacy option code", () => {
+    for (const code of allIconOptionCodes()) expect(optionCodes.has(code), code).toBe(true);
+  });
+
+  it("every SERIES_IMAGES key is a series in catalog.json", () => {
+    const series = new Set(catalog.series.map((s) => s.seriesCode));
+    for (const code of Object.keys(SERIES_IMAGES)) expect(series.has(code), code).toBe(true);
   });
 });

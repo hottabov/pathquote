@@ -25,12 +25,23 @@ import { EL_MODULE_ROLE_LIST } from "../src/lib/production-forms/table-sections"
  */
 
 type Catalog = {
-  series: { seriesCode: string; products: { code: string; isCredit?: boolean }[] }[];
-  options: { code: string; name: string }[];
+  series: { seriesCode: string; products: { code: string; legacyCodes?: string[]; isCredit?: boolean }[] }[];
+  options: { code: string; legacyCodes?: string[]; name: string }[];
 };
 const catalog = catalogData as Catalog;
 
-const products = catalog.series.flatMap((s) => s.products.map((p) => ({ ...p, seriesCode: s.seriesCode })));
+/**
+ * catalog.json carries the catalogue v2 codes; the legacy rules understand
+ * the code a row had before the rename, which the file keeps as
+ * `legacyCodes[0]`. Rows added in v2 have no legacy code and are checked
+ * under their own.
+ */
+const legacyCode = (item: { code: string; legacyCodes?: string[] }) => item.legacyCodes?.[0] ?? item.code;
+
+const products = catalog.series.flatMap((s) =>
+  s.products.map((p) => ({ ...p, code: legacyCode(p), seriesCode: s.seriesCode }))
+);
+const options = catalog.options.map((o) => ({ ...o, code: legacyCode(o) }));
 
 /** What the per-form `matches(code)` regexes used to answer, per product. */
 const LEGACY_FORM_BY_CODE: Record<string, "M_SERIES" | "EASYLOADER" | "FABRICPRO" | null> = {
@@ -208,7 +219,7 @@ describe("option identity parity", () => {
     };
     expect(new Set(Object.keys(LEGACY_PATTERNS))).toEqual(new Set(Object.values(M_SERIES_TICK_ROLES)));
     for (const [role, pattern] of Object.entries(LEGACY_PATTERNS)) {
-      for (const o of catalog.options) {
+      for (const o of options) {
         if (pattern.test(o.code)) expect(legacyOptionIdentity(o.code).role, `${o.code} should carry ${role}`).toBe(role);
       }
     }
@@ -216,7 +227,7 @@ describe("option identity parity", () => {
 
   it("the EasyLoader's covered options are exactly the EL module roles", () => {
     expect(new Set(easyLoaderSpec.coversOptions)).toEqual(new Set(EL_MODULE_ROLE_LIST));
-    for (const o of catalog.options) {
+    for (const o of options) {
       const role = legacyOptionIdentity(o.code).role;
       const covered = easyLoaderSpec.coversOptions!.includes(role!);
       const legacyCovered = Object.values(LEGACY_EL_SUFFIX_BY_ROLE).some((suffix) => o.code.endsWith(suffix));
@@ -292,7 +303,7 @@ describe("option identity parity", () => {
   });
 
   it("leaves nothing in the catalogue without a role except what genuinely has none", () => {
-    const roleless = catalog.options.filter((o) => legacyOptionIdentity(o.code).role === null).map((o) => o.code);
+    const roleless = options.filter((o) => legacyOptionIdentity(o.code).role === null).map((o) => o.code);
     expect(roleless).toEqual([]);
   });
 });

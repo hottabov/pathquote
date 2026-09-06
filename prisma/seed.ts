@@ -16,7 +16,14 @@ import { Prisma } from "@prisma/client";
 import catalogData from "./seed-data/catalog.json";
 import contentBlocksData from "./seed-data/content-blocks.json";
 import usPricesData from "./seed-data/prices-us.json";
+import catalogV2Target from "../docs/reference/catalog-v2-target.json";
 import { backfillCatalogIdentity } from "../scripts/lib/catalog-identity-backfill";
+import type { CatalogTarget } from "../scripts/lib/catalog-v2-plan";
+import {
+  legacyOptionContentBlockKeyCandidates,
+  legacyProductContentBlockKey,
+  whereAnyCode,
+} from "../src/lib/catalog-identity";
 import {
   type Catalog,
   type ContentBlocksJson,
@@ -37,6 +44,26 @@ import {
 const catalog = catalogData as Catalog;
 const contentBlocksJson = contentBlocksData as ContentBlocksJson;
 const usPricesJson = usPricesData as UsPricesJson;
+const v2Target = catalogV2Target as CatalogTarget;
+
+/**
+ * Rows catalogue v2 deletes (docs/reference/catalog-v2-target.json, action
+ * "delete"): AU-only options, software sold as options, duplicates, the
+ * X-Calibre widths not on the US list. scripts/migrate-catalog-v2.ts
+ * removes them from a live database; the seed retires them too (same
+ * delete-or-deactivate rule as RETIRED_OPTION_CODES) so a database seeded
+ * from the pre-v2 catalog.json and never migrated still converges. Matched
+ * by exact current code only -- a deleted row was never renamed, and a
+ * legacy-code match could hit a surviving row.
+ */
+const V2_DELETED_OPTION_CODES = v2Target.options.filter((o) => o.action === "delete").map((o) => o.code);
+const V2_DELETED_PRODUCT_CODES = v2Target.products.filter((p) => p.action === "delete").map((p) => p.code);
+
+/** `where` matching a row by its current code or any code it used to have,
+ *  including every legacy code the seed entry itself lists. */
+function whereAnyOfCodes(codes: string[]) {
+  return { OR: codes.flatMap((c) => whereAnyCode(c).OR) };
+}
 
 /**
  * Option codes retired from the catalog -- either reclassified as products
@@ -174,7 +201,9 @@ async function main() {
   // deactivated option keeps both (it's not gone, just hidden).
   let retiredCount = 0;
   let deactivatedCount = 0;
-  for (const code of RETIRED_OPTION_CODES) {
+  const survivingOptionCodes = new Set(catalog.options.flatMap((o) => [o.code, ...(o.legacyCodes ?? [])]));
+  for (const code of [...RETIRED_OPTION_CODES, ...V2_DELETED_OPTION_CODES]) {
+    if (survivingOptionCodes.has(code)) continue; // the file still carries it (as a code or legacy code) -- not retired
     const existing = await db.option.findUnique({ where: { code } });
     if (!existing) continue; // never seeded under this code (e.g. fresh DB) -- nothing to retire
     const refCount = await db.documentLine.count({ where: { refId: existing.id, kind: "OPTION" } });
@@ -190,6 +219,39 @@ async function main() {
     }
     await db.option.delete({ where: { id: existing.id } });
     retiredCount++;
+  }
+
+  // 3b. Retire the products catalogue v2 deletes, by the same rule: delete
+  // when nothing references the row, deactivate when a document does
+  // (DocumentItem.productId is an optional relation -- deleting would null
+  // it and orphan the item's product snapshot; deactivating hides the
+  // product from every picker and leaves the document whole).
+  let retiredProductCount = 0;
+  let deactivatedProductCount = 0;
+  const survivingProductCodes = new Set(
+    catalog.series.flatMap((s) => s.products.flatMap((p) => [p.code, ...(p.legacyCodes ?? [])]))
+  );
+  for (const code of V2_DELETED_PRODUCT_CODES) {
+    if (survivingProductCodes.has(code)) continue;
+    const existing = await db.product.findUnique({ where: { code } });
+    if (!existing) continue;
+    const [itemCount, lineCount] = await Promise.all([
+      db.documentItem.count({ where: { productId: existing.id } }),
+      db.documentLine.count({ where: { refId: existing.id, kind: "PRODUCT" } }),
+    ]);
+    if (itemCount + lineCount > 0) {
+      if (existing.active) {
+        await db.product.update({ where: { id: existing.id }, data: { active: false } });
+      }
+      console.warn(
+        `seed: retired product "${code}" is still referenced by ${itemCount + lineCount} document row(s) -- deactivated, not deleted`
+      );
+      deactivatedProductCount++;
+      continue;
+    }
+    await db.optionCompatibility.deleteMany({ where: { productId: existing.id } });
+    await db.product.delete({ where: { id: existing.id } });
+    retiredProductCount++;
   }
 
   // 4. Rename legacy "XC-####" product codes to "X-####" (the X-Calibre
@@ -257,35 +319,77 @@ async function main() {
     }
   }
 
-  // 5. Products
+  // 5. Products. Not an upsert by code: catalogue v2 renamed codes, so a
+  // database that was migrated (or seeded before the rename) holds the row
+  // under a code the file now lists in `legacyCodes`. Find by any code --
+  // current or legacy, on either side -- and update in place (setting the
+  // file's code and merging legacyCodes), create only when nothing matches.
+  // Identity columns (kind/form/specs) come from the file, or from the
+  // legacy code rules when the entry has none (see resolveProductIdentity).
   const productIdByCode = new Map<string, string>();
+  let productRenamed = 0;
   for (const p of mapProducts(catalog)) {
     const seriesId = seriesIdByCode.get(p.seriesCode);
     if (!seriesId) throw new Error(`seed: product ${p.code} references unknown series ${p.seriesCode}`);
-    const product = await db.product.upsert({
-      where: { code: p.code },
-      update: { name: p.name, description: p.description, seriesId, sortOrder: p.sortOrder, isCredit: p.isCredit },
-      create: {
-        code: p.code,
-        name: p.name,
-        description: p.description,
-        seriesId,
-        sortOrder: p.sortOrder,
-        isCredit: p.isCredit,
-      },
-    });
-    productIdByCode.set(p.code, product.id);
+    const existing = await db.product.findFirst({ where: whereAnyOfCodes([p.code, ...p.legacyCodes]) });
+    const identity = {
+      name: p.name,
+      description: p.description,
+      seriesId,
+      sortOrder: p.sortOrder,
+      isCredit: p.isCredit,
+      noCommission: p.noCommission,
+      kind: p.kind,
+      form: p.form,
+      specs: p.specs ?? Prisma.DbNull,
+    };
+    let productId: string;
+    if (existing) {
+      const legacyCodes = Array.from(
+        new Set([...existing.legacyCodes, ...p.legacyCodes, ...(existing.code !== p.code ? [existing.code] : [])])
+      ).filter((c) => c !== p.code);
+      if (existing.code !== p.code) productRenamed++;
+      await db.product.update({ where: { id: existing.id }, data: { code: p.code, legacyCodes, ...identity } });
+      productId = existing.id;
+    } else {
+      const created = await db.product.create({ data: { code: p.code, legacyCodes: p.legacyCodes, ...identity } });
+      productId = created.id;
+    }
+    productIdByCode.set(p.code, productId);
   }
 
-  // 6. Options
+  // 6. Options -- same any-code matching as products. parentProductId is
+  // resolved from the file's parentProductCode through the map built above.
   const optionIdByCode = new Map<string, string>();
+  let optionRenamed = 0;
   for (const o of mapOptions(catalog)) {
-    const option = await db.option.upsert({
-      where: { code: o.code },
-      update: { name: o.name, shortDescription: o.shortDescription, sortOrder: o.sortOrder },
-      create: { code: o.code, name: o.name, shortDescription: o.shortDescription, sortOrder: o.sortOrder },
-    });
-    optionIdByCode.set(o.code, option.id);
+    const parentProductId = o.parentProductCode ? (productIdByCode.get(o.parentProductCode) ?? null) : null;
+    if (o.parentProductCode && !parentProductId) {
+      throw new Error(`seed: option ${o.code} references unknown parent product ${o.parentProductCode}`);
+    }
+    const existing = await db.option.findFirst({ where: whereAnyOfCodes([o.code, ...o.legacyCodes]) });
+    const identity = {
+      name: o.name,
+      shortDescription: o.shortDescription,
+      sortOrder: o.sortOrder,
+      noCommission: o.noCommission,
+      role: o.role,
+      parentProductId,
+      unitLengthM: o.unitLengthM,
+    };
+    let optionId: string;
+    if (existing) {
+      const legacyCodes = Array.from(
+        new Set([...existing.legacyCodes, ...o.legacyCodes, ...(existing.code !== o.code ? [existing.code] : [])])
+      ).filter((c) => c !== o.code);
+      if (existing.code !== o.code) optionRenamed++;
+      await db.option.update({ where: { id: existing.id }, data: { code: o.code, legacyCodes, ...identity } });
+      optionId = existing.id;
+    } else {
+      const created = await db.option.create({ data: { code: o.code, legacyCodes: o.legacyCodes, ...identity } });
+      optionId = created.id;
+    }
+    optionIdByCode.set(o.code, optionId);
   }
 
   // 7. Prices (AU only — the other regions have no pricing data yet)
@@ -529,19 +633,56 @@ async function main() {
   console.log(`  renamed XC->X series: ${renamedSeriesCount}`);
   console.log(`  series:         ${seriesIdByCode.size}`);
   console.log(`  retired options: ${retiredCount} deleted, ${deactivatedCount} deactivated`);
+  console.log(`  retired products: ${retiredProductCount} deleted, ${deactivatedProductCount} deactivated`);
+  console.log(`  renamed to v2 codes: ${productRenamed} products, ${optionRenamed} options`);
   console.log(`  renamed XC->X product codes: ${renamedXCount}`);
   console.log(`  renamed HDRF->HDRF-180: ${renamedHdrfCount}`);
-  // 10. Identity columns (migration z31_catalog_identity): kind, form,
-  // specs, role, parent, unit length, content block. catalog.json carries
-  // only legacy codes, so these are derived from the codes by the rules in
-  // src/lib/catalog-identity.ts -- for rows not classified yet. A row an
-  // admin has already classified keeps what they set. Runs last because the
-  // content-block keys it links to are created in step 9.
+  // 10. Identity columns (migration z31_catalog_identity) for rows the
+  // steps above did not classify -- catalogue rows outside catalog.json
+  // (hand-created) that are still at the column defaults. Rows seeded from
+  // the file already carry kind/form/specs/role/parent/unitLengthM from
+  // steps 5 and 6, so the backfill skips them; what they still need is the
+  // content block, linked in 10b. Runs after step 9 because the keys it
+  // links to are created there.
   const identity = await backfillCatalogIdentity(db, "missing");
+
+  // 10b. Content blocks for seeded rows with none yet: the quotation block
+  // a product/option is described by (Product/Option.contentBlockKey).
+  // Derived by the legacy rules from the code the rules understand -- the
+  // entry's first legacy code when it has one (PTW-S was "PTW(S)"), else
+  // its code -- and set only when the row has no block yet, so an admin's
+  // choice is never overwritten.
+  const blockKeys = new Set((await db.contentBlock.findMany({ select: { key: true } })).map((b) => b.key));
+  let blocksLinked = 0;
+  for (const p of mapProducts(catalog)) {
+    const productId = productIdByCode.get(p.code);
+    if (!productId) continue;
+    const row = await db.product.findUnique({ where: { id: productId }, select: { contentBlockKey: true } });
+    if (!row || row.contentBlockKey !== null) continue;
+    const key = [p.legacyCodes[0] ?? p.code, p.code]
+      .map((code) => legacyProductContentBlockKey(p.seriesCode, code))
+      .find((k): k is string => k !== null && blockKeys.has(k));
+    if (!key) continue;
+    await db.product.update({ where: { id: productId }, data: { contentBlockKey: key } });
+    blocksLinked++;
+  }
+  for (const o of mapOptions(catalog)) {
+    const optionId = optionIdByCode.get(o.code);
+    if (!optionId) continue;
+    const row = await db.option.findUnique({ where: { id: optionId }, select: { contentBlockKey: true } });
+    if (!row || row.contentBlockKey !== null) continue;
+    const key = [o.legacyCodes[0] ?? o.code, o.code]
+      .flatMap((code) => legacyOptionContentBlockKeyCandidates(code))
+      .find((k) => blockKeys.has(k));
+    if (!key) continue;
+    await db.option.update({ where: { id: optionId }, data: { contentBlockKey: key } });
+    blocksLinked++;
+  }
 
   console.log(`  products:       ${productIdByCode.size}`);
   console.log(`  options:        ${optionIdByCode.size}`);
   console.log(`  identity:       ${identity.products.written} products, ${identity.options.written} options classified`);
+  console.log(`  content blocks linked: ${blocksLinked}`);
   if (identity.options.unresolvedParents.length) {
     console.warn(`  identity: EasyLoader parent not found for ${identity.options.unresolvedParents.join(", ")}`);
   }

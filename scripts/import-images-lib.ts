@@ -54,19 +54,20 @@ export const SERIES_IMAGES: Record<string, string> = {
  * standalone photo, and all three HDRF width variants sharing the one
  * pre-split "hdrf.png" photo (there's no per-width product photo in the
  * source material, same "one shot per line" convention SERIES_IMAGES uses).
- * "LS Convert" is the SW series' one other product and is deliberately left
- * unmapped (see UNMAPPED_IMAGE_FILES).
+ * "LSC" (LS Convert) is the SW series' one other product and is deliberately
+ * left unmapped (see UNMAPPED_IMAGE_FILES). Codes are the catalogue v2 codes
+ * (docs/reference/catalog-v2-target.json); the import script matches a row
+ * by its current code or any legacy code (whereAnyCode), so a database not
+ * yet migrated still resolves them. PTN and EDG were deleted in v2.
  */
 export const PRODUCT_IMAGES: Record<string, string> = {
   PRA: "production-analyst.png",
-  "PTW(S)": "pathworks.png",
+  "PTW-S": "pathworks.png",
   WPN: "pathworks.png",
   WPL: "pathworks.png",
   PDG: "pathworks.png",
   "ANT-V5": "pathworks.png",
   "ANT-V6": "pathworks.png",
-  PTN: "pathworks.png",
-  EDG: "pathworks.png",
   "FP-TROLLEY": "fp-trolley.png",
   "HDRF-180": "hdrf.png",
   "HDRF-220": "hdrf.png",
@@ -118,13 +119,11 @@ export const ICON_OPTION_TARGETS: Record<string, string[]> = {
   IJP: ["IJP"],
   IKA: ["IKA"],
   MRK: ["MRK"],
-  MTS: ["MTS", "MTS- additional travel p/Metre"],
+  MTS: ["MTS", "MTS-M"],
   OFD: ["OFD-M", "OFD-L"],
   OFJ: ["OFJ"],
   OFP: ["OFP-M", "OFP-L"],
-  PRA: ["PRA-L"],
   PRM: ["PRM-M", "PRM-L"],
-  PTW: ["PTW"],
   JTP: ["JTP"],
 };
 
@@ -142,8 +141,8 @@ export const ICON_OPTION_TARGETS: Record<string, string[]> = {
 export const ICON_PRODUCT_TARGETS: Record<string, string[]> = {
   ANT: ["ANT-V5", "ANT-V6"],
   PRA: ["PRA"],
-  PTW: ["PTW(S)"],
-  LSC: ["LS Convert"],
+  PTW: ["PTW-S"],
+  LSC: ["LSC"],
 };
 
 /**
@@ -162,7 +161,9 @@ export const UNMAPPED_ICONS: string[] = [];
  * ICON_PRODUCT_TARGETS, sorted for deterministic output. Each corresponding
  * <code-lowercased>.svg file is hashed/copied exactly once regardless of how
  * many option/product codes map to it (e.g. PRA and PTW each feed both an
- * option and a product target).
+ * option and a product target). The PRA and PTW icons used to feed the
+ * "PRA-L" and "PTW" options too; catalogue v2 deleted those (software is
+ * never an option), so they are product-only now.
  */
 export function distinctIconCodes(): string[] {
   return Array.from(new Set([...Object.keys(ICON_OPTION_TARGETS), ...Object.keys(ICON_PRODUCT_TARGETS)])).sort();

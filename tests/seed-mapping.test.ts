@@ -96,12 +96,52 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
     ]);
   });
 
+  // Identity defaults for an entry with no `kind`: the legacy code rules on
+  // an unknown series give ACCESSORY / no form / no specs.
+  const IDENTITY = { legacyCodes: [], noCommission: false, kind: "ACCESSORY", form: null, specs: null } as const;
+
   it("mapProducts produces the exact product payload with per-series sortOrder", () => {
     expect(mapProducts(FIXTURE)).toEqual([
-      { code: "A-100", name: "Widget", description: "A widget", seriesCode: "A", sortOrder: 0, isCredit: false },
-      { code: "A-200", name: "Gadget", description: "A gadget", seriesCode: "A", sortOrder: 1, isCredit: false },
-      { code: "B-100", name: "Doohickey", description: "A doohickey", seriesCode: "B", sortOrder: 0, isCredit: false },
+      { code: "A-100", name: "Widget", description: "A widget", seriesCode: "A", sortOrder: 0, isCredit: false, ...IDENTITY },
+      { code: "A-200", name: "Gadget", description: "A gadget", seriesCode: "A", sortOrder: 1, isCredit: false, ...IDENTITY },
+      { code: "B-100", name: "Doohickey", description: "A doohickey", seriesCode: "B", sortOrder: 0, isCredit: false, ...IDENTITY },
     ]);
+  });
+
+  it("mapProducts prefers the entry's explicit kind/form/specs/legacyCodes/noCommission over the legacy rules", () => {
+    const explicit: Catalog = {
+      ...FIXTURE,
+      series: [
+        {
+          ...FIXTURE.series[0],
+          products: [
+            {
+              code: "M-3180",
+              legacyCodes: ["M3180"],
+              name: "M",
+              description: "",
+              price: 1,
+              needsReview: false,
+              noCommission: true,
+              kind: "MACHINE",
+              form: "M_SERIES",
+              specs: { cutHeightCm: 3, cutWidthCm: 180 },
+            },
+            // No `kind`: classified by the legacy rules from legacyCodes[0].
+            { code: "PTW-S", legacyCodes: ["PTW(S)"], name: "PW", description: "", price: 1, needsReview: false },
+          ],
+        },
+      ],
+    };
+    const [m, ptw] = mapProducts({ ...explicit, series: [{ ...explicit.series[0], seriesCode: "SW" }] });
+    expect(m).toMatchObject({
+      legacyCodes: ["M3180"],
+      noCommission: true,
+      kind: "MACHINE",
+      form: "M_SERIES",
+      specs: { cutHeightCm: 3, cutWidthCm: 180 },
+    });
+    expect(ptw).toMatchObject({ kind: "SOFTWARE", form: null, specs: { softwareMode: "standalone" } });
   });
 
   it("mapProducts defaults isCredit to false when the catalog entry omits it, and passes it through when set", () => {
@@ -124,11 +164,39 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
   });
 
   it("mapOptions produces the exact option payload", () => {
+    const identity = { legacyCodes: [], noCommission: false, role: null, parentProductCode: null, unitLengthM: null };
     expect(mapOptions(FIXTURE)).toEqual([
-      { code: "OPT-1", name: "Option One", shortDescription: "First option", sortOrder: 0 },
-      { code: "OPT-2", name: "Option Two", shortDescription: "Second option", sortOrder: 1 },
-      { code: "OPT-3", name: "Widget Accessory", shortDescription: "Product-scoped accessory", sortOrder: 2 },
+      { code: "OPT-1", name: "Option One", shortDescription: "First option", sortOrder: 0, ...identity },
+      { code: "OPT-2", name: "Option Two", shortDescription: "Second option", sortOrder: 1, ...identity },
+      { code: "OPT-3", name: "Widget Accessory", shortDescription: "Product-scoped accessory", sortOrder: 2, ...identity },
     ]);
+  });
+
+  it("mapOptions prefers an explicit role (even null) and falls back to the legacy rules on the legacy code", () => {
+    const opts: Catalog = {
+      ...FIXTURE,
+      options: [
+        {
+          code: "EL-2020-DM12",
+          legacyCodes: ["EL-2020 Additional 1.2M lengths"],
+          name: "x",
+          description: "",
+          price: 1,
+          needsReview: false,
+          compatibleSeries: [],
+          compatibleProducts: ["EL-2020"],
+          role: "EL_CONVEYOR",
+          parentProductCode: "EL-2020",
+          unitLengthM: 1.2,
+        },
+        { code: "MTS-M", legacyCodes: ["MTS- additional travel p/Metre"], name: "x", description: "", price: 1, needsReview: false, compatibleSeries: ["M"] },
+        { code: "ABR-M", name: "x", description: "", price: 1, needsReview: false, compatibleSeries: ["M"], role: null },
+      ],
+    };
+    const [dm12, mts, abr] = mapOptions(opts);
+    expect(dm12).toMatchObject({ role: "EL_CONVEYOR", parentProductCode: "EL-2020", unitLengthM: 1.2 });
+    expect(mts).toMatchObject({ role: "MTS_TRAVEL", parentProductCode: null, unitLengthM: 1 });
+    expect(abr).toMatchObject({ role: null, parentProductCode: null, unitLengthM: null });
   });
 
   it("mapPrices produces the exact price payload, incl. null-price -> amount 0 + needsReview true", () => {
@@ -165,8 +233,15 @@ describe("seed-lib: smoke assertions against the real catalog.json (counts only)
     expect(mapSeries(catalog)).toHaveLength(10);
   });
 
-  it("has exactly 66 total products", () => {
-    expect(mapProducts(catalog)).toHaveLength(66);
+  it("has as many product payloads as catalog.json has products, and one option payload per option", () => {
+    expect(mapProducts(catalog)).toHaveLength(catalog.series.reduce((n, s) => n + s.products.length, 0));
+    expect(mapOptions(catalog)).toHaveLength(catalog.options.length);
+  });
+
+  it("every AU price payload for a null-priced entry is amount 0 + needsReview", () => {
+    for (const p of mapPrices(catalog, "AU")) {
+      if (p.needsReview) expect(p.amount, p.code).toBe(0);
+    }
   });
 });
 
@@ -311,8 +386,8 @@ describe("prices-us.json <-> catalog.json consistency", () => {
 describe("Spot Price Validation (USD)", () => {
   const byCode = new Map(usPrices.prices.map((p) => [p.code, p.amountUsd]));
 
-  it("M3180 = 163350", () => {
-    expect(byCode.get("M3180")).toBe(163350);
+  it("M-3180 = 163350", () => {
+    expect(byCode.get("M-3180")).toBe(163350);
   });
 
   it("X-10180 = 248000", () => {
@@ -323,8 +398,17 @@ describe("Spot Price Validation (USD)", () => {
     expect(byCode.get("L-180")).toBe(118029);
   });
 
-  it("PTW(S) = 3621", () => {
-    expect(byCode.get("PTW(S)")).toBe(3621);
+  it("PTW-S = 3621", () => {
+    expect(byCode.get("PTW-S")).toBe(3621);
+  });
+
+  it("L-320EF = 154864 and L-320F has no US price (it moved to L-320EF)", () => {
+    expect(byCode.get("L-320EF")).toBe(154864);
+    expect(byCode.has("L-320F")).toBe(false);
+  });
+
+  it("no US price is 0 -- a missing US price is simply absent from the file", () => {
+    for (const p of usPrices.prices) expect(p.amountUsd, p.code).toBeGreaterThan(0);
   });
 
   it("LNS-2020 = 27534", () => {

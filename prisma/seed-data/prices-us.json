@@ -1,41 +1,13 @@
 {
-  "extractedAt": "2026-08-31T02:15:13.811Z",
+  "extractedAt": "2026-09-05T12:27:04.831Z",
   "prices": [
-    {
-      "code": "1.0mm dia punch",
-      "amountUsd": 80
-    },
     {
       "code": "180-E",
       "amountUsd": 5304
     },
     {
-      "code": "2.0mm dia punch",
-      "amountUsd": 80
-    },
-    {
       "code": "220-E",
       "amountUsd": 7071
-    },
-    {
-      "code": "28 Dia. Round Knife Tool- Patented Quick release mechanism (Not used on Felt bed) 2x10 sided blades included std",
-      "amountUsd": 466
-    },
-    {
-      "code": "3.0mm dia punch",
-      "amountUsd": 80
-    },
-    {
-      "code": "4.0mm dia punch",
-      "amountUsd": 80
-    },
-    {
-      "code": "40 Dia. Round Knife Tool- Quick release (Not available yet)",
-      "amountUsd": 506
-    },
-    {
-      "code": "5.0mm dia punch",
-      "amountUsd": 80
     },
     {
       "code": "ABR-L",
@@ -74,20 +46,60 @@
       "amountUsd": 1462.5
     },
     {
-      "code": "Crate-180",
+      "code": "Crate-EL",
+      "amountUsd": 1125
+    },
+    {
+      "code": "Crate-FP-180",
+      "amountUsd": 1254
+    },
+    {
+      "code": "Crate-FP-220",
+      "amountUsd": 1400
+    },
+    {
+      "code": "Crate-FP-300",
+      "amountUsd": 1600
+    },
+    {
+      "code": "Crate-HDRF-180",
+      "amountUsd": 1254
+    },
+    {
+      "code": "Crate-HDRF-220",
+      "amountUsd": 1400
+    },
+    {
+      "code": "Crate-HDRF-320",
+      "amountUsd": 1600
+    },
+    {
+      "code": "Crate-L-180",
       "amountUsd": 2507
     },
     {
-      "code": "Crate-220",
+      "code": "Crate-L-220",
       "amountUsd": 2786
     },
     {
-      "code": "Crate-320",
+      "code": "Crate-L-320",
       "amountUsd": 3000
     },
     {
-      "code": "Crate-FP",
-      "amountUsd": 1254
+      "code": "Crate-M-180",
+      "amountUsd": 2507
+    },
+    {
+      "code": "Crate-M-220",
+      "amountUsd": 2786
+    },
+    {
+      "code": "DKT-30",
+      "amountUsd": 587
+    },
+    {
+      "code": "DKT-45",
+      "amountUsd": 587
     },
     {
       "code": "DR2",
@@ -106,15 +118,7 @@
       "amountUsd": 2674
     },
     {
-      "code": "Drag Knife Tool- Quick Release (to suit carbide knife 1.0mm x 7mm purchased seperately) 30 deg",
-      "amountUsd": 587
-    },
-    {
-      "code": "Drag Knife Tool- Quick Release (to suit carbide knife 1.0mm x 7mm purchased seperately) 45 deg?",
-      "amountUsd": 587
-    },
-    {
-      "code": "Driven- Electrically driven. Suit 28mm Carbide Octagonal blade.",
+      "code": "DRV-28",
       "amountUsd": 5143
     },
     {
@@ -134,84 +138,92 @@
       "amountUsd": 29250
     },
     {
-      "code": "EL-2020",
-      "amountUsd": 0
+      "code": "EL-2020-BB12",
+      "amountUsd": 209
     },
     {
-      "code": "EL-2020 #ST620-2020 Roll Holder- Used to dispense perforated underlay paper. Mounted rear of EasyLoader on lower leg.",
-      "amountUsd": 1003
-    },
-    {
-      "code": "EL-2020 Additional 1.2M lengths",
-      "amountUsd": 1337
-    },
-    {
-      "code": "EL-2020 Drive Module (first 1.2M)",
+      "code": "EL-2020-DM1",
       "amountUsd": 6936
     },
     {
-      "code": "EL-2020 Electrical Busbar Per 1.2M Used for Fabric Pro automatic spreader.",
-      "amountUsd": 209
+      "code": "EL-2020-DM12",
+      "amountUsd": 1337
     },
     {
-      "code": "EL-2020 Single Roll feed attachment (L & R clip attachment with cross bar & pair of keeper)",
+      "code": "EL-2020-RF",
       "amountUsd": 613
     },
     {
-      "code": "EL-2020 Static table 1.2M lengths",
+      "code": "EL-2020-RL12",
+      "amountUsd": 161
+    },
+    {
+      "code": "EL-2020-ST12",
       "amountUsd": 557
     },
     {
-      "code": "EL-2020 Travel Platform support rail. Per 1.2m",
-      "amountUsd": 161
-    },
-    {
-      "code": "EL-2420",
-      "amountUsd": 0
-    },
-    {
-      "code": "EL-2420 Additional 1.2M lengths",
-      "amountUsd": 1741
-    },
-    {
-      "code": "EL-2420 Drive Module (first 1.2M)",
-      "amountUsd": 7340
-    },
-    {
-      "code": "EL-2420 Electrical Busbar Per 1.2M Used for Fabric Pro automatic spreader.",
+      "code": "EL-2420-BB12",
       "amountUsd": 209
     },
     {
-      "code": "EL-2420 ST620-2420 Roll Holder- Used to dispense perforated underlay paper. Mounted rear of EasyLoader on lower leg.",
-      "amountUsd": 1031
+      "code": "EL-2420-DM1",
+      "amountUsd": 7340
     },
     {
-      "code": "EL-2420 Single Roll feed attachment (L & R clip attachment with cross bar & pair of keeper)",
+      "code": "EL-2420-DM12",
+      "amountUsd": 1741
+    },
+    {
+      "code": "EL-2420-RF",
       "amountUsd": 641
     },
     {
-      "code": "EL-2420 Static table 1.2M lengths",
-      "amountUsd": 585
-    },
-    {
-      "code": "EL-2420 Travel Platform support rail. Per 1.2m",
+      "code": "EL-2420-RL12",
       "amountUsd": 161
     },
     {
-      "code": "EL-3220",
-      "amountUsd": 0
+      "code": "EL-2420-ST12",
+      "amountUsd": 585
     },
     {
-      "code": "EL-3220 Drive Module (first 1.2M)",
+      "code": "EL-3220-BB12",
+      "amountUsd": 209
+    },
+    {
+      "code": "EL-3220-DM1",
       "amountUsd": 12480
     },
     {
-      "code": "EL-4030",
-      "amountUsd": 0
+      "code": "EL-3220-DM12",
+      "amountUsd": 2406
     },
     {
-      "code": "EL-4030 Drive Module (first 1.2M)",
+      "code": "EL-3220-RL12",
+      "amountUsd": 161
+    },
+    {
+      "code": "EL-3220-ST12",
+      "amountUsd": 1003
+    },
+    {
+      "code": "EL-4030-BB12",
+      "amountUsd": 209
+    },
+    {
+      "code": "EL-4030-DM1",
       "amountUsd": 12480
+    },
+    {
+      "code": "EL-4030-DM12",
+      "amountUsd": 2406
+    },
+    {
+      "code": "EL-4030-RL12",
+      "amountUsd": 161
+    },
+    {
+      "code": "EL-4030-ST12",
+      "amountUsd": 1003
     },
     {
       "code": "FP-180",
@@ -238,24 +250,12 @@
       "amountUsd": 12500
     },
     {
-      "code": "HDRF-180 Crate- Wooden Crate for transport",
-      "amountUsd": 1254
-    },
-    {
       "code": "HDRF-220",
       "amountUsd": 13900
     },
     {
-      "code": "HDRF-220 Crate- Wooden Crate for transport",
-      "amountUsd": 1400
-    },
-    {
       "code": "HDRF-320",
       "amountUsd": 15290
-    },
-    {
-      "code": "HDRF-320 Crate- Wooden Crate for transport",
-      "amountUsd": 1600
     },
     {
       "code": "HFV-L",
@@ -274,7 +274,7 @@
       "amountUsd": 3970
     },
     {
-      "code": "JetPen",
+      "code": "JTP",
       "amountUsd": 7500
     },
     {
@@ -298,7 +298,7 @@
       "amountUsd": 159235
     },
     {
-      "code": "L-320F",
+      "code": "L-320EF",
       "amountUsd": 154864
     },
     {
@@ -314,71 +314,71 @@
       "amountUsd": 30356
     },
     {
-      "code": "LS Convert",
+      "code": "LSC",
       "amountUsd": 9750
     },
     {
-      "code": "M10180",
+      "code": "M-10180",
       "amountUsd": 185625
     },
     {
-      "code": "M10220",
+      "code": "M-10220",
       "amountUsd": 198990
     },
     {
-      "code": "M10300",
+      "code": "M-10300",
       "amountUsd": 266647
     },
     {
-      "code": "M10390",
+      "code": "M-10390",
       "amountUsd": 304425
     },
     {
-      "code": "M3180",
+      "code": "M-3180",
       "amountUsd": 163350
     },
     {
-      "code": "M3220",
+      "code": "M-3220",
       "amountUsd": 176715
     },
     {
-      "code": "M3300",
+      "code": "M-3300",
       "amountUsd": 235950
     },
     {
-      "code": "M3390",
+      "code": "M-3390",
       "amountUsd": 247500
     },
     {
-      "code": "M5180",
+      "code": "M-5180",
       "amountUsd": 170775
     },
     {
-      "code": "M5220",
+      "code": "M-5220",
       "amountUsd": 184140
     },
     {
-      "code": "M5300",
+      "code": "M-5300",
       "amountUsd": 246748
     },
     {
-      "code": "M5390",
+      "code": "M-5390",
       "amountUsd": 289575
     },
     {
-      "code": "M7180",
+      "code": "M-7180",
       "amountUsd": 178200
     },
     {
-      "code": "M7220",
+      "code": "M-7220",
       "amountUsd": 191565
     },
     {
-      "code": "M7300",
+      "code": "M-7300",
       "amountUsd": 256697
     },
     {
-      "code": "M7390",
+      "code": "M-7390",
       "amountUsd": 297000
     },
     {
@@ -390,11 +390,11 @@
       "amountUsd": 10446.43
     },
     {
-      "code": "MTS- additional travel p/Metre",
+      "code": "MTS-M",
       "amountUsd": 626.79
     },
     {
-      "code": "Notch Tool- Quick Release (to suit carbide knife 1.0mm x 7mm)",
+      "code": "NTT",
       "amountUsd": 763
     },
     {
@@ -416,6 +416,30 @@
     {
       "code": "OFP-M",
       "amountUsd": 3133.93
+    },
+    {
+      "code": "PCH-1.0",
+      "amountUsd": 80
+    },
+    {
+      "code": "PCH-2.0",
+      "amountUsd": 80
+    },
+    {
+      "code": "PCH-3.0",
+      "amountUsd": 80
+    },
+    {
+      "code": "PCH-4.0",
+      "amountUsd": 80
+    },
+    {
+      "code": "PCH-5.0",
+      "amountUsd": 80
+    },
+    {
+      "code": "PCH-QR",
+      "amountUsd": 362
     },
     {
       "code": "PDG",
@@ -442,16 +466,32 @@
       "amountUsd": 3214.29
     },
     {
-      "code": "PTW(I)",
+      "code": "PTW-I",
       "amountUsd": 2786
     },
     {
-      "code": "PTW(S)",
+      "code": "PTW-S",
       "amountUsd": 3621
     },
     {
-      "code": "Punch Tool- Quick Release (to suit Hollow dia 1mm/2mm/3mm/4mm/5mm purchased seperately)",
-      "amountUsd": 362
+      "code": "RKT-28",
+      "amountUsd": 466
+    },
+    {
+      "code": "RKT-40",
+      "amountUsd": 506
+    },
+    {
+      "code": "ST620-2020",
+      "amountUsd": 1003
+    },
+    {
+      "code": "ST620-2420",
+      "amountUsd": 1031
+    },
+    {
+      "code": "SVC-EF-INSTALL",
+      "amountUsd": 360
     },
     {
       "code": "SVC-EL-INSTALL",
@@ -466,12 +506,12 @@
       "amountUsd": 180
     },
     {
-      "code": "SVC-L-INSTALL",
-      "amountUsd": 6900
+      "code": "SVC-L-INSTALL-L",
+      "amountUsd": 8820
     },
     {
-      "code": "SVC-L-INSTALL-MTS",
-      "amountUsd": 8820
+      "code": "SVC-L-INSTALL-S",
+      "amountUsd": 6900
     },
     {
       "code": "SVC-LNS-INSTALL",
@@ -490,6 +530,14 @@
       "amountUsd": 480
     },
     {
+      "code": "TR220",
+      "amountUsd": 5036
+    },
+    {
+      "code": "TR480",
+      "amountUsd": 2716
+    },
+    {
       "code": "WPL",
       "amountUsd": 5432
     },
@@ -506,131 +554,5 @@
       "amountUsd": 262000
     }
   ],
-  "unmatched": [
-    {
-      "sheet": "EasyFeed",
-      "label": "EF-2020 Installation (3 hrs) with Cutter installation (service)",
-      "price": 360
-    },
-    {
-      "sheet": "EasyFeed",
-      "label": "EF-2420 Installation (3 hrs) with Cutter installation (service)",
-      "price": 360
-    },
-    {
-      "sheet": "EasyFeed",
-      "label": "EF-3220 Installation (3 hrs) with Cutter installation (service)",
-      "price": 720
-    },
-    {
-      "sheet": "EasyFeed",
-      "label": "EF-4030 Installation (3 hrs) with Cutter installation (service)",
-      "price": 720
-    },
-    {
-      "sheet": "EasyLoader",
-      "label": "EL-2020 Crate",
-      "price": 1125
-    },
-    {
-      "sheet": "EasyLoader",
-      "label": "EL-2420 Crate",
-      "price": 1125
-    },
-    {
-      "sheet": "EasyLoader",
-      "label": "EL-3220 Additional 1.2M lengths",
-      "price": 2406
-    },
-    {
-      "sheet": "EasyLoader",
-      "label": "EL-3220 Crate",
-      "price": 1125
-    },
-    {
-      "sheet": "EasyLoader",
-      "label": "EL-3220 Electrical Runner Per 1.2M Used for Fabric Pro automatic spreader.",
-      "price": 209
-    },
-    {
-      "sheet": "EasyLoader",
-      "label": "EL-3220 Static table 1.2M lengths",
-      "price": 1003
-    },
-    {
-      "sheet": "EasyLoader",
-      "label": "EL-3220 Travel platform support rails including mounting brackets per 1.2m",
-      "price": 161
-    },
-    {
-      "sheet": "EasyLoader",
-      "label": "EL-4030 Additional 1.2M lengths",
-      "price": 2406
-    },
-    {
-      "sheet": "EasyLoader",
-      "label": "EL-4030 Crate",
-      "price": 1125
-    },
-    {
-      "sheet": "EasyLoader",
-      "label": "EL-4030 Electrical Runner Per 1.2M Used for Fabric Pro automatic spreader.",
-      "price": 209
-    },
-    {
-      "sheet": "EasyLoader",
-      "label": "EL-4030 Static table 1.2M lengths",
-      "price": 1003
-    },
-    {
-      "sheet": "EasyLoader",
-      "label": "EL-4030 Travel platform support rails including mounting brackets per 1.2m",
-      "price": 161
-    },
-    {
-      "sheet": "M-series",
-      "label": "Crate M180 -- Wooden Crate for an Mx180",
-      "price": 2507
-    },
-    {
-      "sheet": "M-series",
-      "label": "Crate M220 -- Wooden Crate Mx220",
-      "price": 2786
-    },
-    {
-      "sheet": "M-series",
-      "label": "TR220 -- Transformer 30KVA, 60 Hz, Autotransformer, Three phase. 220V(input) to 380V/415V?(output). Standalone unit- Customer responsibility to hardwire.",
-      "price": 5036
-    },
-    {
-      "sheet": "M-series",
-      "label": "TR480 -- Transformer 30KVA, 60 Hz, Autotransformer, Three phase. 480V(input) to 380V(output). Integrated and wired.",
-      "price": 2716
-    },
-    {
-      "sheet": "X-series",
-      "label": "Crate M180 -- Wooden Crate for an Mx180",
-      "price": 2507.14
-    },
-    {
-      "sheet": "X-series",
-      "label": "Crate M220 -- Wooden Crate Mx220",
-      "price": 2785.71
-    },
-    {
-      "sheet": "X-series",
-      "label": "Install/Training (service)",
-      "price": 6900
-    },
-    {
-      "sheet": "X-series",
-      "label": "Install/Training+MTS (service)",
-      "price": 8820
-    },
-    {
-      "sheet": "X-series",
-      "label": "TR220 -- Transformer 30KVA, 60 Hz, Autotransformer, Three phase. 220V(input) to 380V/415V?(output). Standalone unit- Customer responsibility to hardwire.",
-      "price": 5035.71
-    }
-  ]
+  "unmatched": []
 }

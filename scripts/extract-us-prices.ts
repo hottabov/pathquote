@@ -1,4 +1,13 @@
 /**
+ * DEPRECATED (2026-09-05, catalogue v2). The spreadsheet this script reads is
+ * superseded by docs/reference/catalog-v2-target.json, from which
+ * scripts/build-seed-data-from-target.ts regenerates prisma/seed-data/
+ * catalog.json and prices-us.json. Re-running this script would overwrite the
+ * regenerated files with the pre-v2 codes (M3180, "PTW(S)", "EL-2020 Drive
+ * Module (first 1.2M)"...) and rows v2 deleted. Do not re-run it; kept for
+ * the record of how the original extraction was done.
+ */
+/**
  * Extracts USD (North America) retail prices from the raw NA price list into
  * a committed JSON snapshot: prisma/seed-data/prices-us.json.
  *

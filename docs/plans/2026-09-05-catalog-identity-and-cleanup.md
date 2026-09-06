@@ -48,14 +48,20 @@ Known deliberate differences vs. the code-parsing readers: the quotation spec se
 
 ## Phase 3 — Data: rename, dedupe, add, delete (per decisions file)
 
-- [ ] **3.1** `scripts/migrate-catalog-v2.ts`: reads `catalog-v2-target.json`; for each row
-  matches DB by `id` (from dump) → sets code/name/description/prices/compat/role/kind/specs;
-  old code → `legacyCodes`. Deletes listed rows. Adds new rows. Dry-run flag prints diff.
-- [ ] **3.2** Regenerate `prisma/seed-data/catalog.json` + `prices-us.json` from the same
-  target so a fresh seed reproduces the cleaned catalogue. `extract-*.ts` scripts get a
-  deprecation note (source spreadsheets are superseded by the target file).
-- [ ] **3.3** `content-blocks.json` keys re-pointed via `contentBlockId` (no code keys).
-- [ ] **3.4** Image maps (`import-images-lib.ts`) keyed by new codes + legacy fallback.
+- [x] **3.1** `scripts/migrate-catalog-v2.ts` (IO shell) + `scripts/lib/catalog-v2-plan.ts`
+  (pure planner, tested against `RAW/catalog-dump.json` in `tests/catalog-v2-plan.test.ts`):
+  matches by `id`, then by any code; sets code/name/description/prices/compat/role/kind/specs;
+  old code → `legacyCodes`; deletes listed rows (options, then products); adds new rows;
+  `--dry-run` prints the diff; idempotent (second plan is empty). Not yet run on the live DB.
+- [x] **3.2** `scripts/build-seed-data-from-target.ts` regenerated `catalog.json` + `prices-us.json`
+  (new codes, `kind/form/specs`, `role/parentProductCode/unitLengthM`, `legacyCodes`);
+  `prisma/seed.ts` matches rows by any code and retires the target's deletes. `extract-*.ts`
+  carry a deprecation note.
+- [x] **3.3** `content-blocks.json` keys unchanged (`option.MTS`, `machine.m-series`, …) — they are
+  block ids, not catalogue codes; rows link to them through `contentBlockKey` (backfilled,
+  carried through renames, linked by the seed for fresh rows). Nothing in `src/` derives a key from a code.
+- [x] **3.4** Image maps (`import-images-lib.ts`) keyed by new codes; `import-product-images.ts`
+  matches rows by any code (`whereAnyCode`).
 - [ ] **3.5** Run on local DB, `db:verify-seed`, manual smoke: M-3180 quote → M-Series form;
   EL-2020 builder → DM1/DM12/ST12/BB12/RL12 lines; L-320EF quote → correct US price.
 
