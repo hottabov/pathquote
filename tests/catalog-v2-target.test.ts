@@ -75,6 +75,45 @@ describe("catalog-v2-target.json: internal consistency", () => {
     }
   });
 
+  // The migration failed once on role "DRG" -- a value the planner cannot
+  // check because it only sees strings. Read the enums straight out of the
+  // schema so a typo in the target fails here, not inside the transaction.
+  const schema = readFileSync(path.join(ROOT, "prisma/schema.prisma"), "utf8");
+  const enumValues = (name: string) =>
+    new Set(
+      schema
+        .match(new RegExp(`enum ${name} \\{([^}]*)\\}`))![1]
+        .split("\n")
+        .map((line) => line.replace(/\/\/.*$/, "").trim())
+        .filter(Boolean)
+    );
+
+  it("every role, kind and form is a value the Prisma enums know", () => {
+    const roles = enumValues("OptionRole");
+    const kinds = enumValues("ProductKind");
+    const forms = enumValues("ProductionForm");
+    for (const o of options) expect(roles.has(o.role ?? ""), `${o.code}: role ${o.role}`).toBe(true);
+    for (const p of products) {
+      expect(kinds.has(p.kind ?? ""), `${p.code}: kind ${p.kind}`).toBe(true);
+      if (p.form) expect(forms.has(p.form), `${p.code}: form ${p.form}`).toBe(true);
+    }
+  });
+
+  it("carries what the order forms read: model/width for M, width for FabricPro, module for PathWorks add-ons", () => {
+    for (const p of products) {
+      if (p.form === "M_SERIES") {
+        expect(p.specs?.modelTier, p.code).toMatch(/^M(3|5|7|10)$/);
+        expect(p.specs?.widthCode, p.code).toBeGreaterThan(0);
+      }
+      if (p.form === "FABRICPRO") expect(p.specs?.widthCode, p.code).toBeGreaterThan(0);
+      if (["ANT-V5", "ANT-V6", "PDG", "WPL", "WPN"].includes(p.code)) {
+        expect(p.specs?.pathworksModule, p.code).toBeDefined();
+      }
+      if (p.code === "PTW-I") expect(p.specs?.softwareMode).toBe("integrated");
+      if (p.code === "PTW-S") expect(p.specs?.softwareMode).toBe("standalone");
+    }
+  });
+
   it("prices are non-negative numbers", () => {
     for (const row of [...target.products, ...target.options]) {
       for (const [region, amount] of Object.entries(row.prices)) {

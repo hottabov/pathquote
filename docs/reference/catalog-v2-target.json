@@ -617,6 +617,7 @@
       "kind": "MACHINE",
       "specs": {
         "cutWidthCm": 180,
+        "widthCode": 180,
         "extended": false,
         "belt": "urethane"
       }
@@ -638,6 +639,7 @@
       "kind": "MACHINE",
       "specs": {
         "cutWidthCm": 180,
+        "widthCode": 180,
         "extended": false,
         "belt": "felt"
       }
@@ -659,6 +661,7 @@
       "kind": "MACHINE",
       "specs": {
         "cutWidthCm": 226,
+        "widthCode": 220,
         "extended": false,
         "belt": "urethane"
       }
@@ -680,6 +683,7 @@
       "kind": "MACHINE",
       "specs": {
         "cutWidthCm": 226,
+        "widthCode": 220,
         "extended": false,
         "belt": "felt"
       }
@@ -700,6 +704,7 @@
       "kind": "MACHINE",
       "specs": {
         "cutWidthCm": 320,
+        "widthCode": 320,
         "extended": false,
         "belt": "urethane"
       }
@@ -721,6 +726,7 @@
       "kind": "MACHINE",
       "specs": {
         "cutWidthCm": 320,
+        "widthCode": 320,
         "extended": true,
         "belt": "urethane"
       }
@@ -742,6 +748,7 @@
       "kind": "MACHINE",
       "specs": {
         "cutWidthCm": 320,
+        "widthCode": 320,
         "extended": false,
         "belt": "felt"
       },
@@ -758,6 +765,7 @@
       "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 320cm. Cutting belt Porous felt flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included. Extended length.",
       "specs": {
         "cutWidthCm": 320,
+        "widthCode": 320,
         "extended": true,
         "belt": "felt"
       },
@@ -782,7 +790,10 @@
       },
       "noCommission": false,
       "isCredit": false,
-      "kind": "SOFTWARE"
+      "kind": "SOFTWARE",
+      "specs": {
+        "pathworksModule": "ANT_V5"
+      }
     },
     {
       "id": "cmtfq1k8k0019xy9kydfy43d3",
@@ -798,7 +809,10 @@
       },
       "noCommission": false,
       "isCredit": false,
-      "kind": "SOFTWARE"
+      "kind": "SOFTWARE",
+      "specs": {
+        "pathworksModule": "ANT_V6"
+      }
     },
     {
       "id": "cmtfq1k8p001cxy9kbc8oeuvq",
@@ -814,7 +828,10 @@
       },
       "noCommission": false,
       "isCredit": false,
-      "kind": "SOFTWARE"
+      "kind": "SOFTWARE",
+      "specs": {
+        "pathworksModule": "PDG"
+      }
     },
     {
       "id": "cmtfq1k8r001dxy9k8ulbmd8j",
@@ -830,7 +847,8 @@
       },
       "noCommission": false,
       "isCredit": false,
-      "kind": "SOFTWARE"
+      "kind": "SOFTWARE",
+      "specs": null
     },
     {
       "id": "cmtfq1k8u001gxy9kj3olxoxm",
@@ -846,7 +864,10 @@
       },
       "noCommission": false,
       "isCredit": false,
-      "kind": "SOFTWARE"
+      "kind": "SOFTWARE",
+      "specs": {
+        "pathworksModule": "WPL"
+      }
     },
     {
       "id": "cmtfq1k8v001hxy9kkqzkvi3u",
@@ -862,7 +883,10 @@
       },
       "noCommission": false,
       "isCredit": false,
-      "kind": "SOFTWARE"
+      "kind": "SOFTWARE",
+      "specs": {
+        "pathworksModule": "WPN"
+      }
     },
     {
       "id": "cmtfq1k8o001bxy9kvpyvtmbu",
@@ -1231,7 +1255,8 @@
       "kind": "SPREADER",
       "form": "FABRICPRO",
       "specs": {
-        "cutWidthCm": 180
+        "cutWidthCm": 180,
+        "widthCode": 180
       }
     },
     {
@@ -1251,7 +1276,8 @@
       "kind": "SPREADER",
       "form": "FABRICPRO",
       "specs": {
-        "cutWidthCm": 220
+        "cutWidthCm": 220,
+        "widthCode": 220
       }
     },
     {
@@ -1271,7 +1297,8 @@
       "kind": "SPREADER",
       "form": "FABRICPRO",
       "specs": {
-        "cutWidthCm": 300
+        "cutWidthCm": 300,
+        "widthCode": 300
       }
     },
     {
@@ -1464,7 +1491,7 @@
         "M"
       ],
       "compatProducts": [],
-      "role": "DRG",
+      "role": "DRG_1",
       "note": "X removed: not on US X-sheet"
     },
     {
@@ -1483,7 +1510,7 @@
         "M"
       ],
       "compatProducts": [],
-      "role": "DRG",
+      "role": "DRG_2",
       "note": "X removed: not on US X-sheet"
     },
     {
@@ -1502,7 +1529,7 @@
         "M"
       ],
       "compatProducts": [],
-      "role": "DRG",
+      "role": "DRG_3",
       "note": "X removed: not on US X-sheet"
     },
     {
