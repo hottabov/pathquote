@@ -36,7 +36,8 @@ export type IndustryPickerProps = {
   companyId: string;
   industries: IndustryOption[];
   selectedId: string | null;
-  usageCount: number;
+  /** `null` when the count must be withheld — see `IndustryPicker`'s prop. */
+  usageCount: number | null;
   canRename: boolean;
 };
 

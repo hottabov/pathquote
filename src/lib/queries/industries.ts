@@ -10,8 +10,15 @@ export async function listIndustries() {
 }
 
 /**
- * How many companies point at an industry. Shown in the rename confirmation
- * so a shared-row edit is never silent.
+ * How many companies point at an industry, across every owner. Shown in the
+ * rename confirmation so a shared-row edit is never silent.
+ *
+ * ADMIN-ONLY BY CONTRACT. The count is deliberately unscoped — a rename
+ * really does reach every company, and a per-owner number would understate
+ * that. But it is therefore cross-manager data, so callers must not show it
+ * to a MANAGER; see the client card, which passes `usageCount: null` for
+ * one and renders a qualitative warning instead. Scoping this to fix the
+ * leak would trade a small disclosure for a wrong number, which is worse.
  */
 export async function countCompaniesUsingIndustry(industryId: string): Promise<number> {
   return db.company.count({ where: { industryId } });

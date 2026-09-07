@@ -15,8 +15,14 @@ type Props = {
   companyId: string;
   industries: IndustryOption[];
   selectedId: string | null;
-  /** Companies using the currently selected industry, for the rename confirm. */
-  usageCount: number;
+  /**
+   * Companies using the currently selected industry, for the rename confirm.
+   * `null` when the viewer may not see it: the count is unscoped (see
+   * `countCompaniesUsingIndustry`), so the client card withholds it from a
+   * manager rather than passing a number into the RSC payload. The confirm
+   * then warns qualitatively instead of quoting a figure.
+   */
+  usageCount: number | null;
   /**
    * Whether to offer the rename pencil. Renaming is admin-only (see
    * `renameIndustry`): the row is shared, so the edit lands on every
@@ -106,10 +112,11 @@ export function IndustryPicker({ id = "company-industry", companyId, industries,
 
   async function rename() {
     if (!selected) return;
-    const next = window.prompt(
-      `Rename "${selected.name}"? Used by ${usageCount} ${usageCount === 1 ? "company" : "companies"}.`,
-      selected.name,
-    );
+    const reach =
+      usageCount === null
+        ? "This industry is shared. Renaming it changes it everywhere."
+        : `Used by ${usageCount} ${usageCount === 1 ? "company" : "companies"}.`;
+    const next = window.prompt(`Rename "${selected.name}"? ${reach}`, selected.name);
     if (next === null || next === selected.name) return;
     setPending(true);
     setError(null);
