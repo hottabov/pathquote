@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { db } from "@/lib/db";
 import { toPlainTextPreview } from "@/lib/rich-text";
+import { categorySpecPresence, type CategorySpecPresence } from "@/lib/quote-variables";
 
 const DEFAULT_REGION_CODE = "AU";
 
@@ -116,6 +117,12 @@ export type SeriesDetail = {
    * getSeriesFallbackImageUrl). Distinct from ProductDetail/OptionDetail's
    * imageUrl, which has no fallback of its own. */
   imageUrl: string | null;
+  /** `Series.quoteDescription` — see the schema comment. */
+  quoteDescription: string | null;
+  /** Which spec figures this category's products actually carry, so the
+   * editor offers `{{cutHeightCm}}` to a cutting machine and not to a table.
+   * Computed from the products, never stored. */
+  specPresence: CategorySpecPresence;
 };
 
 type SeriesProductsResult = { series: SeriesDetail; products: ProductListItem[] };
@@ -127,6 +134,7 @@ async function seriesProductsResult(
     name: string;
     maxDiscountPct: { toString(): string } | null;
     imageUrl: string | null;
+    quoteDescription: string | null;
   },
   regionCode: string
 ): Promise<SeriesProductsResult> {
@@ -137,6 +145,10 @@ async function seriesProductsResult(
   // alphabetically, exactly the owner's stated default. Dragging touches
   // only that series' own rows (see `reorderProducts`), so an untouched
   // series elsewhere is unaffected either way.
+  //
+  // No explicit `select` -- Prisma's default already returns every scalar
+  // column, `specs` and `kind` included, so `categorySpecPresence` below
+  // reads them off these same rows rather than needing a second query.
   const products = await db.product.findMany({
     where: { seriesId: series.id },
     orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
@@ -155,6 +167,8 @@ async function seriesProductsResult(
       name: series.name,
       maxDiscountPct: series.maxDiscountPct?.toString() ?? null,
       imageUrl: series.imageUrl,
+      quoteDescription: series.quoteDescription,
+      specPresence: categorySpecPresence(products),
     },
     products: products.map((p) => {
       const price = p.prices[0];
@@ -318,7 +332,10 @@ export async function listOptions(params: {
  * rather than kept alongside this, the same call `getOptionDetailById` made
  * for the option route. */
 export async function getSeriesById(seriesId: string): Promise<SeriesDetail | null> {
-  const series = await db.series.findUnique({ where: { id: seriesId } });
+  const series = await db.series.findUnique({
+    where: { id: seriesId },
+    include: { products: { select: { specs: true, kind: true } } },
+  });
   if (!series) return null;
   return {
     id: series.id,
@@ -326,6 +343,8 @@ export async function getSeriesById(seriesId: string): Promise<SeriesDetail | nu
     name: series.name,
     maxDiscountPct: series.maxDiscountPct?.toString() ?? null,
     imageUrl: series.imageUrl,
+    quoteDescription: series.quoteDescription,
+    specPresence: categorySpecPresence(series.products),
   };
 }
 
@@ -408,7 +427,10 @@ export const getProductDetailById = cache(async function getProductDetailById(
   const [product, regions] = await Promise.all([
     db.product.findUnique({
       where: { id: productId },
-      include: { series: true, prices: { include: { region: true } } },
+      include: {
+        series: { include: { products: { select: { specs: true, kind: true } } } },
+        prices: { include: { region: true } },
+      },
     }),
     listActiveRegions(),
   ]);
@@ -429,6 +451,8 @@ export const getProductDetailById = cache(async function getProductDetailById(
       name: product.series.name,
       maxDiscountPct: product.series.maxDiscountPct?.toString() ?? null,
       imageUrl: product.series.imageUrl,
+      quoteDescription: product.series.quoteDescription,
+      specPresence: categorySpecPresence(product.series.products),
     },
     prices: toRegionPriceRows(regionsForPriceRows(regions, regionId), product.prices),
   };

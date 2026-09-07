@@ -2,6 +2,7 @@
 import { describe, it, expect } from "vitest";
 import {
   CATEGORY_TOKENS,
+  categorySpecPresence,
   categoryTokensFor,
   findUnknownTokens,
   tokensIn,
@@ -85,5 +86,34 @@ describe("CATEGORY_TOKENS", () => {
   it("declares no token twice", () => {
     const names = CATEGORY_TOKENS.map((t) => t.token);
     expect(new Set(names).size).toBe(names.length);
+  });
+});
+
+describe("categorySpecPresence", () => {
+  it("yields all-false for an empty product list", () => {
+    expect(categorySpecPresence([])).toEqual(noSpecs);
+  });
+
+  it("sets only cutWidthCm for a product with cutWidthCm but no cutHeightCm (the L-Series case)", () => {
+    const presence = categorySpecPresence([{ specs: { cutWidthCm: 220 }, kind: "MACHINE" }]);
+    expect(presence.cutWidthCm).toBe(true);
+    expect(presence.cutHeightCm).toBe(false);
+  });
+
+  it("sets hasMachine for a product of kind MACHINE", () => {
+    expect(categorySpecPresence([{ specs: {}, kind: "MACHINE" }]).hasMachine).toBe(true);
+    expect(categorySpecPresence([{ specs: {}, kind: "TABLE" }]).hasMachine).toBe(false);
+  });
+
+  it("tolerates unparseable specs, contributing nothing", () => {
+    expect(categorySpecPresence([{ specs: "not an object", kind: "ACCESSORY" }])).toEqual(noSpecs);
+  });
+
+  it("unions presence across every product in the category", () => {
+    const presence = categorySpecPresence([
+      { specs: {}, kind: "ACCESSORY" },
+      { specs: { cutHeightCm: 5 }, kind: "MACHINE" },
+    ]);
+    expect(presence.cutHeightCm).toBe(true);
   });
 });

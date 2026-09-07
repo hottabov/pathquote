@@ -8,6 +8,8 @@
 // Pure by the same rule as machine-specs.ts and sheet-data.ts: no `@/lib/db`
 // and no `next/*` imports, so `vitest run` needs no DATABASE_URL.
 
+import { readProductSpecs } from "./validation/product-specs";
+
 /** Matches `substitutePlaceholders`'s own pattern in quotation-data.ts —
  * both must accept exactly the same token syntax, including inner spaces. */
 const TOKEN_PATTERN = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
@@ -85,4 +87,36 @@ export function tokensIn(body: string): string[] {
 export function findUnknownTokens(body: string, allowed: QuoteToken[]): string[] {
   const names = new Set(allowed.map((t) => t.token));
   return tokensIn(body).filter((token) => !names.has(token));
+}
+
+/** Folds a category's products down to "does any product here carry this
+ * figure". A token is offered to the editor when at least one product can
+ * fill it; a product that cannot simply loses that line, which the draft
+ * preview then reports.
+ *
+ * The single implementation of this fold — `queries/catalog.ts` (building
+ * `SeriesDetail.specPresence`) and `actions/catalog/series.ts` (validating a
+ * save) both call this rather than each keeping their own copy. `kind` is
+ * typed as `string`, not Prisma's `ProductKind`, so this module keeps no
+ * Prisma dependency; the caller passes the enum value straight through and it
+ * is compared against the literal `"MACHINE"`. */
+export function categorySpecPresence(
+  products: ReadonlyArray<{ specs: unknown; kind: string }>
+): CategorySpecPresence {
+  const presence: CategorySpecPresence = {
+    cutHeightCm: false,
+    cutWidthCm: false,
+    tableWidthMm: false,
+    paperWidthMm: false,
+    hasMachine: false,
+  };
+  for (const product of products) {
+    const specs = readProductSpecs(product.specs);
+    if (specs.cutHeightCm !== undefined) presence.cutHeightCm = true;
+    if (specs.cutWidthCm !== undefined) presence.cutWidthCm = true;
+    if (specs.tableWidthMm !== undefined) presence.tableWidthMm = true;
+    if (specs.paperWidthMm !== undefined) presence.paperWidthMm = true;
+    if (product.kind === "MACHINE") presence.hasMachine = true;
+  }
+  return presence;
 }
