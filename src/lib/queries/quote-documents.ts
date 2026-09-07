@@ -2,63 +2,63 @@ import { cache } from "react";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { QuoteDocumentRow } from "@/lib/quotation-data";
+import {
+  buildQuoteDocumentList,
+  type QuoteDocumentRegionRow,
+} from "@/lib/quote-document-list";
 
-export type QuoteDocumentListItem = {
-  key: string;
-  title: string;
-  sortOrder: number;
-  includedByDefault: boolean;
-  /** Region codes (sorted) that have their own version of this document —
-   * shown as a "Customised for: US, UK" badge in the admin list, in place of
-   * `ContentBlock`'s plain boolean `hasRegionOverrides` flag: the badge names
-   * which regions, not just whether any do. Empty when every region prints
-   * the default. */
-  regionCodes: string[];
-};
+export type { QuoteDocumentListItem } from "@/lib/quote-document-list";
 
 /**
- * Every default (`regionId: null`) `QuoteDocument`, ordered by `sortOrder`
- * then `key` — the print order an admin set, same ordering rule
- * `listContentBlocks` used. Each document carries which regions have their
- * own version, for the admin list's badge.
+ * Every quote document there is, ordered by `sortOrder` then `key` — the
+ * print order an admin set. Each carries which regions keep their own
+ * version, for the list's badge.
  *
- * A document that exists ONLY as a region version — no global default at
- * all (D5: a region-only agreement like an EU entity's Data Processing
- * Agreement, created via `createRegionVersion` with no default to copy) — is
- * not among these rows, exactly as an override-only key never appeared in
- * `listContentBlocks` either. Reaching such a document from the admin list
- * is Task 7's problem, not this query's.
+ * Both row sets are read, not just the defaults: a document may exist ONLY
+ * as a region version, with no global default at all (D2's region-only
+ * agreement — an EU entity's Data Processing Agreement, say, created through
+ * `createRegionVersion`, which deliberately works with nothing to copy).
+ * While this returned defaults alone, such a document was invisible here,
+ * which meant the only screen that can edit or delete it could not be
+ * reached — and, worse, the drag list built from these rows was then a
+ * strict subset of the keys `reorderQuoteDocuments` checks against, so the
+ * first region-only document broke reordering for every document at once.
+ *
+ * The assembly itself is `buildQuoteDocumentList`, kept pure in
+ * src/lib/quote-document-list.ts so that rule can be tested without a
+ * database.
  */
-export async function listQuoteDocuments(): Promise<QuoteDocumentListItem[]> {
+export async function listQuoteDocuments() {
   const [defaults, overrideRows] = await Promise.all([
-    db.quoteDocument.findMany({
-      where: { regionId: null },
-      orderBy: [{ sortOrder: "asc" }, { key: "asc" }],
-    }),
+    db.quoteDocument.findMany({ where: { regionId: null } }),
     db.quoteDocument.findMany({
       where: { regionId: { not: null } },
-      select: { key: true, region: { select: { code: true } } },
+      select: {
+        key: true,
+        title: true,
+        sortOrder: true,
+        includedByDefault: true,
+        region: { select: { code: true } },
+      },
     }),
   ]);
 
-  const regionCodesByKey = new Map<string, string[]>();
+  const regionRows: QuoteDocumentRegionRow[] = [];
   for (const row of overrideRows) {
     // `region` can only be null here if the FK were dangling (never true in
     // practice — Region has no delete path that would orphan a
     // QuoteDocument), but guard it anyway rather than asserting non-null.
     if (!row.region) continue;
-    const codes = regionCodesByKey.get(row.key);
-    if (codes) codes.push(row.region.code);
-    else regionCodesByKey.set(row.key, [row.region.code]);
+    regionRows.push({
+      key: row.key,
+      regionCode: row.region.code,
+      title: row.title,
+      sortOrder: row.sortOrder,
+      includedByDefault: row.includedByDefault,
+    });
   }
 
-  return defaults.map((doc) => ({
-    key: doc.key,
-    title: doc.title,
-    sortOrder: doc.sortOrder,
-    includedByDefault: doc.includedByDefault,
-    regionCodes: (regionCodesByKey.get(doc.key) ?? []).sort(),
-  }));
+  return buildQuoteDocumentList(defaults, regionRows);
 }
 
 export type QuoteDocumentOverride = {

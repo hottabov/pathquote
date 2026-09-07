@@ -175,17 +175,24 @@ export function DocumentReorderList({
   );
 }
 
-/** The two facts a row carries beyond its name: which regions keep their own
- * version of this document, and whether a new quote starts with it ticked.
- * Shared with the read-only list a MANAGER sees, so both say the same thing
- * the same way. */
+/** The three facts a row carries beyond its name: whether it exists only for
+ * certain regions, which regions keep their own version, and whether a new
+ * quote starts with it ticked. Shared with the read-only list a MANAGER sees,
+ * so both say the same thing the same way. */
 export function DocumentBadges({ document: doc }: { document: QuoteDocumentListItem }) {
   return (
     <span className="flex shrink-0 flex-wrap items-center gap-2">
       {doc.includedByDefault ? null : (
         <StatusBadge tone="slate">Off by default</StatusBadge>
       )}
-      {doc.regionCodes.length > 0 ? (
+      {doc.regionOnly ? (
+        // A document with no global default: only the named regions print it,
+        // every other region prints nothing for it. Said in words, not by the
+        // absence of the "Customised for" badge — "no default" is exactly the
+        // fact a reader cannot infer from what is missing, and it changes what
+        // a customer in another region receives.
+        <StatusBadge tone="amber">{`Only in: ${doc.regionCodes.join(", ")}`}</StatusBadge>
+      ) : doc.regionCodes.length > 0 ? (
         <StatusBadge tone="brand-outline">{`Customised for: ${doc.regionCodes.join(", ")}`}</StatusBadge>
       ) : null}
     </span>
