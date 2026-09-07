@@ -115,9 +115,14 @@ export function sheetDoc(overrides: Partial<ToSheetDataDoc> = {}): ToSheetDataDo
 
 /** An M-Series machine: `sheetItem`'s shape plus the fields the quotation
  * renderer needs (`serialNumber`, `kind`, `seriesName`, `specs`,
- * `contentBlockKey`). The `specs` deliberately disagree with the code
+ * `seriesQuoteDescription`). The `specs` deliberately disagree with the code
  * "M5180" (18cm, not 5cm) so a test can tell the column apart from the
- * label: the renderer reads the column. */
+ * label: the renderer reads the column.
+ *
+ * `seriesQuoteDescription` defaults to `null` — the state every category
+ * starts in — so a test that cares about the copy printed under the heading
+ * passes its own body in, and one that doesn't gets a section with no copy
+ * rather than inheriting a shared template it never read. */
 export function quotationItem(overrides: Partial<QuotationItemInput> = {}): QuotationItemInput {
   return {
     ...sheetItem({
@@ -131,7 +136,7 @@ export function quotationItem(overrides: Partial<QuotationItemInput> = {}): Quot
     kind: "MACHINE",
     seriesName: "M-Series",
     specs: { cutHeightCm: 18, cutWidthCm: 180 },
-    contentBlockKey: "machine.m-series",
+    seriesQuoteDescription: null,
     lines: [],
     ...overrides,
   };

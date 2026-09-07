@@ -67,6 +67,7 @@ function baseQuotationData(overrides: Partial<QuotationData> = {}): QuotationDat
     preparedBy: { name: "Jane Author", email: "jane@example.com", phone: "0400 000 000", avatar: null },
     notesHtml: null,
     machineSections: [],
+    strippedTokens: [],
     items: [],
     extraLines: [],
     totals: {

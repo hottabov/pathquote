@@ -10,7 +10,7 @@
 // reason `ToSheetDataDoc` is: TypeScript's structural typing means the real
 // `DocumentForBuilder` satisfies `QuotationDataDoc` without either file
 // importing the other, as long as `DocumentForBuilder`'s items carry the
-// extra fields (`kind`, `specs`, `contentBlockKey`, `seriesName`,
+// extra fields (`kind`, `specs`, `seriesQuoteDescription`, `seriesName`,
 // `serialNumber`) this module needs.
 import type { ProductKind } from "@prisma/client";
 import { formatMoney } from "./format";
@@ -42,16 +42,13 @@ import { identityResolver } from "./sheet-identity";
 
 export type QuotationLineInput = ToSheetLineInput & {
   kind: "OPTION" | "PRODUCT" | "CUSTOM";
-  /** `DocumentLine.attributes` (e.g. `{ metres: 4, tables: 2 }`) — feeds
-   * `substitutePlaceholders` for option blocks like `option.MTS` whose body
-   * references `{{metres}}`/`{{tables}}`. */
+  /** `DocumentLine.attributes` (e.g. `{ metres: 4, tables: 2 }`) — printed
+   * verbatim as the row's `attributesLine`. These used to double as
+   * `{{metres}}`/`{{tables}}` substitution vars for an `option.*` content
+   * block; those blocks are gone (an option row describes itself from
+   * `Option.shortDescription`, snapshotted onto the line), so the attributes
+   * are display data only now and no token anywhere resolves from them. */
   attributes: Record<string, string | number> | null;
-  /** The line's option's `Option.contentBlockKey` (resolved by `refId` the
-   * same live way `imageUrl` below is) — the `option.*` content block whose
-   * body becomes the row's description. `null` for a PRODUCT/CUSTOM line or
-   * an option no block covers; the row then falls back to the line's own
-   * snapshot description. */
-  contentBlockKey: string | null;
   /** The line's option's `Option.imageUrl` (resolved by `refId` — see
    * `getDocumentForBuilder`'s `optionImageMap`), snapshotted from the
    * catalog at read time rather than frozen on the line itself (an option's
@@ -78,11 +75,12 @@ export type QuotationItemInput = ToSheetItemInput & {
    * defensively at runtime via `readProductSpecs`, same treatment as
    * `entitySnapshot`/`bankDetails` in sheet-data.ts. */
   specs: unknown;
-  /** `Product.contentBlockKey` — the `machine.*`/`equipment.*`/`software.*`
-   * block that describes this item, or `null` when nothing in the content
-   * library covers it (the item still renders, just without a
-   * `titleBlockHtml`). */
-  contentBlockKey: string | null;
+  /** `Series.quoteDescription` — the copy authored once for this item's
+   * category, printed under the item's heading with this product's own
+   * figures substituted in. `null` or empty prints nothing, which is what a
+   * category nobody has written copy for does. Replaces the old
+   * `Product.contentBlockKey` lookup into the ContentBlock table. */
+  seriesQuoteDescription: string | null;
   lines: QuotationLineInput[];
 };
 
@@ -91,8 +89,8 @@ export type QuotationItemInput = ToSheetItemInput & {
  * overrides), richer `items` (see `QuotationItemInput`), and the two
  * quotation-first pricing-display toggles (see `setPriceDisplay` in
  * src/lib/actions/documents.ts) that gate per-item/per-option amounts in
- * the investment summary and the `{{price}}` token in a machine title
- * block — the grand total itself is never gated by either flag. */
+ * the investment summary and the `{{price}}` token in a category's quote
+ * copy — the grand total itself is never gated by either flag. */
 export type QuotationDataDoc = Omit<ToSheetDataDoc, "items"> & {
   regionId: string;
   items: QuotationItemInput[];
@@ -153,8 +151,8 @@ export function resolveBlocks(blocks: ContentBlockRow[], regionId: string): Map<
  * machine (M / X / L series) and a whole system (the LNS camera nesting
  * system) are what the remote support program covers; a table, feeder,
  * spreader, software licence or service only appears there once it has a
- * serial number of its own. Distinct from `contentBlockKey`, which answers
- * "which content block describes this specific product", not "is this a
+ * serial number of its own. Distinct from `seriesQuoteDescription`, which
+ * answers "what prose describes this product's category", not "is this a
  * machine at all".
  */
 const RSP_COVERED_KINDS: ReadonlySet<ProductKind> = new Set<ProductKind>(["MACHINE", "SYSTEM"]);
@@ -262,12 +260,13 @@ export type QuotationOptionRow = {
    * `name`. */
   code: string | null;
   name: string;
-  /** Rendered HTML for the description under the option's name: the matched
-   * `option.*` content block's body (placeholders substituted from
-   * `line.attributes`) when one exists, else the line's own snapshot
-   * `description`, deduped against `name` via `dedupeDescription` the same
-   * way an item/extra-line description is — `null` when neither is
-   * present. */
+  /** Rendered HTML for the description under the option's name: the line's
+   * own snapshot `description` (taken from `Option.shortDescription` when the
+   * option was added), deduped against `name` via `dedupeDescription` the
+   * same way an item/extra-line description is — `null` when the option
+   * carries none, or when it only repeats the name. There is no second
+   * source any more: the `option.*` content blocks that used to supply this
+   * are gone, and an option already describes itself in the catalog. */
   descriptionHtml: string | null;
   /** Flattened `line.attributes` as one small line, e.g. "metres: 4 ·
    * tables: 2" — `null` when the line carries no attributes. */
@@ -322,28 +321,24 @@ export type QuotationMachineSection = {
   itemId: string;
   /** The section's heading text — ALWAYS present, one consistent tier
    * (`.pq-product-title` in quotation-sheet.tsx) for every machine/
-   * equipment/software/service item, whether or not a content block matched.
-   * Only trusts the matched content block's own `title` when it's DYNAMIC —
-   * i.e. its raw text contains a `{{` placeholder, like "Pathfinder {{model}}
-   * Cutting System" -> "Pathfinder X-5180 Cutting System" — substituting it
-   * the same way the body is; a STATIC block title (no placeholder at all,
-   * e.g. the generic "Easy-Loader #1" a content-block title used to carry)
-   * is never used as the heading, full stop — this is always the item's own
-   * `name` instead, same as when there's no block, no title, or a dynamic
-   * title's only content was an unresolved placeholder (line-stripped to
-   * ""). The item's code renders alongside this separately, as a muted mono
-   * suffix — see quotation-sheet.tsx. */
+   * equipment/software/service item, and ALWAYS the item's own `name`. A
+   * category has no title of its own to compete with it: the old rule (trust
+   * a matched content block's `title` when it was DYNAMIC, i.e. carried a
+   * `{{` placeholder; ignore a STATIC one like the generic "Easy-Loader #1")
+   * existed only because block titles could carry the wrong product's name.
+   * Nothing can carry a wrong name any more. The item's code renders
+   * alongside this separately, as a muted mono suffix — see
+   * quotation-sheet.tsx. */
   sectionTitle: string;
-  /** Rendered `machine.*`/`equipment.*`/`software.*` block BODY for this
-   * item's product, with `{{model}}`/`{{price}}`/`{{cutHeightCm}}`/
+  /** The item's category copy (`QuotationItemInput.seriesQuoteDescription`)
+   * rendered to HTML, with `{{model}}`/`{{price}}`/`{{cutHeightCm}}`/
    * `{{cutWidthCm}}`/`{{specSentence}}` substituted — `null` when the
-   * item's `contentBlockKey` is null or matches no block, in which case the sheet
-   * renders `specSentence` (alongside `sectionTitle` and the item's price
-   * from `lineSummary`) as a minimal auto-generated section instead — see
-   * quotation-sheet.tsx. No longer carries its own top-level heading (that's
-   * `sectionTitle`'s job now, rendered once, consistently, outside this
-   * HTML) — see the `machine.m-series` seed body, which used to open with
-   * its own "## Pathfinder {{model}} Cutting System" line. */
+   * category has no copy, or when every line of it was stripped for want of
+   * a figure, in which case the sheet renders `specSentence` (alongside
+   * `sectionTitle` and the item's price from `lineSummary`) as a minimal
+   * auto-generated section instead — see quotation-sheet.tsx. Carries no
+   * top-level heading of its own (that's `sectionTitle`'s job, rendered once,
+   * consistently, outside this HTML). */
   titleBlockHtml: string | null;
   /** One-line spec summary from `Product.specs` (see `machineSpecSentence`
    * in src/lib/machine-specs.ts) — e.g. "M-Series Cutting Machine, 3cm
@@ -359,21 +354,21 @@ export type QuotationMachineSection = {
    * showed no price at all, because their content blocks simply never
    * carried a "Price: {{price}}" line the way machine.m-series's did).
    * `null` when neither price-display toggle is on. See `hasInlinePrice`
-   * for when the sheet should print this vs. rely on the block's own inline
+   * for when the sheet should print this vs. rely on the copy's own inline
    * line instead. */
   sectionPrice: string | null;
-  /** `true` when the matched content block's own (pre-substitution) body
-   * text already contains a literal `{{price}}` token — i.e. it prints its
-   * own price line as part of `titleBlockHtml` (machine.m-series's "**Price:
-   * {{price}}**"). The sheet uses this to avoid printing `sectionPrice` a
-   * second time for that one section, while every other section (whose
-   * block has no such line, or has no block at all) gets it structurally.
-   * Always `false` for a blockless section. */
+  /** `true` when the category's own (pre-substitution) copy already contains
+   * a literal `{{price}}` token — i.e. it prints its own price line as part
+   * of `titleBlockHtml` (the way the old machine.m-series block's "**Price:
+   * {{price}}**" did). The sheet uses this to avoid printing `sectionPrice` a
+   * second time for that section, while every other section (whose copy has
+   * no such line, or which has no copy at all) gets it structurally. Always
+   * `false` for a category with no copy. */
   hasInlinePrice: boolean;
   /** One row per selected OPTION line on this item, in a single unified
    * table (see `QuotationOptionRow`) — replaces the old optionBlocksHtml/
-   * fallbackOptions two-tier split; every OPTION line lands here whether or
-   * not its option has an `option.*` content block. */
+   * fallbackOptions two-tier split; every OPTION line lands here, described
+   * by its own snapshot description. */
   optionRows: QuotationOptionRow[];
   /** The machine itself, as the first row of its own options table (owner:
    * the customer should read the product and its base price at the top of
@@ -444,6 +439,9 @@ export type QuotationData = {
    * section at all. */
   notesHtml: string | null;
   machineSections: QuotationMachineSection[];
+  /** Category-copy tokens that had no value on this quote, so their line was
+   * removed. The draft preview lists them; the FINAL PDF ignores them. */
+  strippedTokens: string[];
   items: QuotationItemRow[];
   extraLines: DocSheetLine[];
   totals: DocSheetTotals;
@@ -473,19 +471,11 @@ export type BuildQuotationDataOpts = {
   resolveImage?: ImageResolver;
 };
 
-function attributeVars(attributes: Record<string, string | number> | null): PlaceholderVars {
-  if (!attributes) return {};
-  const vars: PlaceholderVars = {};
-  for (const [key, value] of Object.entries(attributes)) {
-    vars[key] = String(value);
-  }
-  return vars;
-}
-
 /** Flattens a line's `attributes` to a single small display line, e.g.
- * "metres: 4 · tables: 2" — same source data as `attributeVars`, just
- * shaped for direct rendering (see `QuotationOptionRow.attributesLine`)
- * instead of `{{token}}` substitution. `null` when the line carries no
+ * "metres: 4 · tables: 2" — the only thing a line's attributes feed now
+ * (see `QuotationOptionRow.attributesLine`); the per-option `{{metres}}` /
+ * `{{tables}}` substitution they also used to drive went with the `option.*`
+ * content blocks that referenced it. `null` when the line carries no
  * attributes at all, so the sheet's "attributes ? <div>…</div> : null"
  * check stays a clean on/off switch, same pattern as `dedupeDescription`. */
 function attributesLine(attributes: Record<string, string | number> | null): string | null {
@@ -534,6 +524,11 @@ export function buildQuotationData(
   // machine title block's `{{price}}` token cares about.
   const itemPriceVisible = doc.showItemPrices || doc.showOptionPrices;
 
+  // Tokens that cost a line somewhere in this quote's category copy, surfaced
+  // by the draft preview so an author learns a sentence vanished instead of
+  // discovering it in a signed PDF. Never shown on a FINAL quote.
+  const strippedTokens: string[] = [];
+
   const machineSections: QuotationMachineSection[] = doc.items.map((item) => {
     const lineSummary = sheetItemsById.get(item.id);
     if (!lineSummary) {
@@ -556,11 +551,12 @@ export function buildQuotationData(
     const specSentence =
       item.kind === "MACHINE" && item.seriesName ? machineSpecSentence(item.seriesName, specs) : null;
 
-    // Shared placeholder vars for both the block BODY and the block TITLE
-    // (see `sectionTitle` below) — one computation, one source of truth, so
-    // a title referencing e.g. `{{model}}` (machine.m-series's seed title is
-    // now "Pathfinder {{model}} Cutting System", matching its body) resolves
-    // identically to the body's own substitution.
+    // The placeholder vars the category's copy resolves against — this
+    // product's own figures, so one text authored per category reads
+    // correctly under every product in it. Every token here must also be
+    // declared in src/lib/quote-variables.ts, which is what the catalog
+    // editor offers and validates against; a token offered there but absent
+    // here would strip its line on every quote.
     const vars: PlaceholderVars = {
       model: item.code,
       cutHeightCm,
@@ -575,12 +571,10 @@ export function buildQuotationData(
       // not the bare unit price, and always currency-formatted via
       // formatMoney, never a raw decimal string. Gated by the same toggle as
       // everywhere else an item amount shows; when hidden, `OMIT` makes
-      // substitutePlaceholders strip the whole "**Price: {{price}}**" line
-      // out of machine.m-series entirely (never a blank "Price: ____"). No
-      // option.* block currently references {{price}} at all — an option's
-      // price only ever shows in the investment summary table (gated
-      // separately there by `showOptionPrices`), so there's nothing
-      // analogous to thread through `attributeVars` below.
+      // substituteWithReport strip the whole "**Price: {{price}}**" line out
+      // of the category's copy entirely (never a blank "Price: ____") and —
+      // unlike a genuinely missing figure — never report it as stripped: a
+      // hidden price is deliberate, not a gap.
       price: itemPriceVisible ? formatMoney(lineSummary.total, sheet.totals.currency) : OMIT,
       // The machine on its own, with no options folded in (see
       // `ItemBreakdown.basePrice` in src/lib/sheet-data.ts) — owner: "we
@@ -591,55 +585,45 @@ export function buildQuotationData(
       basePrice: itemPriceVisible ? formatMoney(lineSummary.breakdown.basePrice, sheet.totals.currency) : OMIT,
     };
 
-    const block = item.contentBlockKey ? resolved.get(item.contentBlockKey) : undefined;
-    const titleBlockHtml = block ? renderStoredRichText(substitutePlaceholders(block.body, vars)) : null;
+    const categoryCopy = item.seriesQuoteDescription ?? "";
+    const copyReport = categoryCopy ? substituteWithReport(categoryCopy, vars) : { text: "", stripped: [] };
+    for (const token of copyReport.stripped) {
+      if (!strippedTokens.includes(token)) strippedTokens.push(token);
+    }
+    const titleBlockHtml = copyReport.text ? renderStoredRichText(copyReport.text) : null;
 
-    // Structural section price (see `QuotationMachineSection.sectionPrice`'s
-    // doc comment) — the same figure substituted into `vars.price` above,
-    // exposed separately so the sheet can print it under the heading for
-    // EVERY section rather than depending on the matched block happening to
-    // reference `{{price}}` inline itself. `hasInlinePrice` checks the RAW
-    // (pre-substitution) block body text, not `titleBlockHtml`, so it's
-    // never fooled by e.g. a literal "{{price}}" appearing inside an
-    // unrelated placeholder's substituted value.
+    // Structural section price — the same figure substituted into `vars.price`
+    // above, exposed separately so the sheet prints it under EVERY section
+    // heading rather than depending on the category copy happening to
+    // reference `{{price}}` itself. `hasInlinePrice` checks the RAW
+    // (pre-substitution) copy, so it is never fooled by a literal "{{price}}"
+    // appearing inside some other token's substituted value.
     const sectionPrice = itemPriceVisible ? formatMoney(lineSummary.total, sheet.totals.currency) : null;
-    const hasInlinePrice = Boolean(block?.body.includes("{{price}}"));
+    const hasInlinePrice = categoryCopy.includes("{{price}}");
 
-    // The section heading — ALWAYS computed, never conditional on a block
-    // matching (root cause of the owner-reported missing headings: only
-    // machine.m-series's body happened to carry its own inline "##" heading;
-    // equipment.easy-loader/fabric-pro, software.pathworks-*, and
-    // equipment.punchline never did, so those sections rendered their body
-    // with no heading at all). Only trusts the matched block's own `title`
-    // when it's DYNAMIC (raw text contains "{{", e.g. "Pathfinder {{model}}
-    // Cutting System") — a STATIC title (no placeholder, e.g. a generic
-    // "Easy-Loader #1" a block title used to carry) leaked the wrong name
-    // straight onto the sheet, so it's never used at all any more; this is
-    // always the item's own `name` instead. A dynamic title still falls back
-    // to `name` when substitution leaves it empty (its only content was an
-    // unresolved token — see substitutePlaceholders).
-    const rawTitle = block?.title ?? null;
-    const sectionTitle =
-      rawTitle && rawTitle.includes("{{") ? substitutePlaceholders(rawTitle, vars).trim() || item.name : item.name;
+    // A category has no title field of its own, so the heading is always the
+    // item's own name. The old rule — trust a content block's title when it
+    // was dynamic, ignore it when static — existed because block titles
+    // sometimes carried the wrong product's name; nothing can carry a wrong
+    // name any more.
+    const sectionTitle = item.name;
 
     // Unified options table (owner: "table with small icons") — one row per
-    // selected OPTION line, whether or not its option has an `option.*`
-    // content block, replacing the old prose-paragraphs (matched) vs.
-    // bold-bullets (unmatched) split that rendered inconsistently.
+    // selected OPTION line, replacing the old prose-paragraphs (block
+    // matched) vs. bold-bullets (unmatched) split that rendered
+    // inconsistently. Every row describes itself the same way now: from the
+    // description the line snapshotted off `Option.shortDescription`, so
+    // there is only one path and no option can render through a different
+    // one than its neighbour.
     const optionRows: QuotationOptionRow[] = [];
     const docLinesById = new Map(lineSummary.lines.map((docLine) => [docLine.id, docLine]));
     for (const line of item.lines) {
       if (line.kind !== "OPTION") continue;
       const docLine = docLinesById.get(line.id);
       const name = docLine?.name ?? line.name;
-      const found = line.contentBlockKey ? resolved.get(line.contentBlockKey) : undefined;
 
-      const descriptionHtml = found
-        ? renderStoredRichText(substitutePlaceholders(found.body, attributeVars(line.attributes)))
-        : (() => {
-            const raw = dedupeDescription(name, docLine?.description ?? line.description);
-            return raw ? renderStoredRichText(raw) : null;
-          })();
+      const rawDescription = dedupeDescription(name, docLine?.description ?? line.description);
+      const descriptionHtml = rawDescription ? renderStoredRichText(rawDescription) : null;
 
       optionRows.push({
         id: line.id,
@@ -734,6 +718,7 @@ export function buildQuotationData(
     preparedBy: sheet.preparedBy,
     notesHtml,
     machineSections,
+    strippedTokens,
     items: sheet.items.map((item) => ({
       ...item,
       descriptionHtml: item.description ? renderStoredRichText(item.description) : null,
