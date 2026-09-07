@@ -20,7 +20,7 @@ import { getHiddenCatalogIds } from "@/lib/queries/catalog-visibility";
 import { getQuoteValidityDays, getShowOptionIcons } from "@/lib/queries/settings";
 import { getSpecImages } from "@/lib/queries/spec-images";
 import { getUser } from "@/lib/queries/users";
-import { canAuthorSign } from "@/lib/signing/state";
+import { canAuthorSign, canSendToClient } from "@/lib/signing/state";
 import { concessionCapMessage, markupCapMessage } from "@/lib/pricing";
 import { renderStoredRichText } from "@/lib/rich-text";
 import { PageHeader, SectionCard, StatusBadge, STATUS_TONE } from "@/components/ui-kit";
@@ -38,6 +38,7 @@ import { DocumentTotals, StickyFooter } from "@/components/builder/sticky-footer
 import { FinalizeButton } from "@/components/builder/finalize-button";
 import { UnfinalizeButton } from "@/components/builder/unfinalize-button";
 import { SignButton } from "@/components/builder/sign-button";
+import { SendToClientButton } from "@/components/builder/send-to-client-button";
 import { DeleteDraftButton } from "@/components/builder/delete-draft-button";
 import { ConcessionCapBadge } from "@/components/builder/concession-cap-badge";
 import { ConcessionCapToast } from "@/components/builder/concession-cap-toast";
@@ -439,26 +440,51 @@ function DocumentActions({
   // facing rendering of a document now — the older plain line-item
   // "Summary" sheet/PDF was removed (owner: "нам не потрібно мати Summary.
   // Тільки повний quotation.").
+  //
+  // Computed unconditionally (cheap, pure) even though it's only rendered
+  // for a FINAL document below — `canSendToClient` itself is what turns a
+  // DRAFT into a "Finalize the quote before signing it" reason, so there's
+  // no separate `isDraft` branch to maintain here.
+  const contactEmail = document.contact?.email ?? null;
+  const sendVerdict = canSendToClient({
+    documentStatus: document.status,
+    signingStatus: document.signingStatus,
+    hasAuthorSignature: document.signatures.some((s) => s.role === "AUTHOR"),
+    contactEmail,
+  });
   return (
     <div className="flex flex-col gap-2">
       {isDraft ? (
         <FinalizeButton documentId={document.id} />
       ) : (
-        // Signing is offered to whoever this page already scoped the
-        // document to (its author, or any admin — see `signQuoteAsAuthor`'s
-        // own `documentWhereForUser` check), independently of Unfinalize
-        // staying admin-only below. Gated on `canAuthorSign` — the same
-        // function the action itself checks — rather than "any FINAL
-        // document": nothing sets `signingStatus` away from NOT_SENT yet, so
-        // this is currently a no-op, but it stops the button from being
-        // shown (and refused) once sending/revoking/declining exist.
-        canAuthorSign(document.signingStatus) ? (
-          <SignButton
+        <>
+          {/* Signing is offered to whoever this page already scoped the
+              document to (its author, or any admin — see
+              `signQuoteAsAuthor`'s own `documentWhereForUser` check),
+              independently of Unfinalize staying admin-only below. Gated on
+              `canAuthorSign` — the same function the action itself checks —
+              rather than "any FINAL document": nothing sets `signingStatus`
+              away from NOT_SENT yet, so this is currently a no-op, but it
+              stops the button from being shown (and refused) once
+              sending/revoking/declining exist. */}
+          {canAuthorSign(document.signingStatus) ? (
+            <SignButton
+              documentId={document.id}
+              hasAuthorSignature={document.signatures.some((s) => s.role === "AUTHOR")}
+              savedSignatureUrl={mySignatureUrl}
+            />
+          ) : null}
+          {/* Unlike SignButton above, this is always rendered for a FINAL
+              document rather than hidden when the verdict fails — a manager
+              should be able to see *why* sending isn't available (e.g. "Sign
+              the quote before sending it.") via its tooltip, not just that
+              it's missing. */}
+          <SendToClientButton
             documentId={document.id}
-            hasAuthorSignature={document.signatures.some((s) => s.role === "AUTHOR")}
-            savedSignatureUrl={mySignatureUrl}
+            contactEmail={contactEmail}
+            disabledReason={sendVerdict.ok ? null : sendVerdict.reason}
           />
-        ) : null
+        </>
       )}
       {!isDraft && isAdmin ? <UnfinalizeButton documentId={document.id} /> : null}
 

@@ -7,8 +7,15 @@ import { documentWhereForUser } from "@/lib/scope";
 import { idSchema } from "@/lib/validation/documents";
 import { saveUpload, UploadValidationError } from "@/lib/uploads";
 import { parseSignatureDataUrl } from "@/lib/signing/data-url";
-import { canAuthorSign } from "@/lib/signing/state";
+import { canAuthorSign, canSendToClient } from "@/lib/signing/state";
 import { readMySavedSignatureBytes } from "@/lib/signing/saved-signature";
+import { generateSigningToken, hashSigningToken } from "@/lib/signing/token";
+import { addDays } from "@/lib/signing/link";
+import { getSigningLinkValidityDays } from "@/lib/queries/settings";
+import { buildSigningInviteEmail } from "@/lib/email/signing";
+import { resolveReplyTo } from "@/lib/email/reply-to";
+import { createAppMailTransport, mailFromAddress } from "@/lib/email/transport";
+import { formatMoney, formatDateAU } from "@/lib/format";
 import { NOT_FOUND_ERROR, type ActionResult } from "./_shared";
 
 export type { ActionResult };
@@ -133,6 +140,141 @@ export async function signQuoteAsAuthor(documentId: string, dataUrl: string): Pr
       signedAt: new Date(),
     },
   });
+
+  revalidateDocument(document.id);
+  return {};
+}
+
+/**
+ * Issues a signing link and emails it to the document's contact.
+ *
+ * The token is generated here, hashed into the row, and then exists only in
+ * the email — there is no way to recover it afterwards, which is why a
+ * resend issues a new one rather than re-sending the old.
+ *
+ * `expiresAt` is computed once, from the setting, and frozen. Resolving an
+ * existing link never reads the setting again.
+ *
+ * Deviations from the plan's original sketch, checked against the real
+ * code:
+ *  - `requireSession` (redirects to /login), matching `signQuoteAsAuthor`
+ *    right above, rather than a bare `auth()` + manual null check.
+ *  - The mail transport is `createAppMailTransport()` + `transport.sendMail`
+ *    + `mailFromAddress()` (src/lib/email/transport.ts) — there is no
+ *    exported `sendMail({ to, ...mail })` helper. Same shape
+ *    `submitSupportMessage` (src/lib/actions/support.ts) already uses,
+ *    including its "rejected/pending" check for a silently-refused send.
+ *  - The base URL is `process.env.AUTH_URL` — this is Auth.js v5
+ *    (`AUTH_URL`/`AUTH_TRUST_HOST` in .env.example), not v4's
+ *    `NEXTAUTH_URL`, which is set nowhere in this codebase.
+ *  - Formatters are `formatMoney`/`formatDateAU` from src/lib/format.ts —
+ *    there is no `formatLongDate`. `formatDateAU` (DD/MM/YYYY) is reused
+ *    rather than introducing a second date format, matching the quote
+ *    sheet's own convention.
+ *  - `SigningRequest.contactId` is nullable, so `contactId`/`email` are read
+ *    into local `const`s and checked once here — `canSendToClient` already
+ *    guarantees they are present by the time this point is reached (it
+ *    refuses with `NO_CONTACT_EMAIL` otherwise), but that guarantee isn't
+ *    visible to the type checker across the function boundary.
+ */
+export async function sendQuoteForSignature(documentId: string): Promise<ActionResult> {
+  const session = await requireSession();
+
+  const parsedId = idSchema.safeParse(documentId);
+  if (!parsedId.success) return { error: NOT_FOUND_ERROR };
+
+  const document = await db.document.findFirst({
+    where: { id: parsedId.data, ...documentWhereForUser(session.user) },
+    select: {
+      id: true,
+      number: true,
+      status: true,
+      signingStatus: true,
+      total: true,
+      currency: true,
+      contactId: true,
+      contact: { select: { id: true, email: true, firstName: true, lastName: true } },
+      author: { select: { name: true, email: true, active: true } },
+      region: { select: { entityName: true } },
+      signatures: { where: { role: "AUTHOR" }, select: { id: true } },
+    },
+  });
+  if (!document) return { error: NOT_FOUND_ERROR };
+
+  const verdict = canSendToClient({
+    documentStatus: document.status,
+    signingStatus: document.signingStatus,
+    hasAuthorSignature: document.signatures.length > 0,
+    contactEmail: document.contact?.email ?? null,
+  });
+  if (!verdict.ok) return { error: verdict.reason };
+
+  // Guaranteed non-null by the verdict above; re-checked here only so the
+  // type checker (which cannot see across that function boundary) narrows
+  // them for the writes below.
+  const contactId = document.contactId;
+  const contactEmail = document.contact?.email;
+  if (!contactId || !contactEmail) return { error: NOT_FOUND_ERROR };
+
+  const days = await getSigningLinkValidityDays();
+  const token = generateSigningToken();
+  const now = new Date();
+  const expiresAt = addDays(now, days);
+
+  await db.$transaction(async (tx) => {
+    // Any earlier request is dead the moment a new one is issued.
+    await tx.signingRequest.updateMany({
+      where: { documentId: document.id, revokedAt: null },
+      data: { revokedAt: now },
+    });
+    await tx.signingRequest.create({
+      data: {
+        documentId: document.id,
+        contactId,
+        email: contactEmail,
+        tokenHash: hashSigningToken(token),
+        expiresAt,
+      },
+    });
+    await tx.document.update({
+      where: { id: document.id },
+      data: { signingStatus: "SENT" },
+    });
+  });
+
+  const mail = buildSigningInviteEmail({
+    url: `${process.env.AUTH_URL}/sign/${token}`,
+    quoteNumber: document.number ?? "",
+    total: formatMoney(document.total, document.currency),
+    authorName: document.author.name ?? document.author.email,
+    entityName: document.region.entityName,
+    expiresOn: formatDateAU(expiresAt),
+    replyTo: resolveReplyTo(document.author, process.env.EMAIL_REPLY_TO),
+  });
+
+  // Deliberately outside the transaction: the link is issued either way, and
+  // a send failure must not roll back a row the manager can see. Failures are
+  // surfaced rather than swallowed -- the trap documented in
+  // docs/email-sending-setup.md, where a swallowed AuthError made "sent" a lie.
+  try {
+    const transport = createAppMailTransport();
+    const result = await transport.sendMail({
+      to: contactEmail,
+      from: mailFromAddress(),
+      replyTo: mail.replyTo,
+      subject: mail.subject,
+      text: mail.text,
+      html: mail.html,
+    });
+
+    const failed = [...(result.rejected ?? []), ...(result.pending ?? [])].filter(Boolean);
+    if (failed.length) {
+      throw new Error(`Email (${failed.join(", ")}) could not be sent`);
+    }
+  } catch (error) {
+    console.error("[signing] invite email failed", error);
+    return { error: "The quote was prepared but the email could not be sent. Try resending." };
+  }
 
   revalidateDocument(document.id);
   return {};
