@@ -3,6 +3,8 @@ import { describe, it, expect } from "vitest";
 import {
   CATEGORY_TOKENS,
   CATEGORY_TOKEN_NAMES,
+  DOCUMENT_TOKENS,
+  DOCUMENT_TOKEN_NAMES,
   categorySpecPresence,
   categoryTokensFor,
   findUnknownTokens,
@@ -130,6 +132,65 @@ describe("CATEGORY_TOKENS", () => {
     for (const token of CATEGORY_TOKENS) {
       expect(token.source.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("DOCUMENT_TOKENS", () => {
+  it("declares no token twice", () => {
+    const names = DOCUMENT_TOKENS.map((t) => t.token);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("is exactly this list, in palette order", () => {
+    // Pinned for the same reason CATEGORY_TOKEN_NAMES is: this is what
+    // buildQuotationData's document vars are typed against.
+    expect(DOCUMENT_TOKEN_NAMES).toEqual([
+      "deliveryWeeks",
+      "installationDays",
+      "trainingDays",
+      "warrantyMonths",
+      "bankDetails",
+      "validityDate",
+      "quoteNumber",
+      "clientName",
+    ]);
+  });
+
+  it("describes every name it declares, in the same order", () => {
+    expect(DOCUMENT_TOKENS.map((t) => t.token)).toEqual([...DOCUMENT_TOKEN_NAMES]);
+    for (const token of DOCUMENT_TOKENS) {
+      expect(token.source.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("the category and document scopes are separate", () => {
+  it("rejects a category token in a document body", () => {
+    // The plan's motivating example in the other direction: a Terms
+    // document has no business referencing a machine's cut height.
+    expect(findUnknownTokens("Cut height {{cutHeightCm}}", DOCUMENT_TOKENS)).toEqual(["cutHeightCm"]);
+  });
+
+  it("rejects a document token in a category's copy", () => {
+    const specs: CategorySpecPresence = { ...noSpecs, cutWidthCm: true };
+    expect(findUnknownTokens("Delivery in {{deliveryWeeks}} weeks", categoryTokensFor(specs))).toEqual([
+      "deliveryWeeks",
+    ]);
+  });
+
+  it("shares no token name between the two scopes", () => {
+    // Neither list should ever silently gain a name the other already
+    // claims -- that would let a body pass validation in one scope while
+    // meaning something else entirely in the other.
+    const categoryNames = new Set(CATEGORY_TOKEN_NAMES);
+    const overlap = DOCUMENT_TOKEN_NAMES.filter((name) => (categoryNames as Set<string>).has(name));
+    expect(overlap).toEqual([]);
+  });
+
+  it("accepts a body using only document-scope tokens", () => {
+    expect(
+      findUnknownTokens("Quote {{quoteNumber}} for {{clientName}}, valid until {{validityDate}}", DOCUMENT_TOKENS)
+    ).toEqual([]);
   });
 });
 

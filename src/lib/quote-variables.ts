@@ -42,8 +42,40 @@ export const CATEGORY_TOKEN_NAMES = [
 
 export type CategoryTokenName = (typeof CATEGORY_TOKEN_NAMES)[number];
 
-export type QuoteToken = {
-  token: CategoryTokenName;
+/**
+ * Every token a legal document (Terms, General Conditions, RSP) may offer,
+ * in palette order. Mirrors CATEGORY_TOKEN_NAMES exactly, for the same
+ * reason: buildQuotationData types its document `vars` object as
+ * `Record<DocumentTokenName, ...>`, so a name added here without a value
+ * beside it there fails to compile.
+ *
+ * This scope and the category scope are deliberately disjoint — a Terms
+ * document has no business referencing `{{cutHeightCm}}`, and a category's
+ * copy has no business referencing `{{deliveryWeeks}}`. Keeping two
+ * separate lists (rather than one shared list every consumer filters) is
+ * what makes `findUnknownTokens` reject each in the other's scope.
+ */
+export const DOCUMENT_TOKEN_NAMES = [
+  "deliveryWeeks",
+  "installationDays",
+  "trainingDays",
+  "warrantyMonths",
+  "bankDetails",
+  "validityDate",
+  "quoteNumber",
+  "clientName",
+] as const;
+
+export type DocumentTokenName = (typeof DOCUMENT_TOKEN_NAMES)[number];
+
+/** `T` defaults to `string` so a plain `QuoteToken[]` (as `findUnknownTokens`
+ * takes) accepts either scope's token list — `QuoteToken<CategoryTokenName>`
+ * and `QuoteToken<DocumentTokenName>` are each a subtype of it — while
+ * `CATEGORY_TOKENS` and `DOCUMENT_TOKENS` themselves stay typed to their own
+ * literal union, which is what gives each scope's `Record<..., ...>` in
+ * quotation-data.ts its totality guarantee. */
+export type QuoteToken<T extends string = string> = {
+  token: T;
   /** Shown beside the token in the editor palette. Says where the value comes
    * from in the user's own terms, not the column name. */
   source: string;
@@ -101,9 +133,32 @@ const TOKEN_REQUIRES: Partial<Record<CategoryTokenName, keyof CategorySpecPresen
 /** Every token any category could ever offer, in palette order — derived from
  * `CATEGORY_TOKEN_NAMES` rather than restating it, so the list the renderer is
  * typed against and the list the editor renders are the same list. */
-export const CATEGORY_TOKENS: QuoteToken[] = CATEGORY_TOKEN_NAMES.map((token) => ({
+export const CATEGORY_TOKENS: QuoteToken<CategoryTokenName>[] = CATEGORY_TOKEN_NAMES.map((token) => ({
   token,
   source: TOKEN_SOURCES[token],
+}));
+
+/** What each document token means, in the author's terms rather than the
+ * column's. Keyed by `DocumentTokenName` for the same totality reason
+ * `TOKEN_SOURCES` is keyed by `CategoryTokenName`. */
+const DOCUMENT_TOKEN_SOURCES: Record<DocumentTokenName, string> = {
+  deliveryWeeks: "From this quote, or the region's default when the quote leaves it blank",
+  installationDays: "From this quote, or the region's default when the quote leaves it blank",
+  trainingDays: "From this quote, or the region's default when the quote leaves it blank",
+  warrantyMonths: "From this quote, or the region's default when the quote leaves it blank",
+  bankDetails: "The region's bank details",
+  validityDate: "The date this quote expires",
+  quoteNumber: "This quote's number, e.g. Q-AU-2026-001",
+  clientName: "The customer's company name",
+};
+
+/** Every token a legal document may offer, in palette order — derived from
+ * `DOCUMENT_TOKEN_NAMES` for the same reason `CATEGORY_TOKENS` is derived
+ * from `CATEGORY_TOKEN_NAMES`: the list the renderer is typed against and the
+ * list the editor's palette shows can never drift apart. */
+export const DOCUMENT_TOKENS: QuoteToken<DocumentTokenName>[] = DOCUMENT_TOKEN_NAMES.map((token) => ({
+  token,
+  source: DOCUMENT_TOKEN_SOURCES[token],
 }));
 
 /** The tokens this specific category may use, in palette order. A category
