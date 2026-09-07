@@ -4,6 +4,10 @@ Draft copy for the five catalog categories that currently print nothing under a
 product's heading on a quotation. Task 12 of
 `docs/superpowers/plans/2026-09-07-category-quote-copy.md`.
 
+Two further categories have since been added below and are labelled as such:
+`EL`, whose copy existed but was broken, and `FPT`, a series split out of `FP`
+after this file was written.
+
 **How to use this file.** For each category below, copy the HTML block and paste
 it into that category's **Quote description** card at
 `/catalog/<series id>` (admin only). The copy is authored once per category and
@@ -22,18 +26,22 @@ for M and X). Nothing here is asserted that a Pathfinder source does not state.
 
 ---
 
-## Two decisions that apply to all five
+## Two decisions that apply to every category below
 
 **No `{{price}}` or `{{basePrice}}` anywhere.** The M-Series body ends with
 `**Price: {{price}}**`, but that line predates the sheet's structural section
 price. `buildQuotationData` now exposes `sectionPrice` separately and
 `equipment-detail.tsx` prints `Price: …` under every section heading unless the
 copy contains a literal `{{price}}` (`hasInlinePrice`). So an inline price token
-adds nothing and carries a real risk: `substituteWithReport` strips by `\n`-
+adds nothing: the sheet already prints the price for every section, with or
+without one. That is the whole reason to leave it out.
+
+It is not a safety measure. `substituteWithReport` used to strip by `\n`-
 delimited line, and Tiptap saves a body as a single line with no newlines
-between block elements — so on a prices-hidden quote a single `OMIT`-ed
-`{{price}}` would delete the **entire** description, not just its own line.
-Leaving the token out means the price still prints and the body cannot vanish.
+between block elements, so an `OMIT`-ed `{{price}}` on a prices-hidden quote
+really did delete the entire description. Commit `0590ecb` made the strip
+per block element (`htmlBlockLines`), so today only the price line itself goes.
+The conclusion stands; the danger it was once also justified by does not.
 
 **Every token used here resolves for every product in its category.** Nothing
 below can strip a line or raise the draft banner. Checked against
@@ -249,6 +257,60 @@ both needing a decision from you:
 
 ---
 
+## EasyLoader (`EL`)
+
+`EL` is not one of the five empty categories — it is the one category whose
+copy already existed and was *broken*. The `equipment.easy-loader` block opened
+`Conveyorised Spreading Table ({{lengthM}}mtr)`, and `{{lengthM}}` was a
+per-option-line attribute variable whose mechanism has been deleted: the line
+stripped on every quote, and the category could not be re-saved from the editor
+at all, because `updateSeriesQuoteDescription` rejects a token the category
+cannot fill.
+
+`{{tableLengthM}}` replaces it. **You do not need to paste this one by hand:**
+`scripts/migrate-content-blocks-to-series.ts` performs the rewrite as it moves
+the block onto the category, and says so in its dry run
+(`[REWRITE] equipment.easy-loader: {{lengthM}} -> {{tableLengthM}}`). The body
+below is what that produces, recorded here so the category reads like the
+others in this file and so a hand-edit has something to compare against.
+
+```html
+<p>Conveyorised Spreading Table ({{tableLengthM}})</p>
+<p>The Easy-Loader is designed to integrate with the Pathfinder cutting system, automatically presenting spread materials into the cutting machine.</p>
+<ul>
+<li>{{tableWidthMm}} table width</li>
+<li>Modular design</li>
+<li>Digitally controlled speed drive</li>
+<li>Manual/Auto bypass switch</li>
+<li>Auto synchronised with Pathfinder cutter</li>
+</ul>
+```
+
+**Tokens used**
+
+- `{{tableLengthM}}` — the total table length, **computed from the item's own
+  option lines**, not read off the product. An EasyLoader is built from 1.2 m
+  modules (`SECTION_UNIT_M`), each sold as an option carrying
+  `Option.unitLengthM`, so this sums `unitLengthM × qty` over the item's
+  `EL_DRIVE`, `EL_CONVEYOR` and `EL_STATIC` lines and formats the result with
+  `formatMetres` — `4.8 m`, `6 m`, trailing zeros dropped. `EL_BUSBAR` and
+  `EL_RAIL` are excluded: one of each is added per module for the table's whole
+  length, so counting them would roughly triple the figure.
+- `{{tableWidthMm}}` — all four EL products carry `specs.tableWidthMm`.
+
+**Note the missing unit.** The old copy wrote `({{lengthM}}mtr)` because the old
+token substituted a bare number. `formatMetres` carries its own unit, so the
+migration drops that trailing `mtr` — otherwise the quote would read
+`(4.8 mmtr)`. If you paste this body by hand, do not add the unit back.
+
+**The one case where this line still strips.** An EasyLoader item with no table
+modules configured has no length, so `{{tableLengthM}}` resolves to `""` and its
+line goes, reported in the draft banner. That is correct: the category offers
+the token because its products *can* carry a layout, and this particular item
+has none yet. Configure the layout and the line returns.
+
+---
+
 ## Fabric Pro Trolley (`FPT`)
 
 `FPT` is not one of the original five empty categories above — it is a new
@@ -274,11 +336,11 @@ so copy is drafted here ready to paste once the series exists.
 - `{{model}}` — the product code. The only usable token: `FP-TROLLEY` is
   currently the sole `FPT` product and has `specs: null`, so the palette is
   `model`, `name`, `price`, `basePrice` only — same shape as `HDRF` and `SVC`
-  above. `{{specSentence}}` is unavailable (`kind: "ACCESSORY"`). Per the "two
-  decisions that apply to all five" above, `{{price}}`/`{{basePrice}}` are left
-  out (the section price prints structurally regardless), and `{{name}}` is
-  left out because it is the documented broken token (see the closing note
-  below) — using it here would strip this body's only line on every quote.
+  above. `{{specSentence}}` is unavailable (`kind: "ACCESSORY"`). Per the two
+  decisions above, `{{price}}`/`{{basePrice}}` are left out (the section price
+  prints structurally regardless). `{{name}}` is left out for style, not
+  safety — it resolves correctly (see the closing note), but this body's
+  opening line already names the product through `{{model}}`.
 
 **Left out on purpose.** The Pathfinder Brain's Roll Trolley note
 (`02 Products/Roll Feeding.md`, sourced from the Jul 2025 brochure) says the
@@ -306,14 +368,15 @@ precedent) was.
 
 ---
 
-## One bug found while checking tokens
+## One bug found while checking tokens — since fixed
 
-`{{name}}` is offered by `categoryTokensFor` in `src/lib/quote-variables.ts`
-(it is in `UNIVERSAL_TOKENS`) but **is not in the `vars` object**
-`buildQuotationData` substitutes against — `src/lib/quotation-data.ts:560-586`
-sets `model`, `cutHeightCm`, `cutWidthCm`, `specSentence`, `tableWidthMm` /
-`paperWidthMm`, `price` and `basePrice`, and no `name`. So `{{name}}` passes
-validation on save, then strips its line on every quote and reports itself in
-the draft banner. None of the copy above uses it. The fix is one line in
-`quotation-data.ts` (`name: item.name`), or removing `name` from
-`UNIVERSAL_TOKENS` — out of scope here, but it should not stay as it is.
+`{{name}}` was offered by `categoryTokensFor` in `src/lib/quote-variables.ts`
+but **was not in the `vars` object** `buildQuotationData` substitutes against,
+so it passed validation on save and then stripped its own line on every quote.
+Commit `231eef2` fixed it: `vars` is now typed `Record<CategoryTokenName, …>`,
+so a name in `CATEGORY_TOKEN_NAMES` with no value beside it in
+`quotation-data.ts` fails to compile, and `tests/quotation-data.test.ts`'s
+"fills every token the registry offers" holds the two lists together. **`{{name}}`
+works — it resolves to the item's own name, the same string the section heading
+prints.** None of the copy above happens to use it, which is a matter of taste
+rather than of safety.

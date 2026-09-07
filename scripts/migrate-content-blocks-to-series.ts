@@ -53,6 +53,14 @@ import { sanitizeIfHtml } from "../src/lib/rich-text";
  *    skipped or missing target keeps its ContentBlock row(s) and keeps
  *    reporting the same skip/error on every subsequent run until a human
  *    resolves it by hand -- that is not a bug, it is the point
+ *  - a body carrying a token that has since been RENAMED is rewritten on its
+ *    way onto the series -- see TOKEN_REWRITES. Today that is one token in one
+ *    key: `equipment.easy-loader` opens "Conveyorised Spreading Table
+ *    ({{lengthM}}mtr)", and `{{lengthM}}` was a per-option-line attribute
+ *    variable whose mechanism was deleted. `{{tableLengthM}}` replaces it and
+ *    computes the same figure from the item's own module lines. Every rewrite
+ *    is printed as its own `[REWRITE]` line so a dry run shows it happening
+ *    rather than a body quietly differing from its source row
  *  - each body goes through `sanitizeIfHtml` on its way onto the series, the
  *    same write-boundary sanitizer `updateSeriesQuoteDescription` applies to
  *    every editor save. Without it, migrated copy would be the only
@@ -124,6 +132,61 @@ const MIGRATIONS: ReadonlyArray<{ blockKey: string; targetSeriesCodes: readonly 
   { blockKey: "equipment.fabric-pro", targetSeriesCodes: ["FP"] },
 ];
 
+/**
+ * Tokens renamed since the block body was written, rewritten on the way onto
+ * the category. Scoped to one block key each rather than applied globally: a
+ * rename is a fact about a specific body someone actually wrote, and a blanket
+ * search-and-replace across every migrated body is how an unrelated key
+ * acquires a token nobody chose for it.
+ *
+ * `equipment.easy-loader`'s `{{lengthM}}` is the only entry. It was a
+ * per-option-line attribute variable; that mechanism was deleted, so the line
+ * strips on every quote AND the category cannot be re-saved from the editor
+ * (`updateSeriesQuoteDescription` rejects a token the category cannot fill).
+ * `{{tableLengthM}}` is the replacement -- computed from the item's own
+ * EasyLoader module option lines, see src/lib/quote-variables.ts -- so this
+ * rewrite is what makes the migrated body both correct and savable, and is
+ * why that key no longer trips the out-of-scope [WARN] below. Any OTHER
+ * out-of-scope token is left exactly as it is and still warns: this table is
+ * a list of known renames, not a way to silence the check.
+ */
+const TOKEN_REWRITES: ReadonlyArray<{ blockKey: string; from: string; to: string }> = [
+  { blockKey: "equipment.easy-loader", from: "lengthM", to: "tableLengthM" },
+];
+
+/** A literal metre unit written immediately after the token, which the OLD
+ * token needed (it substituted a bare number) and the new one must not have:
+ * `formatMetres` prints "4.8 m", so "({{tableLengthM}}mtr)" would render
+ * "(4.8 mmtr)". Longest alternative first, and the trailing guard stops "m"
+ * from eating the first letter of a real word. */
+const UNIT_SUFFIX = "(?:mtrs|mtr|metres|metre|m)(?![A-Za-z])";
+
+/** Applies every rewrite registered for `blockKey`, returning the new body and
+ * a one-line description of each rewrite for the report. A key with no
+ * registered rewrite returns its body untouched and an empty list. */
+function rewriteTokens(blockKey: string, body: string): { body: string; rewrites: string[] } {
+  const rewrites: string[] = [];
+  let out = body;
+  for (const rule of TOKEN_REWRITES) {
+    if (rule.blockKey !== blockKey) continue;
+    // Same inner-whitespace tolerance `tokensIn` and the renderer both have,
+    // so "{{ lengthM }}" is rewritten too rather than left to strip.
+    const tokenPattern = new RegExp(`\\{\\{\\s*${rule.from}\\s*\\}\\}`, "g");
+    if (!tokenPattern.test(out)) continue;
+    out = out.replace(tokenPattern, `{{${rule.to}}}`);
+    rewrites.push(`{{${rule.from}}} -> {{${rule.to}}}`);
+
+    const suffixPattern = new RegExp(`(\\{\\{${rule.to}\\}\\})\\s*${UNIT_SUFFIX}`, "gi");
+    if (suffixPattern.test(out)) {
+      out = out.replace(suffixPattern, "$1");
+      rewrites.push(
+        `dropped the literal metre unit written after {{${rule.to}}} -- the value already carries it ("4.8 m")`
+      );
+    }
+  }
+  return { body: out, rewrites };
+}
+
 /** Deleted outright with no body migration -- no catalog category maps to
  * any of them. `option.` and `software.` are prefixes (17 and 6 keys today,
  * respectively); the two equipment orphans are named explicitly since most
@@ -192,13 +255,24 @@ type KeyPlan = {
    * exists -- i.e. an earlier run already migrated and deleted it.
    *
    * `body` is the row exactly as stored; `bodyToWrite` is that body through
-   * `sanitizeIfHtml`, and is what actually lands on the series -- see the
-   * header's note on the sanitizer. The two are equal for every body the
-   * allowlist already accepts, which is expected to be all of them; they are
-   * kept apart so the report and the backup describe the SOURCE row while the
-   * write and the already-written comparison both use the value that ends up
-   * in the column. */
-  defaultBlock: { id: string; body: string; bodyToWrite: string } | null;
+   * `rewriteTokens` and then `sanitizeIfHtml`, and is what actually lands on
+   * the series -- see the header's notes on the rewrites and the sanitizer.
+   * The two are equal for every body with no renamed token that the allowlist
+   * already accepts; they are kept apart so the report and the backup describe
+   * the SOURCE row while the write and the already-written comparison both use
+   * the value that ends up in the column. `rewrites` is one line per rewrite
+   * actually applied, for the report -- empty for a body nothing was renamed
+   * in, which is every key but `equipment.easy-loader`. `bodyRewritten` sits
+   * between the two -- the body after the rewrites but before the sanitizer --
+   * purely so the [SANITIZED] line reports what the ALLOWLIST changed rather
+   * than blaming it for a rewrite the line above already announced. */
+  defaultBlock: {
+    id: string;
+    body: string;
+    bodyRewritten: string;
+    bodyToWrite: string;
+    rewrites: string[];
+  } | null;
   overrides: Array<{ id: string; regionCode: string; body: string }>;
   writes: SeriesWritePlan[];
   /** True only when every target series for this key holds this body -- either
@@ -282,7 +356,12 @@ async function computePlan(db: Db) {
     // met the allowlist -- a different shape from every other row in the same
     // column, and one whose first re-save through the editor would silently
     // change it. Both paths now store the same thing.
-    const bodyToWrite = defaultRow ? sanitizeIfHtml(defaultRow.body) : "";
+    // Rewrite renamed tokens BEFORE both the sanitizer and the out-of-scope
+    // check: the check must be asked of the body that actually lands on the
+    // series, or `equipment.easy-loader` would warn about a `{{lengthM}}` this
+    // run has already replaced.
+    const rewritten = rewriteTokens(migration.blockKey, defaultRow?.body ?? "");
+    const bodyToWrite = defaultRow ? sanitizeIfHtml(rewritten.body) : "";
     if (defaultRow) {
       for (const seriesCode of migration.targetSeriesCodes) {
         const series = seriesByCode.get(seriesCode);
@@ -335,7 +414,15 @@ async function computePlan(db: Db) {
     keyPlans.push({
       blockKey: migration.blockKey,
       targetSeriesCodes: migration.targetSeriesCodes,
-      defaultBlock: defaultRow ? { id: defaultRow.id, body: defaultRow.body, bodyToWrite } : null,
+      defaultBlock: defaultRow
+        ? {
+            id: defaultRow.id,
+            body: defaultRow.body,
+            bodyRewritten: rewritten.body,
+            bodyToWrite,
+            rewrites: rewritten.rewrites,
+          }
+        : null,
       overrides: overrideRows.map((o) => ({ id: o.id, regionCode: o.region?.code ?? "?", body: o.body })),
       writes,
       fullyResolved,
@@ -423,12 +510,18 @@ function printPlan(plan: Plan): { hadUnexpectedIssue: boolean; skipsNonempty: nu
       console.log("  no default (regionId: null) ContentBlock row -- already migrated, nothing to write");
     } else {
       console.log(`  source body: ${key.defaultBlock.body.length} chars, "${preview(key.defaultBlock.body)}"`);
-      if (key.defaultBlock.bodyToWrite !== key.defaultBlock.body) {
+      // Printed before [SANITIZED] because it happens before it, and printed
+      // at all because a body silently differing from its source row is
+      // exactly what someone reading a dry run needs to be told about.
+      for (const rewrite of key.defaultBlock.rewrites) {
+        console.log(`  [REWRITE] ${key.blockKey}: ${rewrite}`);
+      }
+      if (key.defaultBlock.bodyToWrite !== key.defaultBlock.bodyRewritten) {
         // Not an issue -- the sanitizer is the same one every editor save
         // applies -- but the run should say out loud that what lands on the
         // series is not byte-for-byte the source row, and what it will be.
         console.log(
-          `  [SANITIZED] the allowlist changed this body (${key.defaultBlock.body.length} -> ${key.defaultBlock.bodyToWrite.length} chars): "${preview(key.defaultBlock.bodyToWrite)}"`
+          `  [SANITIZED] the allowlist changed this body (${key.defaultBlock.bodyRewritten.length} -> ${key.defaultBlock.bodyToWrite.length} chars): "${preview(key.defaultBlock.bodyToWrite)}"`
         );
       }
       for (const w of key.writes) {
@@ -515,6 +608,9 @@ function printPlan(plan: Plan): { hadUnexpectedIssue: boolean; skipsNonempty: nu
   console.log(`  skipped (destination has other copy):   ${skipsNonempty}`);
   console.log(`  errors (target series code not found):  ${missingSeries}`);
   console.log(`  bodies with out-of-scope token(s):      ${outOfScope}`);
+  console.log(
+    `  token rewrites applied:                ${plan.keyPlans.reduce((n, k) => n + (k.defaultBlock?.rewrites.length ?? 0), 0)}`
+  );
   console.log(`  region overrides discarded:              ${overridesDiscarded}`);
   console.log(`  ContentBlock rows to delete (3 migrated keys): ${keyBlocksDeleted}`);
   console.log(`  ContentBlock rows to delete (delete-outright): ${plan.deleteRows.length}`);
