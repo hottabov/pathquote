@@ -29,8 +29,8 @@ export type RegionVersionValues = { title: string; body: string; includedByDefau
  * client component, so the reader stays on the tab they were on even though
  * its props change underneath.
  *
- * Same shape as `RegionPane` in src/components/content/region-pane.tsx, the
- * component this succeeds, with one difference in wording: deleting here does
+ * Same shape as the content-block `RegionPane` this succeeds (deleted in
+ * z37_drop_content_block), with one difference in wording: deleting here does
  * not always mean "falls back to the default", because a region-only document
  * has no default to fall back to and simply stops printing in that region.
  * The confirm text says whichever is true.

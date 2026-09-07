@@ -12,7 +12,7 @@ import type { ActionResult } from "@/lib/actions/catalog";
 /**
  * The category-level quote copy editor, shown to an admin above the series
  * image card (see `[seriesId]/page.tsx`). Saving here never navigates — the
- * admin stays on the same series page — so this follows `ContentBlockForm`'s
+ * admin stays on the same series page — so this follows `QuoteDocumentForm`'s
  * `useTransition` + manual `onSubmit` pattern rather than `useActionState`
  * (which `ProductForm` uses precisely because *its* save redirects): success
  * needs its own signal here, which a `useActionState` result alone can't give
@@ -133,7 +133,7 @@ export function SeriesQuoteDescriptionCard({
         </div>
 
         <div className="flex flex-col gap-1.5 lg:col-span-2 lg:col-start-1 lg:row-start-1">
-          {/* Not a `<label htmlFor>` — same reasoning as ContentBlockForm's
+          {/* Not a `<label htmlFor>` — same reasoning as QuoteDocumentForm's
               Body field: the target is Tiptap's contentEditable surface plus
               a toolbar, not one labelable control. Associated via
               `aria-labelledby` instead, scoped by `seriesId` so two series

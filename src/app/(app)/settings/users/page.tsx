@@ -24,9 +24,8 @@ export const metadata: Metadata = { title: "Users" };
 export const dynamic = "force-dynamic";
 
 export default async function UsersPage() {
-  // See src/app/(app)/settings/content/page.tsx for why this is notFound()
-  // rather than a redirect: a Manager hitting a stale bookmark shouldn't be
-  // told the page exists at all.
+  // notFound() rather than a redirect: a Manager hitting a stale bookmark
+  // shouldn't be told the page exists at all.
   const session = await auth();
   if (!isAdminRole(session?.user?.role)) notFound();
 

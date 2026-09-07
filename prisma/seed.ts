@@ -14,13 +14,11 @@
 import "dotenv/config";
 import { Prisma } from "@prisma/client";
 import catalogData from "./seed-data/catalog.json";
-import contentBlocksData from "./seed-data/content-blocks.json";
 import usPricesData from "./seed-data/prices-us.json";
 import catalogV2Target from "../docs/reference/catalog-v2-target.json";
 import type { CatalogTarget } from "../scripts/lib/catalog-v2-plan";
 import {
   type Catalog,
-  type ContentBlocksJson,
   type UsPricesJson,
   REGIONS,
   mapSeries,
@@ -28,16 +26,11 @@ import {
   mapOptions,
   mapPrices,
   mapCompatibility,
-  mapContentBlocks,
   mapUsPrices,
   missingUsPriceCodes,
-  BLOCK_BODY_MIGRATIONS,
-  shouldMigrateBlock,
-  isRetiredContentBlockKey,
 } from "./seed-lib";
 
 const catalog = catalogData as Catalog;
-const contentBlocksJson = contentBlocksData as ContentBlocksJson;
 const usPricesJson = usPricesData as UsPricesJson;
 const v2Target = catalogV2Target as CatalogTarget;
 
@@ -102,9 +95,9 @@ async function main() {
   // and `create` here -- a fresh database seeds every Series with it null
   // (the column's own default), same as an admin sees on first opening the
   // catalog editor's "Quote description" card (Task 8 of the category-
-  // quote-copy plan). Category copy for M/X/EL/FP is not seed data: it comes
-  // out of the existing `ContentBlock` rows a real database already has, via
-  // the one-shot scripts/migrate-content-blocks-to-series.ts (Task 10) --
+  // quote-copy plan). Category copy for M/X/EL/FP is not seed data: it was
+  // moved onto the column from the old `ContentBlock` rows by the one-shot
+  // scripts/migrate-content-blocks-to-series.ts (Task 10) --
   // carrying it here too would mean maintaining the same three bodies in two
   // places, and catalog.json is itself a generated file (see
   // scripts/build-seed-data-from-target.ts's doc comment), so a
@@ -187,11 +180,8 @@ async function main() {
   }
 
   // 4. Products, upserted by code (see the note on codes above). Identity
-  // columns (kind/form/specs/contentBlockKey) come from the file and
-  // nowhere else (see resolveProductIdentity) and are written on every run.
-  // The content block is linked by key; the row is created in step 8, so
-  // the key is a plain string here and a missing block simply renders no
-  // section.
+  // columns (kind/form/specs) come from the file and nowhere else (see
+  // resolveProductIdentity) and are written on every run.
   const productIdByCode = new Map<string, string>();
   for (const p of mapProducts(catalog)) {
     const seriesId = seriesIdByCode.get(p.seriesCode);
@@ -206,7 +196,6 @@ async function main() {
       kind: p.kind,
       form: p.form,
       specs: p.specs ?? Prisma.DbNull,
-      contentBlockKey: p.contentBlockKey,
     };
     const product = await db.product.upsert({
       where: { code: p.code },
@@ -232,7 +221,6 @@ async function main() {
       role: o.role,
       parentProductId,
       unitLengthM: o.unitLengthM,
-      contentBlockKey: o.contentBlockKey,
     };
     const option = await db.option.upsert({
       where: { code: o.code },
@@ -407,97 +395,6 @@ async function main() {
     console.log(`seed: compatibility sync removed ${compatDeletedCount} stale OptionCompatibility row(s)`);
   }
 
-  // 8. Content blocks -- one regionId:null "default" row per key from
-  // prisma/seed-data/content-blocks.json. Create if the key has never been
-  // seeded before; if a default row already exists, leave it entirely alone
-  // (never overwrite title/body/sortOrder) so an admin's edits made via
-  // /settings/content always win over re-running the seed. Like
-  // OptionCompatibility above, ContentBlock's @@unique([key, regionId]) can't
-  // stop two regionId:null rows for the same key at the Postgres level
-  // (NULL is never equal to NULL for uniqueness purposes), so this checks
-  // first via findFirst rather than a composite-key upsert, and tolerates a
-  // P2002 from a concurrent/duplicate seed run the same way compatibility
-  // rows do.
-  let contentBlockCreated = 0;
-  let contentBlockSkipped = 0;
-  for (const block of mapContentBlocks(contentBlocksJson)) {
-    const existing = await db.contentBlock.findFirst({
-      where: { key: block.key, regionId: null },
-    });
-    if (existing) {
-      contentBlockSkipped++;
-      continue;
-    }
-    try {
-      await db.contentBlock.create({
-        data: {
-          key: block.key,
-          regionId: null,
-          title: block.title,
-          body: block.body,
-          sortOrder: block.sortOrder,
-        },
-      });
-      contentBlockCreated++;
-    } catch (e) {
-      const isDuplicate = e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
-      if (!isDuplicate) throw e;
-      contentBlockSkipped++;
-    }
-  }
-
-  // 8b. Targeted content-block body migrations -- see `BLOCK_BODY_MIGRATIONS`
-  // (prisma/seed-lib.ts) for why this is separate from step 8's "never
-  // overwrite an existing row" rule. Empty today -- its only entry
-  // ("machine.m-series") was removed once that key stopped existing in
-  // content-blocks.json at all (see BLOCK_BODY_MIGRATIONS's doc comment) --
-  // so this loop currently runs zero times. Kept generic so a future
-  // seed-data body/title fix has somewhere to register without touching this
-  // file: force-updates title+body to the new seed-data value, but only when
-  // the existing row's body is byte-for-byte the registered old value
-  // (`shouldMigrateBlock`) -- an admin edit (body differs from both the old
-  // *and* new seeded value) is left untouched and warned about.
-  let blockMigratedCount = 0;
-  let blockMigrationSkipped = 0;
-  for (const [key, migration] of Object.entries(BLOCK_BODY_MIGRATIONS)) {
-    const newBlock = contentBlocksJson.blocks.find((b) => b.key === key);
-    if (!newBlock) continue; // defensive -- a registered key should always still be seeded
-    const existing = await db.contentBlock.findFirst({ where: { key, regionId: null } });
-    if (!existing) continue; // never seeded on this DB, or just created fresh (with the new body) by step 8 above
-    if (!shouldMigrateBlock(existing.body, migration.oldBody)) {
-      if (existing.body !== newBlock.body) {
-        console.warn(`seed: content block "${key}" was admin-edited -- skipped body migration`);
-        blockMigrationSkipped++;
-      }
-      continue;
-    }
-    await db.contentBlock.update({
-      where: { id: existing.id },
-      data: { title: newBlock.title, body: newBlock.body },
-    });
-    blockMigratedCount++;
-  }
-
-  // A seeded row's content block is a key set in step 4/5 from the file;
-  // warn when the file names a block content-blocks.json does not seed, so
-  // a typo in the target file shows up here rather than as a silently
-  // missing quotation section. Excludes a key `isRetiredContentBlockKey`
-  // recognises: the category-quote-copy migration (Task 10) deleted every
-  // machine.*/equipment.*/software.*/option.* row from content-blocks.json
-  // outright, but catalog.json's per-row contentBlockKey values still name
-  // them until Task 11 drops the two columns -- an expected, already-known
-  // dangling reference until then, not a fresh mistake in the file.
-  const blockKeys = new Set((await db.contentBlock.findMany({ select: { key: true } })).map((b) => b.key));
-  const danglingBlockKeys = [...mapProducts(catalog), ...mapOptions(catalog)]
-    .filter(
-      (row) =>
-        row.contentBlockKey !== null && !blockKeys.has(row.contentBlockKey) && !isRetiredContentBlockKey(row.contentBlockKey)
-    )
-    .map((row) => `${row.code} -> ${row.contentBlockKey}`);
-  if (danglingBlockKeys.length) {
-    console.warn(`seed: ${danglingBlockKeys.length} row(s) name a content block that does not exist: ${danglingBlockKeys.join(", ")}`);
-  }
-
   console.log("seed: done");
   console.log(`  regions:        ${regionIdByCode.size}`);
   console.log(`  series:         ${seriesIdByCode.size}`);
@@ -508,10 +405,6 @@ async function main() {
   console.log(`  prices (AU):    ${priceCount}`);
   console.log(`  prices (US):    ${usPriceCount}`);
   console.log(`  compatibility:  ${compatCount} ensured, ${compatDeletedCount} stale removed`);
-  console.log(`  content blocks: ${contentBlockCreated} created, ${contentBlockSkipped} skipped (already seeded)`);
-  console.log(
-    `  content block migrations: ${blockMigratedCount} migrated, ${blockMigrationSkipped} skipped (admin-edited)`
-  );
 }
 
 main()

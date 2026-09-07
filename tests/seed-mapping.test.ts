@@ -1,10 +1,8 @@
 import { describe, it, expect } from "vitest";
 import catalogData from "../prisma/seed-data/catalog.json";
-import contentBlocksData from "../prisma/seed-data/content-blocks.json";
 import usPricesData from "../prisma/seed-data/prices-us.json";
 import {
   type Catalog,
-  type ContentBlocksJson,
   type UsPricesJson,
   REGIONS,
   mapUsPrices,
@@ -14,16 +12,11 @@ import {
   mapOptions,
   mapPrices,
   mapCompatibility,
-  mapContentBlocks,
   resolveOptionIdentity,
   resolveProductIdentity,
-  shouldMigrateBlock,
-  BLOCK_BODY_MIGRATIONS,
-  isRetiredContentBlockKey,
 } from "../prisma/seed-lib";
 
 const catalog = catalogData as Catalog;
-const contentBlocksJson = contentBlocksData as ContentBlocksJson;
 
 /**
  * Small, handcrafted catalog used to assert literal expected outputs of the
@@ -40,11 +33,10 @@ const contentBlocksJson = contentBlocksData as ContentBlocksJson;
  * compatibleProducts: ["A-100"]) mirroring EasyLoader-style accessories, so
  * mapCompatibility's product fan-out is exercised too.
  *
- * Every entry carries its identity explicitly (kind/form/specs/
- * contentBlockKey on products, role/parentProductCode/unitLengthM/
- * contentBlockKey on options): the seed has no rule that derives any of
- * them from a code, and refuses an entry that omits `kind` or the `role`
- * key (see the "refuses" tests below).
+ * Every entry carries its identity explicitly (kind/form/specs on products,
+ * role/parentProductCode/unitLengthM on options): the seed has no rule that
+ * derives any of them from a code, and refuses an entry that omits `kind` or
+ * the `role` key (see the "refuses" tests below).
  */
 const FIXTURE: Catalog = {
   extractedAt: "2026-01-01T00:00:00.000Z",
@@ -63,7 +55,6 @@ const FIXTURE: Catalog = {
           kind: "MACHINE",
           form: "M_SERIES",
           specs: { cutHeightCm: 3, cutWidthCm: 180, modelTier: "M3", widthCode: 180 },
-          contentBlockKey: "machine.m-series",
         },
         {
           code: "A-200",
@@ -74,7 +65,6 @@ const FIXTURE: Catalog = {
           kind: "ACCESSORY",
           form: null,
           specs: null,
-          contentBlockKey: null,
         },
       ],
     },
@@ -92,7 +82,6 @@ const FIXTURE: Catalog = {
           kind: "TABLE",
           form: "EASYLOADER",
           specs: { tableWidthMm: 2000 },
-          contentBlockKey: "equipment.easy-loader",
         },
       ],
     },
@@ -108,7 +97,6 @@ const FIXTURE: Catalog = {
       role: "MTS",
       parentProductCode: null,
       unitLengthM: null,
-      contentBlockKey: "option.MTS",
     },
     {
       code: "OPT-2",
@@ -120,7 +108,6 @@ const FIXTURE: Catalog = {
       role: null,
       parentProductCode: null,
       unitLengthM: null,
-      contentBlockKey: null,
     },
     {
       code: "OPT-3",
@@ -133,7 +120,6 @@ const FIXTURE: Catalog = {
       role: "EL_CONVEYOR",
       parentProductCode: "A-100",
       unitLengthM: 1.2,
-      contentBlockKey: null,
     },
   ],
 };
@@ -159,7 +145,6 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
         kind: "MACHINE",
         form: "M_SERIES",
         specs: { cutHeightCm: 3, cutWidthCm: 180, modelTier: "M3", widthCode: 180 },
-        contentBlockKey: "machine.m-series",
       },
       {
         code: "A-200",
@@ -172,7 +157,6 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
         kind: "ACCESSORY",
         form: null,
         specs: null,
-        contentBlockKey: null,
       },
       {
         code: "B-100",
@@ -185,12 +169,11 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
         kind: "TABLE",
         form: "EASYLOADER",
         specs: { tableWidthMm: 2000 },
-        contentBlockKey: "equipment.easy-loader",
       },
     ]);
   });
 
-  it("mapProducts passes noCommission through and normalises absent form/specs/contentBlockKey to null", () => {
+  it("mapProducts passes noCommission through and normalises absent form/specs to null", () => {
     const explicit: Catalog = {
       ...FIXTURE,
       series: [
@@ -207,9 +190,8 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
               kind: "MACHINE",
               form: "M_SERIES",
               specs: { cutHeightCm: 3, cutWidthCm: 180 },
-              contentBlockKey: "machine.m-series",
             },
-            // Only `kind` given: form/specs/contentBlockKey absent (not null)
+            // Only `kind` given: form/specs absent (not null)
             // and an empty specs object all map to null.
             { code: "PTW-S", name: "PW", description: "", price: 1, needsReview: false, kind: "SOFTWARE" },
             { code: "EMPTY", name: "E", description: "", price: 1, needsReview: false, kind: "ACCESSORY", specs: {} },
@@ -223,9 +205,8 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
       kind: "MACHINE",
       form: "M_SERIES",
       specs: { cutHeightCm: 3, cutWidthCm: 180 },
-      contentBlockKey: "machine.m-series",
     });
-    expect(ptw).toMatchObject({ kind: "SOFTWARE", form: null, specs: null, contentBlockKey: null });
+    expect(ptw).toMatchObject({ kind: "SOFTWARE", form: null, specs: null });
     expect(empty).toMatchObject({ noCommission: false, kind: "ACCESSORY", specs: null });
   });
 
@@ -273,7 +254,6 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
         role: "MTS",
         parentProductCode: null,
         unitLengthM: null,
-        contentBlockKey: "option.MTS",
       },
       {
         code: "OPT-2",
@@ -284,7 +264,6 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
         role: null,
         parentProductCode: null,
         unitLengthM: null,
-        contentBlockKey: null,
       },
       {
         code: "OPT-3",
@@ -295,12 +274,11 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
         role: "EL_CONVEYOR",
         parentProductCode: "A-100",
         unitLengthM: 1.2,
-        contentBlockKey: null,
       },
     ]);
   });
 
-  it("mapOptions takes role/parentProductCode/unitLengthM/contentBlockKey from the entry, with absent ones as null", () => {
+  it("mapOptions takes role/parentProductCode/unitLengthM from the entry, with absent ones as null", () => {
     const opts: Catalog = {
       ...FIXTURE,
       options: [
@@ -315,7 +293,6 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
           role: "EL_CONVEYOR",
           parentProductCode: "EL-2020",
           unitLengthM: 1.2,
-          contentBlockKey: null,
         },
         // Only the `role` key: nothing is inferred from the code.
         { code: "MTS-M", name: "x", description: "", price: 1, needsReview: false, compatibleSeries: ["M"], role: "MTS_TRAVEL" },
@@ -323,9 +300,9 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
       ],
     };
     const [dm12, mts, abr] = mapOptions(opts);
-    expect(dm12).toMatchObject({ role: "EL_CONVEYOR", parentProductCode: "EL-2020", unitLengthM: 1.2, contentBlockKey: null });
-    expect(mts).toMatchObject({ role: "MTS_TRAVEL", parentProductCode: null, unitLengthM: null, contentBlockKey: null });
-    expect(abr).toMatchObject({ role: null, parentProductCode: null, unitLengthM: null, contentBlockKey: null, noCommission: true });
+    expect(dm12).toMatchObject({ role: "EL_CONVEYOR", parentProductCode: "EL-2020", unitLengthM: 1.2 });
+    expect(mts).toMatchObject({ role: "MTS_TRAVEL", parentProductCode: null, unitLengthM: null });
+    expect(abr).toMatchObject({ role: null, parentProductCode: null, unitLengthM: null, noCommission: true });
   });
 
   it("mapOptions refuses an option without a role key (null is fine, absent is not), naming the code", () => {
@@ -387,87 +364,6 @@ describe("seed-lib: smoke assertions against the real catalog.json (counts only)
     }
   });
 });
-
-describe("mapContentBlocks", () => {
-  const FIXTURE_JSON: ContentBlocksJson = {
-    blocks: [
-      { key: "terms.delivery", title: "Delivery", sortOrder: 1, body: "Delivered in {{weeks}} weeks." },
-      { key: "option.OFD", title: "OFD", sortOrder: 2, body: "**OFD** offload display." },
-    ],
-    placeholders: { weeks: "Delivery time in weeks" },
-  };
-
-  it("maps each block's key/title/body/sortOrder 1:1 from the JSON", () => {
-    expect(mapContentBlocks(FIXTURE_JSON)).toEqual([
-      { key: "terms.delivery", title: "Delivery", body: "Delivered in {{weeks}} weeks.", sortOrder: 1 },
-      { key: "option.OFD", title: "OFD", body: "**OFD** offload display.", sortOrder: 2 },
-    ]);
-  });
-
-  // 51 -> 23: the category-quote-copy migration (Task 10) removed
-  // machine.m-series, equipment.easy-loader, equipment.fabric-pro (migrated
-  // onto Series.quoteDescription), the equipment.fabric-master/
-  // equipment.spreading-table orphans, all 17 option.* blocks and all 6
-  // software.* blocks -- 28 removed, leaving only terms.* (7) + conditions.*
-  // (14) + rsp.* (2) = 23. See scripts/migrate-content-blocks-to-series.ts.
-  it("real content-blocks.json has exactly 23 blocks", () => {
-    expect(mapContentBlocks(contentBlocksJson)).toHaveLength(23);
-  });
-
-  it("real content-blocks.json has unique keys", () => {
-    const keys = mapContentBlocks(contentBlocksJson).map((b) => b.key);
-    expect(new Set(keys).size).toBe(keys.length);
-  });
-
-  it("real content-blocks.json has no empty (or whitespace-only) bodies", () => {
-    for (const block of mapContentBlocks(contentBlocksJson)) {
-      expect(block.body.trim().length, `expected "${block.key}" to have a non-empty body`).toBeGreaterThan(0);
-    }
-  });
-
-  it("real content-blocks.json has no empty titles and non-negative sort orders", () => {
-    for (const block of mapContentBlocks(contentBlocksJson)) {
-      expect(block.title.trim().length, `expected "${block.key}" to have a non-empty title`).toBeGreaterThan(0);
-      expect(block.sortOrder).toBeGreaterThanOrEqual(0);
-    }
-  });
-});
-
-describe("shouldMigrateBlock / BLOCK_BODY_MIGRATIONS", () => {
-  it("returns true when the existing body exactly matches the old body", () => {
-    expect(shouldMigrateBlock("old text", "old text")).toBe(true);
-  });
-
-  it("returns false when the existing body differs at all (admin-edited, or already migrated)", () => {
-    expect(shouldMigrateBlock("old text, tweaked", "old text")).toBe(false);
-    expect(shouldMigrateBlock("new text", "old text")).toBe(false);
-    expect(shouldMigrateBlock("", "old text")).toBe(false);
-  });
-
-  // BLOCK_BODY_MIGRATIONS is empty today -- its one past entry
-  // ("machine.m-series") was removed by the category-quote-copy migration
-  // (Task 10): that key no longer exists in content-blocks.json at all, so
-  // there is nothing left to register a body migration against. See
-  // BLOCK_BODY_MIGRATIONS's doc comment in prisma/seed-lib.ts.
-  it("BLOCK_BODY_MIGRATIONS has no entries", () => {
-    expect(Object.keys(BLOCK_BODY_MIGRATIONS)).toEqual([]);
-  });
-});
-
-describe("isRetiredContentBlockKey", () => {
-  it("recognises every prefix the category-quote-copy migration deleted", () => {
-    for (const key of ["machine.m-series", "equipment.easy-loader", "equipment.fabric-pro", "equipment.fabric-master", "software.pathworks-i", "option.MTS"]) {
-      expect(isRetiredContentBlockKey(key), key).toBe(true);
-    }
-  });
-
-  it("does not flag a key the migration left alone", () => {
-    for (const key of ["terms.delivery", "conditions.1", "rsp.agreement"]) {
-      expect(isRetiredContentBlockKey(key), key).toBe(false);
-    }
-  });
-});
-
 
 // --- was tests/us-prices.test.ts: prices-us.json (mapUsPrices / missingUsPriceCodes) ------------------
 

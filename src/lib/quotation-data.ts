@@ -120,8 +120,8 @@ export type QuotationItemInput = ToSheetItemInput & {
   /** `Series.quoteDescription` — the copy authored once for this item's
    * category, printed under the item's heading with this product's own
    * figures substituted in. `null` or empty prints nothing, which is what a
-   * category nobody has written copy for does. Replaces the old
-   * `Product.contentBlockKey` lookup into the ContentBlock table. */
+   * category nobody has written copy for does. Replaces the per-product key
+   * into the ContentBlock table that both went in z37_drop_content_block. */
   seriesQuoteDescription: string | null;
   lines: QuotationLineInput[];
 };

@@ -40,10 +40,6 @@ export interface CatalogItem {
   kind?: ProductKind;
   form?: ProductionForm | null;
   specs?: ProductSpecs | null;
-  /** `Product.contentBlockKey` / `Option.contentBlockKey`: the quotation
-   * content block (prisma/seed-data/content-blocks.json key) that describes
-   * this row, or null for none. Absent = null. */
-  contentBlockKey?: string | null;
 }
 
 export interface CatalogSeries {
@@ -171,19 +167,18 @@ export interface ProductPayload {
   form: ProductionForm | null;
   /** `null` = no specs (the column stays NULL). */
   specs: ProductSpecs | null;
-  contentBlockKey: string | null;
 }
 
 /**
- * Product identity for a catalog entry: its explicit `kind`/`form`/`specs`/
- * `contentBlockKey`. The file is the only source -- an entry without a
- * `kind` is a broken file, not a row to guess at, so this throws naming the
- * code. Pure, so a fresh seed and the tests agree.
+ * Product identity for a catalog entry: its explicit `kind`/`form`/`specs`.
+ * The file is the only source -- an entry without a `kind` is a broken file,
+ * not a row to guess at, so this throws naming the code. Pure, so a fresh
+ * seed and the tests agree.
  */
 export function resolveProductIdentity(
   p: CatalogItem,
   seriesCode: string
-): { kind: ProductKind; form: ProductionForm | null; specs: ProductSpecs | null; contentBlockKey: string | null } {
+): { kind: ProductKind; form: ProductionForm | null; specs: ProductSpecs | null } {
   if (!p.kind) {
     throw new Error(`seed: product ${p.code} (series ${seriesCode}) has no kind in catalog.json`);
   }
@@ -191,7 +186,6 @@ export function resolveProductIdentity(
     kind: p.kind,
     form: p.form ?? null,
     specs: p.specs && Object.keys(p.specs).length ? p.specs : null,
-    contentBlockKey: p.contentBlockKey ?? null,
   };
 }
 
@@ -224,27 +218,24 @@ export interface OptionPayload {
   /** Product code (current, as in catalog.json) -- resolved to an id by the seed. */
   parentProductCode: string | null;
   unitLengthM: number | null;
-  contentBlockKey: string | null;
 }
 
 /**
  * Option identity for a catalog entry: its explicit `role`/
- * `parentProductCode`/`unitLengthM`/`contentBlockKey`. Same rule as
- * `resolveProductIdentity`, keyed on the presence of the `role` key (null
- * is a valid role; a missing key is a broken file and throws).
+ * `parentProductCode`/`unitLengthM`. Same rule as `resolveProductIdentity`,
+ * keyed on the presence of the `role` key (null is a valid role; a missing
+ * key is a broken file and throws).
  */
 export function resolveOptionIdentity(o: CatalogOption): {
   role: OptionRole | null;
   parentProductCode: string | null;
   unitLengthM: number | null;
-  contentBlockKey: string | null;
 } {
   if (!("role" in o)) throw new Error(`seed: option ${o.code} has no role key in catalog.json`);
   return {
     role: o.role ?? null,
     parentProductCode: o.parentProductCode ?? null,
     unitLengthM: o.unitLengthM ?? null,
-    contentBlockKey: o.contentBlockKey ?? null,
   };
 }
 
@@ -397,112 +388,4 @@ export function missingUsPriceCodes(catalog: Catalog, usPrices: UsPricesJson): s
     ...catalog.options.map((o) => o.code),
   ];
   return allCodes.filter((code) => !pricedCodes.has(code)).sort((a, b) => a.localeCompare(b, "en"));
-}
-
-// --- content blocks ------------------------------------------------------
-
-/** One entry of prisma/seed-data/content-blocks.json's `blocks` array. */
-export interface ContentBlockJsonItem {
-  key: string;
-  title: string;
-  sortOrder: number;
-  body: string;
-}
-
-/** Shape of prisma/seed-data/content-blocks.json. `placeholders` maps a
- * `{{token}}` name (as it appears in one or more block bodies) to a
- * human-readable description — consumed directly by the admin editor's
- * placeholder hint panel, not by this mapper. */
-export interface ContentBlocksJson {
-  blocks: ContentBlockJsonItem[];
-  placeholders: Record<string, string>;
-}
-
-export interface ContentBlockPayload {
-  key: string;
-  title: string;
-  body: string;
-  sortOrder: number;
-}
-
-/**
- * Pure passthrough mapping from content-blocks.json's `blocks` array to the
- * flat payload prisma/seed.ts writes as each key's regionId:null default row.
- * No validation here (that's the admin editor's zod schema's job for
- * *edits*) — this just shapes the seed data 1:1, kept as its own function so
- * it's unit-testable and so the IO shell (prisma/seed.ts) never touches the
- * JSON's field names directly.
- */
-export function mapContentBlocks(json: ContentBlocksJson): ContentBlockPayload[] {
-  return json.blocks.map((b) => ({
-    key: b.key,
-    title: b.title,
-    body: b.body,
-    sortOrder: b.sortOrder,
-  }));
-}
-
-// --- targeted content-block body migrations -------------------------------
-
-/**
- * Content-block keys with a targeted, exact-match body migration for
- * existing DBs — distinct from the seed's normal "never touch an existing
- * row" rule for content blocks (see prisma/seed.ts's content-blocks step): a
- * key listed here gets its title+body force-updated by prisma/seed.ts's
- * migration step, but only when the existing row's body is byte-for-byte
- * `oldBody` (see `shouldMigrateBlock`) — i.e. still exactly what an older
- * version of the seed itself put there, never touched by an admin. Add a new
- * entry here (and nowhere else — prisma/seed.ts's migration loop iterates
- * this map generically) whenever a future seed-data body/title edit needs
- * the same safe, targeted forward-fix treatment.
- *
- * Empty today. Its one past entry, "machine.m-series" (with a hardcoded
- * `oldBody` capturing the pre-315e089 duplicate-heading body), was removed
- * by the category-quote-copy migration (docs/superpowers/plans/
- * 2026-09-07-category-quote-copy.md, Task 10): that key no longer exists in
- * content-blocks.json at all — scripts/migrate-content-blocks-to-series.ts
- * copies its live body onto Series.quoteDescription and deletes the
- * ContentBlock row outright, so there is no longer a row for this step to
- * force-update. Left in place, typed and exported, so the next targeted body
- * fix has somewhere to go without touching prisma/seed.ts's generic loop.
- */
-export const BLOCK_BODY_MIGRATIONS: Record<string, { oldBody: string }> = {};
-
-/**
- * True when `existingBody` (a `ContentBlock` row's current body, read from
- * the DB) is exactly `oldBody` (a migration's hardcoded pre-change string,
- * see `BLOCK_BODY_MIGRATIONS`) — i.e. safe to force-update to the new
- * seed-data title/body without clobbering an admin's own edit. Any
- * difference at all (an admin edit, or a row already migrated to the new
- * body) means this returns false and the row must be left alone.
- */
-export function shouldMigrateBlock(existingBody: string, oldBody: string): boolean {
-  return existingBody === oldBody;
-}
-
-// --- retired content-block keys (category-quote-copy migration) -----------
-
-/**
- * Key prefixes `scripts/migrate-content-blocks-to-series.ts` (Task 10 of
- * docs/superpowers/plans/2026-09-07-category-quote-copy.md) deletes from
- * `ContentBlock` outright: the three it migrates onto `Series.quoteDescription`
- * (`machine.m-series`, `equipment.easy-loader`, `equipment.fabric-pro`) and
- * every orphan/option/software block that maps to nothing
- * (`equipment.fabric-master`, `equipment.spreading-table`, `option.*`,
- * `software.*`). `Product.contentBlockKey` / `Option.contentBlockKey`
- * (catalog.json) still name these keys — dropping those two columns is
- * Task 11, deliberately deferred until this migration has actually run
- * against a database — so every product/option row naming a retired key is
- * an *expected* dangling reference from here until Task 11 lands, not a typo
- * in catalog.json. See `isRetiredContentBlockKey`.
- */
-export const RETIRED_CONTENT_BLOCK_KEY_PREFIXES = ["machine.", "equipment.", "software.", "option."] as const;
-
-/** True when `key` falls under one of `RETIRED_CONTENT_BLOCK_KEY_PREFIXES` —
- * i.e. a `Product`/`Option.contentBlockKey` naming it is known, deliberate
- * fallout of the category-quote-copy migration rather than a mistake. Used by
- * prisma/seed.ts's dangling-content-block-key check to keep that warning
- * meaningful for an actual typo in catalog.json. */
-export function isRetiredContentBlockKey(key: string): boolean {
-  return RETIRED_CONTENT_BLOCK_KEY_PREFIXES.some((prefix) => key.startsWith(prefix));
 }

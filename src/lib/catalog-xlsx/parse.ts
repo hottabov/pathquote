@@ -25,6 +25,7 @@ import {
   PRODUCT_COLUMNS,
   PRODUCT_KINDS,
   PRODUCTION_FORMS,
+  RETIRED_COLUMNS,
   SHEET_NAMES,
   type Cell,
   type ItemType,
@@ -68,7 +69,6 @@ export type ParsedProduct = {
   kind: ProductKindValue;
   form: ProductionFormValue | null;
   specs: Record<string, unknown> | null;
-  contentBlockKey: string | null;
   isCredit: boolean;
   noCommission: boolean;
   active: boolean;
@@ -87,7 +87,6 @@ export type ParsedOption = {
   unitLengthM: number | null;
   compatSeries: string[];
   compatProducts: string[];
-  contentBlockKey: string | null;
   noCommission: boolean;
   active: boolean;
   sortOrder: number;
@@ -354,6 +353,12 @@ function readList<C extends string>(r: RowReader<C>, column: C): string[] {
  * is free (Excel users move columns); a header the contract does not know is
  * an error rather than silently ignored, since it is almost always a typo
  * that would otherwise drop a whole column of edits on the floor.
+ *
+ * The exception is a header that USED to be part of the contract
+ * (`RETIRED_COLUMNS`): a workbook exported before that column was dropped is
+ * not a typo, and somebody may well be halfway through editing one. Those are
+ * skipped by name and read by nothing, so an in-flight spreadsheet still
+ * imports.
  */
 function readHeader(
   sheet: string,
@@ -366,6 +371,7 @@ function readHeader(
   header.forEach((cell, i) => {
     const name = cellText(cell);
     if (name === null) return;
+    if ((RETIRED_COLUMNS as readonly string[]).includes(name)) return;
     if (!columns.includes(name)) {
       errors.push({ sheet, row: 1, column: name, message: `Unknown column "${name}"` });
       return;
@@ -461,7 +467,6 @@ export function parseCatalogSheets(sheets: CatalogSheets, snapshot: CatalogExpor
           specs = checked.data as Record<string, unknown>;
         }
       }
-      const contentBlockKey = readText(r, "contentBlockKey", 200);
       const isCredit = readBool(r, "isCredit", false);
       const noCommission = readBool(r, "noCommission", false);
       const active = readBool(r, "active", true);
@@ -483,7 +488,6 @@ export function parseCatalogSheets(sheets: CatalogSheets, snapshot: CatalogExpor
         kind,
         form,
         specs,
-        contentBlockKey,
         isCredit,
         noCommission,
         active,
@@ -533,7 +537,6 @@ export function parseCatalogSheets(sheets: CatalogSheets, snapshot: CatalogExpor
           if (!fileProductCodes.has(p)) fail(r, "compatProducts", productRefMessage("compatProducts", p));
         }
       }
-      const contentBlockKey = readText(r, "contentBlockKey", 200);
       const noCommission = readBool(r, "noCommission", false);
       const active = readBool(r, "active", true);
       const sortOrder = readNumber(r, "sortOrder", { required: false, integer: true, min: 0 }) ?? 0;
@@ -562,7 +565,6 @@ export function parseCatalogSheets(sheets: CatalogSheets, snapshot: CatalogExpor
         unitLengthM,
         compatSeries,
         compatProducts,
-        contentBlockKey,
         noCommission,
         active,
         sortOrder,

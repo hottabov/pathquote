@@ -66,7 +66,6 @@ function snapshotFromDump(dump: Dump): CatalogExportSnapshot {
       ...p,
       kind: "ACCESSORY",
       form: null,
-      contentBlockKey: null,
       sortOrder: i,
     })),
     options: dump.options.map((o, i) => ({
@@ -74,7 +73,6 @@ function snapshotFromDump(dump: Dump): CatalogExportSnapshot {
       role: null,
       parentProduct: null,
       unitLengthM: null,
-      contentBlockKey: null,
       sortOrder: i,
     })),
   };
@@ -97,7 +95,6 @@ function tiny(): CatalogExportSnapshot {
     kind: "MACHINE",
     form: "M_SERIES",
     specs: { cutHeightCm: 5, cutWidthCm: 180 },
-    contentBlockKey: "machine.m-series",
     isCredit: false,
     noCommission: false,
     active: true,
@@ -113,7 +110,6 @@ function tiny(): CatalogExportSnapshot {
     kind: "TABLE",
     form: "EASYLOADER",
     specs: null,
-    contentBlockKey: null,
     sortOrder: 0,
     prices: {},
   };
@@ -127,7 +123,6 @@ function tiny(): CatalogExportSnapshot {
     unitLengthM: "1.20",
     compatSeries: [],
     compatProducts: ["EL-2020"],
-    contentBlockKey: null,
     noCommission: false,
     active: true,
     sortOrder: 1,

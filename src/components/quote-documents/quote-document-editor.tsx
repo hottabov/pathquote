@@ -34,9 +34,9 @@ export type QuoteDocumentEditorRegion = { code: string; name: string };
 /**
  * Region-tabbed view of one whole quote document: a "Default" tab (the
  * `regionId: null` row every quote falls back to) plus one tab per region,
- * a dot on the ones that keep their own version. Succeeds
- * `ContentBlockEditor` (src/components/content/content-block-editor.tsx),
- * whose tab-strip structure this lifts — with the ARIA contract that
+ * a dot on the ones that keep their own version. Succeeds the content-block
+ * editor deleted in z37_drop_content_block, whose tab-strip structure this
+ * lifts — with the ARIA contract that
  * component declared but never finished, which is why it is a rewrite rather
  * than a copy: it marked up `role="tablist"`/`role="tab"` with no
  * `aria-controls`, no `role="tabpanel"`, and no arrow-key movement, so a

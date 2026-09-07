@@ -14,7 +14,7 @@
  * quietly force the minority — the loop in `setConflictGroupMembers`, the
  * detail-only write in `setCatalogVisibility` — to revalidate a page they
  * have no business touching. The pairs that *are* bundled below
- * (`revalidateCatalog`, `revalidateProduct`, `revalidateContentBlock`) are
+ * (`revalidateCatalog`, `revalidateProduct`, `revalidateQuoteDocument`) are
  * the ones where every existing call site wanted the whole set.
  */
 
@@ -27,7 +27,7 @@ export function revalidateHome(): void {
 
 // --- documents ---------------------------------------------------------
 // These name the **quotes** routes — `Document` is the quote model. The
-// legal-documents feature landing on /documents next gets its own pair.----
+// legal documents on /documents have their own pair at the end of this file.
 
 export function revalidateDocumentList(): void {
   revalidatePath("/quotes");
@@ -123,16 +123,6 @@ export function revalidateRegion(regionId: string): void {
   revalidatePath(`/settings/regions/${regionId}`);
 }
 
-/**
- * The content-block list and the editor for one block. The key is a
- * user-defined string that reaches the route as a path segment, so it is
- * encoded here — the one route in the app whose parameter is not an id.
- */
-export function revalidateContentBlock(key: string): void {
-  revalidatePath("/settings/content");
-  revalidatePath(`/settings/content/${encodeURIComponent(key)}`);
-}
-
 export function revalidateConflictGroupList(): void {
   revalidatePath("/settings/option-conflict-groups");
 }
@@ -143,11 +133,9 @@ export function revalidateConflictGroup(groupId: string): void {
 
 // --- quote documents ---------------------------------------------------
 // Terms, General Conditions, RSP, and whatever a region adds later — the
-// legal text a customer signs, edited as whole documents rather than
-// ContentBlock fragments (see docs/superpowers/plans/2026-09-07-quote-
-// documents.md). The list and its editor land on /documents in Task 7;
-// naming the routes here now, before either exists, is the same bet
-// `revalidateDocumentList` made for /quotes.
+// legal text a customer signs, edited as whole documents rather than the
+// ContentBlock fragments they used to be (see
+// docs/superpowers/plans/2026-09-07-quote-documents.md).
 
 export function revalidateQuoteDocumentList(): void {
   revalidatePath("/documents");
@@ -156,8 +144,7 @@ export function revalidateQuoteDocumentList(): void {
 /**
  * The quote-document list and the editor for one document. The key is a
  * user-defined string that reaches the route as a path segment, so it is
- * encoded here — same treatment `revalidateContentBlock` gives a
- * ContentBlock key.
+ * encoded here — the one route in the app whose parameter is not an id.
  */
 export function revalidateQuoteDocument(key: string): void {
   revalidatePath("/documents");

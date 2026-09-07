@@ -39,7 +39,7 @@ export function EquipmentDetail({
           <div className="pq-title-image-group">
             {/* Section heading — ALWAYS rendered, one consistent tier
                 for every machine/equipment/software item, whether or
-                not a content block matched (see
+                not its category carries quote copy (see
                 src/lib/quotation-data.ts's `sectionTitle` — this used
                 to be missing entirely for Easy-Loader/Fabric
                 Pro/PathWorks sections, whose content blocks never
@@ -54,8 +54,8 @@ export function EquipmentDetail({
                 sections showed no price at all because their content
                 blocks never carried an inline "Price: {{price}}" line
                 the way machine.m-series's did) — printed for EVERY
-                section, blocked or not, EXCEPT one whose matched block
-                already prints its own inline price line
+                section, with copy or without, EXCEPT one whose category
+                copy already prints its own inline price line
                 (`hasInlinePrice`), which would otherwise double up. */}
             {section.sectionPrice && !section.hasInlinePrice ? (
               <div className="pq-section-price">Price: {section.sectionPrice}</div>
@@ -63,9 +63,9 @@ export function EquipmentDetail({
             {section.titleBlockHtml ? (
               <div className="pq-block-body" dangerouslySetInnerHTML={{ __html: section.titleBlockHtml }} />
             ) : (
-              // No admin-authored content block matched this item's
-              // product (e.g. L-Series has none — see
-              // the product's `contentBlockKey`) — render
+              // Nobody has written quote copy for this item's category
+              // (e.g. L-Series has none — see `Series.quoteDescription`,
+              // edited on the category's own catalog page) — render
               // a minimal auto-generated spec line underneath the
               // heading/price above instead of just leaving the
               // section bare.

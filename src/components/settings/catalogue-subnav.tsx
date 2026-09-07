@@ -2,14 +2,13 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 
 const TABS = [
-  { href: "/settings/content", label: "Content blocks" },
   { href: "/settings/option-conflict-groups", label: "Option conflict groups" },
   { href: "/settings/spec-images", label: "Spec diagrams" },
 ] as const;
 
 /**
- * The Catalogue nav section bundles independent list pages — content
- * blocks, option conflict groups, and spec diagrams — under one entry (see
+ * The Catalogue nav section bundles independent list pages — option
+ * conflict groups and spec diagrams — under one entry (see
  * src/lib/settings-nav.ts). This lets a user flip between them without
  * detouring back through the outer settings nav, the same "no intermediate
  * card to click through" goal the settings redesign applies one level up.
@@ -24,7 +23,7 @@ const TABS = [
  * reorder possible without moving it in the DOM (so focus and reading order
  * still follow the heading).
  */
-export function CatalogueSubnav({ active }: { active: "content" | "option-conflict-groups" | "spec-images" }) {
+export function CatalogueSubnav({ active }: { active: "option-conflict-groups" | "spec-images" }) {
   return (
     <div role="tablist" aria-label="Catalogue" className="order-first inline-flex w-fit flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1 sm:order-none">
       {TABS.map((tab) => {

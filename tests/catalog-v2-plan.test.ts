@@ -54,7 +54,6 @@ function applyToSnapshot(snapshot: CatalogSnapshot, operations: Operation[]): Ca
           noCommission: op.data.noCommission,
           kind: op.data.kind,
           form: op.data.form,
-          contentBlockKey: op.data.contentBlockKey,
           prices: {},
         });
         break;
@@ -78,7 +77,6 @@ function applyToSnapshot(snapshot: CatalogSnapshot, operations: Operation[]): Ca
           role: op.data.role,
           parentProductCode: op.data.parentProductCode,
           unitLengthM: op.data.unitLengthM,
-          contentBlockKey: op.data.contentBlockKey,
           compatSeries: [],
           compatProducts: [],
           prices: {},
@@ -147,27 +145,6 @@ describe("planCatalogV2 against the pre-migration dump", () => {
     expect(dm12.changes.role?.to).toBe("EL_CONVEYOR");
     expect(dm12.changes.parentProductCode?.to).toBe("EL-2020");
     expect(dm12.changes.unitLengthM?.to).toBe(1.2);
-  });
-
-  it("carries the content-block key: written where the target names one, untouched where the snapshot already has it", () => {
-    // The dump predates the column, so a missing key reads as null and only
-    // the rows the target links to a block get an update...
-    const m3180 = ops.find((o) => o.op === "product.update" && o.code === "M-3180");
-    if (m3180?.op !== "product.update") throw new Error("expected M-3180 update");
-    expect(m3180.changes.contentBlockKey).toEqual({ from: undefined, to: "machine.m-series" });
-    const mts = ops.find((o) => o.op === "option.update" && o.code === "MTS");
-    if (mts?.op !== "option.update") throw new Error("expected MTS update");
-    expect(mts.changes.contentBlockKey).toEqual({ from: undefined, to: "option.MTS" });
-    const noBlock = ops.filter((o) => o.op === "option.update" && o.code === "TR220");
-    for (const o of noBlock) if (o.op === "option.update") expect(o.changes.contentBlockKey).toBeUndefined();
-    // ...whereas a snapshot that already carries the key plans nothing for it.
-    const keyed: CatalogSnapshot = {
-      ...dump,
-      products: dump.products.map((p) => (p.code === "M3180" ? { ...p, contentBlockKey: "machine.m-series" } : p)),
-    };
-    const again = planCatalogV2(target, keyed).operations.find((o) => o.op === "product.update" && o.code === "M-3180");
-    if (again?.op !== "product.update") throw new Error("expected M-3180 update");
-    expect(again.changes.contentBlockKey).toBeUndefined();
   });
 
   it("removes X from the options the US X sheet does not list", () => {

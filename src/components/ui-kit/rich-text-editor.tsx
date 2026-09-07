@@ -142,7 +142,7 @@ function EditorToolbar({ editor, disabled }: { editor: Editor; disabled?: boolea
 
 export type RichTextEditorHandle = {
   /** Inserts plain text at the current cursor position (replacing any
-   * selection), same as typing would — used by `ContentBlockForm`'s
+   * selection), same as typing would — used by `QuoteDocumentForm`'s
    * placeholder-chip row (clicking a `{{token}}` chip) via
    * `editor.commands.insertContent`. A no-op while the editor hasn't
    * mounted yet. */
@@ -151,7 +151,7 @@ export type RichTextEditorHandle = {
 
 /**
  * WYSIWYG replacement for the old markdown textarea + `MarkdownToolbar` +
- * separate preview pane (see notes-section.tsx / content-block-form.tsx):
+ * separate preview pane (see notes-section.tsx / quote-document-form.tsx):
  * editing shows formatted text immediately, no markdown syntax visible and
  * no separate preview needed. `value`/`onChange` carry Tiptap's HTML output
  * directly — the caller owns converting a stored value to HTML before first
@@ -177,7 +177,7 @@ export type RichTextEditorHandle = {
  *
  * Exposes an imperative `RichTextEditorHandle` (via `ref`) rather than a
  * bigger prop surface, since `insertContent` is a one-off need of a single
- * caller (`ContentBlockForm`'s placeholder chips) — every other caller can
+ * caller (`QuoteDocumentForm`'s placeholder chips) — every other caller can
  * ignore the ref entirely.
  */
 export const RichTextEditor = forwardRef<

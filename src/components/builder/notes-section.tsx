@@ -13,7 +13,7 @@ import { setDocumentNotes } from "@/lib/actions/documents";
  * The builder's "Notes" section (owner: freeform remarks on a document,
  * carried through to both renderers — the quotation sheet and the plain
  * document sheet, both via `renderStoredRichText`) — a smaller sibling of
- * `ContentBlockForm`'s `RichTextEditor` (WYSIWYG, formatted text shows
+ * `QuoteDocumentForm`'s `RichTextEditor` (WYSIWYG, formatted text shows
  * immediately, no separate preview pane) but without a title field or a
  * placeholder sidebar: just the editor, autosaved via `useAutosave`
  * (no Save button — see src/lib/use-autosave.ts) which calls

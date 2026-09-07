@@ -1,8 +1,8 @@
 // Pure helpers for the WYSIWYG rich-text editor (RichTextEditor, Tiptap) and
-// its HTML-content-storage story. `ContentBlock.body` and `Document.notes`
-// used to be markdown, hand-typed into a textarea (see src/lib/markdown.ts /
-// src/lib/markdown-editor.ts, still kept around — see their own doc
-// comments). Rows written by the WYSIWYG editor store Tiptap's HTML output
+// its HTML-content-storage story. `QuoteDocument.body` and `Document.notes`
+// used to be markdown, hand-typed into a textarea (see src/lib/markdown.ts,
+// still kept around to read those rows back — see its own doc comment). Rows
+// written by the WYSIWYG editor store Tiptap's HTML output
 // instead, so every reader of stored content now has to handle BOTH shapes:
 // old rows are still markdown, new rows (and any row an admin re-saves) are
 // HTML. This module is that seam: `isHtmlContent` tells the two shapes
@@ -52,9 +52,9 @@ const SAFE_HREF_PATTERN = /^(?:https?:|mailto:)/i;
  * words), except for tags it always drops entirely regardless of allowlist
  * (`<script>`/`<style>` and the like never leak their contents as text).
  *
- * Called from two places: server actions writing `ContentBlock.body` /
+ * Called from two places: server actions writing `QuoteDocument.body` /
  * `Document.notes` (defense at the write boundary — see setDocumentNotes/
- * updateContentBlock/createRegionOverride), and `renderStoredRichText` below
+ * updateQuoteDocument/createRegionVersion), and `renderStoredRichText` below
  * (defense at the read boundary too, so a row written before this
  * allowlist existed, or written by any future direct-DB path, still renders
  * safely).
@@ -85,7 +85,7 @@ export function renderStoredRichText(stored: string): string {
  * is stored as-is, exactly as it always was — sanitization only ever applies
  * to markup a `RichTextEditor` could actually have produced). Used by every
  * server action that persists a `RichTextEditor`-backed column
- * (`ContentBlock.body`/`Document.notes` via updateContentBlock/
+ * (`QuoteDocument.body`/`Document.notes` via updateQuoteDocument/
  * setDocumentNotes, `Product.description` via createProduct/updateProduct)
  * so the allowlist is enforced once, the same way, everywhere a stored value
  * is untrusted-ish editor output rather than assumed clean.

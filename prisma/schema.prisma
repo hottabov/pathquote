@@ -214,7 +214,6 @@ model Region {
   companies       Company[]
   prices          Price[]
   documents       Document[]
-  contentBlocks   ContentBlock[]
   quoteDocuments  QuoteDocument[]
   supportMessages SupportMessage[]
 }
@@ -318,11 +317,6 @@ model Product {
   // quotation's spec sentence, the order forms' model/width boxes and the
   // EasyLoader form's printed-width box read, instead of parsing the code.
   specs             Json?
-  // Which quotation content block describes this product
-  // (ContentBlock.key, e.g. "machine.m-series", "software.pathworks-i").
-  // Null = resolved by series the way it always was. See
-  // src/lib/quotation-data.ts.
-  contentBlockKey   String?
   // Options that belong to this product rather than to a series -- the
   // EasyLoader's modules ("EL-2020-DM12" is a module *of* EL-2020). Replaces
   // the `${itemCode} ${suffix}` code template in table-sections.ts.
@@ -390,9 +384,6 @@ model Option {
   // shows beside the quantity stepper (src/lib/option-length.ts) -- it used
   // to parse "1.2M" out of the name.
   unitLengthM              Decimal?                    @db.Decimal(6, 2)
-  // ContentBlock.key of the quotation block for this option ("option.MTS").
-  // Null = no block. See src/lib/quotation-data.ts.
-  contentBlockKey          String?
   attributeSchema          Json? // e.g. [{key:"metres",label:"Travel (m)",type:"number"}]
   imageUrl                 String?
   active                   Boolean                     @default(true)
@@ -891,25 +882,13 @@ model DocumentLine {
   @@index([refId, kind])
 }
 
-model ContentBlock {
-  id        String  @id @default(cuid())
-  key       String // terms.delivery, rsp.agreement, option.MTS
-  regionId  String?
-  region    Region? @relation(fields: [regionId], references: [id])
-  title     String?
-  body      String // markdown
-  sortOrder Int     @default(0)
-
-  @@unique([key, regionId])
-  // The unique above leads with `key`, which serves every by-key lookup but
-  // not the two places that select on region alone: listContentBlocks
-  // (src/lib/queries/content.ts) splits the table into defaults
-  // (`regionId: null`) and overrides (`regionId: { not: null }`), and
-  // getContentBlocksForRegion -- run once per rendered quotation -- pulls
-  // `OR: [{ regionId: null }, { regionId }]`. A btree index covers IS NULL as
-  // well as equality in Postgres, so one plain index answers both branches.
-  @@index([regionId])
-}
+// `model ContentBlock` stood here until migration z37_drop_content_block.
+// It held three unrelated kinds of text as key-prefixed fragments: category
+// copy (`machine.*`, `equipment.*`), per-option copy (`option.*`), and the
+// legal documents (`terms.*`, `conditions.*`, `rsp.*`). All three moved to
+// where they belong -- `Series.quoteDescription`, and `QuoteDocument` below
+// -- so nothing resolved a block key any more and the two
+// `Product`/`Option.contentBlockKey` columns went with it.
 
 /// One whole legal document printed on a quote — Terms, General Conditions
 /// of Sale, the RSP agreement, and whatever a region adds later. Replaces

@@ -17,8 +17,7 @@ import { DocumentPreview } from "./document-preview";
  * tokens, and a preview.
  *
  * `useTransition` + a manual `onSubmit` rather than `useActionState`, for the
- * reason `ContentBlockForm` (src/components/content/content-block-form.tsx:33-37)
- * gives: this save never navigates away — the admin stays on the same region
+ * reason the content-block form it succeeds gave: this save never navigates away — the admin stays on the same region
  * tab — so success needs a signal of its own, which a `useActionState` result
  * cannot give without an extra effect watching it change.
  *

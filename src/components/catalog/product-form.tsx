@@ -44,7 +44,7 @@ export function ProductForm({
   );
   // `defaultValues.description` may still be a legacy plain-text/markdown
   // row — `toEditorHtml` normalizes it to HTML once, for the editor's
-  // initial mount only (same pattern `ContentBlockForm` uses for its Body
+  // initial mount only (same pattern `QuoteDocumentForm` uses for its Body
   // field). From then on `description` state is always HTML, submitted via
   // the hidden input below since the editor has no native form element of
   // its own. `updateProduct`/`createProduct` sanitize on write, so this
@@ -82,7 +82,7 @@ export function ProductForm({
           {/* Not a `<label htmlFor>` — its target isn't a single labelable
               form control (Tiptap's contentEditable surface plus a row of
               toolbar buttons), so a plain heading avoids a dangling `for`
-              reference to nothing — same reasoning as ContentBlockForm's
+              reference to nothing — same reasoning as QuoteDocumentForm's
               Body field. */}
           <span className="text-sm font-medium text-brand-dark">Description</span>
           {/* The editor itself has no native form control `FormData` can
