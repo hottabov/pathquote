@@ -199,17 +199,40 @@ const UNRESOLVED_MARKER = "@@QUOTATION_UNRESOLVED@@";
  * embedded `\n`s and all, so each of its own lines becomes its own output
  * line exactly as if they'd been written directly into the block body.
  */
-export function substitutePlaceholders(body: string, vars: PlaceholderVars): string {
+export type SubstitutionReport = {
+  /** The body after substitution and line-stripping. */
+  text: string;
+  /** Distinct tokens that had no value and so cost their line, in first-seen
+   * order. A token withheld with `OMIT` is deliberate and never listed — see
+   * the draft banner in the quotation preview, which exists to surface a
+   * missing figure, not a hidden price. */
+  stripped: string[];
+};
+
+/** `substitutePlaceholders` plus a record of what went missing. */
+export function substituteWithReport(body: string, vars: PlaceholderVars): SubstitutionReport {
+  const stripped: string[] = [];
+
   const substituted = body.replace(PLACEHOLDER_PATTERN, (_match, token: string) => {
     const value = vars[token];
-    if (value === undefined || value === OMIT || value === "") return UNRESOLVED_MARKER;
+    if (value === OMIT) return UNRESOLVED_MARKER;
+    if (value === undefined || value === "") {
+      if (!stripped.includes(token)) stripped.push(token);
+      return UNRESOLVED_MARKER;
+    }
     return value;
   });
 
-  return substituted
+  const text = substituted
     .split("\n")
     .filter((line) => !line.includes(UNRESOLVED_MARKER))
     .join("\n");
+
+  return { text, stripped };
+}
+
+export function substitutePlaceholders(body: string, vars: PlaceholderVars): string {
+  return substituteWithReport(body, vars).text;
 }
 
 // --- buildQuotationData ----------------------------------------------------

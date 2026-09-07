@@ -5,6 +5,7 @@ import {
   OMIT,
   resolveBlocks,
   substitutePlaceholders,
+  substituteWithReport,
   type ContentBlockRow,
   type QuotationItemInput,
 } from "../src/lib/quotation-data";
@@ -89,6 +90,36 @@ describe("substitutePlaceholders", () => {
     // unresolved token strips the whole line, not just its own token.
     const result = substitutePlaceholders("{{known}} plus {{unknown}}\nSafe line", { known: "1" });
     expect(result).toBe("Safe line");
+  });
+
+  it("reports the token that caused a line to be stripped", () => {
+    const result = substituteWithReport("Kept {{model}}\nGone {{cutHeightCm}}", { model: "M-5180" });
+    expect(result.text).toBe("Kept M-5180");
+    expect(result.stripped).toEqual(["cutHeightCm"]);
+  });
+
+  it("reports nothing when every token resolves", () => {
+    const result = substituteWithReport("Kept {{model}}", { model: "M-5180" });
+    expect(result.text).toBe("Kept M-5180");
+    expect(result.stripped).toEqual([]);
+  });
+
+  it("does not report a deliberately withheld token", () => {
+    // OMIT means "hidden on purpose right now" (a price with the toggle off),
+    // not "we have no data" — surfacing it would cry wolf on every quote
+    // that simply hides prices.
+    const result = substituteWithReport("Price: {{price}}", { price: OMIT });
+    expect(result.text).toBe("");
+    expect(result.stripped).toEqual([]);
+  });
+
+  it("reports every distinct missing token once", () => {
+    const result = substituteWithReport("{{a}}\n{{b}}\n{{a}}", {});
+    expect(result.stripped).toEqual(["a", "b"]);
+  });
+
+  it("leaves substitutePlaceholders behaving exactly as before", () => {
+    expect(substitutePlaceholders("Kept {{model}}\nGone {{x}}", { model: "M" })).toBe("Kept M");
   });
 });
 
