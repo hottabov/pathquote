@@ -19,6 +19,7 @@ import { catalogVisibilityUserId } from "@/lib/catalog-visibility";
 import { getHiddenCatalogIds } from "@/lib/queries/catalog-visibility";
 import { getQuoteValidityDays, getShowOptionIcons } from "@/lib/queries/settings";
 import { getSpecImages } from "@/lib/queries/spec-images";
+import { getUser } from "@/lib/queries/users";
 import { concessionCapMessage, markupCapMessage } from "@/lib/pricing";
 import { renderStoredRichText } from "@/lib/rich-text";
 import { PageHeader, SectionCard, StatusBadge, STATUS_TONE } from "@/components/ui-kit";
@@ -35,6 +36,7 @@ import { ProductionFormsSection } from "@/components/documents/production-forms-
 import { DocumentTotals, StickyFooter } from "@/components/builder/sticky-footer";
 import { FinalizeButton } from "@/components/builder/finalize-button";
 import { UnfinalizeButton } from "@/components/builder/unfinalize-button";
+import { SignButton } from "@/components/builder/sign-button";
 import { DeleteDraftButton } from "@/components/builder/delete-draft-button";
 import { ConcessionCapBadge } from "@/components/builder/concession-cap-badge";
 import { ConcessionCapToast } from "@/components/builder/concession-cap-toast";
@@ -74,6 +76,13 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
 
   const isDraft = document.status === "DRAFT";
   const isAdmin = isAdminRole(session.user.role);
+
+  // Only fetched for a FINAL document — a DRAFT never renders SignButton, so
+  // there is no reason to pay for this read there. `getUser` (not the
+  // session) because the session JWT only revalidates every few minutes (see
+  // src/auth.ts) and this must reflect a signature drawn in Account just
+  // before this page loaded.
+  const mySignatureUrl = isDraft ? null : ((await getUser(session.user.id))?.signatureUrl ?? null);
 
   // Same message every mutating server action already builds (see
   // recalcDocument's own concessionMessage) — reused here for both the
@@ -335,7 +344,12 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
                 />
               </div>
               <div className="flex flex-col gap-2 border-t border-slate-100 pt-4">
-                <DocumentActions document={document} isDraft={isDraft} isAdmin={isAdmin} />
+                <DocumentActions
+                  document={document}
+                  isDraft={isDraft}
+                  isAdmin={isAdmin}
+                  mySignatureUrl={mySignatureUrl}
+                />
               </div>
               {isDraft ? (
                 <div className="border-t border-slate-100 pt-4">
@@ -355,7 +369,12 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
           <div className="flex flex-col gap-4">
             <DocumentSummaryHeader document={document} />
             {capMessageText ? <ConcessionCapBadge message={capMessageText} /> : null}
-            <DocumentActions document={document} isDraft={isDraft} isAdmin={isAdmin} />
+            <DocumentActions
+              document={document}
+              isDraft={isDraft}
+              isAdmin={isAdmin}
+              mySignatureUrl={mySignatureUrl}
+            />
           </div>
         </SectionCard>
       </div>
@@ -405,10 +424,15 @@ function DocumentActions({
   document,
   isDraft,
   isAdmin,
+  mySignatureUrl,
 }: {
   document: DocumentForBuilder;
   isDraft: boolean;
   isAdmin: boolean;
+  /** The signed-in viewer's own saved signature (`User.signatureUrl`), or
+   * `null` on a DRAFT where it was never fetched — see the page body's own
+   * comment. Feeds SignButton's "Use this" shortcut. */
+  mySignatureUrl: string | null;
 }) {
   // The quotation (content-block-driven, Phase 6) is the only customer-
   // facing rendering of a document now — the older plain line-item
@@ -418,9 +442,18 @@ function DocumentActions({
     <div className="flex flex-col gap-2">
       {isDraft ? (
         <FinalizeButton documentId={document.id} />
-      ) : isAdmin ? (
-        <UnfinalizeButton documentId={document.id} />
-      ) : null}
+      ) : (
+        // Signing is offered to whoever this page already scoped the
+        // document to (its author, or any admin — see `signQuoteAsAuthor`'s
+        // own `documentWhereForUser` check), independently of Unfinalize
+        // staying admin-only below.
+        <SignButton
+          documentId={document.id}
+          hasAuthorSignature={document.signatures.some((s) => s.role === "AUTHOR")}
+          savedSignatureUrl={mySignatureUrl}
+        />
+      )}
+      {!isDraft && isAdmin ? <UnfinalizeButton documentId={document.id} /> : null}
 
       <Link href={`/quotes/${document.id}/quotation`} className={actionLinkClass}>
         <Eye className="size-4" aria-hidden="true" />
