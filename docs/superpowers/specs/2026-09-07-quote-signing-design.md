@@ -141,10 +141,15 @@ would silently rewrite it on every quote they ever signed.
 ### Link validity
 
 New setting key `signing.linkValidityDays`, default **30**, following the
-existing `quote.validityDays` pattern exactly: a `cache`-wrapped getter in
-`src/lib/queries/settings.ts`, a Zod schema in `src/lib/validation/settings.ts`,
-a new case in `updateSetting` (already `requireAdmin`), and a field on the
-Settings page.
+existing `quote.validityDays` pattern for its plumbing: a `cache`-wrapped
+getter in `src/lib/queries/settings.ts`, a Zod schema in
+`src/lib/validation/settings.ts`, a new case in `updateSetting` (already
+`requireAdmin`), and a field on the Settings page. It does NOT follow that
+pattern's 365-day ceiling, though: capped at **90** instead, because a signing
+link is a bearer credential sitting in an inbox (and in every forwarded copy
+of that email), not a document-validity window — a year of exposure is a
+different risk than a year of quote validity, and the 365 bound is
+`quote.validityDays`'s own answer to the latter question, not this one.
 
 The resolved value is **frozen into `SigningRequest.expiresAt` at send time**.
 Reading it live would let an admin lowering the setting from 30 to 7

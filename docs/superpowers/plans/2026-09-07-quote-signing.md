@@ -832,16 +832,22 @@ import {
 } from "../src/lib/validation/settings";
 
 describe("signingLinkValidityDaysSchema", () => {
-  it("accepts a whole number of days in range", () => {
+  it("accepts a whole number of days in range, up to its own 90-day cap", () => {
     expect(signingLinkValidityDaysSchema.parse("30")).toBe(30);
     expect(signingLinkValidityDaysSchema.parse("1")).toBe(1);
-    expect(signingLinkValidityDaysSchema.parse("365")).toBe(365);
+    expect(signingLinkValidityDaysSchema.parse("90")).toBe(90);
   });
 
-  it("rejects zero, negatives, fractions and out-of-range values", () => {
-    for (const bad of ["0", "-1", "1.5", "366"]) {
+  it("rejects zero, negatives, fractions and values over its own 90-day cap", () => {
+    for (const bad of ["0", "-1", "1.5", "91"]) {
       expect(signingLinkValidityDaysSchema.safeParse(bad).success).toBe(false);
     }
+  });
+
+  it("rejects 365 even though that's quoteValidityDaysSchema's ceiling", () => {
+    // A signing link is a bearer credential, not a document-validity window,
+    // so it caps at 90 rather than inheriting the 365-day quote-validity bound.
+    expect(signingLinkValidityDaysSchema.safeParse("365").success).toBe(false);
   });
 
   it("rejects non-numeric input", () => {
@@ -882,20 +888,26 @@ and add the schema beside `quoteValidityDaysSchema`:
 
 ```ts
 /** How many days a client's signing link stays usable, read by
- * `getSigningLinkValidityDays` (src/lib/queries/settings.ts). Same 1..365
- * whole-day shape as `quoteValidityDaysSchema`, reusing the same builder;
- * the default of 30 (used when no `Setting` row exists) lives with that
+ * `getSigningLinkValidityDays` (src/lib/queries/settings.ts). Same whole-day
+ * shape as `quoteValidityDaysSchema`, reusing the same builder, but capped at
+ * 90 days rather than inheriting that schema's 365: a signing link is a
+ * bearer credential sitting in an inbox, not a document-validity window, so
+ * a year of exposure isn't the same question as a year of quote validity.
+ * The default of 30 (used when no `Setting` row exists) lives with that
  * query, not here.
  *
  * Note this only sets the validity of links issued *from now on*: the
  * resolved value is frozen into `SigningRequest.expiresAt` at send time, so
  * lowering it never shortens a link already in a client's inbox. */
-export const signingLinkValidityDaysSchema = validityDayCountSchema({
-  invalidType: "Link validity must be a number",
-  notInteger: "Link validity must be a whole number",
-  tooSmall: "Link validity must be at least 1 day",
-  tooLarge: "Link validity must be at most 365 days",
-});
+export const signingLinkValidityDaysSchema = validityDayCountSchema(
+  {
+    invalidType: "Link validity must be a number",
+    notInteger: "Link validity must be a whole number",
+    tooSmall: "Link validity must be at least 1 day",
+    tooLarge: "Link validity must be at most 90 days",
+  },
+  90
+);
 export type SigningLinkValidityDaysInput = z.infer<typeof signingLinkValidityDaysSchema>;
 ```
 

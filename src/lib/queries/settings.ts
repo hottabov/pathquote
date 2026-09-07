@@ -166,8 +166,16 @@ export const DEFAULT_SIGNING_LINK_VALIDITY_DAYS = 30;
  * existing link, which is what stops a lowered setting from retroactively
  * killing outstanding links.
  *
- * `cache`d for the same reason `getQuoteValidityDays` is: the settings page
- * reads it while rendering a field that also needs the current value.
+ * Wrapped in `cache` to match its sibling `getQuoteValidityDays`, not because
+ * the same justification applies: that wrapper earns its keep because
+ * `getQuoteValidityDays` is genuinely read twice per document-builder render
+ * from two call sites that can't see each other. This function has no such
+ * caller today — the settings page reads it once — so the wrapper is
+ * harmless rather than load-bearing. Its real future caller,
+ * `sendQuoteForSignature` (Task 10), is a server action, where `cache` is an
+ * inert passthrough (see `getQuoteValidityDays`'s own comment), so the memo
+ * does nothing there either. Kept anyway for symmetry with its sibling, not
+ * because a justification was found that actually holds.
  */
 export const getSigningLinkValidityDays = cache(async function getSigningLinkValidityDays(): Promise<number> {
   const setting = await db.setting.findUnique({ where: { key: SIGNING_LINK_VALIDITY_SETTING_KEY } });

@@ -10,8 +10,11 @@ import type { ActionResult } from "@/lib/actions/settings";
  * ADMIN-only editor for the "signing.linkValidityDays" app setting, rendered
  * in the Preferences card on /settings/preferences. Copies
  * `QuoteValidityForm`'s shape exactly (same transition+toast pattern,
- * mirroring `SetPasswordForm`, src/components/users/set-password-form.tsx)
- * since the two fields are the same "whole days, 1..365" shape.
+ * mirroring `SetPasswordForm`, src/components/users/set-password-form.tsx),
+ * but NOT its range: this field caps at 90 days, not 365 — see
+ * `signingLinkValidityDaysSchema` (src/lib/validation/settings.ts) for why a
+ * signing link's exposure window isn't the same question as a quote's
+ * validity window.
  *
  * The helper text calls out that this only governs links issued from now on
  * — see `getSigningLinkValidityDays` (src/lib/queries/settings.ts) for why:
@@ -57,7 +60,7 @@ export function SigningLinkValidityForm({
           name="value"
           type="number"
           min={1}
-          max={365}
+          max={90}
           step={1}
           defaultValue={defaultValue}
           required
