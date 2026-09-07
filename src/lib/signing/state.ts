@@ -14,6 +14,11 @@
  */
 export type SigningStatus = "NOT_SENT" | "SENT" | "VIEWED" | "SIGNED" | "DECLINED";
 
+/** Use `Verdict` when a function can fail for more than one reason and the
+ * caller needs to know which one, so it can show that reason to the user
+ * (canSendToClient, canUnfinalize). Use a bare `boolean` when there is
+ * exactly one failure mode, since the caller already knows what it means and
+ * can supply its own message in context (canRevoke, canComplete, canDecline). */
 export type Verdict = { ok: true } | { ok: false; reason: string };
 
 export const NOT_FINAL = "Finalize the quote before signing it.";
@@ -85,4 +90,30 @@ export function canDecline(status: SigningStatus): boolean {
  * unconditionally instead of branching. */
 export function statusAfterView(status: SigningStatus): SigningStatus {
   return status === "SENT" ? "VIEWED" : status;
+}
+
+export type SignerRole = "AUTHOR" | "CLIENT";
+
+/**
+ * Which Signature rows an event invalidates.
+ *
+ * "unfinalize" clears both roles: the document is about to become editable,
+ * so neither party signed the text that will exist afterwards — a surviving
+ * row of either role would attest to a version of the document that no
+ * longer exists once editing resumes.
+ *
+ * "revoke" clears CLIENT only: revoking kills the outstanding link but
+ * leaves the document FINAL and unchanged, so the author's signature is
+ * still a signature of exactly this text and survives. The client's row
+ * must not survive: revoke is only reachable while the link is in flight
+ * (see canRevoke/isInFlight), i.e. at most "drawn but not confirmed", never
+ * a completed SIGNED. Leaving that row behind would mean the next send opens
+ * the client's page already showing "Signed", with the confirm button
+ * enabled, for a document the client never actually saw.
+ *
+ * Returns a fresh array on every call so a caller cannot mutate a shared
+ * singleton out from under a later caller.
+ */
+export function signatureRolesClearedBy(event: "unfinalize" | "revoke"): SignerRole[] {
+  return event === "unfinalize" ? ["AUTHOR", "CLIENT"] : ["CLIENT"];
 }

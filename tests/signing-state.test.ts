@@ -6,6 +6,7 @@ import {
   canComplete,
   canDecline,
   statusAfterView,
+  signatureRolesClearedBy,
   NO_AUTHOR_SIGNATURE,
   NOT_FINAL,
   NO_CONTACT_EMAIL,
@@ -50,14 +51,15 @@ describe("canSendToClient", () => {
     });
   });
 
-  it("refuses when a link is already outstanding", () => {
-    for (const signingStatus of ["SENT", "VIEWED"] as const) {
+  it.each(["SENT", "VIEWED"] as const)(
+    "refuses when a link is already outstanding (%s)",
+    (signingStatus) => {
       expect(canSendToClient({ ...sendable, signingStatus })).toEqual({
         ok: false,
         reason: ALREADY_IN_FLIGHT,
       });
     }
-  });
+  );
 
   it("refuses a signed document", () => {
     expect(canSendToClient({ ...sendable, signingStatus: "SIGNED" })).toEqual({
@@ -68,6 +70,40 @@ describe("canSendToClient", () => {
 
   it("allows resending after a decline", () => {
     expect(canSendToClient({ ...sendable, signingStatus: "DECLINED" })).toEqual({ ok: true });
+  });
+
+  it("reports the first problem in priority order, not an arbitrary one", () => {
+    // Everything is wrong at once: SIGNED must win over all of it.
+    expect(
+      canSendToClient({
+        documentStatus: "DRAFT",
+        signingStatus: "SIGNED",
+        hasAuthorSignature: false,
+        contactEmail: null,
+      })
+    ).toEqual({ ok: false, reason: SIGNED_IS_FINAL });
+  });
+
+  it("prefers NOT_FINAL over a missing signature and a missing email", () => {
+    expect(
+      canSendToClient({
+        documentStatus: "DRAFT",
+        signingStatus: "NOT_SENT",
+        hasAuthorSignature: false,
+        contactEmail: null,
+      })
+    ).toEqual({ ok: false, reason: NOT_FINAL });
+  });
+
+  it("prefers a missing signature over a missing email", () => {
+    expect(
+      canSendToClient({
+        documentStatus: "FINAL",
+        signingStatus: "NOT_SENT",
+        hasAuthorSignature: false,
+        contactEmail: null,
+      })
+    ).toEqual({ ok: false, reason: NO_AUTHOR_SIGNATURE });
   });
 });
 
@@ -86,11 +122,12 @@ describe("canUnfinalize", () => {
     expect(canUnfinalize("SIGNED")).toEqual({ ok: false, reason: SIGNED_IS_FINAL });
   });
 
-  it("allows every other state", () => {
-    for (const status of ["NOT_SENT", "SENT", "VIEWED", "DECLINED"] as const) {
+  it.each(["NOT_SENT", "SENT", "VIEWED", "DECLINED"] as const)(
+    "allows every other state (%s)",
+    (status) => {
       expect(canUnfinalize(status)).toEqual({ ok: true });
     }
-  });
+  );
 });
 
 describe("canComplete", () => {
@@ -122,9 +159,31 @@ describe("statusAfterView", () => {
     expect(statusAfterView("SENT")).toBe("VIEWED");
   });
 
-  it("leaves every other status untouched", () => {
-    for (const status of ["VIEWED", "SIGNED", "DECLINED", "NOT_SENT"] as const) {
+  it.each(["VIEWED", "SIGNED", "DECLINED", "NOT_SENT"] as const)(
+    "leaves %s untouched",
+    (status) => {
       expect(statusAfterView(status)).toBe(status);
     }
+  );
+});
+
+describe("signatureRolesClearedBy", () => {
+  it("invalidates both signatures on unfinalize, since the text is about to change", () => {
+    const roles = signatureRolesClearedBy("unfinalize");
+    expect(roles).toEqual(expect.arrayContaining(["AUTHOR", "CLIENT"]));
+    expect(roles).toHaveLength(2);
+  });
+
+  it("invalidates only the client signature on revoke, since the document stays FINAL", () => {
+    const roles = signatureRolesClearedBy("revoke");
+    expect(roles).toEqual(expect.arrayContaining(["CLIENT"]));
+    expect(roles).toHaveLength(1);
+  });
+
+  it("returns a fresh array each call, not a shared mutable singleton", () => {
+    const first = signatureRolesClearedBy("unfinalize");
+    first.push("AUTHOR");
+    const second = signatureRolesClearedBy("unfinalize");
+    expect(second).toHaveLength(2);
   });
 });
