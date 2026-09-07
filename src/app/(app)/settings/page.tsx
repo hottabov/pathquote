@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { getRegionById } from "@/lib/queries/catalog";
 import { getUser } from "@/lib/queries/users";
-import { setUserAvatar, changeOwnPassword } from "@/lib/actions/users";
+import { setUserAvatar, changeOwnPassword, saveMySignature, clearMySignature } from "@/lib/actions/users";
 import { AvatarEditor } from "@/components/users/avatar-editor";
+import { SignatureEditor } from "@/components/users/signature-editor";
 import { ChangeOwnPasswordForm } from "@/components/users/change-own-password-form";
 import { PageHeader, SectionCard, StatusBadge, STATUS_TONE } from "@/components/ui-kit";
 
@@ -40,6 +41,17 @@ export default async function AccountSettingsPage() {
           image={me?.image ?? null}
           size={64}
           onSave={setUserAvatar.bind(null, session.user.id)}
+        />
+      </SectionCard>
+
+      <SectionCard
+        title="Signature"
+        description="Drawn once here, then applied to quotes you sign. Redrawing it never changes a signature already on an issued quote."
+      >
+        <SignatureEditor
+          signatureUrl={me?.signatureUrl ?? null}
+          onSave={saveMySignature}
+          onClear={clearMySignature}
         />
       </SectionCard>
 

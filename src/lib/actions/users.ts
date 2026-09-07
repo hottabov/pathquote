@@ -20,7 +20,8 @@ import {
   canSetAvatar,
 } from "@/lib/validation/users";
 import { countActiveAdmins } from "@/lib/queries/users";
-import { IMAGE_URL_PATTERN } from "@/lib/uploads";
+import { IMAGE_URL_PATTERN, saveUpload } from "@/lib/uploads";
+import { parseSignatureDataUrl } from "@/lib/signing/data-url";
 import { NOT_FOUND_ERROR, flattenZodError, type ActionResult } from "./_shared";
 
 export type { ActionResult };
@@ -268,6 +269,56 @@ export async function setUserAvatar(userId: string, url: string | null): Promise
   // (the MANAGER case `canSetAvatar` allows) shows up immediately rather
   // than waiting on those pages' own `force-dynamic`/cache lifetimes.
   revalidateHome();
+  revalidateSettings();
+  return {};
+}
+
+// --- signature -----------------------------------------------------------
+
+/**
+ * Stores the signature drawn in Account as a PNG upload and points
+ * `User.signatureUrl` at it. Unlike `setUserAvatar`, there is no `userId`
+ * parameter and therefore no `canSetAvatar`-style permission check to write:
+ * the only row this can ever touch is `session.user.id`, so an ADMIN cannot
+ * set this on someone else's behalf the way they can an avatar — a signature
+ * is the one profile field nobody may draw for another person.
+ *
+ * The pad hands back a data URL, not a `File`, so this calls `saveUpload`
+ * directly on the server rather than going through the two-step
+ * upload-then-attach flow `AvatarEditor` uses against `/api/uploads` — there
+ * is no browser `<input type="file">` in this flow for that route to serve.
+ * `parseSignatureDataUrl` (src/lib/signing/data-url.ts) is the trust boundary
+ * that validates the string before any bytes reach `saveUpload`.
+ *
+ * Note this is only the *saved* signature. Applying it to a quote copies the
+ * file (a later task, signQuoteAsAuthor), so changing it here never alters a
+ * signature already on an issued quote — see Signature.imageUrl's doc
+ * comment in schema.prisma.
+ */
+export async function saveMySignature(dataUrl: string): Promise<ActionResult> {
+  const session = await requireSession();
+
+  const parsed = parseSignatureDataUrl(dataUrl);
+  if (!parsed.ok) return { error: "That signature could not be read. Please draw it again." };
+
+  const file = new File([new Uint8Array(parsed.bytes)], "signature.png", { type: "image/png" });
+  const url = await saveUpload(file, ["png"]);
+
+  await db.user.update({ where: { id: session.user.id }, data: { signatureUrl: url } });
+  revalidateSettings();
+  return {};
+}
+
+/**
+ * Clears the caller's saved signature. The upload file itself is left on
+ * disk rather than deleted: it may already have been copied onto issued
+ * quotes (see `saveMySignature`'s doc comment), and those copies — not this
+ * column — are what those quotes render, so deleting the bytes here would
+ * gain nothing and risks breaking a reference this action has no way to see.
+ */
+export async function clearMySignature(): Promise<ActionResult> {
+  const session = await requireSession();
+  await db.user.update({ where: { id: session.user.id }, data: { signatureUrl: null } });
   revalidateSettings();
   return {};
 }
