@@ -768,3 +768,70 @@ the next line instead of the typed password. Always confirm afterwards:
 ```sql
 select email, active, ("passwordHash" is not null) as has_pw from "User";
 ```
+
+## 7. Manager isolation
+
+A MANAGER sees only the clients and quotes they created, and only their own
+region's catalogue prices. Two operational rules make that true.
+
+### Every manager needs an active region
+
+A manager whose `regionId` is null — or whose region has since been
+deactivated or deleted — is redirected to `/no-region` and can reach only
+Account and PathQuote Support. Assign the region when creating the account.
+
+There is no fallback region. Quotes used to default silently to AU's
+currency and tax rate for a region-less author; `createDraft` now refuses
+instead. Deactivating a region therefore locks out every manager assigned to
+it, by design — reassign them first:
+
+```sql
+select u.email, r.code, r.active
+from "User" u left join "Region" r on r.id = u."regionId"
+where u.role = 'MANAGER';
+```
+
+### Catalogue visibility is per user and defaults to "sees everything"
+
+Hiding a product from a manager is done at `/settings/users/<id>`, one user
+at a time. A newly created manager sees the whole catalogue until someone
+hides what should be hidden.
+
+This is deliberate — hiding a product is the exception, not the rule — but it
+means an admin creating an account in a region that has hidden products must
+set that up by hand. Nothing warns you.
+
+### After changing a manager's region
+
+Changing `User.regionId` re-homes none of that manager's existing companies.
+They keep owning companies filed in the old region, and the client card will
+now show that region and refuse to save (`That region is not available to
+you.`) until an admin moves the company or restores the manager's region.
+That refusal is intentional: the alternative silently rewrote the company's
+region, and with it its currency and tax rules, on any unrelated edit.
+
+```sql
+select c.name, r.code as company_region, ur.code as owner_region
+from "Company" c
+  join "Region" r on r.id = c."regionId"
+  join "User" u on u.id = c."ownerId"
+  left join "Region" ur on ur.id = u."regionId"
+where u.role = 'MANAGER' and r.id is distinct from ur.id;
+```
+
+An empty result means no manager owns a company outside their own region.
+
+### Re-checking isolation after a change
+
+`tests/scope-coverage.test.ts` fails the build if a module under
+`src/lib/queries/` or `src/lib/actions/` queries `db.company`, `db.document`
+or `db.price` without importing `@/lib/scope`. That catches a forgotten
+filter, not a wrong one.
+
+For the rest, the adversarial script lives in
+`docs/superpowers/plans/2026-09-06-manager-permissions.md`, Task 11: two
+managers, one attempting the other's ids by direct URL and by replayed
+server-action POST. Every attempt must return 404 or an error, never a 200 —
+a 403 is itself a finding, because it confirms the row exists. Re-run it
+after any change to `src/lib/scope.ts`, `src/lib/authz.ts`, or the Settings
+layout guards.
