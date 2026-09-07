@@ -1,10 +1,12 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { FileCheck } from "lucide-react";
+import { FileCheck, Plus } from "lucide-react";
 import { auth } from "@/auth";
 import { isAdminRole } from "@/lib/roles";
 import { listQuoteDocuments } from "@/lib/queries/quote-documents";
 import { reorderQuoteDocuments } from "@/lib/actions/quote-documents";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { PageHeader, EmptyState } from "@/components/ui-kit";
 import {
   DocumentBadges,
@@ -30,6 +32,12 @@ export const dynamic = "force-dynamic";
  * No group headers, unlike the content-block list: `terms.*`, `conditions.*`
  * and `rsp.*` were 22 fragments that needed grouping into three families.
  * They are three documents now, and three rows need no headings.
+ *
+ * The list is every document, not every default: a key that exists only as
+ * one region's version (D2 — an EU-only Data Processing Agreement, say) is
+ * shown here with an "Only in: EU" badge and opens like any other. It has to
+ * be, because this list is the only way to reach its editor, and because the
+ * drag order submitted from here is checked against every key in the table.
  */
 export default async function QuoteDocumentsPage() {
   // AppLayout already calls requireSession and redirects an unauthenticated
@@ -46,6 +54,20 @@ export default async function QuoteDocumentsPage() {
             ? "The legal text printed on every quote. Drag to set the order they print in."
             : "The legal text printed on every quote. Only an admin can change it."
         }
+        actions={
+          // Admin only. A MANAGER reads this section and edits nothing, and
+          // `createQuoteDocument` is `requireAdmin()`, so offering them the
+          // button would only be offering a form that cannot submit.
+          isAdmin ? (
+            <Link
+              href="/documents/new"
+              className={cn(buttonVariants(), "h-11 w-full bg-brand text-white hover:bg-brand/90 sm:w-auto")}
+            >
+              <Plus className="size-4" data-icon="inline-start" aria-hidden="true" />
+              New document
+            </Link>
+          ) : null
+        }
       />
 
       {documents.length === 0 ? (
@@ -54,8 +76,19 @@ export default async function QuoteDocumentsPage() {
           title="No documents yet"
           description={
             isAdmin
-              ? "Run the database seed to populate Terms, General Conditions of Sale and the Remote Support Program."
+              ? "Run the database seed to populate Terms, General Conditions of Sale and the Remote Support Program — or write one here."
               : "Nothing is set up yet — a quote currently prints no terms at all."
+          }
+          action={
+            isAdmin ? (
+              <Link
+                href="/documents/new"
+                className={cn(buttonVariants(), "h-11 bg-brand text-white hover:bg-brand/90")}
+              >
+                <Plus className="size-4" data-icon="inline-start" aria-hidden="true" />
+                New document
+              </Link>
+            ) : undefined
           }
         />
       ) : isAdmin ? (

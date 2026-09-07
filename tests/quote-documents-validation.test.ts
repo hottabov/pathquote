@@ -116,6 +116,26 @@ describe("newQuoteDocumentSchema", () => {
     ["a non-integer sortOrder", { ...base, sortOrder: "1.5" }],
     ["a blank body, same rule as the plain schema", { ...base, body: "<p></p>" }],
   ]);
+
+  // The key is the document's permanent identity: it is what `/documents/<key>`
+  // resolves, what a per-quote `DocumentExclusion` stores instead of an id, and
+  // what the ContentBlock migration wrote. Nothing renames one. So the one
+  // moment it is typed is the only chance to canonicalize it — Postgres
+  // compares "DPA" and "dpa" as different keys, which would give an admin two
+  // documents they believe are one, each printing on a different quote.
+  it("normalizes a new key to lowercase and trims it", () => {
+    const data = expectValid(newQuoteDocumentSchema, { ...base, key: "  DPA  " });
+    expect(data.key).toBe("dpa");
+  });
+
+  // `/documents/new` is the create page itself. Next.js matches a static
+  // segment before the `[key]` one, so a document keyed "new" would be created
+  // successfully and then be unreachable forever — its editor URL would keep
+  // serving the create form. Refused at the only door it can enter by.
+  rejects(newQuoteDocumentSchema, [
+    ["the reserved key that the create route already occupies", { ...base, key: "new" }, "reserved"],
+    ["that reserved key in another case", { ...base, key: "New" }, "reserved"],
+  ]);
 });
 
 describe("reorderQuoteDocumentsSchema", () => {

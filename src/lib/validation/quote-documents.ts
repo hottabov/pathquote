@@ -14,6 +14,35 @@ const keySchema = z.string().regex(QUOTE_DOCUMENT_KEY_REGEX, {
   message: "Key must be 2-60 characters: letters, numbers, dots, and hyphens only",
 });
 
+/** Route segments under `/documents/` that are pages in their own right, and
+ * so can never be a document key: Next.js matches a static segment before the
+ * `[key]` one, meaning a document keyed "new" would be created happily and
+ * then be unreachable forever — `/documents/new` would go on serving the
+ * create form. Refused here, at the only door a key can enter by. */
+const RESERVED_QUOTE_DOCUMENT_KEYS = new Set(["new"]);
+
+/**
+ * The key of a document being created — the only place in the app a key is
+ * ever typed, and therefore the only chance to canonicalize one.
+ *
+ * A key is permanent: it is what `/documents/<key>` resolves, what a
+ * per-quote `DocumentExclusion` stores in place of an id (so an exclusion
+ * survives the quote changing region), and what the ContentBlock migration
+ * wrote. Nothing renames one. Lowercased because Postgres compares "DPA" and
+ * "dpa" as different keys, which would give an admin two documents they
+ * believe are one, each printing on a different quote — and because
+ * `QUOTE_DOCUMENT_KEY_REGEX` is deliberately case-insensitive, so nothing
+ * downstream would object. Trimmed first: this arrives from `FormData`.
+ */
+const newDocumentKeySchema = z
+  .string()
+  .trim()
+  .transform((value) => value.toLowerCase())
+  .pipe(keySchema)
+  .refine((value) => !RESERVED_QUOTE_DOCUMENT_KEYS.has(value), {
+    message: `"new" is reserved — pick another key`,
+  });
+
 /** Required, unlike `ContentBlock.title` — `QuoteDocument.title` is `String`
  * (NOT NULL): it IS the printed heading, not an optional label a rendered
  * fragment could do without. */
@@ -93,7 +122,7 @@ export type QuoteDocumentInput = z.infer<typeof quoteDocumentSchema>;
 /** `quoteDocumentSchema` plus the two fields only `createQuoteDocument`
  * needs: the new document's own key, and its starting sort position. */
 export const newQuoteDocumentSchema = quoteDocumentSchema.extend({
-  key: keySchema,
+  key: newDocumentKeySchema,
   sortOrder: sortOrderSchema,
 });
 

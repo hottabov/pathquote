@@ -212,11 +212,25 @@ export async function deleteRegionVersion(key: string, regionCode: string): Prom
 
 /**
  * Creates a brand-new document family — a `regionId: null` default under a
- * key nothing has used yet. `createRegionVersion` is the only other path
- * that ever creates a region-only document (D5); this one always creates the
- * default.
+ * key nothing has used yet. `createRegionVersion` is the only other path that
+ * ever creates a region-only document (D2); this one always creates the
+ * default. Together they are what makes "adding a Data Processing Agreement
+ * for the EU" an admin task rather than a code change, which is the payoff
+ * the spec claims for this whole feature.
+ *
+ * The key is refused if ANY row already holds it, not just a default row: a
+ * region-only document has no default, so a `regionId: null` check alone
+ * would happily let this create one — silently turning a document one entity
+ * offers into a document every region prints, from a screen whose whole
+ * promise was "a new document". Promoting a region-only document is a
+ * deliberate act and belongs on its own editor page, not in a create form
+ * that thinks it is starting from nothing.
+ *
+ * Returns the created key so the caller can send the admin straight to its
+ * editor — the key it returns is the normalized one (`newQuoteDocumentSchema`
+ * lowercases and trims), which is not necessarily what was typed.
  */
-export async function createQuoteDocument(formData: FormData): Promise<ActionResult> {
+export async function createQuoteDocument(formData: FormData): Promise<ActionResult & { key?: string }> {
   await requireAdmin();
 
   const parsed = newQuoteDocumentSchema.safeParse({
@@ -229,8 +243,8 @@ export async function createQuoteDocument(formData: FormData): Promise<ActionRes
   const tokenError = unknownDocumentTokenError(parsed.data.body);
   if (tokenError) return { error: tokenError };
 
-  const existing = await db.quoteDocument.findFirst({ where: { key: parsed.data.key, regionId: null } });
-  if (existing) return { error: "A document with this key already exists" };
+  const existing = await db.quoteDocument.findFirst({ where: { key: parsed.data.key } });
+  if (existing) return { error: keyTakenError(parsed.data.key) };
 
   try {
     await db.quoteDocument.create({
@@ -245,11 +259,19 @@ export async function createQuoteDocument(formData: FormData): Promise<ActionRes
     });
   } catch (error) {
     if (!isUniqueConstraintError(error)) throw error;
-    return { error: "A document with this key already exists" };
+    return { error: keyTakenError(parsed.data.key) };
   }
 
   revalidateQuoteDocumentList();
-  return {};
+  return { key: parsed.data.key };
+}
+
+/** Names the key rather than saying "this key", because the key that
+ * collided may not be the one the admin typed — `newQuoteDocumentSchema`
+ * lowercases it, so someone typing "DPA" over an existing "dpa" needs to be
+ * told which key they actually asked for. */
+function keyTakenError(key: string): string {
+  return `A document already uses the key "${key}" — open it from the Documents list, or pick another key.`;
 }
 
 /**
@@ -300,6 +322,13 @@ export async function previewQuoteDocument(body: string): Promise<ActionResult &
  * holds (checked via `isQuoteDocumentKeyPermutation`, same pattern
  * `reorderProducts` uses against `isProductPermutation`) so a stale or
  * foreign key can't sneak into the order.
+ *
+ * "Every distinct key" includes a key that exists only as a region version
+ * (D2), which is why `listQuoteDocuments` — the list the drag UI is built
+ * from — must return those too. While it returned defaults alone, the first
+ * region-only document made every submitted order a strict subset, and this
+ * check then rejected every reorder with "refresh and try again", advice a
+ * refresh could not act on because it rebuilt the same short list.
  */
 export async function reorderQuoteDocuments(keys: string[]): Promise<ActionResult> {
   await requireAdmin();

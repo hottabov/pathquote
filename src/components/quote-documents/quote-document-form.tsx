@@ -42,6 +42,11 @@ export function QuoteDocumentForm({
   bodyLabel,
   defaultValues,
   tokens,
+  createFields,
+  submitLabel = "Save changes",
+  pendingLabel = "Saving…",
+  successMessage = "Saved",
+  onSuccess,
 }: {
   action: (formData: FormData) => Promise<ActionResult>;
   idPrefix: string;
@@ -51,13 +56,35 @@ export function QuoteDocumentForm({
   bodyLabel: string;
   defaultValues: { title: string; body: string; includedByDefault: boolean };
   tokens: QuoteToken[];
+  /** Present only when this form is CREATING a document rather than editing
+   * one. It adds the key field — the one field that exists exactly once in a
+   * document's life — and the sort position the new document takes, which
+   * `reorderQuoteDocuments` rewrites from then on and no edit form ever
+   * resubmits. Everything else about the two modes is deliberately identical:
+   * the same editor, the same palette, the same emptiness rule, so an author
+   * writing their first Data Processing Agreement meets the screen they
+   * already know from editing Terms. */
+  createFields?: { sortOrder: number };
+  submitLabel?: string;
+  pendingLabel?: string;
+  successMessage?: string;
+  /** Runs after a successful submit, before the toast — how the create page
+   * navigates to the document it just made. */
+  onSuccess?: () => void;
 }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [body, setBody] = useState(() => toEditorHtml(defaultValues.body));
+  const [key, setKey] = useState("");
   const editorRef = useRef<RichTextEditorHandle>(null);
   const toast = useToast();
   const bodyLabelId = `${idPrefix}-body-label`;
+  const keyHintId = `${idPrefix}-key-hint`;
+  // What the server will actually store: `newQuoteDocumentSchema` trims and
+  // lowercases. Echoed back below the field so an admin typing "DPA" sees the
+  // key they are permanently choosing, rather than discovering it in the URL
+  // afterwards.
+  const normalizedKey = key.trim().toLowerCase();
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -69,7 +96,8 @@ export function QuoteDocumentForm({
         setError(result.error);
         return;
       }
-      toast.success("Saved");
+      onSuccess?.();
+      toast.success(successMessage);
     });
   }
 
@@ -122,6 +150,50 @@ export function QuoteDocumentForm({
       </div>
 
       <div className="flex flex-col gap-4 lg:col-span-2 lg:col-start-1 lg:row-start-1">
+        {createFields ? (
+          <div className="flex flex-col gap-1.5">
+            <FieldRow label="Key" htmlFor={`${idPrefix}-key`}>
+              <input
+                id={`${idPrefix}-key`}
+                name="key"
+                value={key}
+                onChange={(event) => setKey(event.target.value)}
+                maxLength={60}
+                required
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                disabled={pending}
+                aria-describedby={keyHintId}
+                placeholder="dpa"
+                className={fieldInputClass}
+              />
+            </FieldRow>
+            {/* Visible helper text under the field, not a placeholder and not
+                a tooltip: this states a rule the admin cannot undo, and a
+                placeholder disappears the moment they start typing. */}
+            <p id={keyHintId} className="text-xs text-slate-500">
+              Letters, numbers, dots and hyphens.{" "}
+              <span className="font-medium text-slate-700">
+                A document&rsquo;s key can never be changed.
+              </span>{" "}
+              It is how a quote records that this document was left out, and how the migration and
+              every link to it refer to it.
+            </p>
+            {normalizedKey ? (
+              <p className="text-xs text-slate-500">
+                Saved as <span className="font-mono text-brand-dark">{normalizedKey}</span>, at{" "}
+                <span className="font-mono text-brand-dark">/documents/{normalizedKey}</span>
+              </p>
+            ) : null}
+            {/* The new document's print position — last, after everything
+                that already exists. Not a field: an existing document's
+                position is set by dragging the list, and offering a number
+                here would give the admin two places to set one thing. */}
+            <input type="hidden" name="sortOrder" value={createFields.sortOrder} />
+          </div>
+        ) : null}
+
         <FieldRow label="Printed heading" htmlFor={`${idPrefix}-title`}>
           <input
             id={`${idPrefix}-title`}
@@ -181,7 +253,7 @@ export function QuoteDocumentForm({
           disabled={pending}
           className="h-11 w-full bg-brand text-white hover:bg-brand/90 sm:w-auto sm:self-start"
         >
-          {pending ? "Saving…" : "Save changes"}
+          {pending ? pendingLabel : submitLabel}
         </Button>
 
         {/* Reads the live editor state, not `defaultValues` — the point of a
