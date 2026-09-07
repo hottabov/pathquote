@@ -53,7 +53,8 @@ quote's PDF. Archiving bytes at completion fixes this for signed quotes.
 
 ## Data model
 
-Migration `z34_quote_signing`.
+Migration `z35_quote_signing` (z34 was taken by parallel work on the same
+branch).
 
 ```prisma
 enum SigningStatus {
@@ -86,8 +87,12 @@ model SigningRequest {
   id            String    @id @default(cuid())
   documentId    String
   document      Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  contactId     String
-  contact       Contact   @relation(fields: [contactId], references: [id])
+  // Nullable and SET NULL: `email` below is the audit record, so the link to
+  // the contact row is a convenience. RESTRICT was rejected — it made any
+  // contact who had ever been sent a quote permanently undeletable, surfacing
+  // as an unhandled foreign-key error in `deleteContact`.
+  contactId     String?
+  contact       Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
   email         String    // frozen at send time
   tokenHash     String    @unique  // SHA-256; the token itself is never stored
   expiresAt     DateTime  // frozen at send time — see "Link validity" below
