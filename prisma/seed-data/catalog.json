@@ -1,5 +1,5 @@
 {
-  "extractedAt": "2026-09-06T09:04:16.939Z",
+  "extractedAt": "2026-09-07T05:53:41.688Z",
   "series": [
     {
       "seriesCode": "X",
@@ -802,7 +802,14 @@
             "widthCode": 300
           },
           "contentBlockKey": "equipment.fabric-pro"
-        },
+        }
+      ]
+    },
+    {
+      "seriesCode": "FPT",
+      "seriesName": "Fabric Pro Trolley",
+      "maxDiscountPct": null,
+      "products": [
         {
           "code": "FP-TROLLEY",
           "name": "Fabric Roll Trolley",

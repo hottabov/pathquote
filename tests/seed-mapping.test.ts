@@ -368,8 +368,12 @@ describe("seed-lib: smoke assertions against the real catalog.json (counts only)
   // 9 -> 10: HDRF was split out of the EasyFeeder ("EF") series into its own
   // "HDRF" series (owner decision -- see docs/reference/catalog-v2-decisions.md
   // and tests/catalog.test.ts's "catalog.json: series" describe block).
-  it("has exactly 10 series", () => {
-    expect(mapSeries(catalog)).toHaveLength(10);
+  // 10 -> 11: FP-TROLLEY was split out of the FabricPro ("FP") series into
+  // its own "FPT" series, same reasoning as the HDRF split -- an ACCESSORY
+  // does not belong under a SPREADER's quote copy (see
+  // docs/superpowers/plans/2026-09-07-category-quote-copy.md).
+  it("has exactly 11 series", () => {
+    expect(mapSeries(catalog)).toHaveLength(11);
   });
 
   it("has as many product payloads as catalog.json has products, and one option payload per option", () => {

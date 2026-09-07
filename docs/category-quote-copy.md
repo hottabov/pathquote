@@ -249,6 +249,63 @@ both needing a decision from you:
 
 ---
 
+## Fabric Pro Trolley (`FPT`)
+
+`FPT` is not one of the original five empty categories above — it is a new
+series split out of `FP` (see `docs/superpowers/plans/2026-09-07-category-quote-copy.md`'s
+sibling task moving `FP-TROLLEY` out of the FabricPro spreaders). It gets the
+same treatment as the others: no `Series.quoteDescription` exists for it yet,
+so copy is drafted here ready to paste once the series exists.
+
+```html
+<p>Model {{model}} Fabric Roll Trolley, purpose-built to work with the FabricPro™ spreading system. Rolls slide directly into the FabricPro loading cradle, eliminating the need for a separate bulky roll-lifting device.</p>
+<ul>
+<li>Carries up to 2 fabric rolls</li>
+<li>2 lockable castor wheels</li>
+<li>Welded steel construction</li>
+<li>Compatible with EasyLoader tables (880–940mm height)</li>
+<li>Compact flat-packed design</li>
+</ul>
+<p><em>Sold as a companion product alongside FabricPro, not an integrated option.</em></p>
+```
+
+**Tokens used**
+
+- `{{model}}` — the product code. The only usable token: `FP-TROLLEY` is
+  currently the sole `FPT` product and has `specs: null`, so the palette is
+  `model`, `name`, `price`, `basePrice` only — same shape as `HDRF` and `SVC`
+  above. `{{specSentence}}` is unavailable (`kind: "ACCESSORY"`). Per the "two
+  decisions that apply to all five" above, `{{price}}`/`{{basePrice}}` are left
+  out (the section price prints structurally regardless), and `{{name}}` is
+  left out because it is the documented broken token (see the closing note
+  below) — using it here would strip this body's only line on every quote.
+
+**Left out on purpose.** The Pathfinder Brain's Roll Trolley note
+(`02 Products/Roll Feeding.md`, sourced from the Jul 2025 brochure) says the
+brochure publishes **no maximum load per roll or total, no overall
+dimensions, and no mass for the trolley itself** — "the most commercially
+important missing number" in the whole material-handling range (also tracked
+as Brain Open Question 20). None of that appears above. The brochure's
+"Height-adjustable platform (range: 60mm)" spec is also left out: it is 60mm
+of *travel*, not an absolute height, and the vault flags it as easy to
+misread as a table-height figure — the catalog description's own
+"EasyLoader tables (880–940mm height)" line already gives the useful absolute
+range, sourced from the website rather than the brochure, and that is what
+this copy keeps.
+
+**Unsure.** The Pathfinder Brain (`02 Products/Product Portfolio MOC.md`)
+records the Roll Trolley as **not currently on the Australian price list** —
+consistent with `FP-TROLLEY`'s `AU: 0.0` in `docs/reference/catalog-v2-target.json`,
+which the seed turns into `price: null, needsReview: true`. That is a pricing
+data question, not a copy one, but it means this body will print under a
+section whose structural price line is currently blank until AU pricing is
+set. This copy is otherwise based only on `FP-TROLLEY`'s own catalog
+description plus the brochure/website facts above — it has not been reviewed
+by anyone at Pathfinder the way the M-Series body (the one approved
+precedent) was.
+
+---
+
 ## One bug found while checking tokens
 
 `{{name}}` is offered by `categoryTokensFor` in `src/lib/quote-variables.ts`
