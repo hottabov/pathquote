@@ -22,7 +22,7 @@ import { getHiddenCatalogIds } from "@/lib/queries/catalog-visibility";
 import { getQuoteValidityDays, getShowOptionIcons } from "@/lib/queries/settings";
 import { getSpecImages } from "@/lib/queries/spec-images";
 import { getUser } from "@/lib/queries/users";
-import { canAuthorSign, canSendToClient } from "@/lib/signing/state";
+import { canAuthorSign, canRevoke, canSendToClient } from "@/lib/signing/state";
 import { concessionCapMessage, markupCapMessage } from "@/lib/pricing";
 import { renderStoredRichText } from "@/lib/rich-text";
 import { PageHeader, SectionCard, StatusBadge, STATUS_TONE } from "@/components/ui-kit";
@@ -42,6 +42,7 @@ import { FinalizeButton } from "@/components/builder/finalize-button";
 import { UnfinalizeButton } from "@/components/builder/unfinalize-button";
 import { SignButton } from "@/components/builder/sign-button";
 import { SendToClientButton } from "@/components/builder/send-to-client-button";
+import { RevokeSigningLinkButton } from "@/components/builder/revoke-signing-link-button";
 import { DeleteDraftButton } from "@/components/builder/delete-draft-button";
 import { ConcessionCapBadge } from "@/components/builder/concession-cap-badge";
 import { ConcessionCapToast } from "@/components/builder/concession-cap-toast";
@@ -527,6 +528,13 @@ function DocumentActions({
             contactEmail={contactEmail}
             disabledReason={sendVerdict.ok ? null : sendVerdict.reason}
           />
+          {/* Only while a link is actually live -- canRevoke is DocuSign's
+              Void restriction (src/lib/signing/state.ts): nothing revokes a
+              document that hasn't been sent, has already been signed, or
+              was declined. */}
+          {canRevoke(document.signingStatus) ? (
+            <RevokeSigningLinkButton documentId={document.id} />
+          ) : null}
         </>
       )}
       {!isDraft && isAdmin ? <UnfinalizeButton documentId={document.id} /> : null}

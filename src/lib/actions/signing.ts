@@ -7,12 +7,19 @@ import { documentWhereForUser } from "@/lib/scope";
 import { idSchema } from "@/lib/validation/documents";
 import { saveUpload, UploadValidationError } from "@/lib/uploads";
 import { parseSignatureDataUrl } from "@/lib/signing/data-url";
-import { canAuthorSign, canSendToClient, ALREADY_IN_FLIGHT, type SigningStatus } from "@/lib/signing/state";
+import {
+  canAuthorSign,
+  canRevoke,
+  canSendToClient,
+  signatureRolesClearedBy,
+  ALREADY_IN_FLIGHT,
+  type SigningStatus,
+} from "@/lib/signing/state";
 import { readMySavedSignatureBytes } from "@/lib/signing/saved-signature";
 import { generateSigningToken, hashSigningToken } from "@/lib/signing/token";
 import { addDays } from "@/lib/signing/link";
 import { getSigningLinkValidityDays } from "@/lib/queries/settings";
-import { buildSigningInviteEmail } from "@/lib/email/signing";
+import { buildSigningInviteEmail, buildRevokedEmail } from "@/lib/email/signing";
 import { resolveReplyTo } from "@/lib/email/reply-to";
 import { createAppMailTransport, mailFromAddress } from "@/lib/email/transport";
 import { formatMoney, formatDateAU } from "@/lib/format";
@@ -392,6 +399,121 @@ export async function sendQuoteForSignature(documentId: string): Promise<ActionR
       await tx.document.update({ where: { id: document.id }, data: { signingStatus: previousStatus } });
     });
     return { error: "The quote could not be emailed. Nothing was sent — try again." };
+  }
+
+  revalidateDocument(document.id);
+  return {};
+}
+
+// --- revokeSigningLink -------------------------------------------------------
+
+/**
+ * Kills every live link for a quote and returns it to NOT_SENT. This is
+ * DocuSign's Void, with DocuSign's restriction: `canRevoke` (src/lib/signing/state.ts)
+ * refuses once the quote is SIGNED, because a signed quote is not something
+ * either party can take back.
+ *
+ * The client is told, matching DocuSign's void notification: a dead link
+ * with no explanation reads as a broken website. That courtesy email is
+ * deliberately allowed to fail without failing the revoke -- the opposite
+ * ordering from `sendQuoteForSignature` above. There, a failed send undoes
+ * the issue, because nothing had happened yet that the manager wanted. Here,
+ * the link is already dead by the time any mail is attempted, which is the
+ * part that mattered; a failed notice is logged, not surfaced as a failed
+ * revoke. Each recipient is mailed independently inside its own try/catch so
+ * one rejection can never stop the others from being tried.
+ *
+ * Scoped and shaped like `sendQuoteForSignature`/`signQuoteAsAuthor` above:
+ * `requireSession`, `idSchema`, `documentWhereForUser` so a manager may only
+ * revoke their own document while an admin may revoke any, and
+ * `NOT_FOUND_ERROR` rather than a distinct "wrong scope" message.
+ *
+ * No status-guarded `updateMany` claim, unlike `sendQuoteForSignature`'s
+ * concurrent-send guard above. That guard exists because two concurrent
+ * sends can each create a *new*, distinct, simultaneously-live
+ * `SigningRequest` row -- defeating the single-live-link invariant. Two
+ * concurrent revokes have nothing equivalent to race over: every write here
+ * (`revokedAt: null` -> now, delete CLIENT signatures, `signingStatus` ->
+ * NOT_SENT) moves toward the same terminal state regardless of which
+ * transaction runs first, and a second revoke arriving after the first has
+ * committed simply matches zero rows and updates nothing. The one visible
+ * side effect of the race is a client who could receive the courtesy email
+ * below twice -- already the class of failure this function tolerates (see
+ * the paragraph above), not one worth a claim for.
+ */
+export async function revokeSigningLink(documentId: string): Promise<ActionResult> {
+  const session = await requireSession();
+
+  const parsedId = idSchema.safeParse(documentId);
+  if (!parsedId.success) return { error: NOT_FOUND_ERROR };
+
+  const document = await db.document.findFirst({
+    where: { id: parsedId.data, ...documentWhereForUser(session.user) },
+    select: {
+      id: true,
+      number: true,
+      signingStatus: true,
+      author: { select: { name: true, email: true, active: true } },
+      signingRequests: {
+        where: { revokedAt: null },
+        select: { id: true, email: true },
+      },
+    },
+  });
+  if (!document) return { error: NOT_FOUND_ERROR };
+  if (!canRevoke(document.signingStatus)) {
+    return { error: "There is no live link to revoke." };
+  }
+
+  const recipients = document.signingRequests.map((request) => request.email);
+
+  await db.$transaction(async (tx) => {
+    await tx.signingRequest.updateMany({
+      where: { documentId: document.id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    // The client may have drawn a signature without confirming it. Left in
+    // place, the next send would open already showing "Signed" with the
+    // confirm button enabled, for a client who never saw that quote. The
+    // author's signature survives: the document stays FINAL and unchanged,
+    // so it is still a signature of exactly this text. Which roles an event
+    // clears is decided once, in `signatureRolesClearedBy`, beside the other
+    // transition rules -- not re-derived here.
+    await tx.signature.deleteMany({
+      where: { documentId: document.id, role: { in: signatureRolesClearedBy("revoke") } },
+    });
+    await tx.document.update({
+      where: { id: document.id },
+      data: { signingStatus: "NOT_SENT" },
+    });
+  });
+
+  const mail = buildRevokedEmail({
+    quoteNumber: document.number ?? "",
+    authorName: document.author.name ?? document.author.email,
+    replyTo: resolveReplyTo(document.author, process.env.EMAIL_REPLY_TO),
+  });
+
+  // Deliberately outside the transaction that revoked the link, matching
+  // `sendQuoteForSignature`: a mail transport call has no place holding a DB
+  // transaction open. Unlike that function, nothing here is rolled back on
+  // failure -- see the doc comment above for why.
+  const transport = createAppMailTransport();
+  for (const to of recipients) {
+    try {
+      const result = await transport.sendMail({
+        to,
+        from: mailFromAddress(),
+        replyTo: mail.replyTo,
+        subject: mail.subject,
+        text: mail.text,
+        html: mail.html,
+      });
+      const failed = [...(result.rejected ?? []), ...(result.pending ?? [])].filter(Boolean);
+      if (failed.length) throw new Error(`Email (${failed.join(", ")}) could not be sent`);
+    } catch (error) {
+      console.error("[signing] revocation email failed", error);
+    }
   }
 
   revalidateDocument(document.id);

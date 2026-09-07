@@ -14,6 +14,7 @@ import { getQuoteValidityDays } from "@/lib/queries/settings";
 import { getDocumentForBuilder } from "@/lib/queries/documents";
 import { getQuoteDocumentsForRegion } from "@/lib/queries/quote-documents";
 import { buildQuotationData, type DocumentsSnapshot } from "@/lib/quotation-data";
+import { canUnfinalize, signatureRolesClearedBy } from "@/lib/signing/state";
 import { NOT_FOUND_ERROR } from "./_shared";
 
 /** Thrown inside `finalizeDocument`'s `$transaction` to roll it back when
@@ -362,6 +363,14 @@ export async function unfinalizeDocument(documentId: string): Promise<Unfinalize
   });
   if (!document) return { error: NOT_FOUND_ERROR };
 
+  // The one new lock this feature adds: a SIGNED quote cannot be reopened.
+  // Every other immutability guarantee already comes from the `status:
+  // "DRAFT"` clause every editing action carries (see
+  // src/lib/actions/documents/_internal.ts), which is what makes FINAL
+  // immutable today.
+  const verdict = canUnfinalize(document.signingStatus);
+  if (!verdict.ok) return { error: verdict.reason };
+
   // Reopening an issued quote is the most consequential thing an admin can
   // do to one: it un-issues a numbered document, and the next finalize
   // overwrites the entity snapshot, the documents snapshot and the
@@ -378,16 +387,34 @@ export async function unfinalizeDocument(documentId: string): Promise<Unfinalize
     adminUserId: session.user.id,
   });
 
-  await db.document.update({
-    where: { id: document.id },
-    // `documentsSnapshot` cleared — see the doc comment above: the frozen
-    // bodies would otherwise keep winning over the live text this quote was
-    // reopened to edit. `Prisma.DbNull` rather than `null`, which a
-    // `Json?` column does not accept: it must be a SQL NULL, the one thing
-    // `readDocumentsSnapshot` reads back as "no snapshot". Cleared in the
-    // same write that flips the status, so a quote is never DRAFT while
-    // still carrying what it printed.
-    data: { status: "DRAFT", documentsSnapshot: Prisma.DbNull },
+  // The content is about to become editable again, so everything that
+  // referenced it stops being true: outstanding links point at a quote that
+  // is no longer the one that was sent, and the author signed text that is
+  // about to change.
+  await db.$transaction(async (tx) => {
+    await tx.signingRequest.updateMany({
+      where: { documentId: document.id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    // Both roles, not just the author: the text is about to change, so
+    // neither party signed what will exist afterwards. Which roles an event
+    // invalidates is decided by `signatureRolesClearedBy` (src/lib/signing/state.ts),
+    // beside the other transition rules, rather than being re-derived here
+    // and in `revokeSigningLink` (src/lib/actions/signing.ts).
+    await tx.signature.deleteMany({
+      where: { documentId: document.id, role: { in: signatureRolesClearedBy("unfinalize") } },
+    });
+    await tx.document.update({
+      where: { id: document.id },
+      // `documentsSnapshot` cleared — see the doc comment above: the frozen
+      // bodies would otherwise keep winning over the live text this quote was
+      // reopened to edit. `Prisma.DbNull` rather than `null`, which a
+      // `Json?` column does not accept: it must be a SQL NULL, the one thing
+      // `readDocumentsSnapshot` reads back as "no snapshot". Cleared in the
+      // same write that flips the status, so a quote is never DRAFT while
+      // still carrying what it printed.
+      data: { status: "DRAFT", signingStatus: "NOT_SENT", documentsSnapshot: Prisma.DbNull },
+    });
   });
 
   revalidateDocumentList();
