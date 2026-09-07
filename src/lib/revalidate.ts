@@ -140,3 +140,26 @@ export function revalidateConflictGroupList(): void {
 export function revalidateConflictGroup(groupId: string): void {
   revalidatePath(`/settings/option-conflict-groups/${groupId}`);
 }
+
+// --- quote documents ---------------------------------------------------
+// Terms, General Conditions, RSP, and whatever a region adds later — the
+// legal text a customer signs, edited as whole documents rather than
+// ContentBlock fragments (see docs/superpowers/plans/2026-09-07-quote-
+// documents.md). The list and its editor land on /documents in Task 7;
+// naming the routes here now, before either exists, is the same bet
+// `revalidateDocumentList` made for /quotes.
+
+export function revalidateQuoteDocumentList(): void {
+  revalidatePath("/documents");
+}
+
+/**
+ * The quote-document list and the editor for one document. The key is a
+ * user-defined string that reaches the route as a path segment, so it is
+ * encoded here — same treatment `revalidateContentBlock` gives a
+ * ContentBlock key.
+ */
+export function revalidateQuoteDocument(key: string): void {
+  revalidatePath("/documents");
+  revalidatePath(`/documents/${encodeURIComponent(key)}`);
+}
