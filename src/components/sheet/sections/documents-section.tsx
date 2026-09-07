@@ -21,7 +21,10 @@ export function DocumentsSection({ documents }: { documents: QuotationData["docu
       {documents.map((doc) => (
         <section className="pq-section" key={doc.key}>
           <h1 className="pq-section-title">{doc.title}</h1>
-          <div className="pq-flow-block pq-block-body" dangerouslySetInnerHTML={{ __html: doc.bodyHtml }} />
+          <div
+            className="pq-flow-block pq-block-body pq-legal-body"
+            dangerouslySetInnerHTML={{ __html: doc.bodyHtml }}
+          />
         </section>
       ))}
     </>

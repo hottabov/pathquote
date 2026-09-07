@@ -149,7 +149,7 @@ describe("renderQuotationHtml — page wrapping", () => {
 
     expect(html).toContain("<!doctype html>");
     expect(html).toContain('<meta charSet="utf-8">');
-    expect(html).toContain("@page{size:A4;margin:15mm}");
+    expect(html).toContain("@page{size:A4;margin:12mm}");
     expect(html).toContain("Pathfinder Cutting Systems");
     expect(html).toContain("Q-AU-2026-001");
   });

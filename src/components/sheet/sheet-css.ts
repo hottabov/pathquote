@@ -26,7 +26,7 @@ export const SHEET_CSS = `
     background: #ffffff;
     color: #1a1a1a;
     font-family: Arial, Helvetica, sans-serif;
-    font-size: 11px;
+    font-size: 14px;
     line-height: 1.4;
     box-sizing: border-box;
   }
@@ -36,7 +36,10 @@ export const SHEET_CSS = `
   .pq-content {
     position: relative;
     z-index: 1;
-    padding: 15mm;
+    /* Kept equal to the @page{margin:...} rule in src/lib/pdf.ts -- see
+       that file's comment on renderQuotationHtml for why the printed page
+       and this in-app preview only match because the two move together. */
+    padding: 12mm;
   }
   .pq-watermark {
     position: absolute;
@@ -335,7 +338,7 @@ export const SHEET_CSS = `
   .pq-option-desc {
     margin-top: 2px;
     color: #666666;
-    font-size: 9.5px;
+    font-size: 11px;
   }
   .pq-option-desc.pq-block-body p {
     margin: 0 0 4px 0;
@@ -407,6 +410,19 @@ export const SHEET_CSS = `
   }
   .pq-block-body p:last-child {
     margin-bottom: 0;
+  }
+  /* Legal/administrative prose (owner: Terms, General Conditions and RSP
+     should read smaller than product/equipment copy, which stays at the
+     14px .pq-sheet base). DocumentsSection (documents-section.tsx) is the
+     one component that renders every such document -- Terms, General
+     Conditions, RSP, and any admin-added one like a Data Processing
+     Agreement, all through the same "one body, one heading" markup -- so
+     this class is applied there, on the same element that already carries
+     .pq-block-body, rather than lowering .pq-block-body itself: that class
+     is shared with product/equipment/item descriptions (equipment-detail.tsx,
+     investment-summary.tsx), which must stay at 14px. */
+  .pq-legal-body {
+    font-size: 12px;
   }
   /* Top-level block heading (e.g. machine.m-series's "## Pathfinder {{model}}
      Cutting System", rsp.agreement's "## Pathfinder Remote Support Program")
@@ -562,7 +578,7 @@ export const SHEET_CSS = `
   }
   .pq-option-desc {
     color: #888888;
-    font-size: 9.5px;
+    font-size: 11px;
   }
   .pq-discount-row td {
     border-bottom: none;
@@ -624,7 +640,7 @@ export const SHEET_CSS = `
     display: flex;
     justify-content: space-between;
     gap: 24px;
-    font-size: 10px;
+    font-size: 14px;
     color: #555555;
   }
   .pq-bank {
@@ -660,32 +676,35 @@ export const SHEET_CSS = `
     min-width: 0;
   }
   .pq-sig-ink {
-    /* Reserves exactly what .pq-sig-line used to reserve before signing
-       existed (see its comment below) -- signed or not, this box is always
-       32px, because .pq-signatures carries page-break-inside: avoid and
-       an already-issued unsigned quote must paginate exactly as it did
-       before this feature. .pq-sig-image's max-height matches, so a
-       signature image sits inside this reservation rather than growing it. */
-    height: 32px;
+    /* Fixed reservation, signed or not -- .pq-signatures carries
+       page-break-inside: avoid, so an unsigned quote must paginate exactly
+       the same whether or not this box ever gets a signature image. Raised
+       from 32px to 70px (owner: signed a real quote and found the
+       signature too small to read) -- .pq-sig-image's max-height matches,
+       so a signature image sits inside this reservation rather than
+       growing it. Every existing unsigned quote's footer is now ~38px
+       taller as a result, which can push .pq-signatures onto a new page
+       for a quote that only just fitted before. */
+    height: 70px;
     display: flex;
     align-items: flex-end;
     min-width: 0;
   }
   .pq-sig-image {
-    max-height: 32px;
+    max-height: 70px;
     max-width: 100%;
     object-fit: contain;
     object-position: left bottom;
   }
   .pq-sig-line {
-    /* The 32px reservation itself now lives on .pq-sig-ink above -- this
-       rule used to carry it directly (a bare "height: 32px") before a
+    /* The 70px reservation itself lives on .pq-sig-ink above -- this rule
+       used to carry it directly (a bare "height: 32px") before a
        signature image had anywhere to sit. */
     border-top: 1px solid #333333;
   }
   .pq-sig-label {
     margin-top: 4px;
-    font-size: 10px;
+    font-size: 12px;
     color: #555555;
     display: flex;
     justify-content: space-between;
