@@ -445,22 +445,6 @@ export function mapContentBlocks(json: ContentBlocksJson): ContentBlockPayload[]
 // --- targeted content-block body migrations -------------------------------
 
 /**
- * Exact body of the "machine.m-series" content block as seeded before commit
- * 315e089 ("fix: quotation renders heading and all options for every item
- * section"), which removed a duplicate inline "## Pathfinder {{model}}
- * Cutting System" heading from the body — the quotation renderer already
- * prints its own heading from the block's `title`, so the old body produced
- * a duplicate heading on the rendered quotation. Captured verbatim via
- * `git show 8d4c4de:prisma/seed-data/content-blocks.json` (the commit
- * immediately before 315e089). prisma/seed.ts's normal content-block seeding
- * never overwrites an existing row (an admin's own edits always win), so any
- * DB seeded before 315e089 is stuck showing the duplicate heading forever
- * without this targeted migration.
- */
-export const M_SERIES_OLD_BODY =
-  "## Pathfinder {{model}} Cutting System\n\nModel {{model}} conveyorised computer controlled cutting system. Maximum compressed cutting height {{cutHeightCm}}cm. Maximum cutting width {{cutWidthCm}}cm.\n\n- Conveyorised precision cutting table\n- High efficiency vacuum generator\n- Vacuum VSD (Variable Speed Device) - computer controlled vacuum level for optimising cut quality and reducing power consumption.\n- VRB (Vacuum Recovery Blind) - computer controlled blind that reduces vacuum loss and power consumption.\n- Unloading conveyor\n- Roll holder (used for plastic overlay)\n- Operator console with utility drawer\n- Touch screen with wireless keyboard and mouse\n\n### Software\n\n- Windows 10™ operating system\n- PathCut™ cutting software V12.x (graphic user interface)\n\n### Accessories\n\n- Operator manual\n- Operator tool kit\n- 1 roll plastic overlay\n- 1 roll perforated paper\n- 10 knives\n- 1 diamond sharpening stone\n\n**Price: {{price}}**";
-
-/**
  * Content-block keys with a targeted, exact-match body migration for
  * existing DBs — distinct from the seed's normal "never touch an existing
  * row" rule for content blocks (see prisma/seed.ts's content-blocks step): a
@@ -471,10 +455,18 @@ export const M_SERIES_OLD_BODY =
  * entry here (and nowhere else — prisma/seed.ts's migration loop iterates
  * this map generically) whenever a future seed-data body/title edit needs
  * the same safe, targeted forward-fix treatment.
+ *
+ * Empty today. Its one past entry, "machine.m-series" (with a hardcoded
+ * `oldBody` capturing the pre-315e089 duplicate-heading body), was removed
+ * by the category-quote-copy migration (docs/superpowers/plans/
+ * 2026-09-07-category-quote-copy.md, Task 10): that key no longer exists in
+ * content-blocks.json at all — scripts/migrate-content-blocks-to-series.ts
+ * copies its live body onto Series.quoteDescription and deletes the
+ * ContentBlock row outright, so there is no longer a row for this step to
+ * force-update. Left in place, typed and exported, so the next targeted body
+ * fix has somewhere to go without touching prisma/seed.ts's generic loop.
  */
-export const BLOCK_BODY_MIGRATIONS: Record<string, { oldBody: string }> = {
-  "machine.m-series": { oldBody: M_SERIES_OLD_BODY },
-};
+export const BLOCK_BODY_MIGRATIONS: Record<string, { oldBody: string }> = {};
 
 /**
  * True when `existingBody` (a `ContentBlock` row's current body, read from
@@ -486,4 +478,31 @@ export const BLOCK_BODY_MIGRATIONS: Record<string, { oldBody: string }> = {
  */
 export function shouldMigrateBlock(existingBody: string, oldBody: string): boolean {
   return existingBody === oldBody;
+}
+
+// --- retired content-block keys (category-quote-copy migration) -----------
+
+/**
+ * Key prefixes `scripts/migrate-content-blocks-to-series.ts` (Task 10 of
+ * docs/superpowers/plans/2026-09-07-category-quote-copy.md) deletes from
+ * `ContentBlock` outright: the three it migrates onto `Series.quoteDescription`
+ * (`machine.m-series`, `equipment.easy-loader`, `equipment.fabric-pro`) and
+ * every orphan/option/software block that maps to nothing
+ * (`equipment.fabric-master`, `equipment.spreading-table`, `option.*`,
+ * `software.*`). `Product.contentBlockKey` / `Option.contentBlockKey`
+ * (catalog.json) still name these keys — dropping those two columns is
+ * Task 11, deliberately deferred until this migration has actually run
+ * against a database — so every product/option row naming a retired key is
+ * an *expected* dangling reference from here until Task 11 lands, not a typo
+ * in catalog.json. See `isRetiredContentBlockKey`.
+ */
+export const RETIRED_CONTENT_BLOCK_KEY_PREFIXES = ["machine.", "equipment.", "software.", "option."] as const;
+
+/** True when `key` falls under one of `RETIRED_CONTENT_BLOCK_KEY_PREFIXES` —
+ * i.e. a `Product`/`Option.contentBlockKey` naming it is known, deliberate
+ * fallout of the category-quote-copy migration rather than a mistake. Used by
+ * prisma/seed.ts's dangling-content-block-key check to keep that warning
+ * meaningful for an actual typo in catalog.json. */
+export function isRetiredContentBlockKey(key: string): boolean {
+  return RETIRED_CONTENT_BLOCK_KEY_PREFIXES.some((prefix) => key.startsWith(prefix));
 }

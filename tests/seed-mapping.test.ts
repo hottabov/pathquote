@@ -19,7 +19,7 @@ import {
   resolveProductIdentity,
   shouldMigrateBlock,
   BLOCK_BODY_MIGRATIONS,
-  M_SERIES_OLD_BODY,
+  isRetiredContentBlockKey,
 } from "../prisma/seed-lib";
 
 const catalog = catalogData as Catalog;
@@ -400,8 +400,14 @@ describe("mapContentBlocks", () => {
     ]);
   });
 
-  it("real content-blocks.json has exactly 51 blocks", () => {
-    expect(mapContentBlocks(contentBlocksJson)).toHaveLength(51);
+  // 51 -> 23: the category-quote-copy migration (Task 10) removed
+  // machine.m-series, equipment.easy-loader, equipment.fabric-pro (migrated
+  // onto Series.quoteDescription), the equipment.fabric-master/
+  // equipment.spreading-table orphans, all 17 option.* blocks and all 6
+  // software.* blocks -- 28 removed, leaving only terms.* (7) + conditions.*
+  // (14) + rsp.* (2) = 23. See scripts/migrate-content-blocks-to-series.ts.
+  it("real content-blocks.json has exactly 23 blocks", () => {
+    expect(mapContentBlocks(contentBlocksJson)).toHaveLength(23);
   });
 
   it("real content-blocks.json has unique keys", () => {
@@ -434,15 +440,27 @@ describe("shouldMigrateBlock / BLOCK_BODY_MIGRATIONS", () => {
     expect(shouldMigrateBlock("", "old text")).toBe(false);
   });
 
-  it("machine.m-series's registered old body differs from the current seed-data body", () => {
-    // Guards against the migration entry going stale: the hardcoded
-    // M_SERIES_OLD_BODY (captured pre-315e089) must not equal what
-    // content-blocks.json seeds today, or shouldMigrateBlock would never
-    // fire for an already-current-format DB.
-    const current = contentBlocksJson.blocks.find((b) => b.key === "machine.m-series");
-    expect(current).toBeDefined();
-    expect(current!.body).not.toBe(M_SERIES_OLD_BODY);
-    expect(shouldMigrateBlock(M_SERIES_OLD_BODY, BLOCK_BODY_MIGRATIONS["machine.m-series"].oldBody)).toBe(true);
+  // BLOCK_BODY_MIGRATIONS is empty today -- its one past entry
+  // ("machine.m-series") was removed by the category-quote-copy migration
+  // (Task 10): that key no longer exists in content-blocks.json at all, so
+  // there is nothing left to register a body migration against. See
+  // BLOCK_BODY_MIGRATIONS's doc comment in prisma/seed-lib.ts.
+  it("BLOCK_BODY_MIGRATIONS has no entries", () => {
+    expect(Object.keys(BLOCK_BODY_MIGRATIONS)).toEqual([]);
+  });
+});
+
+describe("isRetiredContentBlockKey", () => {
+  it("recognises every prefix the category-quote-copy migration deleted", () => {
+    for (const key of ["machine.m-series", "equipment.easy-loader", "equipment.fabric-pro", "equipment.fabric-master", "software.pathworks-i", "option.MTS"]) {
+      expect(isRetiredContentBlockKey(key), key).toBe(true);
+    }
+  });
+
+  it("does not flag a key the migration left alone", () => {
+    for (const key of ["terms.delivery", "conditions.1", "rsp.agreement"]) {
+      expect(isRetiredContentBlockKey(key), key).toBe(false);
+    }
   });
 });
 
