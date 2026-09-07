@@ -608,7 +608,7 @@ git commit -m "feat: resolve whether a signing link still opens anything"
 
 **Files:**
 - Modify: `prisma/schema.prisma`
-- Create: `prisma/migrations/z34_quote_signing/migration.sql` (generated)
+- Create: `prisma/migrations/z35_quote_signing/migration.sql` (generated)
 - Test: `tests/signing-status-parity.test.ts`
 
 - [ ] **Step 1: Add the enums and models to the schema**
@@ -728,14 +728,14 @@ In `model User`, after `image`, add:
 
 - [ ] **Step 3: Generate the migration without applying it**
 
-Run: `npx prisma migrate dev --create-only --name z34_quote_signing`
-Expected: creates `prisma/migrations/<timestamp>_z34_quote_signing/`.
+Run: `npx prisma migrate dev --create-only --name z35_quote_signing`
+Expected: creates `prisma/migrations/<timestamp>_z35_quote_signing/`.
 
-Rename the directory to `z34_quote_signing` to match the existing convention
+Rename the directory to `z35_quote_signing` to match the existing convention
 (`z33_catalog_import`, `z32_drop_legacy_codes`, …):
 
 ```bash
-cd prisma/migrations && mv *_z34_quote_signing z34_quote_signing && cd ../..
+cd prisma/migrations && mv *_z35_quote_signing z35_quote_signing && cd ../..
 ```
 
 Read the generated `migration.sql` and confirm it only creates two enums, two
@@ -805,7 +805,7 @@ Expected: PASS, 2 tests; typecheck clean.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add prisma/schema.prisma prisma/migrations/z34_quote_signing tests/signing-status-parity.test.ts
+git add prisma/schema.prisma prisma/migrations/z35_quote_signing tests/signing-status-parity.test.ts
 git commit -m "feat: schema for quote signatures and signing requests"
 ```
 
@@ -1579,15 +1579,15 @@ add to `QuotationData` beside `showSignature`:
    * A null side prints the empty rule it prints today, so an unsigned or
    * half-signed quote is unchanged from before this feature. */
   signatures: {
-    author: SheetSignature | null;
-    client: SheetSignature | null;
+    author: QuotationSignature | null;
+    client: QuotationSignature | null;
   };
 ```
 
 with the type:
 
 ```ts
-export type SheetSignature = {
+export type QuotationSignature = {
   /** Already run through `ImageResolver` — a `/api/files/…` URL in the app,
    * a base64 data URI in the PDF and on the client-facing page, both of
    * which render without this app's session cookie. */
@@ -1600,7 +1600,7 @@ export type SheetSignature = {
 and build it inside `buildQuotationData`:
 
 ```ts
-  const signatureFor = (role: "AUTHOR" | "CLIENT"): SheetSignature | null => {
+  const signatureFor = (role: "AUTHOR" | "CLIENT"): QuotationSignature | null => {
     const row = doc.signatures.find((s) => s.role === role);
     if (!row) return null;
     // An unresolvable image prints the empty rule rather than a broken
@@ -1625,7 +1625,7 @@ Expected: PASS.
 Replace `src/components/sheet/sections/signatures.tsx` with:
 
 ```tsx
-import type { SheetSignature } from "@/lib/quotation-data";
+import type { QuotationSignature } from "@/lib/quotation-data";
 
 /**
  * The two signature rules at the foot of the quote — purchaser on the left,
@@ -1642,8 +1642,8 @@ export function Signatures({
   client,
 }: {
   showSignature: boolean;
-  author: SheetSignature | null;
-  client: SheetSignature | null;
+  author: QuotationSignature | null;
+  client: QuotationSignature | null;
 }) {
   if (!showSignature) return null;
 
@@ -1660,7 +1660,7 @@ function SignatureBlock({
   signature,
 }: {
   label: string;
-  signature: SheetSignature | null;
+  signature: QuotationSignature | null;
 }) {
   return (
     <div className="pq-sig-block">
@@ -2325,6 +2325,14 @@ export async function revokeSigningLink(documentId: string): Promise<ActionResul
       where: { documentId: document.id, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    // The client may have drawn a signature without confirming it. Left in
+    // place, the next send would open already showing "Signed ✓" with the
+    // confirm button enabled, for a client who never saw that quote. The
+    // author's signature survives: the document stays FINAL and unchanged,
+    // so it is still a signature of exactly this text.
+    await tx.signature.deleteMany({
+      where: { documentId: document.id, role: { in: signatureRolesClearedBy("revoke") } },
+    });
     await tx.document.update({
       where: { id: document.id },
       data: { signingStatus: "NOT_SENT" },
@@ -2369,7 +2377,13 @@ In `src/lib/actions/finalize.ts`, extend `unfinalizeDocument`. After the
       where: { documentId: document.id, revokedAt: null },
       data: { revokedAt: new Date() },
     });
-    await tx.signature.deleteMany({ where: { documentId: document.id, role: "AUTHOR" } });
+    // Both roles, not just the author: the text is about to change, so
+    // neither party signed what will exist afterwards. Which roles an event
+    // invalidates is decided by `signatureRolesClearedBy`, beside the other
+    // transition rules, rather than being re-derived here and in revoke.
+    await tx.signature.deleteMany({
+      where: { documentId: document.id, role: { in: signatureRolesClearedBy("unfinalize") } },
+    });
     await tx.document.update({
       where: { id: document.id },
       data: { status: "DRAFT", signingStatus: "NOT_SENT" },
@@ -2378,8 +2392,8 @@ In `src/lib/actions/finalize.ts`, extend `unfinalizeDocument`. After the
 ```
 
 replacing the existing bare `db.document.update`. Add `signingStatus: true` to
-the `findFirst`'s select and import `canUnfinalize` and `SigningStatus` from
-`@/lib/signing/state`.
+the `findFirst`'s select and import `canUnfinalize`, `signatureRolesClearedBy`
+and `SigningStatus` from `@/lib/signing/state`.
 
 - [ ] **Step 3: Verify**
 

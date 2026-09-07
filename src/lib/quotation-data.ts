@@ -627,15 +627,15 @@ export type QuotationData = {
    * A null side prints the empty rule it prints today, so an unsigned or
    * half-signed quote is unchanged from before this feature. */
   signatures: {
-    author: SheetSignature | null;
-    client: SheetSignature | null;
+    author: QuotationSignature | null;
+    client: QuotationSignature | null;
   };
 };
 
 /** One resolved signature — one of the two rules `Signatures`
  * (src/components/sheet/sections/signatures.tsx) renders at the foot of the
  * quote. */
-export type SheetSignature = {
+export type QuotationSignature = {
   /** Already run through `ImageResolver` — a `/api/files/…` URL in the app,
    * a base64 data URI in the PDF and on the client-facing page, both of
    * which render without this app's session cookie. */
@@ -1001,13 +1001,26 @@ export function buildQuotationData(
   // One rule is `AUTHOR` (Pathfinder), the other `CLIENT` (Purchaser) — see
   // `Signatures` in src/components/sheet/sections/signatures.tsx, which
   // renders each side's empty rule unchanged when this resolves to `null`.
-  const signatureFor = (role: "AUTHOR" | "CLIENT"): SheetSignature | null => {
+  const signatureFor = (role: "AUTHOR" | "CLIENT"): QuotationSignature | null => {
     const row = doc.signatures.find((s) => s.role === role);
     if (!row) return null;
-    // An unresolvable image prints the empty rule rather than a broken
-    // image icon in the middle of a customer-facing document.
+    // An unresolvable image still prints the empty rule rather than a
+    // broken image icon in the middle of a customer-facing document — for a
+    // logo that would be harmless, but on a SIGNED quote it makes the
+    // printed document look exactly like one nobody ever signed. The
+    // fallback stays (a broken-image icon or an "(unavailable)" string
+    // would be worse on a customer-facing quote), but it must not do so
+    // silently, hence the warning below.
     const image = resolveImage(row.imageUrl);
-    if (!image) return null;
+    if (!image) {
+      // `QuotationDataDoc` carries no document id — this pure module's
+      // input never does (see `ToSheetDataDoc`'s header comment) — so
+      // `doc.number` is the closest identifier available here; it is
+      // `null` for a still-unissued draft, which "(draft)" still
+      // distinguishes from a real quote number in the log.
+      console.warn(`[quotation] signature image unresolvable for document ${doc.number ?? "(draft)"} (${role})`);
+      return null;
+    }
     // Same date formatter buildQuotationData already uses for
     // issueDate/validityDate (see toSheetData) — no second date format on
     // this page.

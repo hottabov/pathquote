@@ -1,4 +1,4 @@
-import type { SheetSignature } from "@/lib/quotation-data";
+import type { QuotationSignature } from "@/lib/quotation-data";
 
 /**
  * The two signature rules at the foot of the quote — purchaser on the left,
@@ -15,8 +15,8 @@ export function Signatures({
   client,
 }: {
   showSignature: boolean;
-  author: SheetSignature | null;
-  client: SheetSignature | null;
+  author: QuotationSignature | null;
+  client: QuotationSignature | null;
 }) {
   if (!showSignature) return null;
 
@@ -33,7 +33,7 @@ function SignatureBlock({
   signature,
 }: {
   label: string;
-  signature: SheetSignature | null;
+  signature: QuotationSignature | null;
 }) {
   return (
     <div className="pq-sig-block">

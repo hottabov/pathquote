@@ -659,19 +659,34 @@ export const SHEET_CSS = `
   }
   .pq-sig-block {
     flex: 1;
+    /* A wide signature image could otherwise push this flex row past the
+       page -- flex's default min-width: auto lets a child's intrinsic size
+       win over "flex: 1", and .pq-sig-ink below is the same kind of flex
+       container, so it needs the same reset. */
+    min-width: 0;
   }
   .pq-sig-ink {
-    height: 44px;
+    /* Reserves exactly what .pq-sig-line used to reserve before signing
+       existed (see its comment below) -- signed or not, this box is always
+       32px, because .pq-signatures carries page-break-inside: avoid and
+       an already-issued unsigned quote must paginate exactly as it did
+       before this feature. .pq-sig-image's max-height matches, so a
+       signature image sits inside this reservation rather than growing it. */
+    height: 32px;
     display: flex;
     align-items: flex-end;
+    min-width: 0;
   }
   .pq-sig-image {
-    max-height: 44px;
+    max-height: 32px;
     max-width: 100%;
     object-fit: contain;
     object-position: left bottom;
   }
   .pq-sig-line {
+    /* The 32px reservation itself now lives on .pq-sig-ink above -- this
+       rule used to carry it directly (a bare "height: 32px") before a
+       signature image had anywhere to sit. */
     border-top: 1px solid #333333;
   }
   .pq-sig-label {
