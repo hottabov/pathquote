@@ -17,9 +17,8 @@ import { Button } from "@/components/ui/button";
  * Escape-to-close for free, and it is also what correctly locks body scroll:
  * Base UI's modal `Dialog.Root` runs its own `useScrollLock` internally
  * whenever the dialog is open, so there is no ad-hoc
- * `document.body.style.overflow` toggling here to place in a ref callback or
- * a `useEffect` — the bug that motivated that question upstream doesn't
- * arise because this component never touches body scroll itself.
+ * `document.body.style.overflow` toggling to place in a ref callback or a
+ * `useEffect` here — that responsibility belongs to `Dialog.Root` alone.
  */
 export function SignatureDialog({
   title,
@@ -45,7 +44,6 @@ export function SignatureDialog({
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 z-50 bg-slate-900/40 transition-opacity duration-150 motion-reduce:transition-none data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
         <Dialog.Popup
-          aria-label={title}
           className="fixed inset-0 z-50 flex flex-col gap-4 bg-white p-4 outline-none transition-all duration-150 motion-reduce:transition-none data-[ending-style]:opacity-0 data-[starting-style]:opacity-0 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:h-auto sm:w-full sm:max-w-2xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-lg sm:p-6 sm:data-[ending-style]:scale-95 sm:data-[starting-style]:scale-95"
         >
           <Dialog.Title className="text-lg font-medium">{title}</Dialog.Title>
