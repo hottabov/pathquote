@@ -3,45 +3,45 @@ import {
   buildQuotationData,
   dedupeOptionCode,
   OMIT,
-  resolveBlocks,
+  resolveQuoteDocuments,
   substitutePlaceholders,
   substituteWithReport,
-  type ContentBlockRow,
   type QuotationItemInput,
+  type QuoteDocumentRow,
 } from "../src/lib/quotation-data";
 import { CATEGORY_TOKENS } from "../src/lib/quote-variables";
 import type { OptionRole } from "@prisma/client";
 // The downstream repair `htmlBlockLines`'s doc comment relies on — see the
 // nested-list test below.
 import { renderStoredRichText } from "../src/lib/rich-text";
-import { quotationDoc, quotationItem } from "./helpers/fixtures";
+import { quotationDoc, quotationItem, sheetCompany } from "./helpers/fixtures";
 
 // Pure module — no @/lib/db import (see quotation-data.ts's header comment),
 // so this never needs DATABASE_URL set, same as tests/sheet-data.test.ts.
 
-describe("resolveBlocks — precedence", () => {
-  const blocks: ContentBlockRow[] = [
-    { key: "terms.delivery", regionId: null, title: "Delivery", body: "Default delivery body", sortOrder: 1 },
-    { key: "terms.delivery", regionId: "region-us", title: "Delivery (US)", body: "US delivery body", sortOrder: 1 },
-    { key: "terms.warranty", regionId: null, title: "Warranty", body: "Default warranty body", sortOrder: 2 },
+describe("resolveQuoteDocuments — precedence", () => {
+  const rows: QuoteDocumentRow[] = [
+    { key: "terms", regionId: null, title: "Terms", body: "Default terms body", sortOrder: 10, includedByDefault: true },
+    { key: "terms", regionId: "region-us", title: "Terms (US)", body: "US terms body", sortOrder: 10, includedByDefault: true },
+    { key: "conditions", regionId: null, title: "Conditions", body: "Default conditions body", sortOrder: 20, includedByDefault: true },
   ];
 
-  it("uses the default (regionId: null) row when the region has no override", () => {
-    const resolved = resolveBlocks(blocks, "region-au");
-    expect(resolved.get("terms.delivery")?.body).toBe("Default delivery body");
-    expect(resolved.get("terms.warranty")?.body).toBe("Default warranty body");
+  it("uses the default (regionId: null) row when the region has no version of its own", () => {
+    const resolved = resolveQuoteDocuments(rows, "region-au");
+    expect(resolved.get("terms")?.body).toBe("Default terms body");
+    expect(resolved.get("conditions")?.body).toBe("Default conditions body");
   });
 
-  it("prefers a region-specific override over the default for the same key", () => {
-    const resolved = resolveBlocks(blocks, "region-us");
-    expect(resolved.get("terms.delivery")?.body).toBe("US delivery body");
+  it("prefers the region's own version over the default for the same key", () => {
+    const resolved = resolveQuoteDocuments(rows, "region-us");
+    expect(resolved.get("terms")?.body).toBe("US terms body");
     // Unrelated key still falls back to its default.
-    expect(resolved.get("terms.warranty")?.body).toBe("Default warranty body");
+    expect(resolved.get("conditions")?.body).toBe("Default conditions body");
   });
 
-  it("ignores a different region's override entirely", () => {
-    const resolved = resolveBlocks(blocks, "region-uk");
-    expect(resolved.get("terms.delivery")?.body).toBe("Default delivery body");
+  it("ignores a different region's version entirely", () => {
+    const resolved = resolveQuoteDocuments(rows, "region-uk");
+    expect(resolved.get("terms")?.body).toBe("Default terms body");
   });
 });
 
@@ -245,30 +245,6 @@ describe("substituteWithReport — HTML block bodies", () => {
 // "**Price: {{price}}**" paragraph — so hiding the price strips only that
 // one line, never the model/height/width line above it.
 const mSeriesCopy = "Model {{model}}. Height {{cutHeightCm}}cm, width {{cutWidthCm}}cm.\n\nPrice: {{price}}";
-
-const termsBlock: ContentBlockRow = {
-  key: "terms.payment",
-  regionId: null,
-  title: "Payment",
-  body: "EFT details:\n\n{{bankDetails}}",
-  sortOrder: 3,
-};
-
-const conditionsBlock: ContentBlockRow = {
-  key: "conditions.1",
-  regionId: null,
-  title: "Sales Price",
-  body: "Prices are ex-works.",
-  sortOrder: 4,
-};
-
-const rspAgreementBlock: ContentBlockRow = {
-  key: "rsp.agreement",
-  regionId: null,
-  title: "RSP",
-  body: "Remote support program.",
-  sortOrder: 5,
-};
 
 /** An L-Series cutter: width only, no lay height, and a category nobody has
  * written quote copy for yet. */
@@ -1182,112 +1158,6 @@ describe("buildQuotationData", () => {
     expect(data.machineSections[0].optionRows[0].qty).toBe(3);
   });
 
-  it("substitutes bankDetails into terms blocks and sorts terms/conditions by sortOrder", () => {
-    const data = buildQuotationData(quotationDoc(), [termsBlock, conditionsBlock]);
-    expect(data.termsSections).toHaveLength(1);
-    // Multi-line: each bank field (bank/bsb/accountNo, per baseDoc's fixture)
-    // renders as its own line, not squashed onto one.
-    expect(data.termsSections[0].bodyHtml).toContain("Bank: ANZ Westfield");
-    expect(data.termsSections[0].bodyHtml).toContain("BSB: 013 442");
-    expect(data.termsSections[0].bodyHtml).toContain("Account No.: 4405 63886");
-    expect(data.conditionsSections).toHaveLength(1);
-    expect(data.conditionsSections[0].key).toBe("conditions.1");
-  });
-
-  it("auto-fills the standard-terms defaults (deliveryWeeks/installationDays/trainingDays/warrantyMonths)", () => {
-    const deliveryBlock: ContentBlockRow = {
-      key: "terms.delivery",
-      regionId: null,
-      title: "Delivery",
-      body: "Included in sale price. (Estimated {{deliveryWeeks}} weeks.)",
-      sortOrder: 6,
-    };
-    const scheduleBlock: ContentBlockRow = {
-      key: "terms.schedule",
-      regionId: null,
-      title: "Schedule",
-      body: "- Installation approx. {{installationDays}} days.\n- Operator training approx. {{trainingDays}} days.",
-      sortOrder: 7,
-    };
-    const warrantyBlock: ContentBlockRow = {
-      key: "terms.warranty",
-      regionId: null,
-      title: "Warranty",
-      body: "{{warrantyMonths}}-month parts warranty.",
-      sortOrder: 8,
-    };
-    const data = buildQuotationData(quotationDoc(), [deliveryBlock, scheduleBlock, warrantyBlock]);
-    const bodies = data.termsSections.map((t) => t.bodyHtml).join("\n");
-    // None of these are wired up from any per-document source today — every
-    // one must come from the auto-fill default, with no "____"/stripped line.
-    expect(bodies).toContain("Estimated 14 weeks");
-    expect(bodies).toContain("Installation approx. 2 days");
-    expect(bodies).toContain("Operator training approx. 3 days");
-    expect(bodies).toContain("12-month parts warranty");
-  });
-
-  it("still line-strips a genuinely-unknown terms token (e.g. rspYear2Cost) with no default", () => {
-    const rspTermsBlock: ContentBlockRow = {
-      key: "terms.rsp",
-      regionId: null,
-      title: "RSP",
-      body: "Customer agrees to 2nd year RSP.\n\n- 1st Year: 100% discount.\n- 2nd Year: {{rspYear2Cost}} + GST.",
-      sortOrder: 9,
-    };
-    const data = buildQuotationData(quotationDoc(), [rspTermsBlock]);
-    expect(data.termsSections[0].bodyHtml).toContain("1st Year: 100% discount");
-    expect(data.termsSections[0].bodyHtml).not.toContain("2nd Year");
-    expect(data.termsSections[0].bodyHtml).not.toContain("____");
-  });
-
-  it("builds an RSP coverage row per item with a 'TBA' unit cost (table cell, not a markdown line — never '____')", () => {
-    const doc = quotationDoc({ items: [quotationItem({ name: "M5180 Cutting System", serialNumber: "SN-001" })] });
-    const data = buildQuotationData(doc, [rspAgreementBlock]);
-    expect(data.rsp.agreementHtml).toContain("Remote support program");
-    expect(data.rsp.coverageRows).toEqual([{ name: "M5180 Cutting System", serialNumber: "SN-001", rspUnitCost: "TBA" }]);
-  });
-
-  it("blanks serialNumber when unset rather than rendering null", () => {
-    const data = buildQuotationData(quotationDoc(), []);
-    expect(data.rsp.coverageRows[0].serialNumber).toBe("");
-  });
-
-  it("includes every MACHINE and SYSTEM item (the M / X / L cutters and the LNS system)", () => {
-    const doc = quotationDoc({
-      items: [
-        quotationItem({ id: "i-m", name: "M item", kind: "MACHINE", seriesName: "M-Series" }),
-        quotationItem({ id: "i-xc", name: "X item", kind: "MACHINE", seriesName: "X-Calibre" }),
-        quotationItem({ id: "i-l", name: "L item", kind: "MACHINE", seriesName: "L-Series" }),
-        quotationItem({ id: "i-lns", name: "LNS item", kind: "SYSTEM", seriesName: "Leather Nesting System" }),
-      ],
-    });
-    const data = buildQuotationData(doc, []);
-    expect(data.rsp.coverageRows.map((r) => r.name)).toEqual(["M item", "X item", "L item", "LNS item"]);
-  });
-
-  it("excludes every other kind with no serial number (table, feeder, spreader, software, service, accessory)", () => {
-    const doc = quotationDoc({
-      items: [
-        quotationItem({ id: "i-el", name: "Easy-Loader", kind: "TABLE", serialNumber: null }),
-        quotationItem({ id: "i-ef", name: "Easy-Feeder", kind: "FEEDER", serialNumber: null }),
-        quotationItem({ id: "i-fp", name: "Fabric Pro", kind: "SPREADER", serialNumber: null }),
-        quotationItem({ id: "i-sw", name: "PathWorks", kind: "SOFTWARE", serialNumber: null }),
-        quotationItem({ id: "i-svc", name: "Service", kind: "SERVICE", serialNumber: null }),
-        quotationItem({ id: "i-acc", name: "Roll feeder", kind: "ACCESSORY", serialNumber: null }),
-        quotationItem({ id: "i-cr", name: "Trade-in", kind: "CREDIT", serialNumber: null }),
-      ],
-    });
-    const data = buildQuotationData(doc, []);
-    expect(data.rsp.coverageRows).toEqual([]);
-  });
-
-  it("includes a non-machine item when it has a serial number", () => {
-    const doc = quotationDoc({
-      items: [quotationItem({ name: "Fabric Master", kind: "ACCESSORY", seriesName: null, serialNumber: "SN-FM-1" })],
-    });
-    const data = buildQuotationData(doc, []);
-    expect(data.rsp.coverageRows).toEqual([{ name: "Fabric Master", serialNumber: "SN-FM-1", rspUnitCost: "TBA" }]);
-  });
 });
 
 // --- buildQuotationData: sectionTitle — every section gets a heading -------
@@ -1911,5 +1781,142 @@ describe("buildQuotationData — signatures", () => {
     });
     const data = buildQuotationData(doc, [], { resolveImage: () => undefined });
     expect(data.signatures.author).toBeNull();
+  });
+});
+
+// --- buildQuotationData: quote documents ----------------------------------
+//
+// The three hardcoded output fields (`termsSections`, `conditionsSections`,
+// `rsp`) are one ordered `documents` array now, assembled from `QuoteDocument`
+// rows an admin controls. What used to be a code change (adding a document) is
+// a row, and what used to be a code constant (the four standard-terms figures)
+// comes off the region, overridable per quote.
+describe("quote documents", () => {
+  const terms = { key: "terms", regionId: null, title: "Terms", body: "<p>Delivery in {{deliveryWeeks}} weeks.</p>", sortOrder: 10, includedByDefault: true };
+  const conditions = { key: "conditions", regionId: null, title: "General Conditions of Sale", body: "<p>Clause.</p>", sortOrder: 20, includedByDefault: true };
+
+  it("renders each included document with its own title, in sortOrder", () => {
+    const data = buildQuotationData(quotationDoc(), [conditions, terms]);
+    expect(data.documents.map((d) => d.title)).toEqual(["Terms", "General Conditions of Sale"]);
+  });
+
+  it("substitutes the quote's term figures", () => {
+    const doc = quotationDoc({ deliveryWeeks: 10 });
+    const data = buildQuotationData(doc, [terms]);
+    expect(data.documents[0].bodyHtml).toContain("Delivery in 10 weeks");
+  });
+
+  it("falls back to the region's figure when the quote sets none", () => {
+    const data = buildQuotationData(quotationDoc(), [terms]);
+    expect(data.documents[0].bodyHtml).toContain("Delivery in 14 weeks");
+  });
+
+  it("prefers a region's own version of a document", () => {
+    const regionTerms = { ...terms, regionId: "region-1", body: "<p>Mexican terms.</p>" };
+    const data = buildQuotationData(quotationDoc({ regionId: "region-1" }), [terms, regionTerms]);
+    expect(data.documents[0].bodyHtml).toContain("Mexican terms");
+  });
+
+  it("ignores another region's version entirely", () => {
+    const otherTerms = { ...terms, regionId: "region-2", body: "<p>Wrong region.</p>" };
+    const data = buildQuotationData(quotationDoc({ regionId: "region-1" }), [terms, otherTerms]);
+    expect(data.documents[0].bodyHtml).toContain("Delivery in 14 weeks");
+  });
+
+  it("includes a region-only document that has no global default", () => {
+    const dpa = { key: "dpa", regionId: "region-1", title: "Data Processing Agreement", body: "<p>DPA.</p>", sortOrder: 30, includedByDefault: true };
+    const data = buildQuotationData(quotationDoc({ regionId: "region-1" }), [terms, dpa]);
+    expect(data.documents.map((d) => d.key)).toEqual(["terms", "dpa"]);
+  });
+
+  it("leaves out a document this quote excludes", () => {
+    const doc = quotationDoc({ excludedDocumentKeys: ["conditions"] });
+    const data = buildQuotationData(doc, [terms, conditions]);
+    expect(data.documents.map((d) => d.key)).toEqual(["terms"]);
+  });
+
+  it("leaves out a document not included by default unless the quote opts in", () => {
+    const optional = { ...conditions, key: "optional", includedByDefault: false };
+    const data = buildQuotationData(quotationDoc(), [terms, optional]);
+    expect(data.documents.map((d) => d.key)).toEqual(["terms"]);
+  });
+
+  it("renders a FINAL quote from its snapshot, not from live text", () => {
+    const doc = quotationDoc({
+      status: "FINAL",
+      documentsSnapshot: { version: 1, documents: [{ key: "terms", title: "Terms", bodyHtml: "<p>As signed.</p>" }], itemCopyHtml: {} },
+    });
+    const data = buildQuotationData(doc, [{ ...terms, body: "<p>Edited since.</p>" }]);
+    expect(data.documents[0].bodyHtml).toContain("As signed");
+    expect(data.documents[0].bodyHtml).not.toContain("Edited since");
+  });
+
+  it("substitutes the remaining document tokens (bank details, validity, number, client)", () => {
+    const tokens = {
+      ...terms,
+      body: "<p>{{clientName}}</p><p>{{quoteNumber}}</p><p>{{validityDate}}</p><p>{{bankDetails}}</p>",
+    };
+    const doc = quotationDoc({
+      number: "Q-AU-2026-001",
+      company: sheetCompany({ name: "Relaxvanguard Pty Ltd" }),
+    });
+    const html = buildQuotationData(doc, [tokens]).documents[0].bodyHtml;
+    expect(html).toContain("Relaxvanguard Pty Ltd");
+    expect(html).toContain("Q-AU-2026-001");
+    // 30 days on from the fixture's 2026-08-30 issue date.
+    expect(html).toContain("29/09/2026");
+    expect(html).toContain("Bank: ANZ Westfield");
+  });
+
+  it("line-strips a token no document scope can fill (e.g. rspYear2Cost), never a blank", () => {
+    // Task 10 reports this one rather than stripping it silently; the
+    // renderer's own contract is unchanged — a line whose figure has no
+    // source does not print at all.
+    const rsp = {
+      ...terms,
+      key: "rsp",
+      title: "Remote Support Program",
+      body: "<p>1st Year: 100% discount.</p><p>2nd Year: {{rspYear2Cost}} + GST.</p>",
+    };
+    const html = buildQuotationData(quotationDoc(), [rsp]).documents[0].bodyHtml;
+    expect(html).toContain("1st Year: 100% discount");
+    expect(html).not.toContain("2nd Year");
+    expect(html).not.toContain("____");
+  });
+
+  it("falls back to live text when the snapshot is malformed rather than throwing", () => {
+    // `documentsSnapshot` is an opaque `Json?` column — a snapshot written by
+    // an older version, or hand-edited, must never take down a
+    // customer-facing page. Same treatment `readProductSpecs` gives
+    // `Product.specs`.
+    for (const snapshot of [{ version: 2, documents: [], itemCopyHtml: {} }, { documents: "nope" }, [], "", 7]) {
+      const data = buildQuotationData(quotationDoc({ status: "FINAL", documentsSnapshot: snapshot }), [terms]);
+      expect(data.documents[0].bodyHtml).toContain("Delivery in 14 weeks");
+    }
+  });
+
+  it("prints a snapshotted item's frozen category copy", () => {
+    const doc = quotationDoc({
+      status: "FINAL",
+      items: [quotationItem({ id: "item-1", seriesQuoteDescription: "<p>Edited since.</p>" })],
+      documentsSnapshot: { version: 1, documents: [], itemCopyHtml: { "item-1": "<p>As signed.</p>" } },
+    });
+    const data = buildQuotationData(doc, []);
+    expect(data.machineSections[0].titleBlockHtml).toContain("As signed");
+    expect(data.machineSections[0].titleBlockHtml).not.toContain("Edited since");
+  });
+
+  it("falls back to live copy for an item the snapshot has no entry for, and for that item alone", () => {
+    const doc = quotationDoc({
+      status: "FINAL",
+      items: [
+        quotationItem({ id: "item-1", seriesQuoteDescription: "<p>Live one.</p>" }),
+        quotationItem({ id: "item-2", seriesQuoteDescription: "<p>Live two.</p>" }),
+      ],
+      documentsSnapshot: { version: 1, documents: [], itemCopyHtml: { "item-1": "<p>Frozen one.</p>" } },
+    });
+    const data = buildQuotationData(doc, []);
+    expect(data.machineSections[0].titleBlockHtml).toContain("Frozen one");
+    expect(data.machineSections[1].titleBlockHtml).toContain("Live two");
   });
 });

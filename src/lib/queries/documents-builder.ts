@@ -365,6 +365,27 @@ export type DocumentForBuilder = {
     signerName: string;
     signedAt: Date;
   }[];
+  /** The document's *region*'s four standard-terms figures — the fallback
+   * for the four per-quote overrides below (see `resolveQuoteTerms` in
+   * src/lib/quote-terms.ts). Read live off `Region`, like `entityName` and
+   * its siblings above, and for the same reason: a DRAFT shows what it would
+   * promise today. */
+  region: { deliveryWeeks: number; installationDays: number; trainingDays: number; warrantyMonths: number };
+  /** `Document`'s own overrides of the four figures — `null` means inherit
+   * the region's. Fed straight into `QuotationDataDoc`. */
+  deliveryWeeks: number | null;
+  installationDays: number | null;
+  trainingDays: number | null;
+  warrantyMonths: number | null;
+  /** The `quoteDocumentKey`s of this quote's `DocumentExclusion` rows — the
+   * legal documents its author unticked. Empty is the common case (absence
+   * means included). */
+  excludedDocumentKeys: string[];
+  /** `Document.documentsSnapshot` exactly as stored (an opaque `Json?`
+   * column, frozen by `finalizeDocument`) — `unknown` for the same reason
+   * `entitySnapshot` above is, and validated at runtime by its one consumer
+   * (`readDocumentsSnapshot` in src/lib/quotation-data.ts). */
+  documentsSnapshot: unknown;
   updatedAt: Date;
 };
 
@@ -514,6 +535,10 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
       signatures: {
         select: { role: true, imageUrl: true, signerName: true, signedAt: true },
       },
+      // Feeds QuotationDataDoc.excludedDocumentKeys — the legal documents
+      // this quote's author unticked. Absence means included, so the common
+      // quote selects nothing here.
+      exclusions: { select: { quoteDocumentKey: true } },
     },
   });
   if (!document) return null;
@@ -661,6 +686,18 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
     regionCode: document.region.code,
     regionName: document.region.name,
     entitySnapshot: document.entitySnapshot,
+    region: {
+      deliveryWeeks: document.region.deliveryWeeks,
+      installationDays: document.region.installationDays,
+      trainingDays: document.region.trainingDays,
+      warrantyMonths: document.region.warrantyMonths,
+    },
+    deliveryWeeks: document.deliveryWeeks,
+    installationDays: document.installationDays,
+    trainingDays: document.trainingDays,
+    warrantyMonths: document.warrantyMonths,
+    excludedDocumentKeys: document.exclusions.map((exclusion) => exclusion.quoteDocumentKey),
+    documentsSnapshot: document.documentsSnapshot,
     entityName: document.region.entityName,
     entityLegalId: document.region.entityLegalId,
     entityAddress: document.region.entityAddress,

@@ -170,6 +170,17 @@ export function quotationDoc(overrides: Partial<QuotationDataDoc> = {}): Quotati
       },
     }),
     regionId: "region-au",
+    /** The region's own standard-terms figures — the `Region` column defaults
+     * from schema.prisma, so a test that overrides one of the four on the
+     * quote itself can assert which of the two sources won (the same trick
+     * `sheetDoc`'s "Live ..." entity strings play against `entitySnapshot`). */
+    region: { deliveryWeeks: 14, installationDays: 2, trainingDays: 3, warrantyMonths: 12 },
+    deliveryWeeks: null,
+    installationDays: null,
+    trainingDays: null,
+    warrantyMonths: null,
+    excludedDocumentKeys: [],
+    documentsSnapshot: null,
     items: [quotationItem()],
     showItemPrices: false,
     showOptionPrices: false,

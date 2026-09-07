@@ -1,6 +1,5 @@
 import { auth } from "@/auth";
 import { getDocumentForBuilder } from "@/lib/queries/documents";
-import { getContentBlocksForRegion } from "@/lib/queries/content";
 import { buildQuotationData } from "@/lib/quotation-data";
 import { renderQuotationHtml, htmlToPdf, fileImageResolver, quotationPdfFilename, buildFooterHtml } from "@/lib/pdf";
 
@@ -31,8 +30,12 @@ export async function GET(_request: Request, { params }: { params: Promise<Param
     return Response.json({ error: "Not found" }, { status: 404 });
   }
 
-  const blocks = await getContentBlocksForRegion(document.regionId);
-  const quotationData = buildQuotationData(document, blocks, { resolveImage: fileImageResolver });
+  // No documents yet: the `ContentBlock` rows this route used to pass are not
+  // `QuoteDocument` rows, and the read that replaces them
+  // (`getQuoteDocumentsForRegion`) lands in the next task of the quote-
+  // documents plan. Until then a quote prints its equipment detail and totals
+  // with no legal text — visible, and fixed by the very next commit.
+  const quotationData = buildQuotationData(document, [], { resolveImage: fileImageResolver });
   const html = await renderQuotationHtml(quotationData);
 
   let pdf: Buffer;

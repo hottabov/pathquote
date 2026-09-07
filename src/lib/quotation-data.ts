@@ -1,5 +1,5 @@
 // Pure assembly for the extended quotation renderer (Phase 6): turns a
-// loaded document plus its resolved ContentBlock rows into `QuotationData`,
+// loaded document plus its region's `QuoteDocument` rows into `QuotationData`,
 // the flat shape `QuotationSheet` (src/components/sheet/quotation-sheet.tsx)
 // renders. Mirrors src/lib/sheet-data.ts's discipline exactly — no
 // `@/lib/db` or `next/*` imports, so a plain `vitest run` of this file never
@@ -13,6 +13,7 @@
 // extra fields (`kind`, `specs`, `seriesQuoteDescription`, `seriesName`,
 // `seriesId`, `serialNumber`) this module needs.
 import type { OptionRole, ProductKind } from "@prisma/client";
+import { z } from "zod";
 import { formatDateAU, formatMoney } from "./format";
 import { machineSpecSentence, extraSpecVars } from "./machine-specs";
 // The one formatter for a metre total ("4.8 m", "6 m") — see its doc comment;
@@ -29,7 +30,11 @@ import { isHtmlContent } from "./rich-text-core";
 // imported rather than re-derived so "what counts as a token" has exactly one
 // definition shared by the editor palette, the save validator and this
 // renderer.
-import { tokensIn, type CategoryTokenName } from "./quote-variables";
+import { tokensIn, type CategoryTokenName, type DocumentTokenName } from "./quote-variables";
+// Quote-then-region precedence for the four standard-terms figures, in one
+// place shared by this renderer and the builder panel that sets them. Pure by
+// the same rule as this module.
+import { resolveQuoteTerms, type QuoteTermValues } from "./quote-terms";
 import { readProductSpecs } from "./validation/product-specs";
 import {
   dedupeDescription,
@@ -86,11 +91,15 @@ export type QuotationLineInput = ToSheetLineInput & {
 };
 
 export type QuotationItemInput = ToSheetItemInput & {
-  /** `DocumentItem.serialNumber` — used as-is (blank when unset) in the RSP
-   * coverage table; never a placeholder-substitution concern. */
+  /** `DocumentItem.serialNumber` — recorded post-installation and printed by
+   * the production forms. Nothing in the quotation renderer reads it any more
+   * (the RSP coverage table it used to fill is gone — see D10 in
+   * docs/superpowers/specs/2026-09-07-quote-documentation-design.md); it stays
+   * on the input type because `DocumentForBuilder` carries it and structural
+   * typing costs nothing for a field this module ignores. */
   serialNumber: string | null;
-  /** `Product.kind` — what decides whether the item is a cutting machine
-   * (spec sentence, RSP coverage). ACCESSORY for a snapshot item whose
+  /** `Product.kind` — what decides whether the item is a cutting machine, and
+   * so whether it gets a spec sentence. ACCESSORY for a snapshot item whose
    * product no longer resolves. */
   kind: ProductKind;
   /** The item's product's `Series.name` (e.g. "M-Series", "X-Calibre") —
@@ -118,8 +127,8 @@ export type QuotationItemInput = ToSheetItemInput & {
 };
 
 /** Same shape as `ToSheetDataDoc` plus the extra fields needed for the
- * quotation renderer: `regionId` (to resolve region-specific content-block
- * overrides), richer `items` (see `QuotationItemInput`), and the two
+ * quotation renderer: `regionId` (to resolve a region's own version of a
+ * document), richer `items` (see `QuotationItemInput`), and the two
  * quotation-first pricing-display toggles (see `setPriceDisplay` in
  * src/lib/actions/documents.ts) that gate per-item/per-option amounts in
  * the investment summary and the `{{price}}` token in a category's quote
@@ -129,6 +138,32 @@ export type QuotationDataDoc = Omit<ToSheetDataDoc, "items"> & {
   items: QuotationItemInput[];
   showItemPrices: boolean;
   showOptionPrices: boolean;
+  /** The document's region's own standard-terms figures (`Region.deliveryWeeks`
+   * and its three siblings) — the fallback for each of the four overrides
+   * below. A region is effectively its own company, with its own lead times
+   * and warranty, which is why these are not constants in this file any more. */
+  region: QuoteTermValues;
+  /** Per-quote overrides of the four figures above — `null` means inherit the
+   * region's. Delivery and warranty are negotiated per deal, so a quote may
+   * legitimately promise something other than its region's default (and `0`
+   * is one of the things it may promise — see `resolveQuoteTerms`). */
+  deliveryWeeks: number | null;
+  installationDays: number | null;
+  trainingDays: number | null;
+  warrantyMonths: number | null;
+  /** `DocumentExclusion.quoteDocumentKey` for this quote — the documents its
+   * author unticked. Keys, not ids, so an exclusion still means the same
+   * thing if the quote's region changes and a different `QuoteDocument` row
+   * becomes the resolved one. Empty is the common case. */
+  excludedDocumentKeys: string[];
+  /** `Document.documentsSnapshot` exactly as stored (an opaque `Json?` column
+   * written by `finalizeDocument`) — `unknown` for the same reason
+   * `entitySnapshot` is: Prisma gives no compile-time guarantee about its
+   * contents, so this module validates it at runtime (see
+   * `readDocumentsSnapshot`) and falls back to live text when it does not
+   * parse. `null` on a DRAFT and on any quote finalised before the column
+   * existed. */
+  documentsSnapshot: unknown;
   /** `Document.signatures` — at most one row per `SignerRole` (see the
    * `@@unique([documentId, role])` constraint on the `Signature` model).
    * Resolved into `QuotationData.signatures` below; an empty array (nobody
@@ -143,64 +178,89 @@ export type QuotationDataDoc = Omit<ToSheetDataDoc, "items"> & {
   }[];
 };
 
-/** A `ContentBlock` row exactly as stored — `regionId: null` is the global
- * default, a non-null `regionId` is a region-specific override sharing the
- * same `key` (enforced by the `@@unique([key, regionId])` constraint). */
-export type ContentBlockRow = {
+/** A `QuoteDocument` row exactly as stored — `regionId: null` is the global
+ * default, a non-null `regionId` is that region's own version of the same
+ * `key` (enforced by the `@@unique([key, regionId])` constraint). A row may
+ * exist for a region with NO global default at all: that is a region-only
+ * document, e.g. a Data Processing Agreement offered by an EU entity. */
+export type QuoteDocumentRow = {
   key: string;
   regionId: string | null;
-  title: string | null;
+  title: string;
   body: string;
   sortOrder: number;
+  includedByDefault: boolean;
 };
 
-// --- resolveBlocks -----------------------------------------------------------
-
-export type ResolvedContentBlock = {
-  key: string;
-  title: string | null;
-  body: string;
-  sortOrder: number;
-};
+// --- resolveQuoteDocuments ---------------------------------------------------
 
 /**
- * Reduces every `ContentBlock` row (defaults + every region's overrides —
- * see `getContentBlocksForRegion`) down to one row per key for `regionId`:
- * the region's own override when one exists, otherwise the global default.
- * Rows for a *different* region are ignored entirely (never shadow a
- * default some other region hasn't overridden). Implemented as two passes
- * — defaults first, then overrides for `regionId` — so an override always
- * wins regardless of array order.
+ * Reduces every `QuoteDocument` row visible to a region (defaults + every
+ * region's own versions — see `getQuoteDocumentsForRegion`) down to one row
+ * per key for `regionId`: that region's own version when one exists,
+ * otherwise the global default. Rows for a *different* region are ignored
+ * entirely (they must never shadow a default some other region has not
+ * replaced). Implemented as two passes — defaults first, then this region's
+ * — so a region version always wins regardless of array order.
+ *
+ * A key present ONLY in the second pass is not a mistake: a region-only
+ * document has no default to override, and the pass structure includes it
+ * for its own region and no other.
  */
-export function resolveBlocks(blocks: ContentBlockRow[], regionId: string): Map<string, ResolvedContentBlock> {
-  const resolved = new Map<string, ResolvedContentBlock>();
+export function resolveQuoteDocuments(rows: QuoteDocumentRow[], regionId: string): Map<string, QuoteDocumentRow> {
+  const resolved = new Map<string, QuoteDocumentRow>();
 
-  for (const block of blocks) {
-    if (block.regionId !== null) continue;
-    resolved.set(block.key, { key: block.key, title: block.title, body: block.body, sortOrder: block.sortOrder });
+  for (const row of rows) {
+    if (row.regionId !== null) continue;
+    resolved.set(row.key, row);
   }
 
-  for (const block of blocks) {
-    if (block.regionId !== regionId) continue;
-    resolved.set(block.key, { key: block.key, title: block.title, body: block.body, sortOrder: block.sortOrder });
+  for (const row of rows) {
+    if (row.regionId !== regionId) continue;
+    resolved.set(row.key, row);
   }
 
   return resolved;
 }
 
-// --- RSP coverage --------------------------------------------------------
+// --- documentsSnapshot -------------------------------------------------------
 
 /**
- * The product kinds the RSP coverage table lists even before a serial
- * number is recorded — see `buildQuotationData`'s `coverageRows`. A cutting
- * machine (M / X / L series) and a whole system (the LNS camera nesting
- * system) are what the remote support program covers; a table, feeder,
- * spreader, software licence or service only appears there once it has a
- * serial number of its own. Distinct from `seriesQuoteDescription`, which
- * answers "what prose describes this product's category", not "is this a
- * machine at all".
+ * What `finalizeDocument` freezes onto `Document.documentsSnapshot`: every
+ * rendered document body and every item's category copy, with placeholders
+ * already substituted. Fixing a typo in General Conditions must not rewrite
+ * the PDF of a quote signed three months ago.
+ *
+ * `version` is a literal `1` so a future shape can be told apart from this
+ * one by parsing rather than by guessing, and an older writer's blob simply
+ * fails to parse here instead of being half-read.
  */
-const RSP_COVERED_KINDS: ReadonlySet<ProductKind> = new Set<ProductKind>(["MACHINE", "SYSTEM"]);
+const documentsSnapshotSchema = z
+  .object({
+    version: z.literal(1),
+    documents: z.array(z.object({ key: z.string(), title: z.string(), bodyHtml: z.string() })),
+    /** `DocumentItem.id` -> that item's frozen category copy. An item with no
+     * copy at the time of finalising simply has no entry, which is why a
+     * missing key falls back to live rather than printing nothing. */
+    itemCopyHtml: z.record(z.string(), z.string()),
+  })
+  .strict();
+
+export type DocumentsSnapshot = z.infer<typeof documentsSnapshotSchema>;
+
+/**
+ * Reads `Document.documentsSnapshot` defensively: a null column, a blob from
+ * an older version of this app, or a hand-edited one that fails validation
+ * all read as "no snapshot" so the caller falls back to live text. Same
+ * treatment `readProductSpecs` gives `Product.specs` and `parseEntitySnapshot`
+ * gives `entitySnapshot` — a malformed snapshot must never throw inside the
+ * render of a customer-facing quote.
+ */
+export function readDocumentsSnapshot(raw: unknown): DocumentsSnapshot | null {
+  if (raw === null || raw === undefined) return null;
+  const parsed = documentsSnapshotSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
 
 // --- substitutePlaceholders ------------------------------------------------
 
@@ -533,17 +593,11 @@ export type QuotationBaseRow = {
   price: string | null;
 };
 
-export type QuotationBlockSection = {
-  key: string;
-  title: string | null;
-  bodyHtml: string;
-};
-
-export type QuotationRspRow = {
-  name: string;
-  serialNumber: string;
-  rspUnitCost: string;
-};
+/** One whole legal document as it prints: its own authored heading and one
+ * body of already-substituted, already-sanitized HTML. The shape the
+ * `documentsSnapshot` stores too, so what a FINAL quote replays is exactly
+ * what its preview showed. */
+export type QuotationDocumentSection = { key: string; title: string; bodyHtml: string };
 
 /**
  * One token that cost its line, and enough about where it happened for a
@@ -603,17 +657,13 @@ export type QuotationData = {
   items: QuotationItemRow[];
   extraLines: DocSheetLine[];
   totals: DocSheetTotals;
-  /** `terms.*` blocks, sorted by `sortOrder` (matches seed order: delivery,
-   * installation, schedule, customer-responsibilities, warranty, rsp,
-   * payment). */
-  termsSections: QuotationBlockSection[];
-  /** `conditions.1`..`conditions.14`, sorted by `sortOrder` — never by key
-   * text, which would sort "conditions.10" before "conditions.2". */
-  conditionsSections: QuotationBlockSection[];
-  rsp: {
-    agreementHtml: string | null;
-    coverageRows: QuotationRspRow[];
-  };
+  /** Every legal document this quote includes, in the print order an admin
+   * set (`QuoteDocument.sortOrder`) — Terms, General Conditions of Sale, the
+   * RSP agreement, and whatever a region adds later. One ordered list where
+   * there used to be three hardcoded fields, so adding a document is a row
+   * rather than a code change. A FINAL quote's list comes from its
+   * `documentsSnapshot` when that parses; everything else renders live. */
+  documents: QuotationDocumentSection[];
   showSignature: boolean;
   /** Pass-through of `QuotationDataDoc`'s toggles for `QuotationSheet` to
    * gate the investment summary's per-item/per-option amount columns —
@@ -707,37 +757,28 @@ function tableLengthM(lines: QuotationLineInput[]): number {
   return metres;
 }
 
-function collectByPrefix(
-  resolved: Map<string, ResolvedContentBlock>,
-  prefix: string,
-  vars: PlaceholderVars
-): QuotationBlockSection[] {
-  return Array.from(resolved.values())
-    .filter((block) => block.key === prefix || block.key.startsWith(`${prefix}.`))
-    .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map((block) => ({
-      key: block.key,
-      title: block.title,
-      bodyHtml: renderStoredRichText(substitutePlaceholders(block.body, vars)),
-    }));
-}
-
 /**
  * Assembles `QuotationData` from a loaded QUOTE document (`doc`) and the
- * full set of `ContentBlock` rows visible to its region (`blocks` — pass
- * `getContentBlocksForRegion(doc.regionId)`'s result). `opts.resolveImage`
+ * full set of `QuoteDocument` rows visible to its region (`documents` — pass
+ * `getQuoteDocumentsForRegion(doc.regionId)`'s result). `opts.resolveImage`
  * behaves exactly like `toSheetData`'s (identity for the in-app preview,
  * `fileImageResolver` for the PDF pipeline — Gotenberg's headless Chromium
  * can't hit an auth-gated `/api/files/...` URL).
  */
 export function buildQuotationData(
   doc: QuotationDataDoc,
-  blocks: ContentBlockRow[],
+  documents: QuoteDocumentRow[],
   opts: BuildQuotationDataOpts = {}
 ): QuotationData {
   const resolveImage = opts.resolveImage ?? identityResolver;
   const sheet: DocSheetData = toSheetData(doc, resolveImage);
-  const resolved = resolveBlocks(blocks, doc.regionId);
+
+  // What this quote froze when it went FINAL, or `null` for a DRAFT and for
+  // anything that fails to parse (see `readDocumentsSnapshot`). Read once,
+  // up here, because it answers two separate questions below: which document
+  // bodies to print, and which items' category copy is already fixed.
+  const snapshot = readDocumentsSnapshot(doc.documentsSnapshot);
+  const snapshotItemCopy = snapshot?.itemCopyHtml ?? {};
 
   const sheetItemsById = new Map(sheet.items.map((item) => [item.id, item]));
 
@@ -844,8 +885,17 @@ export function buildQuotationData(
     };
 
     const categoryCopy = item.seriesQuoteDescription ?? "";
+    // What this item's copy froze as, when the quote went FINAL with a
+    // snapshot that has an entry for it. Per item, not per quote: an item
+    // added to a snapshot written before it existed — or one whose category
+    // had no copy then — has no entry here and renders live, which is a
+    // sentence more than the alternative of printing nothing for it.
+    const frozenCopy = snapshotItemCopy[item.id];
     const copyReport = categoryCopy ? substituteWithReport(categoryCopy, vars) : { text: "", stripped: [] };
-    for (const token of copyReport.stripped) {
+    // A frozen body was substituted once, on the day it was signed; nothing
+    // was stripped from it now, so nothing is reported now either (the draft
+    // banner these feed is a DRAFT-only affordance regardless).
+    for (const token of frozenCopy !== undefined ? [] : copyReport.stripped) {
       const alreadyReported = strippedTokens.some(
         (reported) =>
           reported.token === token && reported.itemName === item.name && reported.seriesId === item.seriesId
@@ -858,7 +908,17 @@ export function buildQuotationData(
         seriesId: item.seriesId,
       });
     }
-    const titleBlockHtml = copyReport.text ? renderStoredRichText(copyReport.text) : null;
+    // Re-sanitized on the way out even though `finalizeDocument` wrote it
+    // already rendered: `documentsSnapshot` is an opaque `Json?` column, and
+    // every read of stored markup in this app goes through the same seam.
+    const titleBlockHtml =
+      frozenCopy !== undefined
+        ? frozenCopy
+          ? renderStoredRichText(frozenCopy)
+          : null
+        : copyReport.text
+          ? renderStoredRichText(copyReport.text)
+          : null;
 
     // Structural section price — the same figure substituted into `vars.price`
     // above, exposed separately so the sheet prints it under EVERY section
@@ -962,39 +1022,76 @@ export function buildQuotationData(
     };
   });
 
-  // `terms.*` blocks reference these standard-terms figures — auto-filled
-  // from the original Word template's own defaults (owner: fields must fill
-  // themselves in, never leave a "____" blank for something this
-  // predictable) rather than left to line-strip as genuinely unresolved.
-  // Any of these a future region/override actually wants to vary can simply
-  // stop matching the token; there's no per-region source for them today.
-  const globalVars: PlaceholderVars = {
-    deliveryWeeks: "14",
-    installationDays: "2",
-    trainingDays: "3",
-    warrantyMonths: "12",
+  // The four standard-terms figures a legal document quotes back at the
+  // customer: this quote's own where it sets one, its region's otherwise.
+  // They were string literals in this file until now — "14 weeks" was
+  // promised to every customer in every region whatever the salesperson had
+  // agreed, which for delivery and warranty is a commitment nobody made.
+  const terms = resolveQuoteTerms(
+    {
+      deliveryWeeks: doc.deliveryWeeks,
+      installationDays: doc.installationDays,
+      trainingDays: doc.trainingDays,
+      warrantyMonths: doc.warrantyMonths,
+    },
+    doc.region
+  );
+
+  // The document scope's vars, typed exhaustively over `DocumentTokenName`
+  // for exactly the reason the category scope's `vars` above is typed over
+  // `CategoryTokenName`: the registry (src/lib/quote-variables.ts) is what
+  // the document editor's palette offers and its save validator accepts, so
+  // a token declared there with no value here would be offered, saved, and
+  // then silently delete its own line on every quote. Adding a name to
+  // `DOCUMENT_TOKEN_NAMES` now fails to compile until a value appears here.
+  //
+  // The last three come from the `sheet` object `toSheetData` already
+  // returned rather than being re-derived — one date format, one number, one
+  // client name on this page.
+  const documentVars: Record<DocumentTokenName, string | typeof OMIT> = {
+    deliveryWeeks: String(terms.deliveryWeeks),
+    installationDays: String(terms.installationDays),
+    trainingDays: String(terms.trainingDays),
+    warrantyMonths: String(terms.warrantyMonths),
     bankDetails: formatBankDetails(sheet.entity.bankDetails),
+    validityDate: sheet.validityDate ?? "",
+    quoteNumber: sheet.number ?? "",
+    clientName: sheet.client?.companyName ?? "",
   };
 
-  const termsSections = collectByPrefix(resolved, "terms", globalVars);
-  const conditionsSections = collectByPrefix(resolved, "conditions", globalVars);
-
-  const rspAgreement = resolved.get("rsp.agreement");
-  const agreementHtml = rspAgreement
-    ? renderStoredRichText(substitutePlaceholders(rspAgreement.body, globalVars))
-    : null;
-
-  const coverageRows: QuotationRspRow[] = doc.items
-    .filter((item) => RSP_COVERED_KINDS.has(item.kind) || Boolean(item.serialNumber))
-    .map((item) => ({
-      name: item.name,
-      serialNumber: item.serialNumber ?? "",
-      // Not a markdown line `substitutePlaceholders`'s line-strip rule can
-      // apply to — this is a plain table cell (see quotation-sheet.tsx's
-      // `.pq-rsp-table`), so an as-yet-unpriced row reads "TBA" rather than
-      // the retired "____" blank marker.
-      rspUnitCost: "TBA",
+  // Selection, in this order: resolve each key to the row this region should
+  // print → drop the documents nobody opted into → drop the ones this quote
+  // unticked → order by the print order an admin set.
+  //
+  // `includedByDefault: false` is a document a quote must ask for, and the
+  // only per-quote channel that exists today is exclusion (`DocumentExclusion`
+  // stores what was unticked, never what was ticked) — so such a document is
+  // dropped here unconditionally. Every seeded document is `true`; the
+  // builder panel would need an inclusion list of its own before an optional
+  // one could be turned on, which is not something this renderer can invent.
+  const excluded = new Set(doc.excludedDocumentKeys);
+  const liveDocuments: QuotationDocumentSection[] = Array.from(
+    resolveQuoteDocuments(documents, doc.regionId).values()
+  )
+    .filter((row) => row.includedByDefault && !excluded.has(row.key))
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((row) => ({
+      key: row.key,
+      title: row.title,
+      bodyHtml: renderStoredRichText(substitutePlaceholders(row.body, documentVars)),
     }));
+
+  // A quote that froze its documents prints what it froze. Re-sanitized on
+  // the way out for the same reason an item's frozen copy is — the column is
+  // opaque `Json?`, and a snapshot that fails to parse at all has already
+  // fallen back to `liveDocuments` above rather than throwing here.
+  const printedDocuments: QuotationDocumentSection[] = snapshot
+    ? snapshot.documents.map((frozen) => ({
+        key: frozen.key,
+        title: frozen.title,
+        bodyHtml: renderStoredRichText(frozen.bodyHtml),
+      }))
+    : liveDocuments;
 
   const notesHtml = doc.notes ? renderStoredRichText(doc.notes) : null;
 
@@ -1047,9 +1144,7 @@ export function buildQuotationData(
     })),
     extraLines: sheet.extraLines,
     totals: sheet.totals,
-    termsSections,
-    conditionsSections,
-    rsp: { agreementHtml, coverageRows },
+    documents: printedDocuments,
     showSignature: sheet.showSignature,
     showItemPrices: doc.showItemPrices,
     showOptionPrices: doc.showOptionPrices,
