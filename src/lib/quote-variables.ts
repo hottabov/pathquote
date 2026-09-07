@@ -35,6 +35,7 @@ export const CATEGORY_TOKEN_NAMES = [
   "cutHeightCm",
   "cutWidthCm",
   "tableWidthMm",
+  "tableLengthM",
   "paperWidthMm",
   "specSentence",
 ] as const;
@@ -58,6 +59,15 @@ export type CategorySpecPresence = {
   tableWidthMm: boolean;
   paperWidthMm: boolean;
   hasMachine: boolean;
+  /** Whether any product in this category is a table someone lays out —
+   * `Product.kind === "TABLE"`, which is what an EasyLoader is. Unlike every
+   * other flag here it gates a token whose value is not read off
+   * `Product.specs` at all but summed from the item's own option lines (see
+   * `tableLengthM` in quotation-data.ts), so the question it answers is "can a
+   * product of this category carry a layout", not "does a product carry a
+   * figure". An individual item with no modules configured still resolves the
+   * token to `""` and loses its line, which the draft banner reports. */
+  hasTableLayout: boolean;
 };
 
 /** What each token means, in the author's terms rather than the column's.
@@ -71,6 +81,7 @@ const TOKEN_SOURCES: Record<CategoryTokenName, string> = {
   cutHeightCm: "Compressed lay height in cm, from the product's specs",
   cutWidthCm: "Cutting or spreading width in cm, from the product's specs",
   tableWidthMm: "Table width in mm, from the product's specs",
+  tableLengthM: "Total table length, added up from the EasyLoader's 1.2 m modules",
   paperWidthMm: "Paper width in mm, from the product's specs",
   specSentence: "A generated sentence naming the machine and its cutting figures",
 };
@@ -82,6 +93,7 @@ const TOKEN_REQUIRES: Partial<Record<CategoryTokenName, keyof CategorySpecPresen
   cutHeightCm: "cutHeightCm",
   cutWidthCm: "cutWidthCm",
   tableWidthMm: "tableWidthMm",
+  tableLengthM: "hasTableLayout",
   paperWidthMm: "paperWidthMm",
   specSentence: "hasMachine",
 };
@@ -145,6 +157,7 @@ export function categorySpecPresence(
     tableWidthMm: false,
     paperWidthMm: false,
     hasMachine: false,
+    hasTableLayout: false,
   };
   for (const product of products) {
     const specs = readProductSpecs(product.specs);
@@ -153,6 +166,10 @@ export function categorySpecPresence(
     if (specs.tableWidthMm !== undefined) presence.tableWidthMm = true;
     if (specs.paperWidthMm !== undefined) presence.paperWidthMm = true;
     if (product.kind === "MACHINE") presence.hasMachine = true;
+    // `"TABLE"` is what an EasyLoader is — the only product a layout, and so
+    // a `{{tableLengthM}}`, can belong to. Compared against the literal for
+    // the same reason `"MACHINE"` is: this module carries no Prisma types.
+    if (product.kind === "TABLE") presence.hasTableLayout = true;
   }
   return presence;
 }

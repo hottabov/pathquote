@@ -10,6 +10,7 @@ import {
   type QuotationItemInput,
 } from "../src/lib/quotation-data";
 import { CATEGORY_TOKENS } from "../src/lib/quote-variables";
+import type { OptionRole } from "@prisma/client";
 // The downstream repair `htmlBlockLines`'s doc comment relies on — see the
 // nested-list test below.
 import { renderStoredRichText } from "../src/lib/rich-text";
@@ -650,7 +651,8 @@ describe("category quote copy", () => {
     // delete its own line on every quote — which is exactly how `{{name}}`
     // shipped broken. This item is a MACHINE carrying every spec, so every
     // token in the registry is in scope for it and none has an excuse to
-    // strip.
+    // strip. It also carries a table module line, since `{{tableLengthM}}`
+    // is filled from the item's own option lines rather than from its specs.
     const doc = quotationDoc({
       showItemPrices: true,
       items: [
@@ -659,6 +661,21 @@ describe("category quote copy", () => {
           seriesName: "M-Series",
           specs: { cutHeightCm: 18, cutWidthCm: 180, tableWidthMm: 2200, paperWidthMm: 1600 },
           seriesQuoteDescription: CATEGORY_TOKENS.map((t) => `<p>${t.token}={{${t.token}}}</p>`).join(""),
+          lines: [
+            {
+              id: "line-1",
+              kind: "OPTION",
+              code: null,
+              name: "Drive Module",
+              description: null,
+              qty: 1,
+              unitPrice: "4050.00",
+              attributes: null,
+              imageUrl: null,
+              role: "EL_DRIVE",
+              unitLengthM: 1.2,
+            },
+          ],
         }),
       ],
     });
@@ -689,6 +706,130 @@ describe("category quote copy", () => {
   });
 });
 
+// --- {{tableLengthM}} -------------------------------------------------------
+//
+// The one COMPUTED token: not read off `Product.specs` like every other
+// figure, but summed from the item's own EasyLoader module option lines. An
+// EasyLoader is built from 1.2m modules (SECTION_UNIT_M), each sold as an
+// option carrying `Option.unitLengthM`, so the table's length is a property
+// of how this item was configured rather than of the product it came from.
+describe("{{tableLengthM}}", () => {
+  /** One EasyLoader module option line. `unitLengthM` is 1.2 unless a test
+   * says otherwise, because that is what every module in the catalog is. */
+  const moduleLine = (
+    id: string,
+    role: OptionRole,
+    qty: number,
+    unitLengthM: number | null = 1.2
+  ): QuotationItemInput["lines"][number] => ({
+    id,
+    kind: "OPTION",
+    code: null,
+    name: `${role} module`,
+    description: null,
+    qty,
+    unitPrice: "1000.00",
+    attributes: null,
+    imageUrl: null,
+    role,
+    unitLengthM,
+  });
+
+  /** An EasyLoader item whose category copy prints nothing but the length. */
+  const easyLoader = (lines: QuotationItemInput["lines"]) =>
+    quotationItem({
+      code: "EL-2020",
+      name: "EasyLoader 2020",
+      kind: "TABLE",
+      seriesName: "EasyLoader",
+      seriesId: "series-el",
+      specs: { tableWidthMm: 2020 },
+      seriesQuoteDescription: "<p>Conveyorised Spreading Table ({{tableLengthM}})</p>",
+      lines,
+    });
+
+  it("sums drive, conveyor and static modules into one length", () => {
+    // 1 drive + 3 conveyor + 2 static = 6 modules x 1.2m = 7.2m. Note the
+    // naive 1.2 * 6 in binary floating point is 7.199999999999999 — the
+    // formatter is what makes this read as a measurement.
+    const doc = quotationDoc({
+      items: [
+        easyLoader([
+          moduleLine("l-drive", "EL_DRIVE", 1),
+          moduleLine("l-conv", "EL_CONVEYOR", 3),
+          moduleLine("l-static", "EL_STATIC", 2),
+        ]),
+      ],
+    });
+    const data = buildQuotationData(doc, []);
+    expect(data.machineSections[0].titleBlockHtml).toContain("Conveyorised Spreading Table (7.2 m)");
+    expect(data.strippedTokens).toEqual([]);
+  });
+
+  it("ignores busbar and rail, which run the table's whole length rather than adding to it", () => {
+    // One busbar and one rail per module, for every module — so counting them
+    // would report a 7.2m table as roughly 21.6m.
+    const modules = [
+      moduleLine("l-drive", "EL_DRIVE", 1),
+      moduleLine("l-conv", "EL_CONVEYOR", 3),
+      moduleLine("l-static", "EL_STATIC", 2),
+    ];
+    const withoutRunners = buildQuotationData(quotationDoc({ items: [easyLoader(modules)] }), []);
+    const withRunners = buildQuotationData(
+      quotationDoc({
+        items: [
+          easyLoader([...modules, moduleLine("l-bus", "EL_BUSBAR", 6), moduleLine("l-rail", "EL_RAIL", 6)]),
+        ],
+      }),
+      []
+    );
+    expect(withRunners.machineSections[0].titleBlockHtml).toBe(
+      withoutRunners.machineSections[0].titleBlockHtml
+    );
+    expect(withRunners.machineSections[0].titleBlockHtml).toContain("(7.2 m)");
+  });
+
+  it("drops the trailing zero on a whole number of metres", () => {
+    const doc = quotationDoc({ items: [easyLoader([moduleLine("l-static", "EL_STATIC", 5)])] });
+    // 5 x 1.2 = 6, printed "6 m" — "6.0 m" reads like a measurement someone
+    // took rather than a count of sections.
+    expect(buildQuotationData(doc, []).machineSections[0].titleBlockHtml).toContain("(6 m)");
+  });
+
+  it("ignores a non-module option line, however long it is", () => {
+    // The MTS carries a `unitLengthM` too (additional travel), and is not
+    // table the customer stands at.
+    const doc = quotationDoc({
+      items: [easyLoader([moduleLine("l-drive", "EL_DRIVE", 1), moduleLine("l-mts", "MTS_TRAVEL", 10)])],
+    });
+    expect(buildQuotationData(doc, []).machineSections[0].titleBlockHtml).toContain("(1.2 m)");
+  });
+
+  it("strips the line and reports the token for an item with no table modules", () => {
+    // A category offering the token has products that CAN carry a layout;
+    // this individual item has none configured, so there is no length to
+    // print. Correct behaviour, and the draft banner says so.
+    const doc = quotationDoc({ items: [easyLoader([])] });
+    const data = buildQuotationData(doc, []);
+    expect(data.machineSections[0].titleBlockHtml).toBeNull();
+    expect(data.strippedTokens).toEqual([
+      { token: "tableLengthM", itemName: "EasyLoader 2020", seriesName: "EasyLoader", seriesId: "series-el" },
+    ]);
+  });
+
+  it("reports the token when the only module lines carry no unit length", () => {
+    // A module option whose `unitLengthM` was never set contributes nothing,
+    // and an item whose every module is like that has no length at all —
+    // reported rather than printed as "0 m".
+    const doc = quotationDoc({
+      items: [easyLoader([moduleLine("l-drive", "EL_DRIVE", 1, null)])],
+    });
+    const data = buildQuotationData(doc, []);
+    expect(data.machineSections[0].titleBlockHtml).toBeNull();
+    expect(data.strippedTokens.map((s) => s.token)).toEqual(["tableLengthM"]);
+  });
+});
+
 describe("option rows", () => {
   it("describes an option from its own snapshot description", () => {
     const doc = quotationDoc({
@@ -698,6 +839,8 @@ describe("option rows", () => {
             {
               id: "l-1",
               kind: "OPTION",
+              role: null,
+              unitLengthM: null,
               code: "MTS",
               name: "Motorised Table System",
               description: "Adds a motorised transfer table.",
@@ -864,6 +1007,8 @@ describe("buildQuotationData", () => {
             {
               id: "line-1",
               kind: "OPTION",
+              role: null,
+              unitLengthM: null,
               code: "MTS",
               name: "Machine Transfer System",
               description: "Travels the machine between tables.",
@@ -875,6 +1020,8 @@ describe("buildQuotationData", () => {
             {
               id: "line-2",
               kind: "OPTION",
+              role: null,
+              unitLengthM: null,
               code: "ZZZ-NOPE",
               name: "Unknown option",
               description: null,
@@ -913,6 +1060,8 @@ describe("buildQuotationData", () => {
             {
               id: "line-1",
               kind: "OPTION",
+              role: null,
+              unitLengthM: null,
               code: "MTS",
               name: "Machine Transfer System",
               description: "Travels the machine between tables.",
@@ -924,6 +1073,8 @@ describe("buildQuotationData", () => {
             {
               id: "line-2",
               kind: "OPTION",
+              role: null,
+              unitLengthM: null,
               code: "UNDESCRIBED-1",
               name: "First undescribed option",
               description: null,
@@ -935,6 +1086,8 @@ describe("buildQuotationData", () => {
             {
               id: "line-3",
               kind: "OPTION",
+              role: null,
+              unitLengthM: null,
               code: null,
               name: "Second undescribed option",
               description: null,
@@ -985,6 +1138,8 @@ describe("buildQuotationData", () => {
             {
               id: "line-1",
               kind: "OPTION",
+              role: null,
+              unitLengthM: null,
               code: "UNDESCRIBED",
               name: "Undescribed option",
               description: null,
@@ -1009,6 +1164,8 @@ describe("buildQuotationData", () => {
             {
               id: "line-1",
               kind: "OPTION",
+              role: null,
+              unitLengthM: null,
               code: "MTS",
               name: "Machine Transfer System",
               description: "Travels the machine between tables.",
@@ -1251,6 +1408,8 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
             {
               id: "line-1",
               kind: "OPTION",
+              role: null,
+              unitLengthM: null,
               code: "MTS",
               name: "Machine Transfer System",
               description: null,
@@ -1277,6 +1436,8 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
             {
               id: "line-1",
               kind: "OPTION",
+              role: null,
+              unitLengthM: null,
               code: "MTS",
               name: "Machine Transfer System",
               description: null,
@@ -1306,6 +1467,8 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
             {
               id: "line-1",
               kind: "OPTION",
+              role: null,
+              unitLengthM: null,
               code: "ABR-M",
               name: "Automatic Blade Replacement",
               description: "Automatic blade replacement.",
@@ -1317,6 +1480,8 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
             {
               id: "line-2",
               kind: "OPTION",
+              role: null,
+              unitLengthM: null,
               code: "MTS",
               name: "Machine Transfer System",
               description: "Travels the machine between tables.",
@@ -1345,6 +1510,8 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
             {
               id: "line-1",
               kind: "OPTION",
+              role: null,
+              unitLengthM: null,
               code: "ZZZ-NOPE",
               name: "ZZZ-NOPE",
               description: null,
@@ -1369,6 +1536,8 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
             {
               id: "line-1",
               kind: "OPTION",
+              role: null,
+              unitLengthM: null,
               code: "UNMATCHED",
               name: "Unmatched option",
               description: "A short freeform description",
@@ -1393,6 +1562,8 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
             {
               id: "line-1",
               kind: "OPTION",
+              role: null,
+              unitLengthM: null,
               code: "UNMATCHED",
               name: "Unmatched option",
               description: "Unmatched option", // identical to name -> deduped away
@@ -1417,6 +1588,8 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
             {
               id: "line-1",
               kind: "OPTION",
+              role: null,
+              unitLengthM: null,
               code: "MTS",
               name: "Machine Transfer System",
               description: null,
@@ -1428,6 +1601,8 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
             {
               id: "line-2",
               kind: "OPTION",
+              role: null,
+              unitLengthM: null,
               code: "UNMATCHED",
               name: "Unmatched option",
               description: null,
@@ -1450,6 +1625,8 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
     const line: QuotationItemInput["lines"][number] = {
       id: "line-1",
       kind: "OPTION",
+      role: null,
+      unitLengthM: null,
       code: "MTS",
       name: "Machine Transfer System",
       description: null,
@@ -1489,6 +1666,8 @@ describe("buildQuotationData — baseRow for a product with no price of its own"
   const driveModule = {
     id: "line-1",
     kind: "OPTION" as const,
+    role: null,
+    unitLengthM: null,
     code: "EL-2020 Drive Module (first 1.2M)",
     name: "Drive Module",
     description: null,

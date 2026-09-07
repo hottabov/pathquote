@@ -16,6 +16,7 @@ const noSpecs: CategorySpecPresence = {
   tableWidthMm: false,
   paperWidthMm: false,
   hasMachine: false,
+  hasTableLayout: false,
 };
 
 describe("tokensIn", () => {
@@ -53,6 +54,21 @@ describe("categoryTokensFor", () => {
   it("offers specSentence only for a category containing a cutting machine", () => {
     expect(categoryTokensFor(noSpecs).map((t) => t.token)).not.toContain("specSentence");
     expect(categoryTokensFor({ ...noSpecs, hasMachine: true }).map((t) => t.token)).toContain("specSentence");
+  });
+
+  it("offers tableLengthM only for a category containing a table product", () => {
+    // The scope rule for the one COMPUTED token: its figure is summed from
+    // the item's own EasyLoader module option lines, so only a category whose
+    // products can carry a layout at all has any business referencing it.
+    expect(categoryTokensFor(noSpecs).map((t) => t.token)).not.toContain("tableLengthM");
+    expect(categoryTokensFor({ ...noSpecs, hasTableLayout: true }).map((t) => t.token)).toContain("tableLengthM");
+  });
+
+  it("does not offer tableLengthM to a category that merely records a table WIDTH", () => {
+    // `tableWidthMm` is a spec on the product; `tableLengthM` is a property of
+    // how the item was configured. A Punchline-style product carrying a width
+    // is not a table someone builds out of 1.2m modules.
+    expect(categoryTokensFor({ ...noSpecs, tableWidthMm: true }).map((t) => t.token)).not.toContain("tableLengthM");
   });
 
   it("gives every offered token a source description for the editor", () => {
@@ -103,6 +119,7 @@ describe("CATEGORY_TOKENS", () => {
       "cutHeightCm",
       "cutWidthCm",
       "tableWidthMm",
+      "tableLengthM",
       "paperWidthMm",
       "specSentence",
     ]);
@@ -130,6 +147,11 @@ describe("categorySpecPresence", () => {
   it("sets hasMachine for a product of kind MACHINE", () => {
     expect(categorySpecPresence([{ specs: {}, kind: "MACHINE" }]).hasMachine).toBe(true);
     expect(categorySpecPresence([{ specs: {}, kind: "TABLE" }]).hasMachine).toBe(false);
+  });
+
+  it("sets hasTableLayout for a product of kind TABLE (an EasyLoader)", () => {
+    expect(categorySpecPresence([{ specs: {}, kind: "TABLE" }]).hasTableLayout).toBe(true);
+    expect(categorySpecPresence([{ specs: {}, kind: "MACHINE" }]).hasTableLayout).toBe(false);
   });
 
   it("tolerates unparseable specs, contributing nothing", () => {

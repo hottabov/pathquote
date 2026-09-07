@@ -12,9 +12,13 @@
 // importing the other, as long as `DocumentForBuilder`'s items carry the
 // extra fields (`kind`, `specs`, `seriesQuoteDescription`, `seriesName`,
 // `seriesId`, `serialNumber`) this module needs.
-import type { ProductKind } from "@prisma/client";
+import type { OptionRole, ProductKind } from "@prisma/client";
 import { formatMoney } from "./format";
 import { machineSpecSentence, extraSpecVars } from "./machine-specs";
+// The one formatter for a metre total ("4.8 m", "6 m") — see its doc comment;
+// it exists for exactly this, and the options editor already prints the same
+// running total beside a module's quantity stepper. Pure, no imports at all.
+import { formatMetres } from "./option-length";
 import { renderStoredRichText } from "./rich-text";
 // The client-safe half of the rich-text seam (no `isomorphic-dompurify`, no
 // `next/*`, no `@/lib/db`) — this module already reaches it transitively
@@ -67,6 +71,18 @@ export type QuotationLineInput = ToSheetLineInput & {
    * or an OPTION with no catalog image — the unified options table (see
    * `QuotationOptionRow.icon`) simply renders no icon cell content then. */
   imageUrl: string | null;
+  /** The line's option's `Option.role`, resolved live by `refId` exactly as
+   * `imageUrl` above is (see `getDocumentForBuilder`'s `optionRowMap`). What
+   * tells an EasyLoader's table modules apart from every other option on the
+   * item, and so what `tableLengthM` below sums over. `null` for a line with
+   * no `refId`, an option with no role, or any non-OPTION line. */
+  role: OptionRole | null;
+  /** The line's option's `Option.unitLengthM` — the metres one unit of this
+   * option adds (1.2 for an EasyLoader module, 1 for a metre of MTS travel).
+   * Resolved live alongside `role`, and converted from Prisma's `Decimal` at
+   * the query boundary the way every other decimal in `DocumentForBuilder`
+   * is. `null` for an option sold by the piece, which is most of them. */
+  unitLengthM: number | null;
 };
 
 export type QuotationItemInput = ToSheetItemInput & {
@@ -615,6 +631,51 @@ function attributesLine(attributes: Record<string, string | number> | null): str
   return entries.map(([key, value]) => `${key}: ${value}`).join(" · ");
 }
 
+/**
+ * The option roles whose lengths ADD UP to the length of the table itself.
+ *
+ * `EL_BUSBAR` and `EL_RAIL` are deliberately out. They are the other two of
+ * the five roles in `EL_MODULE_ROLE_LIST` (src/lib/production-forms/
+ * table-sections.ts), and a FabricPro-compatible layout adds one of each per
+ * module — so they run ALONGSIDE the table for its whole length rather than
+ * extending it, and counting them would report a 7.2m table as roughly 21.6m.
+ * That is why this set is declared here rather than reusing
+ * `EL_MODULE_ROLE_LIST`: that constant answers "is this a module the layout
+ * owns", which is a different question with a different answer.
+ */
+const TABLE_LENGTH_ROLES: ReadonlySet<OptionRole> = new Set<OptionRole>([
+  "EL_DRIVE",
+  "EL_CONVEYOR",
+  "EL_STATIC",
+]);
+
+/**
+ * How many metres of table an item's own option lines add up to — the value
+ * behind `{{tableLengthM}}`.
+ *
+ * The length is not a property of the product: `Product.specs` records an
+ * EasyLoader's WIDTH, but its length is a consequence of how this particular
+ * item was configured. An EasyLoader is built from 1.2m modules
+ * (`SECTION_UNIT_M`), each sold as an option carrying `Option.unitLengthM`,
+ * so the figure is the sum over the item's table-module lines of
+ * `unitLengthM * qty`.
+ *
+ * `0` for an item with no table modules — which the caller turns into `""`,
+ * the same "no value" `substituteWithReport` strips a line for. That is
+ * correct rather than a defect: a category offering the token has products
+ * that CAN carry a layout, and an individual item may simply have none.
+ */
+function tableLengthM(lines: QuotationLineInput[]): number {
+  let metres = 0;
+  for (const line of lines) {
+    if (line.kind !== "OPTION") continue;
+    if (line.role === null || !TABLE_LENGTH_ROLES.has(line.role)) continue;
+    if (line.unitLengthM === null) continue;
+    metres += line.unitLengthM * line.qty;
+  }
+  return metres;
+}
+
 function collectByPrefix(
   resolved: Map<string, ResolvedContentBlock>,
   prefix: string,
@@ -693,6 +754,9 @@ export function buildQuotationData(
     // equipment with a width but no cutting spec. Each missing one becomes
     // `""` in `vars` below, which line-strips exactly as an absent key did.
     const extraSpecs = extraSpecVars(specs);
+    // Metres of table this item's own option lines add up to — see
+    // `tableLengthM`. Computed once here, formatted into `vars` below.
+    const itemTableLengthM = tableLengthM(item.lines);
 
     // The placeholder vars the category's copy resolves against — this
     // product's own figures, so one text authored per category reads
@@ -722,6 +786,11 @@ export function buildQuotationData(
       // `{{tableWidthMm}}` / `{{paperWidthMm}}` for the equipment that has
       // a width but no cutting spec (EasyLoader, Punchline).
       tableWidthMm: extraSpecs.tableWidthMm ?? "",
+      // The one COMPUTED token: summed from this item's own table-module
+      // option lines rather than read off its product (see `tableLengthM`).
+      // A zero sum is `""`, so an item with no layout configured loses the
+      // line and reports the token, exactly as a missing spec figure does.
+      tableLengthM: itemTableLengthM > 0 ? formatMetres(itemTableLengthM) : "",
       paperWidthMm: extraSpecs.paperWidthMm ?? "",
       // The item's own TOTAL — qty * unit price plus every attached option,
       // exactly the figure `lineSummary.total` already carries from the

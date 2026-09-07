@@ -81,6 +81,15 @@ export type BuilderLine = {
    * the manager's own picks. `null` for a line with no `refId`, an option
    * with no role, or any non-OPTION line. */
   role: OptionRole | null;
+  /** For an OPTION line: `Option.unitLengthM` — the metres one unit of this
+   * option adds (1.2 for an EasyLoader module, 1 for a metre of MTS travel),
+   * resolved by `refId` the same live way `role` above is. Converted from
+   * Prisma's `Decimal` here at the query boundary, same as every other
+   * decimal on this type. Feeds `QuotationLineInput.unitLengthM`, which the
+   * quotation's `{{tableLengthM}}` token sums over. `null` for an option sold
+   * by the piece (most of them), a line with no `refId`, or a non-OPTION
+   * line. */
+  unitLengthM: number | null;
   /** For an OPTION line: `Option.imageUrl`, resolved by `refId` against the
    * catalog (see `getDocumentForBuilder`'s `optionImageMap`) — not a
    * snapshot column on `DocumentLine` itself, so this always reflects the
@@ -352,6 +361,10 @@ type OptionRow = {
   imageUrl: string | null;
   noCommission: boolean;
   role: OptionRole | null;
+  /** `Option.unitLengthM` already through `Number` — see `BuilderLine`'s own
+   * field. Converted where the row is read rather than where it is used, so
+   * no Prisma `Decimal` ever escapes this module. */
+  unitLengthM: number | null;
 };
 
 /**
@@ -398,6 +411,7 @@ function toBuilderLine(
         : null,
     sortOrder: line.sortOrder,
     role: optionRow?.role ?? null,
+    unitLengthM: optionRow?.unitLengthM ?? null,
     imageUrl: line.kind === "OPTION" ? (optionRow?.imageUrl ?? null) : line.imageUrl,
     showImage: line.kind === "OPTION" ? false : line.showImage,
   };
@@ -509,19 +523,32 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
         .map((line) => line.refId)
     )
   );
-  // `Option.noCommission` (see the commission section below) and
-  // `Option.role` (see `BuilderLine.role`) are read the same way — live off
-  // the option, not a line snapshot — so this one query covers both needs
-  // rather than adding a round trip per fact.
+  // `Option.noCommission` (see the commission section below), `Option.role`
+  // (see `BuilderLine.role`) and `Option.unitLengthM` (see
+  // `BuilderLine.unitLengthM`) are read the same way — live off the option,
+  // not a line snapshot — so this one query covers every such need rather
+  // than adding a round trip per fact.
   const optionRows =
     optionRefIds.length > 0
       ? await db.option.findMany({
           where: { id: { in: optionRefIds } },
-          select: { id: true, imageUrl: true, noCommission: true, role: true },
+          select: { id: true, imageUrl: true, noCommission: true, role: true, unitLengthM: true },
         })
       : [];
   const optionRowMap = new Map<string, OptionRow>(
-    optionRows.map((o) => [o.id, { imageUrl: o.imageUrl, noCommission: o.noCommission, role: o.role }])
+    optionRows.map((o) => [
+      o.id,
+      {
+        imageUrl: o.imageUrl,
+        noCommission: o.noCommission,
+        role: o.role,
+        // `Decimal?` -> `number | null` at the boundary, the same
+        // `x !== null ? Number(x) : null` every other decimal on this type
+        // gets (see `listPrice` below, and `listCompatibleOptions` in
+        // documents-pickers.ts, which converts this very column).
+        unitLengthM: o.unitLengthM !== null ? Number(o.unitLengthM) : null,
+      },
+    ])
   );
   const optionNoCommissionMap = new Map(optionRows.map((o) => [o.id, o.noCommission]));
 
