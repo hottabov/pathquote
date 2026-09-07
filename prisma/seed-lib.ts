@@ -419,13 +419,18 @@ export interface QuoteDocumentJsonItem {
  * one-shot migration ran it against the live database -- so a fresh database
  * and a migrated one print the same Terms.
  *
- * Known wart, carried deliberately: the Terms body contains
- * `{{rspYear2Cost}}`, a token no document scope fills and never did. The line
- * using it is stripped from every rendered quote, and the document cannot be
- * saved from the editor until an admin decides what that clause should say.
- * It is not silently removed here for the same reason the migration refused to
- * remove it: what that clause should say is a commercial decision, and a
- * fresh database should present the same decision a migrated one does.
+ * One edit was made to the assembled text: the Terms RSP clause read "2nd
+ * Year: {{rspYear2Cost}} + GST", and `{{rspYear2Cost}}` is a token no document
+ * scope fills and never did. Carrying it cost more than the missing figure.
+ * `findUnknownTokens` is what the editor's save validator runs, so every fresh
+ * database seeded a Terms document that silently lost that line on every quote
+ * AND could not be saved at all — an admin who opened it and pressed Save was
+ * rejected over a token they had never typed and had no way to find. It now
+ * reads "2nd Year: quoted separately.", which carries no token; the figure
+ * returns with the RSP pricing work, which is out of scope for this
+ * workstream (D10, and the spec's Out of scope section). Nothing else in the
+ * assembled bodies was touched, and tests/seed-mapping.test.ts asserts that
+ * no seeded body carries an unfillable token again.
  */
 export interface QuoteDocumentsJson {
   documents: QuoteDocumentJsonItem[];

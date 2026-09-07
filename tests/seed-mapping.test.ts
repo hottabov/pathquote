@@ -437,17 +437,22 @@ describe("quote-documents.json well-formedness", () => {
     for (const d of documents) expect(sanitizeIfHtml(d.body), d.key).toBe(d.body);
   });
 
-  // Known and deliberate: `{{rspYear2Cost}}` in Terms has no source in the
-  // document scope and never had one, so its line is stripped from every
-  // rendered quote and Terms cannot be saved from the editor until an admin
-  // decides what that clause should say. The migration refused to strip it for
-  // that reason and the seed carries the same text, so a fresh database
-  // presents the same decision. Narrow the expectation, do not widen it: any
-  // OTHER unfillable token is a mistake in the seed data.
-  it("carries no unfillable token except the known {{rspYear2Cost}} in Terms", () => {
+  // A seeded body may contain NO token the document scope cannot fill. This
+  // used to allow one — `{{rspYear2Cost}}` in Terms, carried over from the
+  // migration so an admin would be presented with the same commercial
+  // decision — and the cost of carrying it was not the missing figure but the
+  // document: `findUnknownTokens` is also what the editor's save validator
+  // runs, so an admin who opened Terms and pressed Save was rejected over a
+  // token they never typed, with no way to find it. A fresh database seeded a
+  // document that could not be saved. The clause says "quoted separately"
+  // now; the figure returns with the RSP pricing work, which is out of scope
+  // for this whole workstream (D10, and the spec's Out of scope section).
+  //
+  // Asserted across every document, not just Terms, so a future seed edit
+  // that reintroduces an unfillable token anywhere fails here.
+  it("carries no token the document scope cannot fill", () => {
     for (const d of documents) {
-      const unknown = findUnknownTokens(d.body, DOCUMENT_TOKENS);
-      expect(unknown, d.key).toEqual(d.key === "terms" ? ["rspYear2Cost"] : []);
+      expect(findUnknownTokens(d.body, DOCUMENT_TOKENS), d.key).toEqual([]);
     }
   });
 });
