@@ -1,5 +1,13 @@
 import { cache } from "react";
-import type { DocumentStatus, LineKind, OptionRole, ProductKind, ProductionForm, SigningStatus } from "@prisma/client";
+import type {
+  DocumentStatus,
+  LineKind,
+  OptionRole,
+  Prisma,
+  ProductKind,
+  ProductionForm,
+  SigningStatus,
+} from "@prisma/client";
 import { db } from "@/lib/db";
 import { documentWhereForUser, type ScopeUser } from "@/lib/scope";
 import { computeTotals, type CommissionResult, type DocumentConcession, type EngineInput } from "@/lib/pricing";
@@ -492,12 +500,24 @@ function toBuilderContact(contact: {
  * load a document — the builder and the quotation preview — fetch it once in
  * `generateMetadata` and again in the page body, and this is by some margin
  * the heaviest read in the app.
+ *
+ * `tx` is for the one caller that needs this read to belong to a transaction
+ * rather than to the request: `finalizeDocument` (src/lib/actions/finalize.ts)
+ * builds the document snapshot it freezes by running `buildQuotationData`
+ * over exactly this shape, and it must see the totals `recalcDocument` wrote
+ * moments earlier *inside* that transaction — which the `db` singleton
+ * cannot, and which the memo would answer with the copy loaded before the
+ * transaction opened. Passing `tx` bypasses the memo for the same reason
+ * `getCommissionTiers(client)` does (see its doc comment in
+ * queries/settings.ts): a transaction's reads must stay that transaction's.
+ * Everything else omits it and keeps the memo.
  */
 export function getDocumentForBuilder(
   user: ScopeUser,
-  id: string
+  id: string,
+  tx?: Prisma.TransactionClient
 ): Promise<DocumentForBuilder | null> {
-  return getDocumentForBuilderInScope(user.id, user.role, id);
+  return tx ? loadDocumentForBuilder(user.id, user.role, id, tx) : getDocumentForBuilderInScope(user.id, user.role, id);
 }
 
 /** Memoization boundary for `getDocumentForBuilder` above, taking the scope
@@ -507,13 +527,27 @@ export function getDocumentForBuilder(
  * on every call and quietly memoize nothing. Both parts are part of the key
  * because both shape the query — `documentWhereForUser` reads the role to
  * decide whether the id restricts anything at all. */
-const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderInScope(
+const getDocumentForBuilderInScope = cache(function getDocumentForBuilderInScope(
   userId: string,
   role: string,
   id: string
 ): Promise<DocumentForBuilder | null> {
+  return loadDocumentForBuilder(userId, role, id);
+});
+
+/** The read itself, against `tx` when the caller has one and the `db`
+ * singleton otherwise. Everything below reaches the database through
+ * `client`, so a transactional caller sees its own uncommitted writes and a
+ * plain one behaves exactly as before. */
+async function loadDocumentForBuilder(
+  userId: string,
+  role: string,
+  id: string,
+  tx?: Prisma.TransactionClient
+): Promise<DocumentForBuilder | null> {
+  const client = tx ?? db;
   const user: ScopeUser = { id: userId, role };
-  const document = await db.document.findFirst({
+  const document = await client.document.findFirst({
     where: { id, ...documentWhereForUser(user) },
     include: {
       region: true,
@@ -555,7 +589,17 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
   // fetched alongside it for the same reason — a read-time default, never
   // persisted onto the document itself (see `CommissionResult`'s doc
   // comment on `DocumentForBuilder` for the null-vs-configured distinction).
-  const [defaultValidityDays, commissionTiers] = await Promise.all([getQuoteValidityDays(), getCommissionTiers()]);
+  //
+  // `getCommissionTiers` takes `tx` so a transactional caller's settings read
+  // stays inside that transaction (its own doc comment explains the split);
+  // `getQuoteValidityDays` has no such parameter and needs none — it is a
+  // memoized read of an org-wide setting no transaction in this app writes,
+  // and finalize, the only transactional caller, has already resolved it
+  // before opening its transaction, so this call is answered from the memo.
+  const [defaultValidityDays, commissionTiers] = await Promise.all([
+    getQuoteValidityDays(),
+    getCommissionTiers(tx),
+  ]);
 
   // Every OPTION line's icon in the quotation's unified options table (see
   // src/lib/quotation-data.ts's QuotationOptionRow) comes from the option's
@@ -579,7 +623,7 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
   // than adding a round trip per fact.
   const optionRows =
     optionRefIds.length > 0
-      ? await db.option.findMany({
+      ? await client.option.findMany({
           where: { id: { in: optionRefIds } },
           select: { id: true, imageUrl: true, noCommission: true, role: true, unitLengthM: true },
         })
@@ -789,4 +833,4 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
     signingStatus: document.signingStatus,
     updatedAt: document.updatedAt,
   };
-});
+}

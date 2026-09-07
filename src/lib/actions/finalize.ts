@@ -11,6 +11,9 @@ import { validateFinalizable, type FinalizableDocument } from "@/lib/validation/
 import { recalcDocument } from "@/lib/documents/recalc";
 import { allocateNumber, formatDocNumber } from "@/lib/numbering";
 import { getQuoteValidityDays } from "@/lib/queries/settings";
+import { getDocumentForBuilder } from "@/lib/queries/documents";
+import { getQuoteDocumentsForRegion } from "@/lib/queries/quote-documents";
+import { buildQuotationData, type DocumentsSnapshot } from "@/lib/quotation-data";
 import { NOT_FOUND_ERROR } from "./_shared";
 
 /** Thrown inside `finalizeDocument`'s `$transaction` to roll it back when
@@ -45,6 +48,12 @@ export { validateFinalizable, type FinalizableDocument };
  * rendering never has to query `Region` again (a later admin edit to the
  * region's bank details/logo/etc. must never retroactively change an
  * already-issued document).
+ *
+ * A `documentsSnapshot` is frozen in the same write, for the same reason one
+ * step further out: the legal text itself. Fixing a typo in General
+ * Conditions used to rewrite the PDF of every quote already signed. Both
+ * snapshots, the number and the three commission columns land in one
+ * `updateMany`, so a quote can never be FINAL without them.
  */
 export async function finalizeDocument(documentId: string): Promise<FinalizeResult> {
   const session = await requireSession();
@@ -200,6 +209,70 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
         resolvedNumber = formatDocNumber(document.region.code, year, counter);
       }
 
+      // The issue date is written below and also feeds `{{validityDate}}` in
+      // the documents frozen just after, so it is resolved once here rather
+      // than inline in the update — two `new Date()` calls would put a
+      // "valid until" in the frozen Terms that the document's own issue date
+      // disagrees with by a millisecond's worth of rounding.
+      const issuedAt = new Date();
+
+      // Every legal document and every item's category copy, substituted and
+      // rendered exactly as the preview renders them — because it IS the
+      // preview: `buildQuotationData` is the only thing in this app that
+      // knows how to turn a document plus its region's `QuoteDocument` rows
+      // into printed text, and a second implementation here would be two
+      // definitions of what this quote says the day it stops being editable.
+      //
+      // Both reads take `tx`, so they see the totals `recalcDocument` wrote
+      // moments ago inside this transaction — item prices feed `{{price}}` in
+      // a category's copy, and a snapshot built from the pre-recalc row would
+      // freeze a price the document no longer adds up to.
+      //
+      // Four fields are overridden on the way in, because the row this reads
+      // is still the DRAFT and the snapshot must describe the FINAL quote:
+      // the number and issue date the update below is about to write (both
+      // are document tokens), the resolved `validityDays` behind
+      // `{{validityDate}}`, and the `entitySnapshot` behind `{{bankDetails}}`.
+      // `documentsSnapshot` is forced to null so a re-finalize renders live
+      // text rather than replaying the snapshot the previous finalize left in
+      // the column — that is what makes an admin's unfinalize/edit/finalize
+      // cycle pick up the edit.
+      const forSnapshot = await getDocumentForBuilder(session.user, document.id, tx);
+      if (!forSnapshot) throw new NotFinalizableError(NOT_FOUND_ERROR);
+      const quoteDocuments = await getQuoteDocumentsForRegion(forSnapshot.regionId, tx);
+      const quotation = buildQuotationData(
+        {
+          ...forSnapshot,
+          status: "FINAL",
+          number: resolvedNumber,
+          issueDate: issuedAt,
+          validityDays,
+          entitySnapshot,
+          documentsSnapshot: null,
+        },
+        quoteDocuments
+      );
+
+      // Every item gets an entry, including one whose category has no copy or
+      // whose copy was stripped to nothing (`""` — which `buildQuotationData`
+      // reads back as "this item printed nothing"). Freezing only the items
+      // that printed something would leave the rest falling back to live copy,
+      // so writing a category's first-ever quote description would make it
+      // appear on a quote signed before it existed — the same leak the
+      // snapshot exists to close. A *missing* entry still falls back to live,
+      // deliberately, for a snapshot written by an older version of this code.
+      const documentsSnapshot: DocumentsSnapshot = {
+        version: 1,
+        documents: quotation.documents.map((doc) => ({
+          key: doc.key,
+          title: doc.title,
+          bodyHtml: doc.bodyHtml,
+        })),
+        itemCopyHtml: Object.fromEntries(
+          quotation.machineSections.map((section) => [section.itemId, section.titleBlockHtml ?? ""])
+        ),
+      };
+
       // Guard against a concurrent finalize (e.g. a double-click, or two
       // requests racing) with a status-scoped `updateMany` instead of an
       // unconditional `update`: if another request already flipped this
@@ -211,9 +284,10 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
         data: {
           status: "FINAL",
           number: resolvedNumber,
-          issueDate: new Date(),
+          issueDate: issuedAt,
           validityDays,
           entitySnapshot: entitySnapshot as Prisma.InputJsonValue,
+          documentsSnapshot: documentsSnapshot as Prisma.InputJsonValue,
           ...commissionFields,
         },
       });
@@ -250,7 +324,15 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
  * builder immediately falls back to computing commission live again,
  * regardless of what's still sitting in those columns — they're simply
  * overwritten with a fresh computation the next time `finalizeDocument`
- * runs (same as `entitySnapshot`), never read in between.
+ * runs (same as `entitySnapshot` and `documentsSnapshot`), never read in
+ * between.
+ *
+ * `documentsSnapshot` follows exactly that rule: it stays on the row while
+ * the quote is back in DRAFT (`buildQuotationData` prefers it whatever the
+ * status, so a reopened quote keeps printing what it froze until it is
+ * finalized again), and the next `finalizeDocument` overwrites it wholesale
+ * from live text. That is what makes "unfinalize, fix the typo in General
+ * Conditions, re-finalize" pick the fix up.
  */
 export async function unfinalizeDocument(documentId: string): Promise<UnfinalizeResult> {
   const session = await requireAdmin();
@@ -262,6 +344,22 @@ export async function unfinalizeDocument(documentId: string): Promise<Unfinalize
     where: { id: parsedId.data, status: "FINAL", ...documentWhereForUser(session.user) },
   });
   if (!document) return { error: NOT_FOUND_ERROR };
+
+  // Reopening an issued quote is the most consequential thing an admin can
+  // do to one: it un-issues a numbered document, and the next finalize
+  // overwrites the entity snapshot, the documents snapshot and the
+  // commission columns with whatever is true then. Logged for the same
+  // reason — and in the same shape — as the two admin overrides
+  // `finalizeDocument` logs above: there is no admin-activity report to
+  // write it into yet (D12 in
+  // docs/superpowers/specs/2026-09-07-quote-documentation-design.md decides
+  // deliberately against an audit table for now), so a grep-able server-log
+  // line naming who did it is the record. Prefix: "[finalize] unfinalize".
+  console.warn("[finalize] unfinalize: FINAL document returned to DRAFT", {
+    documentId: document.id,
+    documentNumber: document.number,
+    adminUserId: session.user.id,
+  });
 
   await db.document.update({
     where: { id: document.id },

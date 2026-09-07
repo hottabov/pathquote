@@ -1,4 +1,5 @@
 import { cache } from "react";
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { QuoteDocumentRow } from "@/lib/quotation-data";
 
@@ -152,9 +153,18 @@ export const getQuoteDocument = cache(async function getQuoteDocument(
  * Feeds `resolveQuoteDocuments` in src/lib/quotation-data.ts, which reduces
  * this flat list down to one row per key (region version wins over
  * default). Mirrors `getContentBlocksForRegion`, the query this replaces.
+ *
+ * `tx` exists for `finalizeDocument`, which resolves these rows inside the
+ * transaction that flips the quote to FINAL so the text it freezes and the
+ * totals it freezes come from one consistent read — the same reason
+ * `getDocumentForBuilder` and `getCommissionTiers` take one. Every other
+ * caller omits it and goes through the `db` singleton.
  */
-export async function getQuoteDocumentsForRegion(regionId: string): Promise<QuoteDocumentRow[]> {
-  const rows = await db.quoteDocument.findMany({
+export async function getQuoteDocumentsForRegion(
+  regionId: string,
+  tx?: Prisma.TransactionClient
+): Promise<QuoteDocumentRow[]> {
+  const rows = await (tx ?? db).quoteDocument.findMany({
     where: { OR: [{ regionId: null }, { regionId }] },
   });
 
