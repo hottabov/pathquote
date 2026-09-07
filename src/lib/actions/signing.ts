@@ -7,7 +7,7 @@ import { documentWhereForUser } from "@/lib/scope";
 import { idSchema } from "@/lib/validation/documents";
 import { saveUpload, UploadValidationError } from "@/lib/uploads";
 import { parseSignatureDataUrl } from "@/lib/signing/data-url";
-import { canAuthorSign, canSendToClient } from "@/lib/signing/state";
+import { canAuthorSign, canSendToClient, ALREADY_IN_FLIGHT, type SigningStatus } from "@/lib/signing/state";
 import { readMySavedSignatureBytes } from "@/lib/signing/saved-signature";
 import { generateSigningToken, hashSigningToken } from "@/lib/signing/token";
 import { addDays } from "@/lib/signing/link";
@@ -145,6 +145,78 @@ export async function signQuoteAsAuthor(documentId: string, dataUrl: string): Pr
   return {};
 }
 
+// --- sendQuoteForSignature helpers ------------------------------------------
+
+/**
+ * The exact set of `signingStatus` values `canSendToClient`
+ * (src/lib/signing/state.ts) permits a send from, derived by asking that
+ * function itself -- for every status in the type, with the other three
+ * inputs fixed to values that already pass -- rather than repeating
+ * `["NOT_SENT", "DECLINED"]` as a second literal here, where it could
+ * silently drift from that function's own rule (e.g. if DECLINED were ever
+ * retired as a sendable status). Used below as the `where` of the
+ * status-guarded claim that replaces the plain revoke-then-insert.
+ */
+const ALL_SIGNING_STATUSES: SigningStatus[] = ["NOT_SENT", "SENT", "VIEWED", "SIGNED", "DECLINED"];
+const SENDABLE_SIGNING_STATUSES: SigningStatus[] = ALL_SIGNING_STATUSES.filter(
+  (signingStatus) =>
+    canSendToClient({
+      documentStatus: "FINAL",
+      signingStatus,
+      hasAuthorSignature: true,
+      contactEmail: "probe@example.com",
+    }).ok
+);
+
+/** Thrown inside `sendQuoteForSignature`'s `$transaction` when the
+ * status-guarded claim below matches nothing -- another request already
+ * moved the document out of a sendable status between the pre-check
+ * (`canSendToClient`, above the transaction) and the claim itself. Caught
+ * outside the transaction and mapped to the same `ALREADY_IN_FLIGHT` message
+ * the pre-check would have returned, so a manager sees one consistent
+ * explanation whichever path refused. */
+class AlreadyClaimedError extends Error {}
+
+type ResolvedAuthUrl = { ok: true; baseUrl: string } | { ok: false; error: string };
+
+/**
+ * Resolves and validates `AUTH_URL` before a token is generated or any row
+ * is touched.
+ *
+ * Unvalidated, `${process.env.AUTH_URL}/sign/${token}` is a dead link
+ * nobody can fix once it exists: unset, the emailed link contains the
+ * literal string "undefined"; with a trailing slash it gets a double slash.
+ * Either is discovered only when the client clicks -- after the only
+ * credential they will ever receive has already been sent. Checking first
+ * costs nothing on failure: no token generated, no row written, no email
+ * sent.
+ */
+function resolveSigningBaseUrl(): ResolvedAuthUrl {
+  const raw = process.env.AUTH_URL;
+  if (!raw || raw.trim() === "") {
+    console.error("[signing] AUTH_URL is not set");
+    return { ok: false, error: "Signing links are not configured (AUTH_URL is missing). Contact an admin." };
+  }
+
+  // A trailing slash (or several) would otherwise survive into
+  // `${baseUrl}/sign/${token}` as a doubled slash.
+  const baseUrl = raw.trim().replace(/\/+$/, "");
+
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    console.error("[signing] AUTH_URL is not a valid absolute URL", { value: raw });
+    return { ok: false, error: "Signing links are misconfigured (AUTH_URL is invalid). Contact an admin." };
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    console.error("[signing] AUTH_URL is not an http(s) URL", { value: raw });
+    return { ok: false, error: "Signing links are misconfigured (AUTH_URL is invalid). Contact an admin." };
+  }
+
+  return { ok: true, baseUrl };
+}
+
 /**
  * Issues a signing link and emails it to the document's contact.
  *
@@ -166,7 +238,9 @@ export async function signQuoteAsAuthor(documentId: string, dataUrl: string): Pr
  *    including its "rejected/pending" check for a silently-refused send.
  *  - The base URL is `process.env.AUTH_URL` — this is Auth.js v5
  *    (`AUTH_URL`/`AUTH_TRUST_HOST` in .env.example), not v4's
- *    `NEXTAUTH_URL`, which is set nowhere in this codebase.
+ *    `NEXTAUTH_URL`, which is set nowhere in this codebase. Read and
+ *    validated once, up front, by `resolveSigningBaseUrl` (above) rather
+ *    than interpolated straight into the link.
  *  - Formatters are `formatMoney`/`formatDateAU` from src/lib/format.ts —
  *    there is no `formatLongDate`. `formatDateAU` (DD/MM/YYYY) is reused
  *    rather than introducing a second date format, matching the quote
@@ -182,6 +256,12 @@ export async function sendQuoteForSignature(documentId: string): Promise<ActionR
 
   const parsedId = idSchema.safeParse(documentId);
   if (!parsedId.success) return { error: NOT_FOUND_ERROR };
+
+  // Checked before the document is even loaded: a misconfigured environment
+  // should fail loudly here, not after a token has been generated, a row
+  // written, and an email sent with an unrecoverable link in it.
+  const resolvedAuthUrl = resolveSigningBaseUrl();
+  if (!resolvedAuthUrl.ok) return { error: resolvedAuthUrl.error };
 
   const document = await db.document.findFirst({
     where: { id: parsedId.data, ...documentWhereForUser(session.user) },
@@ -221,29 +301,56 @@ export async function sendQuoteForSignature(documentId: string): Promise<ActionR
   const now = new Date();
   const expiresAt = addDays(now, days);
 
-  await db.$transaction(async (tx) => {
-    // Any earlier request is dead the moment a new one is issued.
-    await tx.signingRequest.updateMany({
-      where: { documentId: document.id, revokedAt: null },
-      data: { revokedAt: now },
+  // Captured before the transaction below touches the row, so a failed send
+  // (caught further down) can restore exactly what was there -- NOT_SENT or
+  // DECLINED, the only two values `canSendToClient` would have let through.
+  const previousStatus = document.signingStatus;
+
+  let requestId: string;
+  try {
+    requestId = await db.$transaction(async (tx) => {
+      // Claim the document first, atomically. The revoke-then-insert below
+      // has no row lock of its own, and under Postgres's default READ
+      // COMMITTED two concurrent sends could each pass the `canSendToClient`
+      // check above and each create a live `SigningRequest` -- defeating the
+      // guarantee that issuing a link kills the previous one.
+      // `tokenHash`'s unique constraint doesn't help, since the two tokens
+      // differ. This status-guarded `updateMany` is the same idiom
+      // `assertStillDraft` (src/lib/actions/documents/_internal.ts) and
+      // `finalizeDocument`'s own concurrent-finalize guard
+      // (src/lib/actions/finalize.ts) use for exactly this: only a write
+      // takes the row lock that orders concurrent callers against each
+      // other, and `count === 0` means this call lost the race.
+      const claimed = await tx.document.updateMany({
+        where: { id: document.id, signingStatus: { in: SENDABLE_SIGNING_STATUSES } },
+        data: { signingStatus: "SENT" },
+      });
+      if (claimed.count === 0) throw new AlreadyClaimedError();
+
+      // Any earlier request is dead the moment a new one is issued.
+      await tx.signingRequest.updateMany({
+        where: { documentId: document.id, revokedAt: null },
+        data: { revokedAt: now },
+      });
+      const created = await tx.signingRequest.create({
+        data: {
+          documentId: document.id,
+          contactId,
+          email: contactEmail,
+          tokenHash: hashSigningToken(token),
+          expiresAt,
+        },
+        select: { id: true },
+      });
+      return created.id;
     });
-    await tx.signingRequest.create({
-      data: {
-        documentId: document.id,
-        contactId,
-        email: contactEmail,
-        tokenHash: hashSigningToken(token),
-        expiresAt,
-      },
-    });
-    await tx.document.update({
-      where: { id: document.id },
-      data: { signingStatus: "SENT" },
-    });
-  });
+  } catch (error) {
+    if (error instanceof AlreadyClaimedError) return { error: ALREADY_IN_FLIGHT };
+    throw error;
+  }
 
   const mail = buildSigningInviteEmail({
-    url: `${process.env.AUTH_URL}/sign/${token}`,
+    url: `${resolvedAuthUrl.baseUrl}/sign/${token}`,
     quoteNumber: document.number ?? "",
     total: formatMoney(document.total, document.currency),
     authorName: document.author.name ?? document.author.email,
@@ -252,10 +359,11 @@ export async function sendQuoteForSignature(documentId: string): Promise<ActionR
     replyTo: resolveReplyTo(document.author, process.env.EMAIL_REPLY_TO),
   });
 
-  // Deliberately outside the transaction: the link is issued either way, and
-  // a send failure must not roll back a row the manager can see. Failures are
+  // Deliberately outside the transaction that issued the link: a mail
+  // transport call has no place holding a DB transaction open. Failures are
   // surfaced rather than swallowed -- the trap documented in
-  // docs/email-sending-setup.md, where a swallowed AuthError made "sent" a lie.
+  // docs/email-sending-setup.md, where a swallowed AuthError made "sent" a
+  // lie -- and are no longer left standing either, see the catch below.
   try {
     const transport = createAppMailTransport();
     const result = await transport.sendMail({
@@ -273,7 +381,17 @@ export async function sendQuoteForSignature(documentId: string): Promise<ActionR
     }
   } catch (error) {
     console.error("[signing] invite email failed", error);
-    return { error: "The quote was prepared but the email could not be sent. Try resending." };
+    // The link was issued but never delivered, so leaving it live would
+    // block the retry behind a Revoke button that does not exist yet -- and
+    // would advertise a credential nobody received. Undo the issue instead.
+    // Any request that was already live stays revoked: the manager chose to
+    // replace it, and re-arming it here would resurrect a link they had
+    // decided to kill.
+    await db.$transaction(async (tx) => {
+      await tx.signingRequest.update({ where: { id: requestId }, data: { revokedAt: new Date() } });
+      await tx.document.update({ where: { id: document.id }, data: { signingStatus: previousStatus } });
+    });
+    return { error: "The quote could not be emailed. Nothing was sent — try again." };
   }
 
   revalidateDocument(document.id);

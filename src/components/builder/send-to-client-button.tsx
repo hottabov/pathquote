@@ -20,6 +20,12 @@ import { sendQuoteForSignature } from "@/lib/actions/signing";
  * *why* sending isn't available (e.g. "Sign the quote before sending it.")
  * without hunting for it.
  *
+ * `title` alone isn't enough: it's hover-only, and a manager on a tablet has
+ * no hover. The same reason is also rendered as small, muted text beneath
+ * the button — quiet on purpose, so it reads as an explanation rather than
+ * an error — kept in sync with the tooltip since both come from the one
+ * `disabledReason` prop.
+ *
  * The confirmation names the destination address before anything is sent —
  * the one place in this flow a manager can catch a stale or wrong contact
  * email before a credential goes out to it.
@@ -80,6 +86,7 @@ export function SendToClientButton({
         <Send className="size-4" data-icon="inline-start" aria-hidden="true" />
         {pending ? "Sending…" : "Send to client"}
       </Button>
+      {disabledReason ? <p className="text-xs text-slate-500">{disabledReason}</p> : null}
       {error ? (
         <p role="alert" className="text-sm text-destructive">
           {error}
