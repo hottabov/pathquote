@@ -123,6 +123,88 @@ describe("substitutePlaceholders", () => {
   });
 });
 
+// --- the line-strip rule against Tiptap's one-line HTML ---------------------
+//
+// The strip was written for markdown, where every paragraph, heading and list
+// item already sat on its own `\n`-delimited line. Tiptap serialises a whole
+// document as ONE line — `<p>A</p><p>B</p><ul><li>C</li></ul>`, no newlines
+// anywhere — so splitting that body by `\n` gives a single line, and one
+// unresolved token anywhere in it deleted the entire description. These tests
+// pin the block-aware behaviour that replaces it.
+describe("substituteWithReport — HTML block bodies", () => {
+  it("strips only the paragraph holding the unresolved token", () => {
+    const result = substituteWithReport("<p>Kept {{model}}</p><p>Gone {{x}}</p>", { model: "M" });
+    expect(result.text).toContain("Kept M");
+    expect(result.text).toContain("<p>");
+    expect(result.text).not.toContain("Gone");
+    expect(result.stripped).toEqual(["x"]);
+  });
+
+  it("strips one list item and leaves the list itself standing", () => {
+    const result = substituteWithReport("<ul><li>Kept</li><li>Gone {{x}}</li></ul>", {});
+    expect(result.text).toContain("<ul>");
+    expect(result.text).toContain("</ul>");
+    expect(result.text).toContain("<li>Kept</li>");
+    expect(result.text).not.toContain("Gone");
+    expect(result.stripped).toEqual(["x"]);
+  });
+
+  it("keeps a heading whose following paragraph is stripped", () => {
+    const result = substituteWithReport("<h2>Kept</h2><p>Gone {{x}}</p>", {});
+    expect(result.text).toContain("<h2>Kept</h2>");
+    expect(result.text).not.toContain("Gone");
+  });
+
+  it("strips inside a blockquote without orphaning its closing tag", () => {
+    // A blockquote wraps blocks the way a list does: if its opening tag rode
+    // on its first paragraph's line, stripping that paragraph would delete
+    // the opener and leave `</blockquote>` behind.
+    const result = substituteWithReport("<blockquote><p>Keep</p><p>Gone {{x}}</p></blockquote><p>After</p>", {});
+    expect(result.text).toContain("<blockquote>");
+    expect(result.text).toContain("</blockquote>");
+    expect(result.text).toContain("<p>Keep</p>");
+    expect(result.text).toContain("<p>After</p>");
+    expect(result.text).not.toContain("Gone");
+  });
+
+  it("drops a list left holding nothing rather than printing an empty one", () => {
+    const result = substituteWithReport("<p>Keep</p><ul><li>{{x}}</li></ul>", {});
+    expect(result.text).toContain("<p>Keep</p>");
+    expect(result.text).not.toContain("<ul>");
+    expect(result.text).not.toContain("</ul>");
+  });
+
+  it("returns nothing when every block holds an unresolved token", () => {
+    const result = substituteWithReport("<p>{{a}}</p><p>{{b}}</p>", {});
+    expect(result.text).toBe("");
+    expect(result.stripped).toEqual(["a", "b"]);
+  });
+
+  it("leaves an HTML body with no unresolved tokens intact", () => {
+    // The normalisation inserts newlines between tags, which the sanitizer
+    // treats as insignificant whitespace — so assert on the tags and text
+    // present, not on an exact string.
+    const result = substituteWithReport("<h2>Specs</h2><p>The {{model}}.</p><ul><li>One</li><li>Two</li></ul>", {
+      model: "M-5180",
+    });
+    expect(result.text).toContain("<h2>Specs</h2>");
+    expect(result.text).toContain("<p>The M-5180.</p>");
+    expect(result.text).toContain("<ul>");
+    expect(result.text).toContain("<li>One</li>");
+    expect(result.text).toContain("<li>Two</li>");
+    expect(result.text).toContain("</ul>");
+    expect(result.stripped).toEqual([]);
+  });
+
+  it("still strips a legacy markdown body one `\\n` line at a time", () => {
+    // The regression guard for the pre-Tiptap path: a body with no HTML tags
+    // must behave exactly as it did before block-awareness existed.
+    const result = substituteWithReport("Line one\nCost: {{x}}\nLine three", {});
+    expect(result.text).toBe("Line one\nLine three");
+    expect(result.stripped).toEqual(["x"]);
+  });
+});
+
 // --- buildQuotationData: light integration coverage -------------------------
 
 // One category's quote copy (`Series.quoteDescription`), of the shape the
@@ -355,6 +437,37 @@ describe("category quote copy", () => {
     expect(data.machineSections[0].titleBlockHtml).toContain("Width 220cm");
     expect(data.machineSections[0].titleBlockHtml).not.toContain("Height");
     expect(data.strippedTokens).toEqual(["cutHeightCm"]);
+  });
+
+  it("keeps the blocks of rich-text copy that do resolve", () => {
+    // The defect this guards: Tiptap saves a whole document as one line, so
+    // the `\n`-based strip used to delete the entire description over a
+    // single missing figure.
+    const doc = quotationDoc({
+      items: [
+        quotationItem({
+          seriesQuoteDescription: "<p>Width {{cutWidthCm}}cm.</p><p>Height {{cutHeightCm}}cm.</p>",
+          specs: { cutWidthCm: 220 },
+        }),
+      ],
+    });
+    const data = buildQuotationData(doc, []);
+    expect(data.machineSections[0].titleBlockHtml).toContain("Width 220cm.");
+    expect(data.machineSections[0].titleBlockHtml).not.toContain("Height");
+    expect(data.strippedTokens).toEqual(["cutHeightCm"]);
+  });
+
+  it("renders no copy at all when every block of it strips", () => {
+    const doc = quotationDoc({
+      items: [
+        quotationItem({
+          seriesQuoteDescription: "<p>Height {{cutHeightCm}}cm.</p><p>Paper {{paperWidthMm}}mm.</p>",
+          specs: { cutWidthCm: 220 },
+        }),
+      ],
+    });
+    const data = buildQuotationData(doc, []);
+    expect(data.machineSections[0].titleBlockHtml).toBeNull();
   });
 
   it("resolves {{name}} to the item's own name", () => {

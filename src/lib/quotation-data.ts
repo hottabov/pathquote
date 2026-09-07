@@ -16,6 +16,11 @@ import type { ProductKind } from "@prisma/client";
 import { formatMoney } from "./format";
 import { machineSpecSentence, extraSpecVars } from "./machine-specs";
 import { renderStoredRichText } from "./rich-text";
+// The client-safe half of the rich-text seam (no `isomorphic-dompurify`, no
+// `next/*`, no `@/lib/db`) — this module already reaches it transitively
+// through `./rich-text`, so importing it directly adds no dependency and
+// keeps this file's purity rule (see the header comment) intact.
+import { isHtmlContent } from "./rich-text-core";
 import { readProductSpecs } from "./validation/product-specs";
 import {
   dedupeDescription,
@@ -179,6 +184,63 @@ export type PlaceholderVars = Record<string, string | typeof OMIT>;
 // line-strip pass below can find it after substitution has already run.
 const UNRESOLVED_MARKER = "@@QUOTATION_UNRESOLVED@@";
 
+/** Leaf blocks: they hold text directly and wrap no other block, so a
+ * newline after the closing tag is enough to give each one its own line.
+ * Kept in step with `ALLOWED_TAGS` in rich-text-core.ts — the inline tags
+ * there (`strong`, `em`, `a`, `br`, ...) are deliberately absent, since an
+ * inline tag never ends a line. */
+const BLOCK_CLOSE_PATTERN = /(<\/(?:p|h2|h3|li)>)/gi;
+/** Containers: `<ul>`, `<ol>` and `<blockquote>` wrap other blocks rather
+ * than being one, so their own tags need lines of their own — otherwise the
+ * opener rides on the first child's line and gets deleted with it, leaving
+ * the closer orphaned. */
+const CONTAINER_OPEN_PATTERN = /(<(?:ul|ol|blockquote)\b[^>]*>)/gi;
+const CONTAINER_CLOSE_PATTERN = /(<\/(?:ul|ol|blockquote)>)/gi;
+/** A container left holding nothing once its children were stripped. */
+const EMPTY_CONTAINER_PATTERN = /<(ul|ol|blockquote)\b[^>]*>\s*<\/\1>/gi;
+
+/**
+ * Splits an HTML body into one line per block-level element, so the strip
+ * below can remove a single paragraph or list item instead of the whole
+ * document. Tiptap serialises a document as one unbroken line — the `\n` the
+ * markdown-era strip relied on simply is not there.
+ *
+ * A newline goes after every closing leaf-block tag, after every opening
+ * container tag, and on BOTH sides of every closing container tag. That
+ * placement is what keeps a container's own tags off its children's lines:
+ * `<ul><li>A</li><li>B {{x}}</li></ul>` becomes the four lines `<ul>`,
+ * `<li>A</li>`, `<li>B {{x}}</li>`, `</ul>`, so dropping the third leaves
+ * the `<ul>`/`</ul>` pair around the item that survived rather than an
+ * orphaned opener. The inserted newlines are whitespace between tags, which
+ * the sanitizer and the browser both ignore.
+ *
+ * The one shape this cannot divide cleanly is a list item holding both its
+ * own text and a nested list — `<li>A {{x}}<ul>…` — where the item's opening
+ * tag has no choice but to share a line with the text an unresolved token
+ * would take. Stripping there leaves a stray `</li>`, which
+ * `sanitizeRichText` drops (every read of this output goes through
+ * `renderStoredRichText`, which re-parses and re-serialises), so the page
+ * still receives valid markup and the nested items are promoted into the
+ * parent list rather than lost. Dividing it properly needs a real HTML
+ * parser, which this pure module has no business carrying for a shape the
+ * editor's own toolbar makes rare.
+ */
+function htmlBlockLines(html: string): string[] {
+  return html
+    .replace(CONTAINER_OPEN_PATTERN, "$1\n")
+    .replace(CONTAINER_CLOSE_PATTERN, "\n$1\n")
+    .replace(BLOCK_CLOSE_PATTERN, "$1\n")
+    .split("\n");
+}
+
+/** "" for a value with no visible content left, so the caller's `text ? ... :
+ * null` test means "is there anything to print" rather than "is the string
+ * non-empty" — a body stripped down to the newlines `htmlBlockLines` inserted
+ * would otherwise be truthy. */
+function emptyToBlank(html: string): string {
+  return html.trim() === "" ? "" : html;
+}
+
 /**
  * Replaces every `{{token}}` in `body` with `vars[token]`, then strips (in
  * full) any output line that still contains an unresolved or explicitly
@@ -189,13 +251,23 @@ const UNRESOLVED_MARKER = "@@QUOTATION_UNRESOLVED@@";
  * source (or one the caller deliberately withheld, like a hidden
  * `{{price}}`) simply doesn't exist in the rendered output.
  *
- * The strip runs on the raw markdown source, one `\n`-delimited line at a
- * time, *before* `renderStoredRichText` ever sees it — so a whole markdown
- * paragraph/list-item/heading line disappears cleanly instead of leaving a
- * dangling `<p>`/`<li>` with blank content. A resolved multi-line value
- * (e.g. `{{bankDetails}}` — see `formatBankDetails`) substitutes in as-is,
- * embedded `\n`s and all, so each of its own lines becomes its own output
- * line exactly as if they'd been written directly into the block body.
+ * The strip runs on the raw stored source, one block at a time, *before*
+ * `renderStoredRichText` ever sees it — so a whole paragraph/list-item/
+ * heading disappears cleanly instead of leaving a dangling `<p>`/`<li>` with
+ * blank content. What counts as a block depends on the body's shape:
+ *
+ *  - legacy markdown, where every paragraph, list item and heading already
+ *    sits on its own line: one `\n`-delimited line, exactly as before;
+ *  - HTML from the Tiptap editor, which serialises an entire document as a
+ *    single line with no newlines in it at all: one block-level element,
+ *    via `htmlBlockLines`. Splitting such a body on `\n` gave one line, so
+ *    a single unresolved token anywhere in a category's copy used to delete
+ *    the whole description rather than the sentence that needed the figure.
+ *
+ * A resolved multi-line value (e.g. `{{bankDetails}}` — see
+ * `formatBankDetails`) substitutes in as-is, embedded `\n`s and all, so each
+ * of its own lines becomes its own output line exactly as if they'd been
+ * written directly into the block body.
  */
 export type SubstitutionReport = {
   /** The body after substitution and line-stripping. */
@@ -221,10 +293,21 @@ export function substituteWithReport(body: string, vars: PlaceholderVars): Subst
     return value;
   });
 
-  const text = substituted
-    .split("\n")
-    .filter((line) => !line.includes(UNRESOLVED_MARKER))
-    .join("\n");
+  // Which shape the AUTHORED body is, not the substituted one: a resolved
+  // value could contain a tag of its own and must not change how the body it
+  // sits in is divided into lines.
+  const isHtml = isHtmlContent(body);
+  const kept = (isHtml ? htmlBlockLines(substituted) : substituted.split("\n")).filter(
+    (line) => !line.includes(UNRESOLVED_MARKER)
+  );
+  const joined = kept.join("\n");
+  // On the HTML path, drop a container whose every child was stripped (an
+  // empty bullet box is not what the author wrote) and report a document
+  // reduced to nothing but the newlines this function inserted as empty, so
+  // `titleBlockHtml` ends up `null` rather than blank markup. The markdown
+  // path is left exactly as it was — its output is asserted character for
+  // character by the pre-existing tests above.
+  const text = isHtml ? emptyToBlank(joined.replace(EMPTY_CONTAINER_PATTERN, "")) : joined;
 
   return { text, stripped };
 }
