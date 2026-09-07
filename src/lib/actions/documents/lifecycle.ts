@@ -73,7 +73,7 @@ export async function createDraft(): Promise<void> {
   });
 
   revalidateDocumentList();
-  redirect(`/documents/${created.id}`);
+  redirect(`/quotes/${created.id}`);
 }
 
 /**
@@ -108,7 +108,7 @@ export async function deleteDraft(documentId: string): Promise<{ error: string }
   if (deleted.count !== 1) return { error: NOT_FOUND_ERROR };
 
   revalidateDocumentList();
-  redirect("/documents");
+  redirect("/quotes");
 }
 
 /**

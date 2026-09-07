@@ -207,7 +207,7 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
 
   return (
     <div className="flex flex-col gap-6 pb-4">
-      <PageHeader backHref="/documents" title={title} description={description} />
+      <PageHeader backHref="/quotes" title={title} description={description} />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
         <div className="flex flex-col gap-4 lg:col-span-2">
@@ -422,12 +422,12 @@ function DocumentActions({
         <UnfinalizeButton documentId={document.id} />
       ) : null}
 
-      <Link href={`/documents/${document.id}/quotation`} className={actionLinkClass}>
+      <Link href={`/quotes/${document.id}/quotation`} className={actionLinkClass}>
         <Eye className="size-4" aria-hidden="true" />
         Quotation preview
       </Link>
 
-      <a href={`/api/documents/${document.id}/quotation-pdf`} className={actionLinkClass}>
+      <a href={`/api/quotes/${document.id}/quotation-pdf`} className={actionLinkClass}>
         <Download className="size-4" aria-hidden="true" />
         Quotation PDF
       </a>

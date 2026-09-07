@@ -5,9 +5,9 @@ import { FileText, Users, Package, Settings } from "lucide-react";
 // single source of truth.
 export const NAV_ITEMS = [
   {
-    href: "/documents",
-    label: "Documents",
-    description: "Quotes",
+    href: "/quotes",
+    label: "Quotes",
+    description: "Customer quotations",
     icon: FileText,
   },
   {

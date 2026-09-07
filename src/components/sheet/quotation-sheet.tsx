@@ -19,7 +19,7 @@ import { TotalBanner } from "@/components/sheet/sections/total-banner";
  * machine/equipment item with its admin-authored description and selected
  * options rendered from markdown, an investment summary table, terms,
  * general conditions, the RSP agreement + coverage table, and signatures.
- * Used by both the `/documents/[documentId]/quotation` preview route and,
+ * Used by both the `/quotes/[documentId]/quotation` preview route and,
  * via src/lib/pdf.ts's `renderQuotationHtml`, the quotation PDF pipeline —
  * that second consumer is why this file is deliberately NOT a normal app
  * component: no Tailwind classes (Gotenberg's headless Chromium never sees

@@ -28,11 +28,11 @@ export function revalidateHome(): void {
 // --- documents -------------------------------------------------------------
 
 export function revalidateDocumentList(): void {
-  revalidatePath("/documents");
+  revalidatePath("/quotes");
 }
 
 export function revalidateDocument(documentId: string): void {
-  revalidatePath(`/documents/${documentId}`);
+  revalidatePath(`/quotes/${documentId}`);
 }
 
 // --- clients ---------------------------------------------------------------

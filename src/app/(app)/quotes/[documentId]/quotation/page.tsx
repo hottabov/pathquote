@@ -32,7 +32,7 @@ export async function generateMetadata({
 
 /**
  * Read-only render of the extended, content-block-driven quotation sheet —
- * the same `QuotationSheet` the quotation PDF route (`/api/documents/
+ * the same `QuotationSheet` the quotation PDF route (`/api/quotes/
  * [documentId]/quotation-pdf`) posts to Gotenberg — lets an author sanity-
  * check the full equipment write-up, terms, conditions and RSP detail
  * before downloading. Images are passed straight through as their stored
@@ -61,7 +61,7 @@ export default async function QuotationPreviewPage({ params }: { params: Promise
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           <Link
-            href={`/documents/${document.id}`}
+            href={`/quotes/${document.id}`}
             className="focus-ring -my-1 inline-flex items-center gap-1 rounded-md py-1 text-sm font-medium text-slate-500 transition-colors hover:text-brand-dark"
           >
             <ChevronLeft className="size-4" aria-hidden="true" />
@@ -75,7 +75,7 @@ export default async function QuotationPreviewPage({ params }: { params: Promise
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <a
-            href={`/api/documents/${document.id}/quotation-pdf`}
+            href={`/api/quotes/${document.id}/quotation-pdf`}
             className={cn(buttonVariants(), "h-11 flex-1 bg-brand text-white hover:bg-brand/90 sm:flex-none")}
           >
             <Download className="size-4" data-icon="inline-start" aria-hidden="true" />

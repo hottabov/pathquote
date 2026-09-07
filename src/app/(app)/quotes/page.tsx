@@ -136,7 +136,7 @@ export default async function DocumentsPage({
 function DocumentRow({ document: d, canDelete }: { document: DocumentListItem; canDelete: boolean }) {
   const statusLabel = d.status === "DRAFT" ? "Draft" : "Final";
   const numberLabel = d.number ?? "Quote draft";
-  const href = `/documents/${d.id}`;
+  const href = `/quotes/${d.id}`;
 
   return (
     <tr className={tableRowClassName}>
@@ -191,7 +191,7 @@ function DocumentCard({ document: d, canDelete }: { document: DocumentListItem; 
   return (
     <div className="relative rounded-xl border border-slate-200 bg-white p-4">
       <Link
-        href={`/documents/${d.id}`}
+        href={`/quotes/${d.id}`}
         className={cn(
           "focus-ring flex min-h-12 flex-col gap-2 rounded-lg transition-colors active:bg-slate-100",
           canDelete && "pr-12"

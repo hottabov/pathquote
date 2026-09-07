@@ -22,7 +22,7 @@ const RECENT_LIMIT = 5;
 /** Nav-item hrefs that have a live count on the dashboard — catalog/settings
  * don't, so their cards render without a number. */
 const COUNT_BY_HREF: Record<string, keyof DashboardCounts> = {
-  "/documents": "documents",
+  "/quotes": "documents",
   "/clients": "clients",
 };
 
@@ -91,7 +91,7 @@ export default async function DashboardPage() {
         title="Recent documents"
         description="Your last 5 quotes"
         actions={
-          <Link href="/documents" className="focus-ring rounded-md text-sm font-medium text-brand hover:underline">
+          <Link href="/quotes" className="focus-ring rounded-md text-sm font-medium text-brand hover:underline">
             View all
           </Link>
         }
@@ -148,7 +148,7 @@ function RecentDocumentRow({ document }: { document: DocumentListItem }) {
   return (
     <li>
       <Link
-        href={`/documents/${document.id}`}
+        href={`/quotes/${document.id}`}
         className="focus-ring flex min-h-14 items-center justify-between gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-slate-50"
       >
         <div className="flex min-w-0 items-center gap-3">

@@ -1,5 +1,5 @@
 // Server-only: HTML rendering + Gotenberg conversion for the quotation PDF
-// pipeline (src/app/api/documents/[documentId]/quotation-pdf/route.ts).
+// pipeline (src/app/api/quotes/[documentId]/quotation-pdf/route.ts).
 // Kept separate from that route so `renderQuotationHtml`/`fileImageResolver`
 // stay reachable from tests without spinning up a route handler.
 //
