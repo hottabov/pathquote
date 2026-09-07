@@ -14,7 +14,7 @@ import { CODE_EXISTS_ERROR, flattenZodError, type ActionResult } from "../_share
 import { isUniqueConstraintError, readProductForm } from "./_internal";
 
 /** `Product.description` is now written by the `RichTextEditor`
- * (product-form.tsx), same HTML-storage story as `ContentBlock.body` — see
+ * (product-form.tsx), same HTML-storage story as `QuoteDocument.body` — see
  * `sanitizeIfHtml`'s doc comment. `parsed.data.description` is `undefined`
  * when the field was left blank (see `descriptionSchema` in
  * validation/catalog.ts), which becomes `null` on the row exactly as before. */

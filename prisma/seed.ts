@@ -14,11 +14,13 @@
 import "dotenv/config";
 import { Prisma } from "@prisma/client";
 import catalogData from "./seed-data/catalog.json";
+import quoteDocumentsData from "./seed-data/quote-documents.json";
 import usPricesData from "./seed-data/prices-us.json";
 import catalogV2Target from "../docs/reference/catalog-v2-target.json";
 import type { CatalogTarget } from "../scripts/lib/catalog-v2-plan";
 import {
   type Catalog,
+  type QuoteDocumentsJson,
   type UsPricesJson,
   REGIONS,
   mapSeries,
@@ -26,11 +28,13 @@ import {
   mapOptions,
   mapPrices,
   mapCompatibility,
+  mapQuoteDocuments,
   mapUsPrices,
   missingUsPriceCodes,
 } from "./seed-lib";
 
 const catalog = catalogData as Catalog;
+const quoteDocumentsJson = quoteDocumentsData as QuoteDocumentsJson;
 const usPricesJson = usPricesData as UsPricesJson;
 const v2Target = catalogV2Target as CatalogTarget;
 
@@ -395,6 +399,59 @@ async function main() {
     console.log(`seed: compatibility sync removed ${compatDeletedCount} stale OptionCompatibility row(s)`);
   }
 
+  // 8. Quote documents -- one regionId:null "default" row per key from
+  // prisma/seed-data/quote-documents.json: Terms, General Conditions of Sale
+  // and the Remote Support Program agreement. Without this a fresh database
+  // prints no legal text at all on a quote, which is worse than it sounds:
+  // the sheet renders, the quote looks complete, and the terms the customer
+  // is signing under simply are not on it.
+  //
+  // Create if the key has never been seeded; if a default row already exists,
+  // leave it ENTIRELY alone -- never overwrite title/body/sortOrder/
+  // includedByDefault. The same rule content-blocks.json followed, and it
+  // matters more here: this is the text a customer signs, an admin edits it
+  // in the Documents section, and a deploy that re-ran the seed would
+  // otherwise silently revert legal wording somebody changed on purpose.
+  //
+  // findFirst rather than a composite-key upsert for the same reason
+  // OptionCompatibility uses one: QuoteDocument's @@unique([key, regionId])
+  // cannot stop two regionId:null rows for one key at the Postgres level
+  // (NULL is never equal to NULL for uniqueness), so this checks first and
+  // tolerates a P2002 from a concurrent or duplicate seed run.
+  //
+  // Region versions are NOT seeded -- see QuoteDocumentsJson's doc comment.
+  // Neither are Region's four term figures (deliveryWeeks, installationDays,
+  // trainingDays, warrantyMonths): they come from the column defaults in
+  // migration z36_quote_documents, so a region whose delivery time an admin
+  // changed keeps it. Writing them in seed data would undo that change on the
+  // next `npm run db:seed`.
+  let quoteDocumentCreated = 0;
+  let quoteDocumentSkipped = 0;
+  for (const doc of mapQuoteDocuments(quoteDocumentsJson)) {
+    const existing = await db.quoteDocument.findFirst({ where: { key: doc.key, regionId: null } });
+    if (existing) {
+      quoteDocumentSkipped++;
+      continue;
+    }
+    try {
+      await db.quoteDocument.create({
+        data: {
+          key: doc.key,
+          regionId: null,
+          title: doc.title,
+          body: doc.body,
+          sortOrder: doc.sortOrder,
+          includedByDefault: doc.includedByDefault,
+        },
+      });
+      quoteDocumentCreated++;
+    } catch (e) {
+      const isDuplicate = e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
+      if (!isDuplicate) throw e;
+      quoteDocumentSkipped++;
+    }
+  }
+
   console.log("seed: done");
   console.log(`  regions:        ${regionIdByCode.size}`);
   console.log(`  series:         ${seriesIdByCode.size}`);
@@ -405,6 +462,7 @@ async function main() {
   console.log(`  prices (AU):    ${priceCount}`);
   console.log(`  prices (US):    ${usPriceCount}`);
   console.log(`  compatibility:  ${compatCount} ensured, ${compatDeletedCount} stale removed`);
+  console.log(`  quote documents: ${quoteDocumentCreated} created, ${quoteDocumentSkipped} skipped (already seeded)`);
 }
 
 main()

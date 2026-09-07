@@ -1,9 +1,10 @@
-// The assembly half of Task 10's one-shot migration
-// (scripts/migrate-content-blocks-to-quote-documents.ts): 21 ContentBlock
-// fragments become the two documents a customer signs. The script itself
-// cannot run anywhere an agent can reach — the database only listens on
-// Vadym's machine — so these pure functions are the only part of that
-// migration that can be checked before it is run against real legal text.
+// The assembly half of Task 10's one-shot migration: 21 ContentBlock
+// fragments become the two documents a customer signs. That migration has
+// been applied and its script is gone with the model it read, but these
+// functions are still what produced both the rows in the live database and
+// the bodies in prisma/seed-data/quote-documents.json — so what they do is
+// still the definition of how that legal text is shaped, and still worth
+// pinning.
 //
 // Pure: no DB, no next/*, same discipline as rich-text.test.ts.
 import { describe, it, expect } from "vitest";

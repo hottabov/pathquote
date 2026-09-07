@@ -389,3 +389,69 @@ export function missingUsPriceCodes(catalog: Catalog, usPrices: UsPricesJson): s
   ];
   return allCodes.filter((code) => !pricedCodes.has(code)).sort((a, b) => a.localeCompare(b, "en"));
 }
+
+// --- quote documents ------------------------------------------------------
+
+/** One entry of prisma/seed-data/quote-documents.json's `documents` array. */
+export interface QuoteDocumentJsonItem {
+  /** `QuoteDocument.key` -- "terms", "conditions", "rsp". */
+  key: string;
+  /** The heading printed above the document on a quote. */
+  title: string;
+  /** HTML, sanitizer-stable, and it may carry document-scope `{{tokens}}`. */
+  body: string;
+  sortOrder: number;
+  includedByDefault: boolean;
+}
+
+/**
+ * Shape of prisma/seed-data/quote-documents.json.
+ *
+ * Every entry is a GLOBAL default (`regionId: null`). A region's own version
+ * of a document is a copy an admin makes in the Documents section, not seed
+ * data: it is the whole point of a region version that it says something the
+ * default does not, and there is nothing about "Mexico's Terms" a fresh
+ * database could know.
+ *
+ * The bodies were generated, not retyped: `scripts/lib/quote-document-bodies.ts`
+ * (still here, still unit-tested in tests/quote-document-bodies.test.ts) run
+ * over the 23 `ContentBlock` rows that used to hold this text, exactly as the
+ * one-shot migration ran it against the live database -- so a fresh database
+ * and a migrated one print the same Terms.
+ *
+ * Known wart, carried deliberately: the Terms body contains
+ * `{{rspYear2Cost}}`, a token no document scope fills and never did. The line
+ * using it is stripped from every rendered quote, and the document cannot be
+ * saved from the editor until an admin decides what that clause should say.
+ * It is not silently removed here for the same reason the migration refused to
+ * remove it: what that clause should say is a commercial decision, and a
+ * fresh database should present the same decision a migrated one does.
+ */
+export interface QuoteDocumentsJson {
+  documents: QuoteDocumentJsonItem[];
+}
+
+export interface QuoteDocumentPayload {
+  key: string;
+  title: string;
+  body: string;
+  sortOrder: number;
+  includedByDefault: boolean;
+}
+
+/**
+ * Pure passthrough from quote-documents.json's `documents` array to the flat
+ * payload prisma/seed.ts writes as each key's `regionId: null` default row.
+ * No validation (that is the admin editor's zod schema's job, for *edits*) --
+ * this shapes the seed data 1:1, kept as its own function so it is unit
+ * testable and so the IO shell never touches the JSON's field names directly.
+ */
+export function mapQuoteDocuments(json: QuoteDocumentsJson): QuoteDocumentPayload[] {
+  return json.documents.map((d) => ({
+    key: d.key,
+    title: d.title,
+    body: d.body,
+    sortOrder: d.sortOrder,
+    includedByDefault: d.includedByDefault,
+  }));
+}
