@@ -21,6 +21,11 @@ import { renderStoredRichText } from "./rich-text";
 // through `./rich-text`, so importing it directly adds no dependency and
 // keeps this file's purity rule (see the header comment) intact.
 import { isHtmlContent } from "./rich-text-core";
+// The token registry — pure by the same rule as this module. `tokensIn` is
+// imported rather than re-derived so "what counts as a token" has exactly one
+// definition shared by the editor palette, the save validator and this
+// renderer.
+import { tokensIn } from "./quote-variables";
 import { readProductSpecs } from "./validation/product-specs";
 import {
   dedupeDescription,
@@ -183,6 +188,12 @@ export type PlaceholderVars = Record<string, string | typeof OMIT>;
 // authored text, used to mark a substituted-in token as unresolved so the
 // line-strip pass below can find it after substitution has already run.
 const UNRESOLVED_MARKER = "@@QUOTATION_UNRESOLVED@@";
+
+/** Stand-in substituted for `{{price}}` in the throwaway second pass that
+ * asks whether the category copy's own price line survived stripping — see
+ * `hasInlinePrice` in `buildQuotationData`. Never reaches any rendered
+ * output. Same "can never appear in authored text" rule as the marker above. */
+const INLINE_PRICE_PROBE = "@@QUOTATION_INLINE_PRICE@@";
 
 /** Leaf blocks: they hold text directly and wrap no other block, so a
  * newline after the closing tag is enough to give each one its own line.
@@ -681,11 +692,36 @@ export function buildQuotationData(
     // Structural section price — the same figure substituted into `vars.price`
     // above, exposed separately so the sheet prints it under EVERY section
     // heading rather than depending on the category copy happening to
-    // reference `{{price}}` itself. `hasInlinePrice` checks the RAW
-    // (pre-substitution) copy, so it is never fooled by a literal "{{price}}"
-    // appearing inside some other token's substituted value.
+    // reference `{{price}}` itself.
     const sectionPrice = itemPriceVisible ? formatMoney(lineSummary.total, sheet.totals.currency) : null;
-    const hasInlinePrice = categoryCopy.includes("{{price}}");
+
+    // Does the copy print a price of its own, so the sheet must not print the
+    // structural one under the heading as well (`equipment-detail.tsx`:
+    // `sectionPrice && !hasInlinePrice`)? Two questions, and a raw
+    // `categoryCopy.includes("{{price}}")` answered neither:
+    //
+    //  - Is there a price token at all? `tokensIn` is the registry's own
+    //    definition of a token, the same one the editor's palette and the
+    //    save validator use, so `{{ price }}` — which every one of those
+    //    accepts, and which substitutes perfectly well — counts here too. A
+    //    substring test missed it and printed the price twice.
+    //  - Did it survive? A price line carrying a SECOND, missing token
+    //    (`Price: {{price}} ({{cutHeightCm}} high)`) is stripped whole, and
+    //    the raw copy cannot tell: the section then showed no price at all.
+    //    Substituting a stand-in for `{{price}}` and looking for it in the
+    //    stripped output answers that directly. The stand-in is never `OMIT`,
+    //    so a price hidden by the display toggle still counts as inline —
+    //    that line is withheld on purpose and `sectionPrice` is null beside
+    //    it, so neither price prints either way.
+    //
+    // Both questions are asked of the AUTHORED copy, so a literal "{{price}}"
+    // arriving inside some other token's substituted value can still never
+    // fool it.
+    const hasInlinePrice =
+      tokensIn(categoryCopy).includes("price") &&
+      substituteWithReport(categoryCopy, { ...vars, price: INLINE_PRICE_PROBE }).text.includes(
+        INLINE_PRICE_PROBE
+      );
 
     // A category has no title field of its own, so the heading is always the
     // item's own name. The old rule — trust a content block's title when it

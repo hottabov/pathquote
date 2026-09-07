@@ -494,6 +494,38 @@ describe("category quote copy", () => {
     const data = buildQuotationData(doc, []);
     expect(data.machineSections[0].hasInlinePrice).toBe(true);
   });
+
+  it("detects an inline price token written with inner spaces", () => {
+    // `PLACEHOLDER_PATTERN` and `tokensIn` both accept `{{ price }}`, and so
+    // does the save validator — so it substitutes fine. A raw
+    // `.includes("{{price}}")` missed it, and the sheet then printed the
+    // structural sectionPrice as well: the price twice.
+    const doc = quotationDoc({
+      items: [quotationItem({ seriesQuoteDescription: "Price: {{ price }}" })],
+      showItemPrices: true,
+    });
+    const data = buildQuotationData(doc, []);
+    expect(data.machineSections[0].hasInlinePrice).toBe(true);
+  });
+
+  it("falls back to the structural price when the price line strips", () => {
+    // The price line carries a second token this product has no figure for,
+    // so the whole line goes. Reading the RAW copy left hasInlinePrice true
+    // and the section showed no price at all.
+    const doc = quotationDoc({
+      items: [
+        quotationItem({
+          seriesQuoteDescription: "Price: {{price}} ({{cutHeightCm}} high)",
+          specs: { cutWidthCm: 220 },
+        }),
+      ],
+      showItemPrices: true,
+    });
+    const data = buildQuotationData(doc, []);
+    expect(data.machineSections[0].titleBlockHtml).toBeNull();
+    expect(data.machineSections[0].hasInlinePrice).toBe(false);
+    expect(data.machineSections[0].sectionPrice).not.toBeNull();
+  });
 });
 
 describe("option rows", () => {
