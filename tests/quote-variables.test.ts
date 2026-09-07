@@ -2,6 +2,7 @@
 import { describe, it, expect } from "vitest";
 import {
   CATEGORY_TOKENS,
+  CATEGORY_TOKEN_NAMES,
   categorySpecPresence,
   categoryTokensFor,
   findUnknownTokens,
@@ -86,6 +87,32 @@ describe("CATEGORY_TOKENS", () => {
   it("declares no token twice", () => {
     const names = CATEGORY_TOKENS.map((t) => t.token);
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("is exactly this list, in palette order", () => {
+    // Pinned rather than merely checked for duplicates: a DELETED token is
+    // invisible to every other assertion in this file, and deleting one
+    // silently strips its line from every quote that used it. The list is
+    // also what `buildQuotationData`'s `vars` is typed against, so changing
+    // it is a deliberate act that should have to change this line too.
+    expect(CATEGORY_TOKEN_NAMES).toEqual([
+      "model",
+      "name",
+      "price",
+      "basePrice",
+      "cutHeightCm",
+      "cutWidthCm",
+      "tableWidthMm",
+      "paperWidthMm",
+      "specSentence",
+    ]);
+  });
+
+  it("describes every name it declares, in the same order", () => {
+    expect(CATEGORY_TOKENS.map((t) => t.token)).toEqual([...CATEGORY_TOKEN_NAMES]);
+    for (const token of CATEGORY_TOKENS) {
+      expect(token.source.length).toBeGreaterThan(0);
+    }
   });
 });
 

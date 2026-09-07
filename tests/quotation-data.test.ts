@@ -10,6 +10,9 @@ import {
   type QuotationItemInput,
 } from "../src/lib/quotation-data";
 import { CATEGORY_TOKENS } from "../src/lib/quote-variables";
+// The downstream repair `htmlBlockLines`'s doc comment relies on — see the
+// nested-list test below.
+import { renderStoredRichText } from "../src/lib/rich-text";
 import { quotationDoc, quotationItem } from "./helpers/fixtures";
 
 // Pure module — no @/lib/db import (see quotation-data.ts's header comment),
@@ -173,6 +176,32 @@ describe("substituteWithReport — HTML block bodies", () => {
     expect(result.text).toContain("<p>Keep</p>");
     expect(result.text).not.toContain("<ul>");
     expect(result.text).not.toContain("</ul>");
+  });
+
+  it("leaves a nested list's stray tags for the sanitizer to repair", () => {
+    // `htmlBlockLines`'s doc comment names exactly one shape it cannot divide
+    // cleanly -- an `<li>` holding both its own text and a nested list -- and
+    // says the stray tags it leaves behind are repaired downstream, because
+    // every read of this output goes through `renderStoredRichText`. That
+    // claim is load-bearing (it is the argument for not carrying a real HTML
+    // parser in this pure module) and was untested. So: strip, then render,
+    // and check the sanitizer really does hand the page valid markup with the
+    // nested item still in it.
+    const result = substituteWithReport("<ul><li>A {{x}}<ul><li>B</li></ul></li></ul>", {});
+    expect(result.stripped).toEqual(["x"]);
+    // The unresolved item's own text is gone; the stray tags are still there.
+    expect(result.text).not.toContain("A ");
+    expect(result.text).toContain("</li>\n");
+
+    const rendered = renderStoredRichText(result.text);
+    expect(rendered).toContain("<li>B</li>");
+    expect(rendered).not.toContain("A ");
+    // Valid: every tag the sanitizer emitted is balanced, so nothing stray
+    // survived to reach the page.
+    const count = (html: string, pattern: RegExp) => html.match(pattern)?.length ?? 0;
+    expect(count(rendered, /<li>/g)).toBe(count(rendered, /<\/li>/g));
+    expect(count(rendered, /<ul>/g)).toBe(count(rendered, /<\/ul>/g));
+    expect(count(rendered, /<ul>/g)).toBeGreaterThan(0);
   });
 
   it("returns nothing when every block holds an unresolved token", () => {
