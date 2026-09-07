@@ -466,7 +466,11 @@ describe("category quote copy", () => {
     const data = buildQuotationData(doc, []);
     expect(data.machineSections[0].titleBlockHtml).toContain("Width 220cm");
     expect(data.machineSections[0].titleBlockHtml).not.toContain("Height");
-    expect(data.strippedTokens).toEqual(["cutHeightCm"]);
+    // Attributed, not just named — the banner has to say which item and which
+    // category, and link the category's editor by id.
+    expect(data.strippedTokens).toEqual([
+      { token: "cutHeightCm", itemName: "M5180 Cutting System", seriesName: "M-Series", seriesId: "series-m" },
+    ]);
   });
 
   it("keeps the blocks of rich-text copy that do resolve", () => {
@@ -484,7 +488,107 @@ describe("category quote copy", () => {
     const data = buildQuotationData(doc, []);
     expect(data.machineSections[0].titleBlockHtml).toContain("Width 220cm.");
     expect(data.machineSections[0].titleBlockHtml).not.toContain("Height");
-    expect(data.strippedTokens).toEqual(["cutHeightCm"]);
+    expect(data.strippedTokens).toEqual([
+      { token: "cutHeightCm", itemName: "M5180 Cutting System", seriesName: "M-Series", seriesId: "series-m" },
+    ]);
+  });
+
+  it("attributes a stripped token to each item's own category", () => {
+    // The defect the attribution exists for: a quote holding a machine and an
+    // EasyLoader, both losing a line, used to report one bare token list and
+    // leave the reader guessing which of the two categories to open. Two
+    // items, two categories, two entries — and the ids the banner links.
+    const doc = quotationDoc({
+      items: [
+        quotationItem({
+          name: "L-220 Cutting Machine",
+          seriesName: "L-Series",
+          seriesId: "series-l",
+          specs: { cutWidthCm: 220 },
+          seriesQuoteDescription: "<p>Height {{cutHeightCm}}cm.</p>",
+        }),
+        quotationItem({
+          name: "EL-2020 EasyLoader",
+          kind: "ACCESSORY",
+          seriesName: "EasyLoader",
+          seriesId: "series-el",
+          specs: { tableWidthMm: 2000 },
+          seriesQuoteDescription: "<p>Paper {{paperWidthMm}}mm.</p>",
+        }),
+      ],
+    });
+    const data = buildQuotationData(doc, []);
+    expect(data.strippedTokens).toEqual([
+      { token: "cutHeightCm", itemName: "L-220 Cutting Machine", seriesName: "L-Series", seriesId: "series-l" },
+      { token: "paperWidthMm", itemName: "EL-2020 EasyLoader", seriesName: "EasyLoader", seriesId: "series-el" },
+    ]);
+  });
+
+  it("reports the same token twice when two categories both lose it", () => {
+    // A token-keyed accumulator collapsed these into one entry, which named
+    // whichever category happened to be first and silently dropped the other.
+    const doc = quotationDoc({
+      items: [
+        quotationItem({
+          name: "L-220 Cutting Machine",
+          seriesName: "L-Series",
+          seriesId: "series-l",
+          specs: { cutWidthCm: 220 },
+          seriesQuoteDescription: "<p>Height {{cutHeightCm}}cm.</p>",
+        }),
+        quotationItem({
+          name: "SP-180 Spreader",
+          kind: "ACCESSORY",
+          seriesName: "Spreaders",
+          seriesId: "series-sp",
+          specs: { cutWidthCm: 180 },
+          seriesQuoteDescription: "<p>Height {{cutHeightCm}}cm.</p>",
+        }),
+      ],
+    });
+    const data = buildQuotationData(doc, []);
+    expect(data.strippedTokens).toEqual([
+      { token: "cutHeightCm", itemName: "L-220 Cutting Machine", seriesName: "L-Series", seriesId: "series-l" },
+      { token: "cutHeightCm", itemName: "SP-180 Spreader", seriesName: "Spreaders", seriesId: "series-sp" },
+    ]);
+  });
+
+  it("reports a token once per item however many of its lines it cost", () => {
+    // Within one item the token is one thing to fix, so the banner must not
+    // list it twice — the de-duplication the token-keyed accumulator did get
+    // right, kept.
+    const doc = quotationDoc({
+      items: [
+        quotationItem({
+          seriesQuoteDescription: "<p>Height {{cutHeightCm}}cm.</p><p>Still {{cutHeightCm}}cm.</p>",
+          specs: { cutWidthCm: 220 },
+        }),
+      ],
+    });
+    const data = buildQuotationData(doc, []);
+    expect(data.strippedTokens).toEqual([
+      { token: "cutHeightCm", itemName: "M5180 Cutting System", seriesName: "M-Series", seriesId: "series-m" },
+    ]);
+  });
+
+  it("still reports a token for an item whose product no longer resolves a category", () => {
+    // `seriesId`/`seriesName` are both null in that defensive case. The
+    // banner still has to name the item; it just cannot offer a link.
+    const doc = quotationDoc({
+      items: [
+        quotationItem({
+          name: "Retired Machine",
+          seriesName: null,
+          seriesId: null,
+          specs: {},
+          seriesQuoteDescription: "<p>Height {{cutHeightCm}}cm.</p>",
+        }),
+      ],
+    });
+    const data = buildQuotationData(doc, []);
+    expect(data.strippedTokens).toEqual([
+      { token: "cutHeightCm", itemName: "Retired Machine", seriesName: null, seriesId: null },
+    ]);
   });
 
   it("renders no copy at all when every block of it strips", () => {
@@ -1102,7 +1206,9 @@ describe("buildQuotationData — sectionTitle", () => {
     const data = buildQuotationData(doc, []);
     expect(data.machineSections[0].sectionTitle).toBe("M5180 Cutting System");
     expect(data.machineSections[0].titleBlockHtml).toBeNull();
-    expect(data.strippedTokens).toEqual(["rspUnitCost"]);
+    expect(data.strippedTokens).toEqual([
+      { token: "rspUnitCost", itemName: "M5180 Cutting System", seriesName: "M-Series", seriesId: "series-m" },
+    ]);
   });
 });
 

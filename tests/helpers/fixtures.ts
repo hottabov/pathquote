@@ -114,7 +114,7 @@ export function sheetDoc(overrides: Partial<ToSheetDataDoc> = {}): ToSheetDataDo
 }
 
 /** An M-Series machine: `sheetItem`'s shape plus the fields the quotation
- * renderer needs (`serialNumber`, `kind`, `seriesName`, `specs`,
+ * renderer needs (`serialNumber`, `kind`, `seriesName`, `seriesId`, `specs`,
  * `seriesQuoteDescription`). The `specs` deliberately disagree with the code
  * "M5180" (18cm, not 5cm) so a test can tell the column apart from the
  * label: the renderer reads the column.
@@ -135,6 +135,11 @@ export function quotationItem(overrides: Partial<QuotationItemInput> = {}): Quot
     serialNumber: null,
     kind: "MACHINE",
     seriesName: "M-Series",
+    // A real `Series.id` is a cuid; any stable non-null string does here —
+    // what matters is that the draft banner has something to link to, and
+    // that a test can override it to `null` to exercise the unresolved-
+    // category path.
+    seriesId: "series-m",
     specs: { cutHeightCm: 18, cutWidthCm: 180 },
     seriesQuoteDescription: null,
     lines: [],

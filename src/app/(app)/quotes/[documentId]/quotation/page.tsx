@@ -5,7 +5,7 @@ import { ChevronLeft, Download, TriangleAlert } from "lucide-react";
 import { auth } from "@/auth";
 import { getDocumentForBuilder } from "@/lib/queries/documents";
 import { getContentBlocksForRegion } from "@/lib/queries/content";
-import { buildQuotationData } from "@/lib/quotation-data";
+import { buildQuotationData, type StrippedCopyToken } from "@/lib/quotation-data";
 import { QuotationSheet } from "@/components/sheet/quotation-sheet";
 import { buttonVariants } from "@/components/ui/button";
 import { StatusBadge, STATUS_TONE } from "@/components/ui-kit";
@@ -28,6 +28,51 @@ export async function generateMetadata({
   const document = await getDocumentForBuilder(session.user, documentId);
   if (!document) return { title: "Quotation" };
   return { title: document.number ? `${document.number} — quotation` : "Quotation" };
+}
+
+/** One category's worth of the draft banner: the category to open, and the
+ * items under it that lost a line, each with the tokens that cost them. */
+type StrippedTokenGroup = {
+  /** Stable list key. The category's id when it has one; otherwise its name,
+   * prefixed so an id can never collide with a name. */
+  key: string;
+  seriesId: string | null;
+  seriesName: string | null;
+  items: Array<{ itemName: string; tokens: string[] }>;
+};
+
+/**
+ * Folds the flat, per-(item, token) report into one entry per category.
+ *
+ * One category's copy is one thing to go and edit, however many items on this
+ * quote came out of it — so a quote with three M-Series machines all missing
+ * a figure reads "M-Series" once, with the three items listed under it,
+ * rather than repeating the category (and its link) three times. Order is
+ * first-seen, which is the order the items appear on the sheet.
+ *
+ * A category the item's product no longer resolves (`seriesId === null`)
+ * groups by name, and by the empty string when even the name is gone — one
+ * "Uncategorised" bucket, never one bucket per orphaned item.
+ */
+function groupStrippedTokens(stripped: readonly StrippedCopyToken[]): StrippedTokenGroup[] {
+  const groups: StrippedTokenGroup[] = [];
+  for (const entry of stripped) {
+    const key = entry.seriesId ?? `name:${entry.seriesName ?? ""}`;
+    let group = groups.find((candidate) => candidate.key === key);
+    if (!group) {
+      group = { key, seriesId: entry.seriesId, seriesName: entry.seriesName, items: [] };
+      groups.push(group);
+    }
+    let item = group.items.find((candidate) => candidate.itemName === entry.itemName);
+    if (!item) {
+      item = { itemName: entry.itemName, tokens: [] };
+      group.items.push(item);
+    }
+    // buildQuotationData already de-duplicates per (item, category, token);
+    // belt and braces, so a future change there can't double a token here.
+    if (!item.tokens.includes(entry.token)) item.tokens.push(entry.token);
+  }
+  return groups;
 }
 
 /**
@@ -55,6 +100,9 @@ export default async function QuotationPreviewPage({ params }: { params: Promise
 
   const statusLabel = document.status === "DRAFT" ? "Draft" : "Final";
   const numberLabel = document.number ?? "Quote draft";
+  // Computed unconditionally, rendered only on a DRAFT (see the banner
+  // below) — grouping an empty list is an empty list.
+  const strippedGroups = groupStrippedTokens(quotationData.strippedTokens);
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 pb-8">
@@ -91,21 +139,54 @@ export default async function QuotationPreviewPage({ params }: { params: Promise
           persistent admin-facing notice in this app: not an error to fix
           before saving (there's nothing to save here), a still-true fact
           about this quote. */}
-      {quotationData.isDraft && quotationData.strippedTokens.length > 0 ? (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+      {quotationData.isDraft && strippedGroups.length > 0 ? (
+        <div
+          role="status"
+          className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+        >
           <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          <span>
-            <strong className="font-semibold">Some lines were removed.</strong> No value for{" "}
-            {quotationData.strippedTokens.map((token, index) => (
-              <span key={token}>
-                {index > 0 ? ", " : ""}
-                <code className="font-mono">{`{{${token}}}`}</code>
-              </span>
-            ))}{" "}
-            in this quote, so the {quotationData.strippedTokens.length > 1 ? "lines using them are" : "line using it is"}{" "}
-            not printed. Edit the category&apos;s quote description in the catalog, or ignore this if the omission is
-            intended.
-          </span>
+          <div className="flex min-w-0 flex-col gap-2">
+            <p>
+              <strong className="font-semibold">Some lines were removed.</strong> These variables have no value in this
+              quote, so the lines using them are not printed. Open a category below to edit its quote description, or
+              ignore this if the omission is intended.
+            </p>
+            {/* One list item per category, its items nested under it — the
+                category is the thing to go and open, so it is the heading and
+                the link, and an item that shares it never repeats it. A
+                category whose product no longer resolves has no id to link,
+                so it stays plain text rather than becoming /catalog/null. */}
+            <ul className="flex flex-col gap-1.5">
+              {strippedGroups.map((group) => (
+                <li key={group.key} className="min-w-0">
+                  {group.seriesId ? (
+                    <Link
+                      href={`/catalog/${group.seriesId}`}
+                      className="focus-ring -my-1 inline-block rounded-md py-1 font-semibold underline underline-offset-2 transition-colors hover:text-amber-900"
+                    >
+                      {group.seriesName ?? "Uncategorised"}
+                    </Link>
+                  ) : (
+                    <span className="font-semibold">{group.seriesName ?? "Uncategorised"}</span>
+                  )}
+                  <ul className="mt-0.5 flex flex-col gap-0.5 pl-4">
+                    {group.items.map((item) => (
+                      <li key={item.itemName} className="break-words">
+                        {item.itemName}
+                        {" — "}
+                        {item.tokens.map((token, index) => (
+                          <span key={token}>
+                            {index > 0 ? ", " : ""}
+                            <code className="font-mono">{`{{${token}}}`}</code>
+                          </span>
+                        ))}
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       ) : null}
 

@@ -11,7 +11,7 @@
 // `DocumentForBuilder` satisfies `QuotationDataDoc` without either file
 // importing the other, as long as `DocumentForBuilder`'s items carry the
 // extra fields (`kind`, `specs`, `seriesQuoteDescription`, `seriesName`,
-// `serialNumber`) this module needs.
+// `seriesId`, `serialNumber`) this module needs.
 import type { ProductKind } from "@prisma/client";
 import { formatMoney } from "./format";
 import { machineSpecSentence, extraSpecVars } from "./machine-specs";
@@ -81,6 +81,13 @@ export type QuotationItemInput = ToSheetItemInput & {
    * display only, the prose `machineSpecSentence` opens with. `null` for a
    * snapshot item whose product no longer resolves a series. */
   seriesName: string | null;
+  /** The item's product's `Series.id`. Not display data: it is what lets the
+   * draft banner link a stripped token straight to the editor that owns the
+   * copy (`/catalog/<seriesId>`) instead of naming a category the reader then
+   * has to go and find. `null` for a snapshot item whose product no longer
+   * resolves a category — the banner then names the category without linking
+   * it rather than linking to `/catalog/null`. */
+  seriesId: string | null;
   /** `Product.specs` exactly as stored (opaque `Json?`) — validated
    * defensively at runtime via `readProductSpecs`, same treatment as
    * `entitySnapshot`/`bankDetails` in sheet-data.ts. */
@@ -510,6 +517,33 @@ export type QuotationRspRow = {
   rspUnitCost: string;
 };
 
+/**
+ * One token that cost its line, and enough about where it happened for a
+ * reader to act on it.
+ *
+ * A bare token name was not actionable: a quote holding an M-Series machine,
+ * an EasyLoader and a spreader is three plausible categories, and
+ * "`{{cutHeightCm}}` has no value — edit the category's quote description"
+ * named none of them. Every field here exists to answer "which one do I
+ * open?".
+ */
+export type StrippedCopyToken = {
+  /** The token itself, without braces — e.g. `cutHeightCm`. */
+  token: string;
+  /** The item whose copy lost the line, e.g. "L-220 Cutting Machine". The
+   * item, not the product: this is the name printed on the quote, so the
+   * reader can find the section that is missing a sentence. */
+  itemName: string;
+  /** `Series.name` of the category that owns the copy — what the banner
+   * groups by, since one category's copy is one thing to go and edit however
+   * many items on the quote came out of it. `null` for a snapshot item whose
+   * product no longer resolves a category. */
+  seriesName: string | null;
+  /** `Series.id`, so the banner can link straight to the editor. `null` for a
+   * snapshot item whose product no longer resolves a category. */
+  seriesId: string | null;
+};
+
 export type QuotationData = {
   isDraft: boolean;
   number: string | null;
@@ -534,8 +568,10 @@ export type QuotationData = {
   notesHtml: string | null;
   machineSections: QuotationMachineSection[];
   /** Category-copy tokens that had no value on this quote, so their line was
-   * removed. The draft preview lists them; the FINAL PDF ignores them. */
-  strippedTokens: string[];
+   * removed — each one attributed to the item it happened on and the category
+   * whose copy owns it. The draft preview lists them; the FINAL PDF ignores
+   * them. */
+  strippedTokens: StrippedCopyToken[];
   items: QuotationItemRow[];
   extraLines: DocSheetLine[];
   totals: DocSheetTotals;
@@ -621,7 +657,16 @@ export function buildQuotationData(
   // Tokens that cost a line somewhere in this quote's category copy, surfaced
   // by the draft preview so an author learns a sentence vanished instead of
   // discovering it in a signed PDF. Never shown on a FINAL quote.
-  const strippedTokens: string[] = [];
+  //
+  // Attributed, not just named: the same token can be missing on two items
+  // from two different categories, and the reader's next move is to open one
+  // category's editor — so each entry carries the item and the category it
+  // came from, and the de-duplication key is the whole (item, category, token)
+  // triple rather than the token alone. Two items in one category each losing
+  // `{{cutHeightCm}}` are two entries, which the banner groups back together
+  // under one category heading; two items in *different* categories losing it
+  // must never collapse into one, which is exactly what a token-only key did.
+  const strippedTokens: StrippedCopyToken[] = [];
 
   const machineSections: QuotationMachineSection[] = doc.items.map((item) => {
     const lineSummary = sheetItemsById.get(item.id);
@@ -701,7 +746,17 @@ export function buildQuotationData(
     const categoryCopy = item.seriesQuoteDescription ?? "";
     const copyReport = categoryCopy ? substituteWithReport(categoryCopy, vars) : { text: "", stripped: [] };
     for (const token of copyReport.stripped) {
-      if (!strippedTokens.includes(token)) strippedTokens.push(token);
+      const alreadyReported = strippedTokens.some(
+        (reported) =>
+          reported.token === token && reported.itemName === item.name && reported.seriesId === item.seriesId
+      );
+      if (alreadyReported) continue;
+      strippedTokens.push({
+        token,
+        itemName: item.name,
+        seriesName: item.seriesName,
+        seriesId: item.seriesId,
+      });
     }
     const titleBlockHtml = copyReport.text ? renderStoredRichText(copyReport.text) : null;
 
