@@ -4,6 +4,7 @@ import Nodemailer from "next-auth/providers/nodemailer";
 import { createTransport } from "nodemailer";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { buildMagicLinkEmail } from "@/lib/email/magic-link";
+import { toConfirmUrl } from "@/lib/email/magic-link-url";
 import { resolveReplyTo } from "@/lib/email/reply-to";
 import { verify } from "@node-rs/argon2";
 import { Prisma } from "@prisma/client";
@@ -111,7 +112,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // a real, monitored Microsoft 365 mailbox.
       async sendVerificationRequest({ identifier, url, provider }) {
         const { subject, text, html, replyTo } = buildMagicLinkEmail({
-          url,
+          // Never the raw callback URL. `url` signs you in on GET, so the first
+          // machine to fetch it wins — which is what happened on 2026-09-07,
+          // when a link scanner consumed a token 24 seconds after send and 31
+          // seconds before the mail reached the inbox. toConfirmUrl points the
+          // link at an inert page whose button POSTs to that same callback.
+          // See src/lib/email/magic-link-url.ts.
+          url: toConfirmUrl(url),
           // A sign-in link has no document author, so this always resolves to
           // the shared inbox. Quote emails to clients pass the document's
           // author here instead — see src/lib/email/reply-to.ts.
