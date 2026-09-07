@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { ChevronLeft, Download } from "lucide-react";
+import { ChevronLeft, Download, TriangleAlert } from "lucide-react";
 import { auth } from "@/auth";
 import { getDocumentForBuilder } from "@/lib/queries/documents";
 import { getContentBlocksForRegion } from "@/lib/queries/content";
@@ -83,6 +83,31 @@ export default async function QuotationPreviewPage({ params }: { params: Promise
           </a>
         </div>
       </div>
+
+      {/* Draft-only: a FINAL quote must show exactly what the customer sees,
+          so this never renders once `isDraft` is false — see
+          `strippedTokens`'s own doc comment in quotation-data.ts. Same
+          amber/TriangleAlert language as `ConcessionCapBadge`, the other
+          persistent admin-facing notice in this app: not an error to fix
+          before saving (there's nothing to save here), a still-true fact
+          about this quote. */}
+      {quotationData.isDraft && quotationData.strippedTokens.length > 0 ? (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <span>
+            <strong className="font-semibold">Some lines were removed.</strong> No value for{" "}
+            {quotationData.strippedTokens.map((token, index) => (
+              <span key={token}>
+                {index > 0 ? ", " : ""}
+                <code className="font-mono">{`{{${token}}}`}</code>
+              </span>
+            ))}{" "}
+            in this quote, so the {quotationData.strippedTokens.length > 1 ? "lines using them are" : "line using it is"}{" "}
+            not printed. Edit the category&apos;s quote description in the catalog, or ignore this if the omission is
+            intended.
+          </span>
+        </div>
+      ) : null}
 
       <div className="overflow-x-auto rounded-xl bg-slate-100 p-4 sm:p-8">
         <div className="mx-auto w-fit shadow-lg">
