@@ -22,12 +22,26 @@ import { CATEGORY_TOKENS, tokensIn } from "../src/lib/quote-variables";
  *    printed before a single row is touched
  *  - refuses to overwrite a Series.quoteDescription that is already
  *    non-empty -- reports and skips that one write, and does not fail the
- *    whole run over it
- *  - safe to run twice: everything this script would touch is gone after a
- *    first --apply, so a second run (dry or --apply) finds nothing to do
+ *    whole run over it. Crucially, a key's ContentBlock row(s) are only ever
+ *    deleted once EVERY one of its target series was actually written (see
+ *    `machine.m-series`, which targets both M and X) -- if even one target
+ *    was skipped or had a missing series code, the source row is left in
+ *    place so the body still exists somewhere and a human can reconcile it
+ *    by hand
+ *  - safe to run twice: a key whose every target series was actually written
+ *    has its ContentBlock row(s) gone after the first --apply, so a second
+ *    run (dry or --apply) finds nothing left to do for that key. A key with
+ *    a skipped or missing target keeps its ContentBlock row(s) and keeps
+ *    reporting the same skip/error on every subsequent run until a human
+ *    resolves it by hand -- that is not a bug, it is the point
+ *  - a run whose only unresolved items are non-empty-destination skips (no
+ *    missing series, no unrecognized keys) exits with status 2, not 0 and
+ *    not 1 -- a skip is a human decision waiting to happen, not a clean run
+ *    and not a malfunction, so it gets its own distinct exit code
  *  - a target series code that does not exist is reported clearly and does
  *    not crash the script -- but it does leave that key's ContentBlock
  *    row(s) in place (not fully migrated) and makes the run exit non-zero
+ *    (status 1, same as an unrecognized key -- see below)
  *  - a ContentBlock key this script doesn't recognise (not a migration
  *    source, not one of the delete-outright keys, not terms./conditions./
  *    rsp.) is reported and left completely untouched, and also makes the
@@ -106,10 +120,13 @@ type KeyPlan = {
   overrides: Array<{ id: string; regionCode: string; body: string }>;
   writes: SeriesWritePlan[];
   unknownTokens: string[];
-  /** True when every write for this key resolved one way or another (write
-   * or skip-nonempty) -- i.e. nothing is left for a future run to do. False
-   * when at least one target series is missing, in which case this key's
-   * ContentBlock row(s) are left in place rather than deleted. */
+  /** True only when every target series for this key was actually written
+   * (status "write") -- i.e. there is nothing left for a human or a future
+   * run to do, so this key's ContentBlock row(s) may be deleted. False when
+   * at least one target resolved to "skip-nonempty" (destination already has
+   * copy) or "missing-series" (series code not found): either way, at least
+   * one destination never got this body, so the source row must survive so
+   * the body isn't lost from both places at once. */
   fullyResolved: boolean;
 };
 
@@ -134,6 +151,13 @@ async function computePlan(db: Db) {
           fullyResolved = false;
         } else if (series.quoteDescription && series.quoteDescription.trim() !== "") {
           writes.push({ status: "skip-nonempty", seriesCode, existingLength: series.quoteDescription.length });
+          // A skipped destination means this key is NOT fully migrated: the
+          // body still needs to live somewhere, so the source ContentBlock
+          // row(s) must not be deleted below (see `apply`'s `fullyResolved`
+          // check). This is the fix for the data-loss path where a
+          // hand-authored Series.quoteDescription caused the write to be
+          // (correctly) skipped but the source row was deleted anyway.
+          fullyResolved = false;
         } else {
           writes.push({ status: "write", seriesCode, seriesId: series.id });
         }
@@ -172,7 +196,9 @@ async function computePlan(db: Db) {
   return { keyPlans, deleteRows, unrecognized };
 }
 
-function printPlan(plan: Awaited<ReturnType<typeof computePlan>>): { hadUnexpectedIssue: boolean } {
+function printPlan(
+  plan: Awaited<ReturnType<typeof computePlan>>
+): { hadUnexpectedIssue: boolean; skipsNonempty: number } {
   let hadUnexpectedIssue = false;
 
   console.log("=== Category copy migration: machine.*/equipment.* -> Series.quoteDescription ===\n");
@@ -188,6 +214,9 @@ function printPlan(plan: Awaited<ReturnType<typeof computePlan>>): { hadUnexpect
         } else if (w.status === "skip-nonempty") {
           console.log(
             `  [SKIP]   Series ${w.seriesCode} already has a non-empty quoteDescription (${w.existingLength} chars) -- refusing to overwrite`
+          );
+          console.log(
+            `  [KEEP]   ContentBlock "${key.blockKey}" retained -- ${w.seriesCode} already has copy`
           );
         } else {
           console.log(`  [ERROR]  Series code "${w.seriesCode}" not found in the catalog -- cannot migrate ${key.blockKey}`);
@@ -211,7 +240,7 @@ function printPlan(plan: Awaited<ReturnType<typeof computePlan>>): { hadUnexpect
         console.log(`  [DELETE] ${rowCount} ContentBlock row(s) for key "${key.blockKey}" once every write above is resolved`);
       } else {
         console.log(
-          `  [KEEP]   ${rowCount} ContentBlock row(s) for key "${key.blockKey}" left in place -- not fully migrated (see [ERROR] above)`
+          `  [KEEP]   ${rowCount} ContentBlock row(s) for key "${key.blockKey}" left in place -- not every target series was written (see [SKIP]/[ERROR] above)`
         );
       }
     }
@@ -257,7 +286,7 @@ function printPlan(plan: Awaited<ReturnType<typeof computePlan>>): { hadUnexpect
   console.log(`  unrecognized ContentBlock keys:          ${plan.unrecognized.length}`);
   console.log("");
 
-  return { hadUnexpectedIssue };
+  return { hadUnexpectedIssue, skipsNonempty };
 }
 
 async function apply(db: Db, plan: Awaited<ReturnType<typeof computePlan>>) {
@@ -282,13 +311,28 @@ async function apply(db: Db, plan: Awaited<ReturnType<typeof computePlan>>) {
   }
 }
 
+/** Exit-code policy for a run whose only unresolved items are non-empty-
+ * destination skips (no missing series, no unrecognized keys): that is a
+ * human decision waiting to happen, not a clean run (status 0) and not a
+ * malfunction (status 1, reserved for `hadUnexpectedIssue`) -- so it gets
+ * its own status, 2, visible to a script or CI checking `$?` without being
+ * mistaken for a crash. No-op (and does not touch `process.exitCode`) once
+ * `hadUnexpectedIssue` is true, since status 1 already covers that run. */
+function reportPendingSkips(hadUnexpectedIssue: boolean, skipsNonempty: number): void {
+  if (hadUnexpectedIssue || skipsNonempty === 0) return;
+  console.log(
+    `note: ${skipsNonempty} write(s) skipped because the destination already has copy -- exiting with status 2 (a human decision is pending; this is not a failure).`
+  );
+  process.exitCode = 2;
+}
+
 async function main() {
   const isApply = process.argv.includes("--apply");
 
   const { db } = await import("../src/lib/db");
 
   const plan = await computePlan(db);
-  const { hadUnexpectedIssue } = printPlan(plan);
+  const { hadUnexpectedIssue, skipsNonempty } = printPlan(plan);
 
   const nothingToDo =
     plan.keyPlans.every((k) => !k.defaultBlock && k.overrides.length === 0) && plan.deleteRows.length === 0;
@@ -304,26 +348,40 @@ async function main() {
       console.log("note: at least one unexpected issue was reported above -- exiting non-zero even though this was a dry run.");
       process.exitCode = 1;
     }
+    reportPendingSkips(hadUnexpectedIssue, skipsNonempty);
     return;
   }
 
   await apply(db, plan);
 
   // Prove idempotence right away: a second plan over the migrated rows
-  // should find nothing left to migrate or delete (it may still legitimately
-  // report an unresolved key if a target series was missing and is still
-  // missing).
+  // should find nothing left to migrate or delete for any key that was
+  // fully resolved above. A key that was NOT fully resolved (a skipped
+  // non-empty destination, or a missing series code) is expected to still
+  // show up -- its ContentBlock row(s) were deliberately kept -- so only an
+  // UNEXPECTED leftover (a key that fullyResolved said was clear, but still
+  // has rows; or any delete-outright row still present) counts as a
+  // regression worth warning about.
   const after = await computePlan(db);
-  const afterNothingToDo =
-    after.keyPlans.every((k) => !k.defaultBlock && k.overrides.length === 0) && after.deleteRows.length === 0;
-  if (!afterNothingToDo) {
-    console.warn("warning: a second plan is not empty after applying -- re-run with no flags to see what remains");
+  const expectedRemainingKeys = new Set(plan.keyPlans.filter((k) => !k.fullyResolved).map((k) => k.blockKey));
+  const unexpectedLeftoverKeys = after.keyPlans.filter(
+    (k) => (k.defaultBlock !== null || k.overrides.length > 0) && !expectedRemainingKeys.has(k.blockKey)
+  );
+  const hasUnexpectedLeftover = unexpectedLeftoverKeys.length > 0 || after.deleteRows.length > 0;
+
+  if (hasUnexpectedLeftover) {
+    console.warn("warning: a second plan finds unexpected leftover rows after applying -- re-run with no flags to see what remains");
     process.exitCode = 1;
+  } else if (expectedRemainingKeys.size > 0) {
+    console.log(
+      `verified: a second plan finds nothing unexpected -- ${expectedRemainingKeys.size} key(s) intentionally left in place pending human review: ${[...expectedRemainingKeys].join(", ")}`
+    );
   } else {
     console.log("verified: a second plan finds nothing left to do");
   }
 
-  if (hadUnexpectedIssue) process.exitCode = 1;
+  if (hadUnexpectedIssue || hasUnexpectedLeftover) process.exitCode = 1;
+  else reportPendingSkips(hadUnexpectedIssue, skipsNonempty);
 }
 
 main()
