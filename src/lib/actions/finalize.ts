@@ -327,12 +327,29 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
  * runs (same as `entitySnapshot` and `documentsSnapshot`), never read in
  * between.
  *
- * `documentsSnapshot` follows exactly that rule: it stays on the row while
- * the quote is back in DRAFT (`buildQuotationData` prefers it whatever the
- * status, so a reopened quote keeps printing what it froze until it is
- * finalized again), and the next `finalizeDocument` overwrites it wholesale
- * from live text. That is what makes "unfinalize, fix the typo in General
- * Conditions, re-finalize" pick the fix up.
+ * `documentsSnapshot` is the deliberate exception, and is CLEARED here. The
+ * asymmetry is the point: `number`, `entitySnapshot` and the `commission*`
+ * columns describe the IDENTITY of the issued quote and are reused when it is
+ * re-finalized, whereas the snapshot describes what it PRINTED — and printing
+ * is exactly what reopening a quote is meant to change. `buildQuotationData`
+ * prefers a parsed snapshot whatever the status, so leaving one behind made a
+ * reopened quote uneditable in every way that matters:
+ *
+ *  - an admin fixing a typo in General Conditions saw no change in the
+ *    preview or the draft PDF, because the frozen bodies still won;
+ *  - worse with money — a salesperson applying a discount got a page showing
+ *    the PRE-discount figure, because `titleBlockHtml` came from the frozen
+ *    `itemCopyHtml` with the old `{{price}}` baked in while `hasInlinePrice`
+ *    was computed from the live copy, which then suppressed the live
+ *    `sectionPrice` beside it;
+ *  - the D6 stripped-token banner went quiet, since nothing is reported for a
+ *    frozen item.
+ *
+ * Nothing is lost by clearing it: `finalizeDocument` rebuilds the snapshot
+ * from live text on every finalize, so the re-finalize that closes this cycle
+ * writes a fresh one. D7's guarantee ("legal text is frozen into the quote at
+ * FINAL") is untouched — the quote is DRAFT at this moment, and a DRAFT has
+ * never been the thing that must not change.
  */
 export async function unfinalizeDocument(documentId: string): Promise<UnfinalizeResult> {
   const session = await requireAdmin();
@@ -363,7 +380,14 @@ export async function unfinalizeDocument(documentId: string): Promise<Unfinalize
 
   await db.document.update({
     where: { id: document.id },
-    data: { status: "DRAFT" },
+    // `documentsSnapshot` cleared — see the doc comment above: the frozen
+    // bodies would otherwise keep winning over the live text this quote was
+    // reopened to edit. `Prisma.DbNull` rather than `null`, which a
+    // `Json?` column does not accept: it must be a SQL NULL, the one thing
+    // `readDocumentsSnapshot` reads back as "no snapshot". Cleared in the
+    // same write that flips the status, so a quote is never DRAFT while
+    // still carrying what it printed.
+    data: { status: "DRAFT", documentsSnapshot: Prisma.DbNull },
   });
 
   revalidateDocumentList();

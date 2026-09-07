@@ -1919,4 +1919,41 @@ describe("quote documents", () => {
     expect(data.machineSections[0].titleBlockHtml).toContain("Frozen one");
     expect(data.machineSections[1].titleBlockHtml).toContain("Live two");
   });
+
+  // The row a REOPENED quote actually presents. `unfinalizeDocument`
+  // (src/lib/actions/finalize.ts) clears `documentsSnapshot` when it returns a
+  // quote to DRAFT, precisely so that this is the shape that reaches here:
+  // reopening a quote exists to change what it prints, and a snapshot left on
+  // the row defeats that — `buildQuotationData` prefers a parsed snapshot
+  // whatever the status, so the admin who reopened the quote to fix a typo
+  // would see no change in the preview or the draft PDF.
+  //
+  // The money case is why this is asserted and not merely commented: a frozen
+  // `itemCopyHtml` carries the price it was substituted with, while
+  // `hasInlinePrice` is computed from the LIVE copy — so a discount applied
+  // after reopening printed the pre-discount figure and suppressed the live
+  // one. Both halves are asserted below.
+  it("prints live text and the live price on a quote unfinalize returned to DRAFT", () => {
+    const doc = quotationDoc({
+      status: "DRAFT",
+      // What unfinalize leaves behind: no snapshot, so nothing is frozen.
+      documentsSnapshot: null,
+      showItemPrices: true,
+      items: [
+        quotationItem({
+          id: "item-1",
+          total: "150000.00",
+          seriesQuoteDescription: "<p>Discounted price: {{price}}.</p>",
+        }),
+      ],
+    });
+    const data = buildQuotationData(doc, [{ ...terms, body: "<p>Corrected terms.</p>" }]);
+
+    expect(data.documents[0].bodyHtml).toContain("Corrected terms");
+    // The live copy, with the live (post-discount) total substituted into it.
+    expect(data.machineSections[0].titleBlockHtml).toContain("Discounted price: $150,000");
+    // And the copy's own price line is what the sheet sees, so the structural
+    // `sectionPrice` is correctly suppressed rather than the two disagreeing.
+    expect(data.machineSections[0].hasInlinePrice).toBe(true);
+  });
 });
