@@ -1956,4 +1956,85 @@ describe("quote documents", () => {
     // `sectionPrice` is correctly suppressed rather than the two disagreeing.
     expect(data.machineSections[0].hasInlinePrice).toBe(true);
   });
+
+  // D6's draft banner covered category copy only: `substitutePlaceholders`
+  // was used for document bodies, which throws the `SubstitutionReport` away.
+  // A Terms clause could therefore vanish from the preview with nothing
+  // anywhere saying so.
+  describe("stripped document tokens", () => {
+    it("reports a document-scope token that cost its line, naming the document", () => {
+      const doc = quotationDoc({ company: null });
+      const data = buildQuotationData(doc, [
+        { ...terms, body: "<p>Prepared for {{clientName}}.</p><p>Delivery in {{deliveryWeeks}} weeks.</p>" },
+      ]);
+      expect(data.strippedDocumentTokens).toEqual([
+        { token: "clientName", documentKey: "terms", documentTitle: "Terms" },
+      ]);
+      // The line itself is gone, as it always was — never a blank.
+      expect(data.documents[0].bodyHtml).not.toContain("Prepared for");
+      expect(data.documents[0].bodyHtml).toContain("Delivery in 14 weeks");
+    });
+
+    it("attributes each token to the document it happened in", () => {
+      const data = buildQuotationData(quotationDoc({ company: null }), [
+        { ...terms, body: "<p>{{clientName}}</p>" },
+        { ...conditions, body: "<p>{{validityDate}}</p>" },
+      ]);
+      // `validityDate` resolves on this fixture (validityDays: 30), so only
+      // the Terms strip is reported — and it names Terms, not Conditions.
+      expect(data.strippedDocumentTokens).toEqual([
+        { token: "clientName", documentKey: "terms", documentTitle: "Terms" },
+      ]);
+    });
+
+    it("reports one entry per (document, token), never a duplicate", () => {
+      const data = buildQuotationData(quotationDoc({ company: null }), [
+        { ...terms, body: "<p>{{clientName}} A</p><p>{{clientName}} B</p>" },
+      ]);
+      expect(data.strippedDocumentTokens).toHaveLength(1);
+    });
+
+    // The judgement call. A DRAFT has no number until it is finalized, so
+    // `{{quoteNumber}}` strips on EVERY unnumbered draft and there is nothing
+    // its author can do about it — the number is allocated by
+    // finalizeDocument, not typed by anyone. Reporting it would fire the
+    // banner on every draft carrying that clause, which is how a reader
+    // learns to ignore the banner that does carry an actionable strip. So it
+    // is withheld with OMIT: the line still goes (no blank in a customer-
+    // facing quote), and nothing is reported. Same mechanism a deliberately
+    // hidden `{{price}}` already uses.
+    it("strips {{quoteNumber}} on an unnumbered draft without reporting it", () => {
+      const data = buildQuotationData(quotationDoc({ number: null }), [
+        { ...terms, body: "<p>Quote {{quoteNumber}}</p><p>Delivery in {{deliveryWeeks}} weeks.</p>" },
+      ]);
+      expect(data.strippedDocumentTokens).toEqual([]);
+      expect(data.documents[0].bodyHtml).not.toContain("Quote");
+      expect(data.documents[0].bodyHtml).toContain("Delivery in 14 weeks");
+    });
+
+    it("substitutes {{quoteNumber}} normally once the quote has one", () => {
+      const data = buildQuotationData(quotationDoc({ number: "Q-AU-2026-001" }), [
+        { ...terms, body: "<p>Quote {{quoteNumber}}</p>" },
+      ]);
+      expect(data.documents[0].bodyHtml).toContain("Q-AU-2026-001");
+      expect(data.strippedDocumentTokens).toEqual([]);
+    });
+
+    // A frozen body was substituted once, on the day it was signed; nothing
+    // is stripped from it now, so nothing is reported now — the same rule
+    // `strippedTokens` already follows for a snapshotted item's copy.
+    it("reports nothing for a quote rendering from its snapshot", () => {
+      const doc = quotationDoc({
+        status: "FINAL",
+        company: null,
+        documentsSnapshot: {
+          version: 1,
+          documents: [{ key: "terms", title: "Terms", bodyHtml: "<p>As signed.</p>" }],
+          itemCopyHtml: {},
+        },
+      });
+      const data = buildQuotationData(doc, [{ ...terms, body: "<p>{{clientName}}</p>" }]);
+      expect(data.strippedDocumentTokens).toEqual([]);
+    });
+  });
 });

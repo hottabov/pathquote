@@ -626,6 +626,30 @@ export type StrippedCopyToken = {
   seriesId: string | null;
 };
 
+/**
+ * The document-scope counterpart of `StrippedCopyToken`: one token that cost
+ * its line out of a legal document's body, and where to go and fix it.
+ *
+ * A parallel type rather than a widened `StrippedCopyToken` with a
+ * discriminant, because the two share exactly one field. A document strip has
+ * no item and no category — all three of `itemName`, `seriesName` and
+ * `seriesId` would become meaningless here, and every existing reader of
+ * `StrippedCopyToken` would have to start narrowing a union to keep reading
+ * the fields it reads today. Two small total types, each answering "which one
+ * do I open?" for its own scope, cost the banner one more list and cost the
+ * type nothing.
+ */
+export type StrippedDocumentToken = {
+  /** The token itself, without braces — e.g. `clientName`. */
+  token: string;
+  /** `QuoteDocument.key`, so the banner can link to `/documents/<key>`. */
+  documentKey: string;
+  /** The document's printed heading, e.g. "Terms" — what the banner names,
+   * since that is what the reader sees on the quote and in the Documents
+   * list. */
+  documentTitle: string;
+};
+
 export type QuotationData = {
   isDraft: boolean;
   number: string | null;
@@ -654,6 +678,12 @@ export type QuotationData = {
    * whose copy owns it. The draft preview lists them; the FINAL PDF ignores
    * them. */
   strippedTokens: StrippedCopyToken[];
+  /** The same report for the DOCUMENT scope — tokens that had no value in a
+   * legal document's body, so their clause was removed, each attributed to
+   * the document to open. Empty for a quote rendering from its snapshot: a
+   * frozen body was substituted once, on the day it was signed, and nothing
+   * is stripped from it now. */
+  strippedDocumentTokens: StrippedDocumentToken[];
   items: QuotationItemRow[];
   extraLines: DocSheetLine[];
   totals: DocSheetTotals;
@@ -1055,7 +1085,21 @@ export function buildQuotationData(
     warrantyMonths: String(terms.warrantyMonths),
     bankDetails: formatBankDetails(sheet.entity.bankDetails),
     validityDate: sheet.validityDate ?? "",
-    quoteNumber: sheet.number ?? "",
+    // `OMIT`, not `""`, for a quote that has no number yet — the one document
+    // token deliberately withheld rather than reported. A DRAFT has no number
+    // until `finalizeDocument` allocates one, so a Terms clause referencing
+    // `{{quoteNumber}}` strips on EVERY unnumbered draft, and there is nothing
+    // its author can do about it: the number is not a field anyone types.
+    // Reporting it would raise the banner on every such draft, which is how a
+    // reader learns to ignore the banner on the drafts where it names a
+    // genuinely missing figure. The line still goes (never a blank on a
+    // customer-facing quote) and the FINAL, which always has a number,
+    // substitutes it normally.
+    //
+    // `validityDate` and `clientName` below are NOT withheld: both are
+    // actionable — attach a client, set the validity — and both are worth
+    // knowing about before a quote goes out.
+    quoteNumber: sheet.number ?? OMIT,
     clientName: sheet.client?.companyName ?? "",
   };
 
@@ -1070,16 +1114,32 @@ export function buildQuotationData(
   // builder panel would need an inclusion list of its own before an optional
   // one could be turned on, which is not something this renderer can invent.
   const excluded = new Set(doc.excludedDocumentKeys);
+  // Collected as the bodies are substituted, so a clause that vanished from
+  // the preview says so. `substituteWithReport` rather than
+  // `substitutePlaceholders`: the report was being discarded here, which left
+  // the D6 banner blind to the whole document scope — a Terms line carrying
+  // `{{clientName}}` disappeared from a draft with no client attached and
+  // nothing anywhere explained it.
+  const strippedDocumentTokens: StrippedDocumentToken[] = [];
   const liveDocuments: QuotationDocumentSection[] = Array.from(
     resolveQuoteDocuments(documents, doc.regionId).values()
   )
     .filter((row) => row.includedByDefault && !excluded.has(row.key))
     .sort((a, b) => a.sortOrder - b.sortOrder)
-    .map((row) => ({
-      key: row.key,
-      title: row.title,
-      bodyHtml: renderStoredRichText(substitutePlaceholders(row.body, documentVars)),
-    }));
+    .map((row) => {
+      const report = substituteWithReport(row.body, documentVars);
+      // `report.stripped` is already distinct within one body, and each body
+      // is visited once, so no de-duplication is needed across documents —
+      // the same token missing in two documents is two things to fix.
+      for (const token of report.stripped) {
+        strippedDocumentTokens.push({ token, documentKey: row.key, documentTitle: row.title });
+      }
+      return {
+        key: row.key,
+        title: row.title,
+        bodyHtml: renderStoredRichText(report.text),
+      };
+    });
 
   // A quote that froze its documents prints what it froze. Re-sanitized on
   // the way out for the same reason an item's frozen copy is — the column is
@@ -1138,6 +1198,11 @@ export function buildQuotationData(
     notesHtml,
     machineSections,
     strippedTokens,
+    // Nothing to report about a body that was substituted once, months ago,
+    // and is being replayed verbatim — `liveDocuments` above is computed
+    // regardless (it is what a snapshot falls back to) but its report
+    // describes text this quote is not printing.
+    strippedDocumentTokens: snapshot ? [] : strippedDocumentTokens,
     items: sheet.items.map((item) => ({
       ...item,
       descriptionHtml: item.description ? renderStoredRichText(item.description) : null,

@@ -5,7 +5,7 @@ import { ChevronLeft, Download, TriangleAlert } from "lucide-react";
 import { auth } from "@/auth";
 import { getDocumentForBuilder } from "@/lib/queries/documents";
 import { getQuoteDocumentsForRegion } from "@/lib/queries/quote-documents";
-import { buildQuotationData, type StrippedCopyToken } from "@/lib/quotation-data";
+import { buildQuotationData, type StrippedCopyToken, type StrippedDocumentToken } from "@/lib/quotation-data";
 import { QuotationSheet } from "@/components/sheet/quotation-sheet";
 import { buttonVariants } from "@/components/ui/button";
 import { StatusBadge, STATUS_TONE } from "@/components/ui-kit";
@@ -75,6 +75,33 @@ function groupStrippedTokens(stripped: readonly StrippedCopyToken[]): StrippedTo
   return groups;
 }
 
+/** One legal document's worth of the same banner: the document to open, and
+ * the tokens whose clauses were removed from it. */
+type StrippedDocumentGroup = {
+  documentKey: string;
+  documentTitle: string;
+  tokens: string[];
+};
+
+/**
+ * The document-scope counterpart of `groupStrippedTokens`, one level
+ * shallower: a document has no items under it, so it folds to one entry per
+ * document with its tokens listed. Order is first-seen, which
+ * `buildQuotationData` produces in the documents' own print order.
+ */
+function groupStrippedDocumentTokens(stripped: readonly StrippedDocumentToken[]): StrippedDocumentGroup[] {
+  const groups: StrippedDocumentGroup[] = [];
+  for (const entry of stripped) {
+    let group = groups.find((candidate) => candidate.documentKey === entry.documentKey);
+    if (!group) {
+      group = { documentKey: entry.documentKey, documentTitle: entry.documentTitle, tokens: [] };
+      groups.push(group);
+    }
+    if (!group.tokens.includes(entry.token)) group.tokens.push(entry.token);
+  }
+  return groups;
+}
+
 /**
  * Read-only render of the extended, content-block-driven quotation sheet —
  * the same `QuotationSheet` the quotation PDF route (`/api/quotes/
@@ -106,6 +133,8 @@ export default async function QuotationPreviewPage({ params }: { params: Promise
   // Computed unconditionally, rendered only on a DRAFT (see the banner
   // below) — grouping an empty list is an empty list.
   const strippedGroups = groupStrippedTokens(quotationData.strippedTokens);
+  const strippedDocumentGroups = groupStrippedDocumentTokens(quotationData.strippedDocumentTokens);
+  const hasStripped = strippedGroups.length > 0 || strippedDocumentGroups.length > 0;
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 pb-8">
@@ -142,7 +171,7 @@ export default async function QuotationPreviewPage({ params }: { params: Promise
           persistent admin-facing notice in this app: not an error to fix
           before saving (there's nothing to save here), a still-true fact
           about this quote. */}
-      {quotationData.isDraft && strippedGroups.length > 0 ? (
+      {quotationData.isDraft && hasStripped ? (
         <div
           role="status"
           className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800"
@@ -151,7 +180,7 @@ export default async function QuotationPreviewPage({ params }: { params: Promise
           <div className="flex min-w-0 flex-col gap-2">
             <p>
               <strong className="font-semibold">Some lines were removed.</strong> These variables have no value in this
-              quote, so the lines using them are not printed. Open a category below to edit its quote description, or
+              quote, so the lines using them are not printed. Open the category or document below to edit its text, or
               ignore this if the omission is intended.
             </p>
             {/* One list item per category, its items nested under it — the
@@ -186,6 +215,32 @@ export default async function QuotationPreviewPage({ params }: { params: Promise
                       </li>
                     ))}
                   </ul>
+                </li>
+              ))}
+            </ul>
+            {/* The document scope, in the same shape one level shallower: the
+                document is the thing to go and open, and unlike a category it
+                always has a key to link with, so there is no plain-text
+                fallback here. `{{quoteNumber}}` never appears in this list —
+                see `documentVars` in quotation-data.ts: an unnumbered draft
+                withholds it deliberately rather than reporting a gap nobody
+                can close. */}
+            <ul className="flex flex-col gap-1.5">
+              {strippedDocumentGroups.map((group) => (
+                <li key={group.documentKey} className="min-w-0 break-words">
+                  <Link
+                    href={`/documents/${group.documentKey}`}
+                    className="focus-ring -my-1 inline-block rounded-md py-1 font-semibold underline underline-offset-2 transition-colors hover:text-amber-900"
+                  >
+                    {group.documentTitle}
+                  </Link>
+                  {" — "}
+                  {group.tokens.map((token, index) => (
+                    <span key={token}>
+                      {index > 0 ? ", " : ""}
+                      <code className="font-mono">{`{{${token}}}`}</code>
+                    </span>
+                  ))}
                 </li>
               ))}
             </ul>

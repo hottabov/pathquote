@@ -68,6 +68,7 @@ function baseQuotationData(overrides: Partial<QuotationData> = {}): QuotationDat
     notesHtml: null,
     machineSections: [],
     strippedTokens: [],
+    strippedDocumentTokens: [],
     items: [],
     extraLines: [],
     totals: {
