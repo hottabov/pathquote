@@ -19,7 +19,7 @@ import type { ActionResult } from "./_internal";
 
 /**
  * Creates a DRAFT quote and redirects straight into its builder — the
- * "New quote" button on /documents submits with no fields, so the draft
+ * "New quote" button on /quotes submits with no fields, so the draft
  * exists before a client is even picked (companyId stays null until
  * setDocumentClient). Region/currency/tax are snapshotted from the author's
  * own region, which is required: an author with no region cannot create a
@@ -34,7 +34,7 @@ export async function createDraft(): Promise<void> {
   // This guards itself rather than leaning on the Documents layout because
   // NO caller goes through that layout — a server action never does. The
   // action body runs before any layout renders, so a form under
-  // `documents/` inherits nothing from `DocumentsLayout`; both call sites
+  // `quotes/` inherits nothing from `DocumentsLayout`; both call sites
   // (the dashboard, src/app/(app)/page.tsx, and the Documents list,
   // src/app/(app)/quotes/page.tsx) post this action directly. Calling the
   // same guard here is what makes a region-less manager land on /no-region
@@ -112,7 +112,7 @@ export async function deleteDraft(documentId: string): Promise<{ error: string }
 }
 
 /**
- * Permanently deletes a document of any status, from the /documents list.
+ * Permanently deletes a document of any status, from the /quotes list.
  * Items/lines cascade via `onDelete: Cascade` (schema.prisma).
  *
  * Scoped like every other action here (`documentWhereForUser`: a MANAGER

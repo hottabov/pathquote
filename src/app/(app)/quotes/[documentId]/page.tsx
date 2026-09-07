@@ -54,7 +54,7 @@ export async function generateMetadata({
   // the tab title.
   const session = (await auth())!;
   const document = await getDocumentForBuilder(session.user, documentId);
-  if (!document) return { title: "Document" };
+  if (!document) return { title: "Quote" };
   return { title: document.number ?? "New quote" };
 }
 

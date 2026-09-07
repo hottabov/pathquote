@@ -25,7 +25,9 @@ export function revalidateHome(): void {
   revalidatePath("/");
 }
 
-// --- documents -------------------------------------------------------------
+// --- documents ---------------------------------------------------------
+// These name the **quotes** routes — `Document` is the quote model. The
+// legal-documents feature landing on /documents next gets its own pair.----
 
 export function revalidateDocumentList(): void {
   revalidatePath("/quotes");
