@@ -338,6 +338,18 @@ export type RegionPriceRow = {
   needsReview: boolean;
 };
 
+/** The regions whose price rows a viewer should see: every active region
+ * for an admin (`regionId` null — the price editor needs the full table),
+ * or just their own. An unknown region id yields an empty list rather than
+ * the full one, so a stale session cannot widen the view. */
+function regionsForPriceRows(
+  regions: RegionSummary[],
+  regionId: string | null
+): RegionSummary[] {
+  if (regionId === null) return regions;
+  return regions.filter((region) => region.id === regionId);
+}
+
 function toRegionPriceRows(
   regions: RegionSummary[],
   prices: { regionId: string; amount: { toString(): string }; needsReview: boolean }[]
@@ -372,8 +384,10 @@ export type ProductDetail = {
 };
 
 /**
- * A single product (by id) with everything the editor needs: every active
- * region's price row (present or not) for the per-region price section.
+ * A single product (by id) with everything the editor needs: a price row
+ * (present or not) per region the viewer may see — every active region for
+ * an admin, their own for anyone else, see `regionsForPriceRows` — for the
+ * per-region price section.
  * Looked up by id rather than by series code + product code: the route it
  * backs (`/catalog/[seriesId]/[productId]`) needs a key that never changes,
  * since a code is free text an admin can edit and may contain characters
@@ -383,10 +397,13 @@ export type ProductDetail = {
  *
  * Request-memoized: `/catalog/[seriesId]/[productId]` loads the product in
  * `generateMetadata` (to decide whether its name may appear in the tab
- * title) and again in the page body.
+ * title) and again in the page body. `cache()` keys on *every* argument, so
+ * both call sites must pass the same `regionId` or the single query becomes
+ * two.
  */
 export const getProductDetailById = cache(async function getProductDetailById(
-  productId: string
+  productId: string,
+  regionId: string | null
 ): Promise<ProductDetail | null> {
   const [product, regions] = await Promise.all([
     db.product.findUnique({
@@ -413,7 +430,7 @@ export const getProductDetailById = cache(async function getProductDetailById(
       maxDiscountPct: product.series.maxDiscountPct?.toString() ?? null,
       imageUrl: product.series.imageUrl,
     },
-    prices: toRegionPriceRows(regions, product.prices),
+    prices: toRegionPriceRows(regionsForPriceRows(regions, regionId), product.prices),
   };
 });
 
@@ -446,8 +463,10 @@ export type OptionDetail = {
   conflictGroups: ConflictGroupSummary[];
 };
 
-/** A single option (by id) with every active region's price row, its
- * series-level compatibility, and its conflicts, for the option editor.
+/** A single option (by id) with a price row per region the viewer may see
+ * (every active region for an admin, their own for anyone else — see
+ * `regionsForPriceRows`), its series-level compatibility, and its conflicts,
+ * for the option editor.
  * Looked up by id rather than code: the route it backs
  * (`/catalog/options/[optionId]`) needs a key that never changes, since a
  * code is free text an admin can edit and may contain characters (like `/`)
@@ -455,9 +474,11 @@ export type OptionDetail = {
  * other callers, so it was replaced here rather than kept alongside this.
  * Request-memoized for the same reason `getProductDetailById` above is:
  * `/catalog/options/[optionId]` reads it in `generateMetadata` and again in
- * the page body. */
+ * the page body — and, as there, both call sites must pass the same
+ * `regionId`, since `cache()` keys on every argument. */
 export const getOptionDetailById = cache(async function getOptionDetailById(
-  optionId: string
+  optionId: string,
+  regionId: string | null
 ): Promise<OptionDetail | null> {
   const [option, regions] = await Promise.all([
     db.option.findUnique({
@@ -486,7 +507,7 @@ export const getOptionDetailById = cache(async function getOptionDetailById(
     noCommission: option.noCommission,
     sortOrder: option.sortOrder,
     imageUrl: option.imageUrl,
-    prices: toRegionPriceRows(regions, option.prices),
+    prices: toRegionPriceRows(regionsForPriceRows(regions, regionId), option.prices),
     compatSeriesIds: option.compat
       .filter((c) => c.productId === null)
       .map((c) => c.seriesId)

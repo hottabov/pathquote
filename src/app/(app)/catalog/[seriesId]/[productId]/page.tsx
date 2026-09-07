@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { isAdminRole } from "@/lib/roles";
+import { priceRegionIdForSessionUser } from "@/lib/authz";
 import { getProductDetailById } from "@/lib/queries/catalog";
 import { catalogVisibilityUserId, isProductHidden } from "@/lib/catalog-visibility";
 import { getHiddenCatalogIds } from "@/lib/queries/catalog-visibility";
@@ -33,7 +34,15 @@ export async function generateMetadata({
   // Re-check hidden-ness here too, same reasoning as the series page's own
   // generateMetadata — a hidden product's name/series shouldn't leak into
   // the tab title for a manager who hit its URL directly.
-  const [product, session] = await Promise.all([getProductDetailById(productId), auth()]);
+  // The session is resolved first, not alongside the product: the product's
+  // price rows are scoped to the viewer's region, so the region has to be
+  // known before the fetch. `CatalogLayout`'s `requireRegion` can't supply
+  // it — a layout doesn't reliably run before a route's `generateMetadata`.
+  const session = await auth();
+  const product = await getProductDetailById(
+    productId,
+    priceRegionIdForSessionUser(session?.user)
+  );
   if (!product) return { title: "Product" };
   const hiddenCatalogIds = await getHiddenCatalogIds(catalogVisibilityUserId(session?.user));
   if (isProductHidden({ id: product.id, seriesId: product.series.id }, hiddenCatalogIds)) {
@@ -44,10 +53,14 @@ export async function generateMetadata({
 
 export default async function ProductEditorPage({ params }: { params: Promise<Params> }) {
   const { productId } = await params;
-  const [product, session] = await Promise.all([
-    getProductDetailById(productId),
-    auth(),
-  ]);
+  // Session first, then the product — same reason as `generateMetadata`
+  // above, and the same `regionId` value, so `getProductDetailById` stays a
+  // single request-memoized query across the two calls.
+  const session = await auth();
+  const product = await getProductDetailById(
+    productId,
+    priceRegionIdForSessionUser(session?.user)
+  );
 
   if (!product) notFound();
 

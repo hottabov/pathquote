@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { isAdminRole } from "@/lib/roles";
+import { priceRegionIdForSessionUser } from "@/lib/authz";
 import { getOptionDetailById, listSeriesWithCounts } from "@/lib/queries/catalog";
 import { catalogVisibilityUserId, filterHiddenSeries } from "@/lib/catalog-visibility";
 import { getHiddenCatalogIds } from "@/lib/queries/catalog-visibility";
@@ -42,16 +43,28 @@ export async function generateMetadata({
   params: Promise<Params>;
 }): Promise<Metadata> {
   const { optionId } = await params;
-  const option = await getOptionDetailById(optionId);
+  // The session is resolved before the option: its price rows are scoped to
+  // the viewer's region, so the region has to be known before the fetch, and
+  // `CatalogLayout`'s `requireRegion` can't supply it — a layout doesn't
+  // reliably run before a route's `generateMetadata`.
+  const session = await auth();
+  const option = await getOptionDetailById(
+    optionId,
+    priceRegionIdForSessionUser(session?.user)
+  );
   return { title: option ? option.code : "Option" };
 }
 
 export default async function OptionEditorPage({ params }: { params: Promise<Params> }) {
   const { optionId } = await params;
-  const [option, series, session] = await Promise.all([
-    getOptionDetailById(optionId),
+  // Session first, then the option — same reason as `generateMetadata`
+  // above, and the same `regionId` value, so `getOptionDetailById` stays a
+  // single request-memoized query across the two calls. `listSeriesWithCounts`
+  // needs no region and still runs alongside the option fetch.
+  const session = await auth();
+  const [option, series] = await Promise.all([
+    getOptionDetailById(optionId, priceRegionIdForSessionUser(session?.user)),
     listSeriesWithCounts(),
-    auth(),
   ]);
 
   if (!option) notFound();

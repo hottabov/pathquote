@@ -79,12 +79,14 @@ function PriceRow({
 }
 
 /**
- * One row per active region, each an independently-submittable form bound
- * to `upsertPrice` for the given target (a product or an option). Empty
- * amount clears the price; anything else upserts it and clears
- * needsReview. Read-only for non-admins (Managers can view but not edit).
- * Amounts are right-aligned with tabular figures per the design direction's
- * numeric-column convention.
+ * One row per region the viewer may see — every active region for an admin,
+ * and only their own for a manager (see `regionsForPriceRows` in
+ * src/lib/queries/catalog.ts, which decides that before the rows get here).
+ * Each row is an independently-submittable form bound to `upsertPrice` for
+ * the given target (a product or an option). Empty amount clears the price;
+ * anything else upserts it and clears needsReview. Read-only for non-admins
+ * (Managers can view but not edit). Amounts are right-aligned with tabular
+ * figures per the design direction's numeric-column convention.
  */
 export function PriceEditor({
   target,
@@ -97,6 +99,15 @@ export function PriceEditor({
   action: (target: PriceTarget, formData: FormData) => Promise<ActionResult>;
   readOnly?: boolean;
 }) {
+  // No rows is reachable now that the list is scoped to the viewer: a
+  // manager whose region has been deactivated, or a session pointing at a
+  // region that no longer exists. Both are correct and fail-closed, but a
+  // blank card under a "Prices by region" heading reads as a bug rather
+  // than as an answer, so say which it is.
+  if (rows.length === 0) {
+    return <p className="text-sm text-slate-500">No price is available for your region.</p>;
+  }
+
   return (
     <div>
       {rows.map((row) => (
