@@ -399,10 +399,6 @@ export const SHEET_CSS = `
     page-break-after: avoid;
     break-after: avoid;
   }
-  .pq-conditions-section .pq-block-body {
-    font-size: 10px;
-    color: #444444;
-  }
   .pq-block-body {
     color: #333333;
   }
@@ -446,11 +442,31 @@ export const SHEET_CSS = `
   .pq-block-body h3:first-child {
     margin-top: 0;
   }
-  .pq-block-body ul {
+  /* An ordered list shares every rule with a bullet one here. It needed none
+     before: the 14 General Conditions clauses were 14 separate blocks the
+     renderer numbered by array position, so a quote's only numbered list was
+     built out of headings. A document is one authored body now and its
+     clauses are an ordered list the author wrote in the editor, which without
+     this rule would print at the browser's default 40px indent — visibly out
+     of line with every bullet list beside it. */
+  .pq-block-body ul,
+  .pq-block-body ol {
     margin: 0 0 8px 0;
     padding-left: 18px;
   }
-  .pq-block-body ul:last-child {
+  .pq-block-body ul:last-child,
+  .pq-block-body ol:last-child {
+    margin-bottom: 0;
+  }
+  /* A legal clause runs to a paragraph or more, so its items need air
+     between them that a two-word bullet does not. Never breaking a clause
+     across a page keeps its number with its text. */
+  .pq-block-body ol > li {
+    margin-bottom: 6px;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .pq-block-body ol > li:last-child {
     margin-bottom: 0;
   }
   .pq-block-body strong {
@@ -600,28 +616,6 @@ export const SHEET_CSS = `
     font-size: 14px;
     font-weight: 700;
     color: #243478;
-  }
-  .pq-rsp-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 14px;
-    page-break-inside: avoid;
-    break-inside: avoid;
-  }
-  .pq-rsp-table th {
-    text-align: left;
-    font-size: 9px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: #2b304f;
-    border-bottom: 2px solid #243478;
-    padding: 6px 4px;
-  }
-  .pq-rsp-table td {
-    padding: 6px 4px;
-    border-bottom: 1px solid #e4e4e4;
-    color: #333333;
   }
   .pq-footer {
     margin-top: 28px;

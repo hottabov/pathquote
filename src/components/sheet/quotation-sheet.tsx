@@ -1,24 +1,23 @@
 import type { QuotationData } from "@/lib/quotation-data";
 import { SHEET_CSS } from "@/components/sheet/sheet-css";
-import { ConditionsSection } from "@/components/sheet/sections/conditions-section";
 import { DocumentHeader } from "@/components/sheet/sections/document-header";
+import { DocumentsSection } from "@/components/sheet/sections/documents-section";
 import { EntityFooter } from "@/components/sheet/sections/entity-footer";
 import { EquipmentDetail } from "@/components/sheet/sections/equipment-detail";
 import { InvestmentSummary } from "@/components/sheet/sections/investment-summary";
 import { NotesSection } from "@/components/sheet/sections/notes-section";
 import { PreparedBlock } from "@/components/sheet/sections/prepared-block";
-import { RspSection } from "@/components/sheet/sections/rsp-section";
 import { SetupImage } from "@/components/sheet/sections/setup-image";
 import { Signatures } from "@/components/sheet/sections/signatures";
-import { TermsSection } from "@/components/sheet/sections/terms-section";
 import { TotalBanner } from "@/components/sheet/sections/total-banner";
 
 /**
  * The extended quotation sheet (Phase 6): a single, self-contained render of
- * a QUOTE's full content-block-driven detail — cover header, one section per
- * machine/equipment item with its admin-authored description and selected
- * options rendered from markdown, an investment summary table, terms,
- * general conditions, the RSP agreement + coverage table, and signatures.
+ * a QUOTE's full detail — cover header, one section per machine/equipment
+ * item with its category's authored copy and selected options, an investment
+ * summary table, then every legal document the quote includes (Terms,
+ * General Conditions of Sale, the RSP agreement, whatever else an admin has
+ * added), and signatures.
  * Used by both the `/quotes/[documentId]/quotation` preview route and,
  * via src/lib/pdf.ts's `renderQuotationHtml`, the quotation PDF pipeline —
  * that second consumer is why this file is deliberately NOT a normal app
@@ -39,8 +38,9 @@ import { TotalBanner } from "@/components/sheet/sections/total-banner";
  *
  * It receives an already-fully-assembled `QuotationData` — see
  * `buildQuotationData` in src/lib/quotation-data.ts, the pure assembler that
- * resolves content blocks, substitutes `{{placeholders}}`, and renders each
- * body to HTML via `renderStoredRichText` (src/lib/rich-text.ts) — and does
+ * resolves each document for the quote's region, substitutes
+ * `{{placeholders}}`, and renders each body to HTML via
+ * `renderStoredRichText` (src/lib/rich-text.ts) — and does
  * no further data work of its own, just JSX. Every block body reaches this
  * component as trusted, already-sanitized HTML (`renderStoredRichText`
  * either sanitizes already-HTML content through an allowlist, or runs
@@ -90,9 +90,7 @@ export function QuotationSheet({ data }: { data: QuotationData }) {
           totals={totals}
           itemPriceVisible={itemPriceVisible}
         />
-        <TermsSection sections={data.termsSections} />
-        <ConditionsSection sections={data.conditionsSections} />
-        <RspSection rsp={data.rsp} />
+        <DocumentsSection documents={data.documents} />
         <EntityFooter entity={data.entity} />
         <Signatures
           showSignature={data.showSignature}
