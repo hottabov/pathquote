@@ -1,5 +1,6 @@
 import { auth } from "@/auth";
 import { getDocumentForBuilder } from "@/lib/queries/documents";
+import { getQuoteDocumentsForRegion } from "@/lib/queries/quote-documents";
 import { buildQuotationData } from "@/lib/quotation-data";
 import { renderQuotationHtml, htmlToPdf, fileImageResolver, quotationPdfFilename, buildFooterHtml } from "@/lib/pdf";
 
@@ -30,12 +31,11 @@ export async function GET(_request: Request, { params }: { params: Promise<Param
     return Response.json({ error: "Not found" }, { status: 404 });
   }
 
-  // No documents yet: the `ContentBlock` rows this route used to pass are not
-  // `QuoteDocument` rows, and the read that replaces them
-  // (`getQuoteDocumentsForRegion`) lands in the next task of the quote-
-  // documents plan. Until then a quote prints its equipment detail and totals
-  // with no legal text — visible, and fixed by the very next commit.
-  const quotationData = buildQuotationData(document, [], { resolveImage: fileImageResolver });
+  // See the same call in src/app/(app)/quotes/[documentId]/quotation/page.tsx
+  // — both read this document's region's own QuoteDocument rows so the
+  // preview and the PDF resolve Terms/Conditions/RSP identically.
+  const documents = await getQuoteDocumentsForRegion(document.regionId);
+  const quotationData = buildQuotationData(document, documents, { resolveImage: fileImageResolver });
   const html = await renderQuotationHtml(quotationData);
 
   let pdf: Buffer;

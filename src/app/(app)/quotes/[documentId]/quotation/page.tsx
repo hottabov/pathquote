@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { ChevronLeft, Download, TriangleAlert } from "lucide-react";
 import { auth } from "@/auth";
 import { getDocumentForBuilder } from "@/lib/queries/documents";
+import { getQuoteDocumentsForRegion } from "@/lib/queries/quote-documents";
 import { buildQuotationData, type StrippedCopyToken } from "@/lib/quotation-data";
 import { QuotationSheet } from "@/components/sheet/quotation-sheet";
 import { buttonVariants } from "@/components/ui/button";
@@ -95,9 +96,10 @@ export default async function QuotationPreviewPage({ params }: { params: Promise
   if (!document) notFound();
 
   // See the same call in src/app/api/quotes/[documentId]/quotation-pdf/route.ts
-  // — the `ContentBlock` read this used to pass is not a `QuoteDocument` read,
-  // and `getQuoteDocumentsForRegion` replaces it in the next task.
-  const quotationData = buildQuotationData(document, []);
+  // — both read this document's region's own QuoteDocument rows so the
+  // preview and the PDF resolve Terms/Conditions/RSP identically.
+  const documents = await getQuoteDocumentsForRegion(document.regionId);
+  const quotationData = buildQuotationData(document, documents);
 
   const statusLabel = document.status === "DRAFT" ? "Draft" : "Final";
   const numberLabel = document.number ?? "Quote draft";
