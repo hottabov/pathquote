@@ -18,12 +18,14 @@ describe("visibleSettingsNavItems", () => {
   });
 
   it("omits admin-only sections for a MANAGER, but keeps the open ones", () => {
+    // Preferences moved into the admin-only set (its values are business-wide
+    // defaults a manager cannot change), leaving just Account and Support.
     const items = visibleSettingsNavItems("MANAGER");
-    expect(items.map((i) => i.label)).toEqual(["Account", "Preferences", "PathQuote Support"]);
+    expect(items.map((i) => i.label)).toEqual(["Account", "PathQuote Support"]);
   });
 
   it("treats a missing role the same as a non-admin", () => {
-    const expected = ["Account", "Preferences", "PathQuote Support"];
+    const expected = ["Account", "PathQuote Support"];
     expect(visibleSettingsNavItems(null).map((i) => i.label)).toEqual(expected);
     expect(visibleSettingsNavItems(undefined).map((i) => i.label)).toEqual(expected);
   });
@@ -92,12 +94,11 @@ describe("activeSettingsNavHref", () => {
   });
 
   it("resolves against the caller's visible items, not the full list", () => {
-    // A MANAGER never renders Users, so a Users path must not resolve to an
-    // item that isn't on their screen.
+    // A MANAGER never renders Users or Preferences, so a path under either
+    // must not resolve to an item that isn't on their screen — it falls back
+    // to Account, the area root, instead.
     const managerItems = visibleSettingsNavItems("MANAGER");
-    expect(activeSettingsNavHref("/settings/preferences", managerItems)).toBe(
-      "/settings/preferences"
-    );
+    expect(activeSettingsNavHref("/settings/preferences", managerItems)).toBe("/settings");
     expect(activeSettingsNavHref("/settings/users", managerItems)).toBe("/settings");
   });
 });

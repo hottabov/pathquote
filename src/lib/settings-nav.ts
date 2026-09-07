@@ -13,8 +13,11 @@ export type SettingsNavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
-  /** Account and Preferences are open to every signed-in user; every other
-   * section is ADMIN-or-DEVELOPER only, same as today (see isAdminRole). */
+  /** Account and PathQuote Support are open to every signed-in user; every
+   * other section is ADMIN-or-DEVELOPER only (see isAdminRole). Preferences
+   * moved here from the open set: its values are business-wide defaults a
+   * manager cannot change, and showing them read-only advertised settings
+   * that are none of their concern. */
   adminOnly: boolean;
   /** Extra path prefixes (besides `href`) that should also mark this item
    * active. Catalogue bundles independent list pages — content blocks,
@@ -26,7 +29,7 @@ export type SettingsNavItem = {
 
 export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
   { href: "/settings", label: "Account", icon: User, adminOnly: false },
-  { href: "/settings/preferences", label: "Preferences", icon: SlidersHorizontal, adminOnly: false },
+  { href: "/settings/preferences", label: "Preferences", icon: SlidersHorizontal, adminOnly: true },
   { href: "/settings/users", label: "Users", icon: Users, adminOnly: true },
   {
     href: "/settings/content",
