@@ -53,6 +53,51 @@ describe("resolveLinkState", () => {
   it("treats expiry as inclusive of the boundary instant", () => {
     expect(resolveLinkState({ ...live, expiresAt: NOW })).toEqual({ kind: "live" });
   });
+
+  // Finding 1: DECLINED is recorded twice -- signingStatus and declinedAt --
+  // and either field being set must be enough to close the gate. Pin both
+  // directions of disagreement so a partial write can never fall through to
+  // expired or (worse, on an unauthenticated gate) live.
+  it("reports declined when signingStatus says DECLINED but declinedAt is null", () => {
+    expect(
+      resolveLinkState({ ...live, signingStatus: "DECLINED", declinedAt: null })
+    ).toEqual({ kind: "declined" });
+  });
+
+  it("reports declined when declinedAt is set but signingStatus disagrees", () => {
+    expect(resolveLinkState({ ...live, signingStatus: "SENT", declinedAt: NOW })).toEqual({
+      kind: "declined",
+    });
+  });
+
+  // Finding 2: the doc comment claims completed > revoked > declined > expired
+  // > live as a full chain. Pin every adjacent pair so the claim is checked,
+  // not just asserted in prose.
+  it("reports revoked even when the link has also expired", () => {
+    expect(
+      resolveLinkState({
+        ...live,
+        revokedAt: NOW,
+        expiresAt: new Date("2026-08-01T10:00:00.000Z"),
+      })
+    ).toEqual({ kind: "revoked" });
+  });
+
+  it("reports declined even when the link has also expired", () => {
+    expect(
+      resolveLinkState({
+        ...live,
+        declinedAt: NOW,
+        expiresAt: new Date("2026-08-01T10:00:00.000Z"),
+      })
+    ).toEqual({ kind: "declined" });
+  });
+
+  it("reports completion even when the request was also declined", () => {
+    expect(
+      resolveLinkState({ ...live, signingStatus: "SIGNED", declinedAt: NOW })
+    ).toEqual({ kind: "completed" });
+  });
 });
 
 describe("addDays", () => {
