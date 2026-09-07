@@ -8,13 +8,11 @@ import { countsForDashboard, type DashboardCounts } from "@/lib/queries/dashboar
 import { listDocuments, type DocumentListItem } from "@/lib/queries/documents";
 import { getUser } from "@/lib/queries/users";
 import { createDraft } from "@/lib/actions/documents";
-import { setUserAvatar } from "@/lib/actions/users";
 import { formatMoney, relativeDate } from "@/lib/format";
 import { firstNameFrom } from "@/lib/avatar";
 import { isAdminRole } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
-import { PageHeader, SectionCard, StatusBadge, STATUS_TONE, EmptyState } from "@/components/ui-kit";
-import { AvatarEditor } from "@/components/users/avatar-editor";
+import { PageHeader, SectionCard, StatusBadge, STATUS_TONE, EmptyState, Avatar } from "@/components/ui-kit";
 
 export const metadata: Metadata = { title: "Dashboard" };
 export const dynamic = "force-dynamic";
@@ -54,16 +52,9 @@ export default async function DashboardPage() {
       <PageHeader
         title={
           <span className="inline-flex items-center gap-3">
-            {/* Editable in place — this is where a MANAGER changes their own
-                photo, since Settings is the admin's section. An ADMIN
-                changes other people's photos from the users list. */}
-            <AvatarEditor
-              name={displayName ?? null}
-              email={session.user.email ?? ""}
-              image={me?.image ?? null}
-              size={40}
-              onSave={setUserAvatar.bind(null, session.user.id)}
-            />
+            {/* Read-only here — the editable control now lives in
+                Settings > Account. */}
+            <Avatar name={displayName ?? null} email={session.user.email ?? ""} image={me?.image ?? null} size={40} />
             {`Hi, ${firstName}`}
           </span>
         }

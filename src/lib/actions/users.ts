@@ -188,6 +188,38 @@ export async function setUserPassword(userId: string, formData: FormData): Promi
   return {};
 }
 
+/**
+ * Sets the *signed-in* user's own password. Separate from `setUserPassword`
+ * above rather than a relaxation of it, and the difference is the point:
+ * this takes no `userId`. There is no id for a caller to substitute,
+ * because the only id it can ever write is `session.user.id`, read on the
+ * server. `setUserPassword` keeps its `requireAdmin` and its explicit
+ * target; the two never share a code path.
+ *
+ * The current password is not required. This is a deliberate product
+ * decision: the session cookie is already the proof of identity, and a
+ * stolen live session can change the password either way — asking for the
+ * old one adds friction without adding a barrier. Revisit only alongside
+ * session invalidation on password change, which would make it meaningful.
+ */
+export async function changeOwnPassword(formData: FormData): Promise<ActionResult> {
+  const session = await requireSession();
+
+  const parsed = setUserPasswordSchema.safeParse({ password: formData.get("password") });
+  if (!parsed.success) {
+    return { error: flattenZodError(parsed.error) };
+  }
+
+  const passwordHash = await hash(parsed.data.password);
+  await db.user.update({
+    where: { id: session.user.id },
+    data: { passwordHash },
+  });
+
+  revalidateUserPaths(session.user.id);
+  return {};
+}
+
 // --- avatar ------------------------------------------------------------------
 
 /** Same URL-shape check `updateProductImage`/`updateOptionImage` apply in
