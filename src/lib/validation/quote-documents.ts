@@ -134,3 +134,81 @@ export function isQuoteDocumentKeyPermutation(proposed: string[], actual: string
   }
   return true;
 }
+
+// --- the builder's own panel (setQuoteTerms / setDocumentExclusions) --------
+
+/**
+ * One ceiling for all four figures rather than a plausible bound per unit
+ * (weeks, days, days, months). These are typo guards, not business rules:
+ * what a quote may promise for delivery or warranty is a commercial
+ * judgement the discount cap has no equivalent of, and the real check is a
+ * salesperson reading the sentence back. 999 is high enough that no honest
+ * figure ever meets it and low enough that a mistyped year ("2026 weeks")
+ * does.
+ */
+const TERM_FIGURE_MAX = 999;
+
+/**
+ * One per-quote override of a region's standard-terms figure. Blank (a
+ * cleared input, a missing FormData value, an explicit `null`) collapses to
+ * `null`, which is what `resolveQuoteTerms` reads as "inherit the region's".
+ *
+ * `0` is NOT blank and must never be folded into it: "Installation: 0 days"
+ * is a legitimate thing to promise for a self-install, which is the whole
+ * reason `resolveQuoteTerms` uses `??` rather than `||`. The blank test here
+ * is deliberately written against the *raw* value before coercion — `z.coerce
+ * .number("")` is `0`, so collapsing after coercion would turn every emptied
+ * field into a promise of zero.
+ */
+const termFigureSchema = z.preprocess(
+  (value) =>
+    value === null || value === undefined || (typeof value === "string" && value.trim() === "")
+      ? null
+      : value,
+  // `.nullable()` rather than a `z.union([z.null(), …])`: a union reports its
+  // own "Invalid input" when every member fails, which is the message a
+  // rejected figure would then carry all the way to the field's inline error.
+  // Nullable delegates to the number rule instead, so "12.5" says "Enter a
+  // whole number".
+  z.coerce
+    .number({ error: "Enter a whole number" })
+    .int("Enter a whole number")
+    .min(0, "Enter 0 or more")
+    .max(TERM_FIGURE_MAX, `Enter ${TERM_FIGURE_MAX} or less`)
+    .nullable()
+);
+
+/**
+ * `setQuoteTerms`' input — all four figures together, the way the builder
+ * panel submits them (same one-call-for-the-whole-group convention
+ * `priceDisplaySchema` follows for its toggle pair). Each field is
+ * independently nullable, so clearing one back to inherited leaves the other
+ * three exactly as they were.
+ */
+export const quoteTermsSchema = z.object({
+  deliveryWeeks: termFigureSchema,
+  installationDays: termFigureSchema,
+  trainingDays: termFigureSchema,
+  warrantyMonths: termFigureSchema,
+});
+
+export type QuoteTermsInput = z.infer<typeof quoteTermsSchema>;
+
+/**
+ * `setDocumentExclusions`' input: the complete set of document keys this
+ * quote leaves out, submitted whole so the action can replace the stored set
+ * rather than diff it (see `DocumentExclusion`'s doc comment in
+ * schema.prisma — absence means included, so the common quote submits `[]`).
+ *
+ * Shape only. Whether a key names a document that actually resolves for this
+ * quote's region is deliberately not checked: an exclusion is subtractive, so
+ * one naming nothing removes nothing, and the alternative — reading the
+ * region's documents inside the write path purely to reject a key the panel
+ * could not have produced — buys no integrity for the query it costs.
+ */
+export const documentExclusionsSchema = z
+  .array(keySchema, { error: "Invalid document selection" })
+  .max(100, "Invalid document selection")
+  .refine((keys) => new Set(keys).size === keys.length, "Duplicate document in selection");
+
+export type DocumentExclusionsInput = z.infer<typeof documentExclusionsSchema>;

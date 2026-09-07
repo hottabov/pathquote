@@ -6,6 +6,8 @@ import {
   reorderQuoteDocumentsSchema,
   isQuoteDocumentKeyPermutation,
   regionCodeSchema,
+  quoteTermsSchema,
+  documentExclusionsSchema,
 } from "../src/lib/validation/quote-documents";
 import { accepts, rejects, expectValid } from "./helpers/schema";
 
@@ -146,4 +148,62 @@ describe("isQuoteDocumentKeyPermutation", () => {
 describe("regionCodeSchema (re-exported)", () => {
   accepts(regionCodeSchema, [["a lowercase code, normalized to uppercase", "uk", "UK"]]);
   rejects(regionCodeSchema, [["an empty code", ""]]);
+});
+
+describe("quoteTermsSchema", () => {
+  const inherited = { deliveryWeeks: "", installationDays: "", trainingDays: "", warrantyMonths: "" };
+  const allNull = { deliveryWeeks: null, installationDays: null, trainingDays: null, warrantyMonths: null };
+
+  accepts(quoteTermsSchema, [
+    ["four blank fields, every figure inherited", inherited, allNull],
+    ["explicit nulls, the same as blank", allNull, allNull],
+    [
+      "figures typed as the strings a form submits",
+      { ...inherited, deliveryWeeks: "10", warrantyMonths: "24" },
+      { ...allNull, deliveryWeeks: 10, warrantyMonths: 24 },
+    ],
+    ["a figure typed with surrounding whitespace", { ...inherited, trainingDays: " 3 " }, { ...allNull, trainingDays: 3 }],
+    ["figures already coerced to numbers", { ...inherited, installationDays: 2 }, { ...allNull, installationDays: 2 }],
+    ["a figure at the 999 ceiling", { ...inherited, deliveryWeeks: "999" }, { ...allNull, deliveryWeeks: 999 }],
+    // An omitted field reads as blank reads as inherited — the same answer
+    // `undefined` gets everywhere else in this schema. The panel always
+    // submits all four, so this is a floor rather than a supported call.
+    ["an omitted field, read as inherited", { deliveryWeeks: "1" }, { ...allNull, deliveryWeeks: 1 }],
+  ]);
+
+  // The rule the whole feature turns on: "Installation: 0 days" is a real
+  // thing to promise for a self-install, so a typed zero must survive as `0`
+  // and not be folded into the blank that means "inherit the region's". A
+  // `z.coerce.number` applied before the blank test would make `""` into `0`
+  // and lose the distinction in the other direction too.
+  it("keeps a typed zero as a real override, distinct from a blank field", () => {
+    const parsed = expectValid(quoteTermsSchema, { ...inherited, installationDays: "0" });
+    expect(parsed.installationDays).toBe(0);
+    expect(parsed.deliveryWeeks).toBeNull();
+  });
+
+  it("keeps a numeric zero as a real override too", () => {
+    expect(expectValid(quoteTermsSchema, { ...inherited, installationDays: 0 }).installationDays).toBe(0);
+  });
+
+  rejects(quoteTermsSchema, [
+    ["a negative figure", { ...inherited, deliveryWeeks: "-1" }, "Enter 0 or more"],
+    ["a fractional figure", { ...inherited, warrantyMonths: "12.5" }, "Enter a whole number"],
+    ["a figure past the ceiling", { ...inherited, deliveryWeeks: "1000" }, "Enter 999 or less"],
+    ["text where a figure belongs", { ...inherited, trainingDays: "soon" }, "Enter a whole number"],
+  ]);
+});
+
+describe("documentExclusionsSchema", () => {
+  accepts(documentExclusionsSchema, [
+    ["an empty list — the common quote, which excludes nothing", []],
+    ["a list of real document keys", ["rsp"]],
+    ["several distinct keys", ["rsp", "conditions"]],
+  ]);
+
+  rejects(documentExclusionsSchema, [
+    ["a duplicated key", ["rsp", "rsp"], "Duplicate document"],
+    ["a key that is not a document key at all", ["general conditions"]],
+    ["something that is not a list", "rsp"],
+  ]);
 });

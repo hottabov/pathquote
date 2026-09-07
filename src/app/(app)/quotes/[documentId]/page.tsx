@@ -15,6 +15,8 @@ import {
   type DocumentForBuilder,
 } from "@/lib/queries/documents";
 import { listActiveRegions } from "@/lib/queries/catalog";
+import { getQuoteDocumentsForRegion } from "@/lib/queries/quote-documents";
+import { resolveQuoteDocuments } from "@/lib/quotation-data";
 import { catalogVisibilityUserId } from "@/lib/catalog-visibility";
 import { getHiddenCatalogIds } from "@/lib/queries/catalog-visibility";
 import { getQuoteValidityDays, getShowOptionIcons } from "@/lib/queries/settings";
@@ -31,6 +33,7 @@ import { ExtraLinesSection } from "@/components/builder/extra-lines-section";
 import { DocumentDiscountField } from "@/components/builder/document-discount-field";
 import { PriceDisplayToggles } from "@/components/builder/price-display-toggles";
 import { NotesSection } from "@/components/builder/notes-section";
+import { TermsDocumentsPanel } from "@/components/builder/terms-documents-panel";
 import { ValidityDaysField } from "@/components/builder/validity-days-field";
 import { DeliveryTermsField } from "@/components/builder/delivery-terms-field";
 import { ProductionFormsSection } from "@/components/documents/production-forms-section";
@@ -143,6 +146,7 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
     orgDefaultValidityDays,
     formsDocument,
     screenSideImages,
+    quoteDocumentRows,
     compatibleOptionsEntries,
   ] = await Promise.all([
     listClientPickerCompanies(session.user),
@@ -161,6 +165,11 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
     // `showOptionIcons`, and threaded down through ItemsSection/ItemsList
     // to every item's ProductionSpecEditor.
     getSpecImages("screenSide"),
+    // Every legal document visible to this quote's region — the same rows
+    // the quotation renderer reads, reduced below by the same
+    // `resolveQuoteDocuments`, so the tickboxes can never offer a document
+    // the sheet would not print (or miss one it would).
+    getQuoteDocumentsForRegion(document.regionId),
     Promise.all(
       Array.from(compatKeys.entries()).map(
         async ([key, { productId, seriesId }]) =>
@@ -172,6 +181,14 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
   const compatibleOptionsByItemKey: Record<string, CompatibleOption[]> = Object.fromEntries(
     compatibleOptionsEntries
   );
+
+  // One row per key for this region (its own version where it has one, the
+  // global default otherwise), in the print order an admin set — the same
+  // selection `buildQuotationData` makes, minus the exclusion filter, which
+  // is exactly what the panel is for.
+  const panelDocuments = Array.from(resolveQuoteDocuments(quoteDocumentRows, document.regionId).values())
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((row) => ({ key: row.key, title: row.title, includedByDefault: row.includedByDefault }));
 
   // Same rule as /clients/new: a manager is offered only their own region,
   // so the inline "new company" form shows it as text rather than a select.
@@ -293,6 +310,32 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
               documentId={document.id}
               notes={document.notes}
               notesHtml={notesHtml}
+              readOnly={!isDraft}
+            />
+          </SectionCard>
+
+          {/* What this quote promises, and which legal documents carry it.
+              Delivery and warranty are negotiated per deal, so a quote may
+              promise something other than its region's standard; RSP printed
+              on every quote whether or not the customer bought it, and is a
+              tickbox now. Sits between Notes and the setup image because it
+              is the last thing about the *deal* before the panels that are
+              purely about how the sheet looks. */}
+          <SectionCard
+            title="Terms and documents"
+            description="The figures this quote promises, and the agreements it prints."
+          >
+            <TermsDocumentsPanel
+              documentId={document.id}
+              region={document.region}
+              terms={{
+                deliveryWeeks: document.deliveryWeeks,
+                installationDays: document.installationDays,
+                trainingDays: document.trainingDays,
+                warrantyMonths: document.warrantyMonths,
+              }}
+              documents={panelDocuments}
+              excludedKeys={document.excludedDocumentKeys}
               readOnly={!isDraft}
             />
           </SectionCard>
