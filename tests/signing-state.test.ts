@@ -105,6 +105,20 @@ describe("canSendToClient", () => {
       })
     ).toEqual({ ok: false, reason: NO_AUTHOR_SIGNATURE });
   });
+
+  it("prefers ALREADY_IN_FLIGHT over NOT_FINAL, a missing signature and a missing email", () => {
+    // Reachable: canUnfinalize permits unfinalizing a SENT document, so a
+    // DRAFT quote with a live client link is a real state, not a contrived
+    // one.
+    expect(
+      canSendToClient({
+        documentStatus: "DRAFT",
+        signingStatus: "SENT",
+        hasAuthorSignature: false,
+        contactEmail: null,
+      })
+    ).toEqual({ ok: false, reason: ALREADY_IN_FLIGHT });
+  });
 });
 
 describe("canRevoke", () => {
