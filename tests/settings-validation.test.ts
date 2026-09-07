@@ -3,6 +3,7 @@ import {
   quoteValidityDaysSchema,
   showOptionIconsSchema,
   commissionTiersSchema,
+  signingLinkValidityDaysSchema,
   isAllowedSettingKey,
   ALLOWED_SETTING_KEYS,
 } from "../src/lib/validation/settings";
@@ -88,5 +89,33 @@ describe("isAllowedSettingKey", () => {
     expect(isAllowedSettingKey("quote.validityDays; DROP TABLE")).toBe(false);
     expect(isAllowedSettingKey("some.other.key")).toBe(false);
     expect(isAllowedSettingKey("")).toBe(false);
+  });
+});
+
+describe("signingLinkValidityDaysSchema", () => {
+  it("accepts a whole number of days in range", () => {
+    expect(signingLinkValidityDaysSchema.parse("30")).toBe(30);
+    expect(signingLinkValidityDaysSchema.parse("1")).toBe(1);
+    expect(signingLinkValidityDaysSchema.parse("365")).toBe(365);
+  });
+
+  it("rejects zero, negatives, fractions and out-of-range values", () => {
+    for (const bad of ["0", "-1", "1.5", "366"]) {
+      expect(signingLinkValidityDaysSchema.safeParse(bad).success).toBe(false);
+    }
+  });
+
+  it("rejects non-numeric input", () => {
+    expect(signingLinkValidityDaysSchema.safeParse("thirty").success).toBe(false);
+  });
+});
+
+describe("signing.linkValidityDays is a writable setting key", () => {
+  it("appears in ALLOWED_SETTING_KEYS", () => {
+    expect(ALLOWED_SETTING_KEYS).toContain("signing.linkValidityDays");
+  });
+
+  it("passes isAllowedSettingKey", () => {
+    expect(isAllowedSettingKey("signing.linkValidityDays")).toBe(true);
   });
 });

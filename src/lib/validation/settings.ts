@@ -9,7 +9,12 @@ import { validityDayCountSchema } from "./validity-days";
  * Kept as an array (rather than inlining string literals at each call site)
  * so a new setting only needs adding here plus a new schema/case in the
  * action's switch. */
-export const ALLOWED_SETTING_KEYS = ["quote.validityDays", "ui.showOptionIcons", "commission.tiers"] as const;
+export const ALLOWED_SETTING_KEYS = [
+  "quote.validityDays",
+  "ui.showOptionIcons",
+  "commission.tiers",
+  "signing.linkValidityDays",
+] as const;
 export type SettingKey = (typeof ALLOWED_SETTING_KEYS)[number];
 
 export function isAllowedSettingKey(key: string): key is SettingKey {
@@ -27,6 +32,23 @@ export const quoteValidityDaysSchema = validityDayCountSchema({
   tooLarge: "Quote validity must be at most 365 days",
 });
 export type QuoteValidityDaysInput = z.infer<typeof quoteValidityDaysSchema>;
+
+/** How many days a client's signing link stays usable, read by
+ * `getSigningLinkValidityDays` (src/lib/queries/settings.ts). Same 1..365
+ * whole-day shape as `quoteValidityDaysSchema`, reusing the same builder;
+ * the default of 30 (used when no `Setting` row exists) lives with that
+ * query, not here.
+ *
+ * Note this only sets the validity of links issued *from now on*: the
+ * resolved value is frozen into `SigningRequest.expiresAt` at send time, so
+ * lowering it never shortens a link already in a client's inbox. */
+export const signingLinkValidityDaysSchema = validityDayCountSchema({
+  invalidType: "Link validity must be a number",
+  notInteger: "Link validity must be a whole number",
+  tooSmall: "Link validity must be at least 1 day",
+  tooLarge: "Link validity must be at most 365 days",
+});
+export type SigningLinkValidityDaysInput = z.infer<typeof signingLinkValidityDaysSchema>;
 
 /** Whether the builder's options editor shows each compatible option's small
  * icon (read by `getShowOptionIcons`, src/lib/queries/settings.ts; default

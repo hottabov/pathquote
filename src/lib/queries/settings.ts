@@ -149,3 +149,30 @@ const readDefaultCommissionTiers = cache(async function readDefaultCommissionTie
 > {
   return readCommissionTiers(db);
 });
+
+const SIGNING_LINK_VALIDITY_SETTING_KEY = "signing.linkValidityDays";
+
+/** Fallback when no `Setting` row exists for "signing.linkValidityDays" (or
+ * its value isn't a finite number). Thirty days is long enough for a quote
+ * to survive a client's holiday and short enough that a forwarded link stops
+ * being a credential. Exported so the settings form can show it as the
+ * field's placeholder without duplicating the number. */
+export const DEFAULT_SIGNING_LINK_VALIDITY_DAYS = 30;
+
+/**
+ * How long a newly-issued client signing link stays usable. Read once per
+ * send by `sendQuoteForSignature` (src/lib/actions/signing.ts) and frozen
+ * into `SigningRequest.expiresAt` — never read again when resolving an
+ * existing link, which is what stops a lowered setting from retroactively
+ * killing outstanding links.
+ *
+ * `cache`d for the same reason `getQuoteValidityDays` is: the settings page
+ * reads it while rendering a field that also needs the current value.
+ */
+export const getSigningLinkValidityDays = cache(async function getSigningLinkValidityDays(): Promise<number> {
+  const setting = await db.setting.findUnique({ where: { key: SIGNING_LINK_VALIDITY_SETTING_KEY } });
+  const rawValue = setting?.value;
+  return typeof rawValue === "number" && Number.isFinite(rawValue)
+    ? rawValue
+    : DEFAULT_SIGNING_LINK_VALIDITY_DAYS;
+});

@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
-import { getQuoteValidityDays, getShowOptionIcons, getCommissionTiers } from "@/lib/queries/settings";
+import {
+  getQuoteValidityDays,
+  getShowOptionIcons,
+  getCommissionTiers,
+  getSigningLinkValidityDays,
+} from "@/lib/queries/settings";
 import { updateSetting } from "@/lib/actions/settings";
 import { QuoteValidityForm } from "@/components/settings/quote-validity-form";
+import { SigningLinkValidityForm } from "@/components/settings/signing-link-validity-form";
 import { ShowOptionIconsForm } from "@/components/settings/show-option-icons-form";
 import { CommissionTiersForm } from "@/components/settings/commission-tiers-form";
 import { PageHeader, SectionCard } from "@/components/ui-kit";
@@ -17,8 +23,9 @@ export const dynamic = "force-dynamic";
  * MANAGER never reaches this page at all.
  */
 export default async function PreferencesSettingsPage() {
-  const [quoteValidityDays, showOptionIcons, commissionTiers] = await Promise.all([
+  const [quoteValidityDays, signingLinkValidityDays, showOptionIcons, commissionTiers] = await Promise.all([
     getQuoteValidityDays(),
+    getSigningLinkValidityDays(),
     getShowOptionIcons(),
     getCommissionTiers(),
   ]);
@@ -33,6 +40,12 @@ export default async function PreferencesSettingsPage() {
             action={updateSetting.bind(null, "quote.validityDays")}
             defaultValue={quoteValidityDays}
           />
+          <div className="border-t border-slate-100 pt-4">
+            <SigningLinkValidityForm
+              action={updateSetting.bind(null, "signing.linkValidityDays")}
+              defaultValue={signingLinkValidityDays}
+            />
+          </div>
           <div className="border-t border-slate-100 pt-4">
             <ShowOptionIconsForm
               action={updateSetting.bind(null, "ui.showOptionIcons")}
