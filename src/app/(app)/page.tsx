@@ -88,7 +88,7 @@ export default async function DashboardPage() {
       </div>
 
       <SectionCard
-        title="Recent documents"
+        title="Recent quotes"
         description="Your last 5 quotes"
         actions={
           <Link href="/quotes" className="focus-ring rounded-md text-sm font-medium text-brand hover:underline">
@@ -97,7 +97,7 @@ export default async function DashboardPage() {
         }
       >
         {recentDocuments.length === 0 ? (
-          <EmptyState icon={FileText} title="No documents yet" description="Create your first quote above." />
+          <EmptyState icon={FileText} title="No quotes yet" description="Create your first quote above." />
         ) : (
           <ul className="flex flex-col divide-y divide-slate-100">
             {recentDocuments.map((document) => (

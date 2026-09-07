@@ -36,7 +36,7 @@ export async function createDraft(): Promise<void> {
   // action body runs before any layout renders, so a form under
   // `documents/` inherits nothing from `DocumentsLayout`; both call sites
   // (the dashboard, src/app/(app)/page.tsx, and the Documents list,
-  // src/app/(app)/documents/page.tsx) post this action directly. Calling the
+  // src/app/(app)/quotes/page.tsx) post this action directly. Calling the
   // same guard here is what makes a region-less manager land on /no-region
   // by either route instead of on the error boundary.
   const { session } = await requireRegion();

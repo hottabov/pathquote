@@ -21,7 +21,7 @@ import {
 } from "@/components/ui-kit";
 import { cn } from "@/lib/utils";
 
-export const metadata: Metadata = { title: "Documents" };
+export const metadata: Metadata = { title: "Quotes" };
 export const dynamic = "force-dynamic";
 
 type SearchParams = { q?: string };
@@ -41,7 +41,7 @@ export default async function DocumentsPage({
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        title="Documents"
+        title="Quotes"
         description={
           isAdminRole(session.user.role) ? "Every quote across the business." : "Quotes you've created."
         }
@@ -77,7 +77,7 @@ export default async function DocumentsPage({
       {documents.length === 0 ? (
         <EmptyState
           icon={FileText}
-          title={q ? "No documents match your search" : "No documents yet"}
+          title={q ? "No quotes match your search" : "No quotes yet"}
           description={q ? "Try a different company name." : "Create your first quote above."}
         />
       ) : (
