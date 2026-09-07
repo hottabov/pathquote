@@ -74,7 +74,10 @@ export default async function DashboardPage() {
         </form>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* One column per NAV_ITEMS entry at `lg` — five since Documents
+          joined them. Left at four, the fifth card sat alone on a row of its
+          own. */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {NAV_ITEMS.map((item) => (
           <NavCard
             key={item.href}

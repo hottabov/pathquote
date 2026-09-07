@@ -2,7 +2,8 @@
 
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { requireAdmin } from "@/lib/authz";
+import { requireAdmin, requireSession } from "@/lib/authz";
+import { renderQuoteDocumentPreview } from "@/lib/quote-document-preview";
 import { sanitizeIfHtml } from "@/lib/rich-text";
 import { revalidateQuoteDocument, revalidateQuoteDocumentList } from "@/lib/revalidate";
 import { DOCUMENT_TOKENS, findUnknownTokens } from "@/lib/quote-variables";
@@ -249,6 +250,37 @@ export async function createQuoteDocument(formData: FormData): Promise<ActionRes
 
   revalidateQuoteDocumentList();
   return {};
+}
+
+/**
+ * Renders `body` with sample figures, for the editor's Preview panel.
+ *
+ * A server action rather than a client-side render for two reasons. The
+ * rendering itself goes through `renderStoredRichText`, whose sanitizer
+ * (`isomorphic-dompurify`) the project deliberately keeps out of browser
+ * chunks — and, more to the point, the markup produced here is handed
+ * straight to `dangerouslySetInnerHTML`, so it must come out of the
+ * allowlist, not out of whatever a legacy markdown row or a paste happens to
+ * contain. Doing it here also means the preview and the printed quote share
+ * one substitution path (see src/lib/quote-document-preview.ts) rather than
+ * a second, drifting one written in the browser.
+ *
+ * `requireSession`, not `requireAdmin`: a MANAGER may read these documents
+ * (that is the whole point of the Documents section), and this action only
+ * ever formats text the caller already supplied — it reads nothing and
+ * writes nothing.
+ */
+export async function previewQuoteDocument(body: string): Promise<ActionResult & { html?: string }> {
+  await requireSession();
+
+  if (typeof body !== "string" || body.trim() === "") {
+    return { error: "Nothing to preview yet — write the document first." };
+  }
+  // Same ceiling `bodySchema` enforces on a save, so a preview can't be used
+  // to hand the sanitizer an unbounded string.
+  if (body.length > 20000) return { error: "Body must be at most 20000 characters" };
+
+  return { html: renderQuoteDocumentPreview(body) };
 }
 
 /**
