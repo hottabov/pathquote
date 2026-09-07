@@ -4,7 +4,7 @@ import { revalidateCompany, revalidateCompanyList } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/authz";
-import { companyWhereForUser } from "@/lib/scope";
+import { assertRegionWritable, companyWhereForUser } from "@/lib/scope";
 import { companySchema, contactSchema } from "@/lib/validation/clients";
 import { idSchema } from "@/lib/validation/documents";
 import { NOT_FOUND_ERROR, flattenZodError, type ActionResult } from "./_shared";
@@ -69,6 +69,15 @@ export async function createCompany(formData: FormData): Promise<ActionResult> {
   const region = await db.region.findUnique({ where: { code: parsed.data.regionCode } });
   if (!region) return { error: "Region not found" };
 
+  // The form field is the client's *claim* about which region this company
+  // belongs to. This is the check. Hiding the picker for a manager (see
+  // /clients/new) is only the UI consequence of this rule, never the rule.
+  try {
+    assertRegionWritable(session.user, region.id);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Region not available" };
+  }
+
   const created = await db.company.create({
     data: {
       name: parsed.data.name,
@@ -118,6 +127,15 @@ export async function updateCompany(companyId: string, formData: FormData): Prom
 
   const region = await db.region.findUnique({ where: { code: parsed.data.regionCode } });
   if (!region) return { error: "Region not found" };
+
+  // The submitted region is checked, not the one already on the row — so this
+  // also stops a manager MOVING one of their own companies into a region that
+  // isn't theirs, not just filing a new one there.
+  try {
+    assertRegionWritable(session.user, region.id);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Region not available" };
+  }
 
   await db.company.update({
     where: { id: companyId },
@@ -336,6 +354,15 @@ export async function createCompanyInline(input: CompanyInlineInput): Promise<Cr
 
   const region = await db.region.findUnique({ where: { code: parsed.data.regionCode } });
   if (!region) return { error: "Region not found" };
+
+  // Same rule and same reason as `createCompany` above — the builder's
+  // inline panel is a second door into company creation, and a guard on one
+  // door is not a guard.
+  try {
+    assertRegionWritable(session.user, region.id);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Region not available" };
+  }
 
   const created = await db.company.create({
     data: {

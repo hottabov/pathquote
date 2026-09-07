@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Download, Eye } from "lucide-react";
 import { auth } from "@/auth";
+import { requireRegion } from "@/lib/authz";
 import { isAdminRole } from "@/lib/roles";
 import {
   getDocumentForBuilder,
@@ -61,7 +62,10 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
   const { documentId } = await params;
   // AppLayout (src/app/(app)/layout.tsx) already calls requireSession and
   // redirects unauthenticated requests, so a session is always present here.
-  const session = (await auth())!;
+  // `requireRegion` rather than a bare `auth()` because this page also has to
+  // decide which regions the inline "+ New company" panel may offer — it is
+  // the same session, plus the viewer's region (`null` for an admin).
+  const { session, regionId } = await requireRegion();
 
   const document = await getDocumentForBuilder(session.user, documentId);
   // A foreign document (belongs to another manager) resolves to the same
@@ -158,6 +162,36 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
     compatibleOptionsEntries
   );
 
+  // Same rule as /clients/new: a manager is offered only their own region,
+  // so the inline "new company" form shows it as text rather than a select.
+  // The enforcement is still createCompanyInline's assertRegionWritable.
+  const offeredRegions = regionId === null ? regions : regions.filter((r) => r.id === regionId);
+
+  // What the panel SHOWS and what it SUBMITS have to be the same region.
+  // `defaultRegionCode` seeds `companyForm.regionCode` (its only use in
+  // ClientSection — it also feeds the reset on cancel, which is the same
+  // seed), and for a manager the field is now static text reading
+  // `offeredRegions[0]`. Those two normally agree, because a document's
+  // region is snapshotted from its author's at creation; they diverge when
+  // an admin moves a manager to another region after that manager's quotes
+  // exist. Seeding from the offered region keeps display and submission in
+  // step and matches what the guard will actually accept. An admin
+  // (`regionId === null`) is unaffected: full list, working select, still
+  // defaulted to the document's own region.
+  //
+  // The `??` fallback is no longer a route a manager can walk into:
+  // `requireRegion` now redirects anyone whose region is missing, deleted or
+  // deactivated, so a manager who reaches this line has exactly one offered
+  // region. It stays for the one case that outlives that guard — its check
+  // and `listActiveRegions()` are two separate reads, so a region
+  // deactivated between them would leave `offeredRegions` empty on a
+  // request already past the redirect — and because seeding "" latches the
+  // panel's Create button disabled with no control to fix it. It is a floor
+  // under a race, not the manager-without-an-active-region case it used to
+  // describe.
+  const defaultRegionCode =
+    regionId === null ? document.regionCode : (offeredRegions[0]?.code ?? document.regionCode);
+
   // Sanitized here rather than inside `NotesSection`, which renders it through
   // `dangerouslySetInnerHTML`: `Document.notes` is a raw column that may
   // predate the write-boundary allowlist (`setDocumentNotes`), so the
@@ -182,8 +216,8 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
             companies={companies}
             initialCompanyId={document.company?.id ?? null}
             initialContactId={document.contactId}
-            regions={regions.map((r) => ({ code: r.code, name: r.name }))}
-            defaultRegionCode={document.regionCode}
+            regions={offeredRegions.map((r) => ({ code: r.code, name: r.name }))}
+            defaultRegionCode={defaultRegionCode}
             readOnly={!isDraft}
           />
 

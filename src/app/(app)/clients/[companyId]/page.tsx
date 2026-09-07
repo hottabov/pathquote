@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { ExternalLink } from "lucide-react";
 import { auth } from "@/auth";
+import { requireRegion } from "@/lib/authz";
 import { isAdminRole } from "@/lib/roles";
 import { getCompanyDetail } from "@/lib/queries/clients";
 import { listActiveRegions } from "@/lib/queries/catalog";
@@ -35,13 +36,27 @@ export default async function CompanyEditorPage({ params }: { params: Promise<Pa
   const { companyId } = await params;
   // AppLayout (src/app/(app)/layout.tsx) already calls requireSession and
   // redirects unauthenticated requests, so a session is always present here.
-  const session = (await auth())!;
+  // `requireRegion` additionally hands back the region this viewer may write
+  // — `null` for an admin, meaning every region.
+  const { session, regionId } = await requireRegion();
 
-  const [company, regions, industries] = await Promise.all([
+  const [company, allRegions, industries] = await Promise.all([
     getCompanyDetail(session.user, companyId),
     listActiveRegions(),
     listIndustries(),
   ]);
+
+  // Same rule as /clients/new: offer a manager only their own region, so the
+  // field renders as static text rather than a choice `updateCompany` would
+  // reject. The enforcement itself is assertRegionWritable in that action.
+  //
+  // "Offered" is not "displayed": `CompanyRegionField` shows and submits
+  // `defaultValues.regionCode` — this company's own region — and uses the
+  // offered one only to put a name to it. A manager an admin has since
+  // re-homed therefore sees the company's real region and gets
+  // FOREIGN_REGION_ERROR in the form's error slot on save, rather than
+  // silently dragging the company into their new one.
+  const regions = regionId === null ? allRegions : allRegions.filter((r) => r.id === regionId);
 
   // A foreign company (belongs to another manager) resolves to the same
   // `null` as a nonexistent one — never leak which case it was.
@@ -49,10 +64,17 @@ export default async function CompanyEditorPage({ params }: { params: Promise<Pa
 
   // Only counted once we know the company exists, since it depends on
   // `company.industryId`. Renaming is admin-only (see `renameIndustry`) —
-  // the picker uses this to decide whether to show the pencil at all.
-  const industryUsageCount = company.industryId
-    ? await countCompaniesUsingIndustry(company.industryId)
-    : 0;
+  // the picker uses `canRename` to decide whether to show the pencil at all.
+  //
+  // The count itself is unscoped by design (see `countCompaniesUsingIndustry`),
+  // so it is cross-manager data: don't even issue the query for a manager.
+  // `null` — not 0 — because a prop handed to a client component lands in the
+  // RSC payload whether or not the component renders it, and the picker turns
+  // `null` into a qualitative "this industry is shared" warning.
+  const industryUsageCount =
+    isAdminRole(session.user.role) && company.industryId
+      ? await countCompaniesUsingIndustry(company.industryId)
+      : null;
   const canRenameIndustry = isAdminRole(session.user.role);
 
   return (
