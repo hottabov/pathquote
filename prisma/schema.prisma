@@ -64,6 +64,15 @@ enum DeliveryTerms {
 // Signature(CLIENT) row. In both cases the signature exists before the act
 // that commits it, which is what gives each signer a window to change their
 // mind (see docs/superpowers/specs/2026-09-07-quote-signing-design.md, D7).
+//
+// EXPIRED and REVOKED are absent for the same reason: neither is a fact
+// about the document, only about the outstanding link, and both are already
+// fully derived from SigningRequest.expiresAt/revokedAt by resolveLinkState
+// (src/lib/signing/link.ts). Adding either here would be a second,
+// independently-driftable place to record something that one column (and,
+// for expiry, one comparison against the clock) already answers -- and
+// Postgres can add an enum value but can never drop one, so it would be
+// undroppable the moment it shipped.
 enum SigningStatus {
   NOT_SENT
   SENT
@@ -997,8 +1006,25 @@ model Signature {
   role        SignerRole
   imageUrl    String
   signerName  String
+  // Null for an AUTHOR whose User account has no email recorded (User.email
+  // is required today, but this predates that guarantee and is kept
+  // nullable rather than assumed). Always present for a CLIENT: the signing
+  // page has no path to a signature without SigningRequest.email behind it.
   signerEmail String?
   signedAt    DateTime   @default(now())
+  // ip and userAgent are null-by-design for an AUTHOR signature: the author
+  // signs inside an authenticated session that already identifies them
+  // (session -> User, logged wherever sessions are), so capturing a second,
+  // weaker identifier here would add nothing. For a CLIENT signature they
+  // are the audit trail -- the client signs on a public, unauthenticated
+  // page, so this is the only record of who was on the other end.
+  //
+  // A third CHECK constraint was proposed alongside the two added in
+  // migration z35 -- requiring `ip` to be set whenever role = CLIENT -- and
+  // rejected: a client behind a proxy that strips `x-forwarded-for` would
+  // then be unable to sign at all, turning a missing header into a blocked
+  // signature. The evidentiary value of an IP does not justify refusing a
+  // customer's signature, so both columns stay nullable for every role.
   ip          String?
   userAgent   String?
 
@@ -1015,22 +1041,39 @@ model Signature {
 // freezes Document.validityDays: an admin lowering the setting must not
 // retroactively kill every outstanding client link.
 model SigningRequest {
-  id            String    @id @default(cuid())
-  documentId    String
-  document      Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  contactId     String
-  contact       Contact   @relation(fields: [contactId], references: [id])
-  email         String
+  id               String    @id @default(cuid())
+  documentId       String
+  document         Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  // A convenience link to the contact record, not the audit trail -- `email`
+  // below already snapshots the exact address the invite went to, the way
+  // every other frozen-at-action-time field in this schema works (compare
+  // DocumentItem's code/name/unitPrice snapshots). Nullable and SET NULL
+  // instead of Prisma's default RESTRICT for a required relation: a contact
+  // who was sent a quote for signature -- sent, expired, revoked, completed,
+  // years ago, it makes no difference -- must still be deletable from
+  // deleteContact (src/lib/actions/clients.ts), which has no pre-check and
+  // no try/catch of its own. Keeping this required and RESTRICT would turn
+  // any such contact permanently undeletable, surfacing to a manager as a
+  // raw unhandled foreign-key exception rather than a message. Matches
+  // Document.contactId's shape above for exactly the same reason.
+  contactId        String?
+  contact          Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  email            String
   // SHA-256 of the token. The token itself never reaches the database, so a
   // dump grants access to no quote.
-  tokenHash     String    @unique
-  expiresAt     DateTime
-  sentAt        DateTime  @default(now())
-  firstViewedAt DateTime?
-  revokedAt     DateTime?
-  declinedAt    DateTime?
-  declineReason String?
-  declineIp     String?
+  tokenHash        String    @unique
+  expiresAt        DateTime
+  sentAt           DateTime  @default(now())
+  firstViewedAt    DateTime?
+  revokedAt        DateTime?
+  declinedAt       DateTime?
+  declineReason    String?
+  declineIp        String?
+  // Symmetric with Signature.ip/userAgent above: declining, like signing, is
+  // a terminal act by an unauthenticated visitor, and the audit trail should
+  // not capture less about the one than the other. declineIp alone (without
+  // this column) was the gap.
+  declineUserAgent String?
 
   @@index([documentId])
 }

@@ -32,7 +32,7 @@ CREATE TABLE "Signature" (
 CREATE TABLE "SigningRequest" (
     "id" TEXT NOT NULL,
     "documentId" TEXT NOT NULL,
-    "contactId" TEXT NOT NULL,
+    "contactId" TEXT,
     "email" TEXT NOT NULL,
     "tokenHash" TEXT NOT NULL,
     "expiresAt" TIMESTAMP(3) NOT NULL,
@@ -42,6 +42,7 @@ CREATE TABLE "SigningRequest" (
     "declinedAt" TIMESTAMP(3),
     "declineReason" TEXT,
     "declineIp" TEXT,
+    "declineUserAgent" TEXT,
 
     CONSTRAINT "SigningRequest_pkey" PRIMARY KEY ("id")
 );
@@ -62,5 +63,19 @@ ALTER TABLE "Signature" ADD CONSTRAINT "Signature_documentId_fkey" FOREIGN KEY (
 ALTER TABLE "SigningRequest" ADD CONSTRAINT "SigningRequest_documentId_fkey" FOREIGN KEY ("documentId") REFERENCES "Document"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "SigningRequest" ADD CONSTRAINT "SigningRequest_contactId_fkey" FOREIGN KEY ("contactId") REFERENCES "Contact"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "SigningRequest" ADD CONSTRAINT "SigningRequest_contactId_fkey" FOREIGN KEY ("contactId") REFERENCES "Contact"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
+-- The archived signed PDF is a pair: a filename and the digest of those exact
+-- bytes. One without the other is not a weaker record, it is a broken one --
+-- a name with no digest proves nothing, a digest with no file verifies
+-- nothing. Enforced here rather than in the action layer because the pair is
+-- written once, at completion, and never edited afterwards.
+ALTER TABLE "Document" ADD CONSTRAINT "Document_signed_pdf_pair"
+  CHECK (("signedPdfName" IS NULL) = ("signedPdfSha256" IS NULL));
+
+-- A signed quote is always a final one. canUnfinalize (src/lib/signing/state.ts)
+-- refuses to reopen a SIGNED document and canSendToClient refuses to send a
+-- DRAFT, so the application can only reach this pairing through a bug -- which
+-- is exactly the case worth catching at the boundary that cannot be bypassed.
+ALTER TABLE "Document" ADD CONSTRAINT "Document_signed_implies_final"
+  CHECK ("signingStatus" <> 'SIGNED' OR "status" = 'FINAL');
