@@ -559,6 +559,9 @@ export function buildQuotationData(
     // here would strip its line on every quote.
     const vars: PlaceholderVars = {
       model: item.code,
+      // The item's own name, the same string `sectionTitle` uses — so copy
+      // that opens "The {{name}} ..." reads as the heading does.
+      name: item.name,
       cutHeightCm,
       cutWidthCm,
       ...(specSentence ? { specSentence } : {}),

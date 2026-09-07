@@ -357,6 +357,22 @@ describe("category quote copy", () => {
     expect(data.strippedTokens).toEqual(["cutHeightCm"]);
   });
 
+  it("resolves {{name}} to the item's own name", () => {
+    // The palette offers `{{name}}`, so buildQuotationData must fill it —
+    // otherwise picking it from the editor silently deletes its own line.
+    const doc = quotationDoc({
+      items: [
+        quotationItem({
+          name: "M-5180 Cutting Machine",
+          seriesQuoteDescription: "The {{name}} is built for volume.",
+        }),
+      ],
+    });
+    const data = buildQuotationData(doc, []);
+    expect(data.machineSections[0].titleBlockHtml).toContain("The M-5180 Cutting Machine is built for volume.");
+    expect(data.strippedTokens).toEqual([]);
+  });
+
   it("still detects an inline price token in the category copy", () => {
     const doc = quotationDoc({
       items: [quotationItem({ seriesQuoteDescription: "Price: {{price}}" })],
