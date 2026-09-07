@@ -173,6 +173,7 @@ export function quotationDoc(overrides: Partial<QuotationDataDoc> = {}): Quotati
     items: [quotationItem()],
     showItemPrices: false,
     showOptionPrices: false,
+    signatures: [],
     ...overrides,
   };
 }

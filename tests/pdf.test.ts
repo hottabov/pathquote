@@ -88,6 +88,7 @@ function baseQuotationData(overrides: Partial<QuotationData> = {}): QuotationDat
     showSignature: true,
     showItemPrices: true,
     showOptionPrices: true,
+    signatures: { author: null, client: null },
     ...overrides,
   };
 }

@@ -353,6 +353,18 @@ export type DocumentForBuilder = {
    * exactly like `logoUrl`/`author.avatar` above, so this stays an
    * unresolved `/api/files/<name>` URL (or `null`) here. */
   heroImageUrl: string | null;
+  /** `Document.signatures` — at most one row per `SignerRole` (see the
+   * `@@unique([documentId, role])` constraint on the `Signature` model),
+   * fed straight into `buildQuotationData`'s `QuotationDataDoc.signatures`
+   * (src/lib/quotation-data.ts), which resolves each side's image through
+   * the same `ImageResolver` as the logo/avatar. Empty for a quote nobody
+   * has signed yet — the common case. */
+  signatures: {
+    role: "AUTHOR" | "CLIENT";
+    imageUrl: string;
+    signerName: string;
+    signedAt: Date;
+  }[];
   updatedAt: Date;
 };
 
@@ -496,6 +508,11 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
       lines: {
         where: { itemId: null },
         orderBy: { sortOrder: "asc" },
+      },
+      // Feeds QuotationDataDoc.signatures (src/lib/quotation-data.ts) — at
+      // most one row per role (documentId, role) is unique on Signature.
+      signatures: {
+        select: { role: true, imageUrl: true, signerName: true, signedAt: true },
       },
     },
   });
@@ -724,6 +741,7 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
     showItemPrices: document.showItemPrices,
     showOptionPrices: document.showOptionPrices,
     heroImageUrl: document.heroImageUrl,
+    signatures: document.signatures,
     updatedAt: document.updatedAt,
   };
 });

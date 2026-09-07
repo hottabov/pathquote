@@ -13,7 +13,7 @@
 // extra fields (`kind`, `specs`, `seriesQuoteDescription`, `seriesName`,
 // `seriesId`, `serialNumber`) this module needs.
 import type { OptionRole, ProductKind } from "@prisma/client";
-import { formatMoney } from "./format";
+import { formatDateAU, formatMoney } from "./format";
 import { machineSpecSentence, extraSpecVars } from "./machine-specs";
 // The one formatter for a metre total ("4.8 m", "6 m") — see its doc comment;
 // it exists for exactly this, and the options editor already prints the same
@@ -129,6 +129,18 @@ export type QuotationDataDoc = Omit<ToSheetDataDoc, "items"> & {
   items: QuotationItemInput[];
   showItemPrices: boolean;
   showOptionPrices: boolean;
+  /** `Document.signatures` — at most one row per `SignerRole` (see the
+   * `@@unique([documentId, role])` constraint on the `Signature` model).
+   * Resolved into `QuotationData.signatures` below; an empty array (nobody
+   * has signed yet) is what makes an untouched quote print unchanged from
+   * before this feature — see `Signatures` in
+   * src/components/sheet/sections/signatures.tsx. */
+  signatures: {
+    role: "AUTHOR" | "CLIENT";
+    imageUrl: string;
+    signerName: string;
+    signedAt: Date;
+  }[];
 };
 
 /** A `ContentBlock` row exactly as stored — `regionId: null` is the global
@@ -611,6 +623,25 @@ export type QuotationData = {
    * visible" rather than reading `showItemPrices` alone. */
   showItemPrices: boolean;
   showOptionPrices: boolean;
+  /** Resolved signature images for the two rules at the foot of the quote.
+   * A null side prints the empty rule it prints today, so an unsigned or
+   * half-signed quote is unchanged from before this feature. */
+  signatures: {
+    author: SheetSignature | null;
+    client: SheetSignature | null;
+  };
+};
+
+/** One resolved signature — one of the two rules `Signatures`
+ * (src/components/sheet/sections/signatures.tsx) renders at the foot of the
+ * quote. */
+export type SheetSignature = {
+  /** Already run through `ImageResolver` — a `/api/files/…` URL in the app,
+   * a base64 data URI in the PDF and on the client-facing page, both of
+   * which render without this app's session cookie. */
+  image: string;
+  name: string;
+  signedAt: string;
 };
 
 export type BuildQuotationDataOpts = {
@@ -967,6 +998,22 @@ export function buildQuotationData(
 
   const notesHtml = doc.notes ? renderStoredRichText(doc.notes) : null;
 
+  // One rule is `AUTHOR` (Pathfinder), the other `CLIENT` (Purchaser) — see
+  // `Signatures` in src/components/sheet/sections/signatures.tsx, which
+  // renders each side's empty rule unchanged when this resolves to `null`.
+  const signatureFor = (role: "AUTHOR" | "CLIENT"): SheetSignature | null => {
+    const row = doc.signatures.find((s) => s.role === role);
+    if (!row) return null;
+    // An unresolvable image prints the empty rule rather than a broken
+    // image icon in the middle of a customer-facing document.
+    const image = resolveImage(row.imageUrl);
+    if (!image) return null;
+    // Same date formatter buildQuotationData already uses for
+    // issueDate/validityDate (see toSheetData) — no second date format on
+    // this page.
+    return { image, name: row.signerName, signedAt: formatDateAU(row.signedAt) };
+  };
+
   return {
     isDraft: sheet.isDraft,
     number: sheet.number,
@@ -993,6 +1040,7 @@ export function buildQuotationData(
     showSignature: sheet.showSignature,
     showItemPrices: doc.showItemPrices,
     showOptionPrices: doc.showOptionPrices,
+    signatures: { author: signatureFor("AUTHOR"), client: signatureFor("CLIENT") },
   };
 }
 

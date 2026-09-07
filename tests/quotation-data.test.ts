@@ -1856,3 +1856,60 @@ describe("buildQuotationData — hero image", () => {
     expect(data.heroImage).toBeNull();
   });
 });
+
+// The two signature rules at the foot of the quote (see
+// src/components/sheet/sections/signatures.tsx) — `data.signatures.author`/
+// `.client` are resolved images the sheet renders in place of an empty rule.
+// `signedAt` is formatted with `formatDateAU`, the same helper
+// `buildQuotationData` already uses for `issueDate`/`validityDate` — no
+// second date format belongs on this page.
+describe("buildQuotationData — signatures", () => {
+  it("carries both signatures through, resolved as images", () => {
+    const doc = quotationDoc({
+      signatures: [
+        {
+          role: "AUTHOR",
+          imageUrl: "/api/files/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee.png",
+          signerName: "Jane Manager",
+          signedAt: new Date("2026-09-07T10:00:00.000Z"),
+        },
+        {
+          role: "CLIENT",
+          imageUrl: "/api/files/11111111-2222-4333-8444-555555555555.png",
+          signerName: "Bob Buyer",
+          signedAt: new Date("2026-09-08T11:30:00.000Z"),
+        },
+      ],
+    });
+    const data = buildQuotationData(doc, [], { resolveImage: (url) => `resolved:${url}` });
+
+    expect(data.signatures.author).toEqual({
+      image: "resolved:/api/files/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee.png",
+      name: "Jane Manager",
+      // formatDateAU: "DD/MM/YYYY".
+      signedAt: "07/09/2026",
+    });
+    expect(data.signatures.client?.name).toBe("Bob Buyer");
+  });
+
+  it("leaves a side null when that party has not signed", () => {
+    const doc = quotationDoc({ signatures: [] });
+    const data = buildQuotationData(doc, [], { resolveImage: (url) => url });
+    expect(data.signatures).toEqual({ author: null, client: null });
+  });
+
+  it("leaves a side null when its image cannot be resolved", () => {
+    const doc = quotationDoc({
+      signatures: [
+        {
+          role: "AUTHOR",
+          imageUrl: "/api/files/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee.png",
+          signerName: "Jane Manager",
+          signedAt: new Date("2026-09-07T10:00:00.000Z"),
+        },
+      ],
+    });
+    const data = buildQuotationData(doc, [], { resolveImage: () => undefined });
+    expect(data.signatures.author).toBeNull();
+  });
+});

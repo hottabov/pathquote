@@ -660,13 +660,29 @@ export const SHEET_CSS = `
   .pq-sig-block {
     flex: 1;
   }
+  .pq-sig-ink {
+    height: 44px;
+    display: flex;
+    align-items: flex-end;
+  }
+  .pq-sig-image {
+    max-height: 44px;
+    max-width: 100%;
+    object-fit: contain;
+    object-position: left bottom;
+  }
   .pq-sig-line {
     border-top: 1px solid #333333;
-    height: 32px;
   }
   .pq-sig-label {
     margin-top: 4px;
     font-size: 10px;
     color: #555555;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .pq-sig-meta {
+    color: #777777;
   }
 `;

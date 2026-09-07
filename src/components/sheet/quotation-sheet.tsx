@@ -94,7 +94,11 @@ export function QuotationSheet({ data }: { data: QuotationData }) {
         <ConditionsSection sections={data.conditionsSections} />
         <RspSection rsp={data.rsp} />
         <EntityFooter entity={data.entity} />
-        <Signatures showSignature={data.showSignature} />
+        <Signatures
+          showSignature={data.showSignature}
+          author={data.signatures.author}
+          client={data.signatures.client}
+        />
       </div>
     </div>
   );
