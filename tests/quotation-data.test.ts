@@ -9,6 +9,7 @@ import {
   type ContentBlockRow,
   type QuotationItemInput,
 } from "../src/lib/quotation-data";
+import { CATEGORY_TOKENS } from "../src/lib/quote-variables";
 import { quotationDoc, quotationItem } from "./helpers/fixtures";
 
 // Pure module — no @/lib/db import (see quotation-data.ts's header comment),
@@ -506,6 +507,33 @@ describe("category quote copy", () => {
     });
     const data = buildQuotationData(doc, []);
     expect(data.machineSections[0].hasInlinePrice).toBe(true);
+  });
+
+  it("fills every token the registry offers", () => {
+    // The belt to the type-level braces (`vars` is a
+    // `Record<CategoryTokenName, ...>` in buildQuotationData): a token added
+    // to CATEGORY_TOKENS but not to the renderer would be offered by the
+    // editor palette, accepted by the save validator, and then silently
+    // delete its own line on every quote — which is exactly how `{{name}}`
+    // shipped broken. This item is a MACHINE carrying every spec, so every
+    // token in the registry is in scope for it and none has an excuse to
+    // strip.
+    const doc = quotationDoc({
+      showItemPrices: true,
+      items: [
+        quotationItem({
+          kind: "MACHINE",
+          seriesName: "M-Series",
+          specs: { cutHeightCm: 18, cutWidthCm: 180, tableWidthMm: 2200, paperWidthMm: 1600 },
+          seriesQuoteDescription: CATEGORY_TOKENS.map((t) => `<p>${t.token}={{${t.token}}}</p>`).join(""),
+        }),
+      ],
+    });
+    const data = buildQuotationData(doc, []);
+    expect(data.strippedTokens).toEqual([]);
+    for (const { token } of CATEGORY_TOKENS) {
+      expect(data.machineSections[0].titleBlockHtml).toContain(`${token}=`);
+    }
   });
 
   it("falls back to the structural price when the price line strips", () => {

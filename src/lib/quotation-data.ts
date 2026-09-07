@@ -25,7 +25,7 @@ import { isHtmlContent } from "./rich-text-core";
 // imported rather than re-derived so "what counts as a token" has exactly one
 // definition shared by the editor palette, the save validator and this
 // renderer.
-import { tokensIn } from "./quote-variables";
+import { tokensIn, type CategoryTokenName } from "./quote-variables";
 import { readProductSpecs } from "./validation/product-specs";
 import {
   dedupeDescription,
@@ -644,24 +644,40 @@ export function buildQuotationData(
     // and nothing else keys on it.
     const specSentence =
       item.kind === "MACHINE" && item.seriesName ? machineSpecSentence(item.seriesName, specs) : null;
+    // Only the figures this product carries — the two width tokens for
+    // equipment with a width but no cutting spec. Each missing one becomes
+    // `""` in `vars` below, which line-strips exactly as an absent key did.
+    const extraSpecs = extraSpecVars(specs);
 
     // The placeholder vars the category's copy resolves against — this
     // product's own figures, so one text authored per category reads
-    // correctly under every product in it. Every token here must also be
-    // declared in src/lib/quote-variables.ts, which is what the catalog
-    // editor offers and validates against; a token offered there but absent
-    // here would strip its line on every quote.
-    const vars: PlaceholderVars = {
+    // correctly under every product in it.
+    //
+    // Typed as an exhaustive record over `CategoryTokenName`, which is what
+    // ties this object to src/lib/quote-variables.ts: the registry is what
+    // the catalog editor offers and the save validator accepts, so a token
+    // declared there with no value here would be offered, saved, and then
+    // silently delete its own line on every quote — the exact shape of the
+    // `{{name}}` defect. Adding a name to `CATEGORY_TOKEN_NAMES` now fails to
+    // compile until a value appears below.
+    //
+    // Which means every key is unconditional. A figure this product does not
+    // carry is `""`, not an omitted key: `substituteWithReport` treats the
+    // two identically (`value === undefined || value === ""` — strip the
+    // line, report the token), so the behaviour is the one a conditional
+    // spread gave, without the hole in the type.
+    const vars: Record<CategoryTokenName, string | typeof OMIT> = {
       model: item.code,
       // The item's own name, the same string `sectionTitle` uses — so copy
       // that opens "The {{name}} ..." reads as the heading does.
       name: item.name,
       cutHeightCm,
       cutWidthCm,
-      ...(specSentence ? { specSentence } : {}),
+      specSentence: specSentence ?? "",
       // `{{tableWidthMm}}` / `{{paperWidthMm}}` for the equipment that has
       // a width but no cutting spec (EasyLoader, Punchline).
-      ...extraSpecVars(specs),
+      tableWidthMm: extraSpecs.tableWidthMm ?? "",
+      paperWidthMm: extraSpecs.paperWidthMm ?? "",
       // The item's own TOTAL — qty * unit price plus every attached option,
       // exactly the figure `lineSummary.total` already carries from the
       // pricing engine (`totals.itemTotals`, see getDocumentForBuilder) —

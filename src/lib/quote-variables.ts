@@ -14,8 +14,35 @@ import { readProductSpecs } from "./validation/product-specs";
  * both must accept exactly the same token syntax, including inner spaces. */
 const TOKEN_PATTERN = /\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g;
 
+/**
+ * Every token a category may offer, in palette order. This one list is what
+ * ties the registry to the renderer: `buildQuotationData` types its `vars`
+ * object as `Record<CategoryTokenName, ...>`, so a name added here without a
+ * value beside it in quotation-data.ts fails to compile. Before that link
+ * existed, `{{name}}` was offered by the palette, accepted by the save
+ * validator, and silently deleted its own line on every quote (fixed in
+ * 231eef2 — this is the type that stops the next one).
+ *
+ * `as const` is load-bearing: it is what makes `CategoryTokenName` a union of
+ * literals rather than `string`, and so what makes the renderer's record
+ * exhaustive.
+ */
+export const CATEGORY_TOKEN_NAMES = [
+  "model",
+  "name",
+  "price",
+  "basePrice",
+  "cutHeightCm",
+  "cutWidthCm",
+  "tableWidthMm",
+  "paperWidthMm",
+  "specSentence",
+] as const;
+
+export type CategoryTokenName = (typeof CATEGORY_TOKEN_NAMES)[number];
+
 export type QuoteToken = {
-  token: string;
+  token: CategoryTokenName;
   /** Shown beside the token in the editor palette. Says where the value comes
    * from in the user's own terms, not the column name. */
   source: string;
@@ -33,43 +60,49 @@ export type CategorySpecPresence = {
   hasMachine: boolean;
 };
 
-/** Available in every category regardless of what its products carry. */
-const UNIVERSAL_TOKENS: QuoteToken[] = [
-  { token: "model", source: "The product code, e.g. M-5180" },
-  { token: "name", source: "The product name as the quote lists it" },
-  { token: "price", source: "The item total, options included. Hidden when quote prices are off." },
-  { token: "basePrice", source: "The product alone, without options. Hidden when quote prices are off." },
-];
+/** What each token means, in the author's terms rather than the column's.
+ * Keyed by `CategoryTokenName`, so this table can neither describe a token
+ * `CATEGORY_TOKEN_NAMES` does not declare nor leave one it does undescribed. */
+const TOKEN_SOURCES: Record<CategoryTokenName, string> = {
+  model: "The product code, e.g. M-5180",
+  name: "The product name as the quote lists it",
+  price: "The item total, options included. Hidden when quote prices are off.",
+  basePrice: "The product alone, without options. Hidden when quote prices are off.",
+  cutHeightCm: "Compressed lay height in cm, from the product's specs",
+  cutWidthCm: "Cutting or spreading width in cm, from the product's specs",
+  tableWidthMm: "Table width in mm, from the product's specs",
+  paperWidthMm: "Paper width in mm, from the product's specs",
+  specSentence: "A generated sentence naming the machine and its cutting figures",
+};
 
-/** Available only when the category's products carry the underlying figure. */
-const SPEC_TOKENS: Array<QuoteToken & { requires: keyof CategorySpecPresence }> = [
-  { token: "cutHeightCm", source: "Compressed lay height in cm, from the product's specs", requires: "cutHeightCm" },
-  { token: "cutWidthCm", source: "Cutting or spreading width in cm, from the product's specs", requires: "cutWidthCm" },
-  { token: "tableWidthMm", source: "Table width in mm, from the product's specs", requires: "tableWidthMm" },
-  { token: "paperWidthMm", source: "Paper width in mm, from the product's specs", requires: "paperWidthMm" },
-  {
-    token: "specSentence",
-    source: "A generated sentence naming the machine and its cutting figures",
-    requires: "hasMachine",
-  },
-];
+/** The presence flag a token needs before a category may use it. A token
+ * absent from this table is universal: every category carries a value for it
+ * regardless of what its products are. */
+const TOKEN_REQUIRES: Partial<Record<CategoryTokenName, keyof CategorySpecPresence>> = {
+  cutHeightCm: "cutHeightCm",
+  cutWidthCm: "cutWidthCm",
+  tableWidthMm: "tableWidthMm",
+  paperWidthMm: "paperWidthMm",
+  specSentence: "hasMachine",
+};
 
-/** Every token any category could ever offer. Used for the duplicate check
- * and by callers that need the full vocabulary rather than one category's. */
-export const CATEGORY_TOKENS: QuoteToken[] = [
-  ...UNIVERSAL_TOKENS,
-  ...SPEC_TOKENS.map(({ token, source }) => ({ token, source })),
-];
+/** Every token any category could ever offer, in palette order — derived from
+ * `CATEGORY_TOKEN_NAMES` rather than restating it, so the list the renderer is
+ * typed against and the list the editor renders are the same list. */
+export const CATEGORY_TOKENS: QuoteToken[] = CATEGORY_TOKEN_NAMES.map((token) => ({
+  token,
+  source: TOKEN_SOURCES[token],
+}));
 
 /** The tokens this specific category may use, in palette order. A category
  * whose products carry no cut height is never offered `{{cutHeightCm}}` — the
  * reason a spreading table cannot reference one is that the token is not on
  * offer, not that an author remembered not to type it. */
 export function categoryTokensFor(presence: CategorySpecPresence): QuoteToken[] {
-  return [
-    ...UNIVERSAL_TOKENS,
-    ...SPEC_TOKENS.filter((t) => presence[t.requires]).map(({ token, source }) => ({ token, source })),
-  ];
+  return CATEGORY_TOKENS.filter((t) => {
+    const requires = TOKEN_REQUIRES[t.token];
+    return requires === undefined || presence[requires];
+  });
 }
 
 /** Every distinct `{{token}}` in `body`, in first-seen order. */
@@ -85,7 +118,10 @@ export function tokensIn(body: string): string[] {
 /** The tokens in `body` that `allowed` does not cover, in first-seen order.
  * An empty array means the body is safe to save. */
 export function findUnknownTokens(body: string, allowed: QuoteToken[]): string[] {
-  const names = new Set(allowed.map((t) => t.token));
+  // `Set<string>`, not `Set<CategoryTokenName>`: the whole job here is to test
+  // tokens that may well be none of them (`{{rspYear2Cost}}`, a typo, a
+  // hand-pasted token this category cannot fill).
+  const names: Set<string> = new Set(allowed.map((t) => t.token));
   return tokensIn(body).filter((token) => !names.has(token));
 }
 
