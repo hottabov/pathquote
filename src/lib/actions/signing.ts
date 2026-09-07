@@ -408,6 +408,33 @@ export async function sendQuoteForSignature(documentId: string): Promise<ActionR
 // --- revokeSigningLink -------------------------------------------------------
 
 /**
+ * The exact set of `signingStatus` values `canRevoke` (src/lib/signing/state.ts)
+ * permits a revoke from, derived by asking that function itself over
+ * `ALL_SIGNING_STATUSES` (declared above, next to `SENDABLE_SIGNING_STATUSES`)
+ * rather than repeating `["SENT", "VIEWED"]` as a second literal here, where
+ * it could silently drift from that function's own rule. Used below as the
+ * `where` of the status-guarded claim that replaces the unconditional
+ * revoke.
+ */
+const REVOCABLE_SIGNING_STATUSES: SigningStatus[] = ALL_SIGNING_STATUSES.filter(canRevoke);
+
+/** The message a manager sees both when the pre-check finds no live link and
+ * when the guarded claim inside the transaction loses its race (below) --
+ * one wording for both refusals, so which path caught it is invisible to the
+ * user. */
+const NO_LIVE_LINK_TO_REVOKE = "There is no live link to revoke.";
+
+/** Thrown inside `revokeSigningLink`'s `$transaction` when the status-guarded
+ * claim below matches nothing -- the client's own completion or decline
+ * (`completeSigning`/`declineSigning`, not yet implemented; a later task)
+ * already moved the document out of SENT/VIEWED between the pre-check
+ * (`canRevoke`, above the transaction) and the claim itself. Caught outside
+ * the transaction and mapped to `NO_LIVE_LINK_TO_REVOKE`, the same message
+ * the pre-check would have returned -- mirroring `AlreadyClaimedError`
+ * above. */
+class RevokeLostRaceError extends Error {}
+
+/**
  * Kills every live link for a quote and returns it to NOT_SENT. This is
  * DocuSign's Void, with DocuSign's restriction: `canRevoke` (src/lib/signing/state.ts)
  * refuses once the quote is SIGNED, because a signed quote is not something
@@ -428,18 +455,30 @@ export async function sendQuoteForSignature(documentId: string): Promise<ActionR
  * revoke their own document while an admin may revoke any, and
  * `NOT_FOUND_ERROR` rather than a distinct "wrong scope" message.
  *
- * No status-guarded `updateMany` claim, unlike `sendQuoteForSignature`'s
- * concurrent-send guard above. That guard exists because two concurrent
- * sends can each create a *new*, distinct, simultaneously-live
- * `SigningRequest` row -- defeating the single-live-link invariant. Two
- * concurrent revokes have nothing equivalent to race over: every write here
- * (`revokedAt: null` -> now, delete CLIENT signatures, `signingStatus` ->
- * NOT_SENT) moves toward the same terminal state regardless of which
+ * Two revokes racing each other converge harmlessly and need no guard: every
+ * write here moves toward the same terminal state regardless of which
  * transaction runs first, and a second revoke arriving after the first has
- * committed simply matches zero rows and updates nothing. The one visible
- * side effect of the race is a client who could receive the courtesy email
- * below twice -- already the class of failure this function tolerates (see
- * the paragraph above), not one worth a claim for.
+ * committed simply matches zero rows and updates nothing (the one visible
+ * side effect being a client who could receive the courtesy email below
+ * twice -- already the class of failure this function tolerates, see the
+ * paragraph above, not one worth a claim for).
+ *
+ * The race that *does* matter is against the client's own outcome. Once
+ * `completeSigning`/`declineSigning` exist (a later task, presumably beside
+ * `sendQuoteForSignature` in this file or in a sibling `signing-client.ts`),
+ * a revoke loaded while the document was still VIEWED can commit *after*
+ * the client has completed or declined it. Written unconditionally, this
+ * function's own writes would stomp SIGNED (or DECLINED) back to NOT_SENT
+ * and -- worse -- the `tx.signature.deleteMany` below would delete the
+ * CLIENT signature the client had just legitimately confirmed. The
+ * status-guarded `updateMany` claim below is what makes the client's outcome
+ * win that race: if the document has already left SENT/VIEWED by the time
+ * this transaction runs, the claim matches zero rows, nothing else in the
+ * transaction executes, and this call reports the same "no live link"
+ * outcome the pre-check would have. Same idiom `sendQuoteForSignature`'s own
+ * concurrent-send guard above uses, for the same underlying reason: only a
+ * write takes the row lock that orders concurrent callers against each
+ * other.
  */
 export async function revokeSigningLink(documentId: string): Promise<ActionResult> {
   const session = await requireSession();
@@ -462,31 +501,50 @@ export async function revokeSigningLink(documentId: string): Promise<ActionResul
   });
   if (!document) return { error: NOT_FOUND_ERROR };
   if (!canRevoke(document.signingStatus)) {
-    return { error: "There is no live link to revoke." };
+    return { error: NO_LIVE_LINK_TO_REVOKE };
   }
 
   const recipients = document.signingRequests.map((request) => request.email);
 
-  await db.$transaction(async (tx) => {
-    await tx.signingRequest.updateMany({
-      where: { documentId: document.id, revokedAt: null },
-      data: { revokedAt: new Date() },
+  try {
+    await db.$transaction(async (tx) => {
+      // Claim the document first, atomically -- see this function's own doc
+      // comment for the race this guards against. Ordered before either
+      // write below so a lost claim leaves every other row untouched:
+      // nothing past this point runs unless this call actually owns the
+      // transition.
+      const claimed = await tx.document.updateMany({
+        where: { id: document.id, signingStatus: { in: REVOCABLE_SIGNING_STATUSES } },
+        data: { signingStatus: "NOT_SENT" },
+      });
+      if (claimed.count === 0) throw new RevokeLostRaceError();
+
+      // Only reached once the claim above has succeeded, so a lost race can
+      // never delete a signature the client just confirmed. The client may
+      // have drawn a signature without confirming it. Left in place, the
+      // next send would open already showing "Signed" with the confirm
+      // button enabled, for a client who never saw that quote. The author's
+      // signature survives: the document stays FINAL and unchanged, so it is
+      // still a signature of exactly this text. Which roles an event clears
+      // is decided once, in `signatureRolesClearedBy`, beside the other
+      // transition rules -- not re-derived here.
+      await tx.signature.deleteMany({
+        where: { documentId: document.id, role: { in: signatureRolesClearedBy("revoke") } },
+      });
+
+      // Request revocation is bookkeeping layered on the already-claimed
+      // status change, so it runs last: it is not what orders concurrent
+      // callers against each other -- only a write matched by the
+      // status-guarded `where` above (the claim) does that.
+      await tx.signingRequest.updateMany({
+        where: { documentId: document.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
     });
-    // The client may have drawn a signature without confirming it. Left in
-    // place, the next send would open already showing "Signed" with the
-    // confirm button enabled, for a client who never saw that quote. The
-    // author's signature survives: the document stays FINAL and unchanged,
-    // so it is still a signature of exactly this text. Which roles an event
-    // clears is decided once, in `signatureRolesClearedBy`, beside the other
-    // transition rules -- not re-derived here.
-    await tx.signature.deleteMany({
-      where: { documentId: document.id, role: { in: signatureRolesClearedBy("revoke") } },
-    });
-    await tx.document.update({
-      where: { id: document.id },
-      data: { signingStatus: "NOT_SENT" },
-    });
-  });
+  } catch (error) {
+    if (error instanceof RevokeLostRaceError) return { error: NO_LIVE_LINK_TO_REVOKE };
+    throw error;
+  }
 
   const mail = buildRevokedEmail({
     quoteNumber: document.number ?? "",
