@@ -1,0 +1,159 @@
+// Assembling the whole legal documents a customer signs out of the
+// `ContentBlock` fragments they used to be stored as — the substance of Task
+// 10 of docs/superpowers/plans/2026-09-07-quote-documents.md, split out of
+// `scripts/migrate-content-blocks-to-quote-documents.ts` so it can be tested.
+//
+// The script itself cannot be run anywhere an agent can reach (the database
+// only listens on Vadym's machine), so everything about the migration that is
+// a pure string function lives here instead of inline: given the rows, what
+// exactly does the document body come out as. `tests/quote-document-bodies.test.ts`
+// pins it.
+//
+// Pure by the same rule as src/lib/rich-text.ts, which it builds on: no
+// `@/lib/db`, no `next/*`, so `vitest run` needs no DATABASE_URL.
+
+import { renderStoredRichText, sanitizeIfHtml } from "../../src/lib/rich-text";
+
+/** A `ContentBlock` row, only the columns the assembly reads. */
+export type LegalBlock = {
+  key: string;
+  title: string | null;
+  body: string;
+  sortOrder: number;
+};
+
+/**
+ * Escapes a block's `title` for interpolation into the markup below. Only
+ * `&`, `<` and `>` — the three that change how a fragment parses. `"` and
+ * `'` are deliberately left alone: a title is interpolated into element
+ * *content*, never into an attribute value, where they are ordinary
+ * characters. Escaping them anyway would round-trip badly, because
+ * `sanitizeRichText` (which every assembled body goes through, and which
+ * re-serialises the parsed DOM) turns `&quot;`/`&#39;` back into `"`/`'` —
+ * so an over-escaped title would be a body the sanitizer *changes*, and the
+ * one thing this module must not produce is markup that does not survive
+ * the sanitizer intact.
+ */
+function escapeTitle(title: string): string {
+  return title.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * The order the blocks were printed in: `sortOrder`, exactly as every reader
+ * of `ContentBlock` sorted them. `key` breaks a tie, so two blocks sharing a
+ * `sortOrder` (which nothing prevents) assemble the same way on every run
+ * rather than in whatever order the database handed them over — a migration
+ * that assembles legal text differently on a re-run is not one anybody can
+ * check by reading a dry run.
+ */
+export function orderBlocks<T extends { key: string; sortOrder: number }>(blocks: readonly T[]): T[] {
+  return [...blocks].sort((a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key));
+}
+
+/**
+ * One block's stored body as HTML. `renderStoredRichText` is the same
+ * function the quotation renderer already called on these bodies, so the
+ * migrated document renders identically to what customers have been
+ * receiving: a body still in markdown (every seeded one is) goes through
+ * `renderMarkdown`, and a body an admin has since re-saved through the Tiptap
+ * editor is already HTML and is sanitized rather than markdown-parsed.
+ */
+function renderBlock(body: string): string {
+  return renderStoredRichText(body).trim();
+}
+
+/**
+ * Terms, unsanitized: each block an `<h2>` of its title followed by its body,
+ * which is what `TermsSection` printed (`<h2 class="pq-block-title">` per
+ * block) before a document became one body. A block with no title contributes
+ * its body alone — the same "rather than an empty heading" rule that component
+ * had.
+ *
+ * Exported alongside `buildTermsBody` purely so the migration's dry run can
+ * report what the sanitizer changed on top of the assembly, rather than
+ * reporting the two as one indivisible step.
+ */
+export function assembleTermsBody(blocks: readonly LegalBlock[]): string {
+  return orderBlocks(blocks)
+    .map((block) => {
+      const body = renderBlock(block.body);
+      const title = block.title?.trim();
+      if (!title) return body;
+      return body.length > 0 ? `<h2>${escapeTitle(title)}</h2>\n${body}` : `<h2>${escapeTitle(title)}</h2>`;
+    })
+    .filter((section) => section.length > 0)
+    .join("\n");
+}
+
+/**
+ * General Conditions, unsanitized: one `<ol>` whose `<li>`s are the clauses in
+ * `sortOrder`, each opening with its title in `<strong>`.
+ *
+ * `ConditionsSection` numbered these `{index + 1}.` from array position, and
+ * that component is gone: the numbering is the list's own from here on, which
+ * is also what an admin editing the document in Tiptap will see and be able to
+ * reorder. The title sits in its own `<p><strong>…</strong></p>` rather than as
+ * a bare inline run, so a clause of several paragraphs has its heading on its
+ * own line under `.pq-block-body p`'s margins instead of relying on an
+ * anonymous block box.
+ */
+export function assembleConditionsBody(blocks: readonly LegalBlock[]): string {
+  const items = orderBlocks(blocks).map((block) => {
+    const body = renderBlock(block.body);
+    const title = block.title?.trim();
+    const heading = title ? `<p><strong>${escapeTitle(title)}</strong></p>` : "";
+    return `<li>${heading}${body}</li>`;
+  });
+  if (items.length === 0) return "";
+  return `<ol>\n${items.join("\n")}\n</ol>`;
+}
+
+/**
+ * A one-block document (the RSP agreement), unsanitized: the body alone.
+ *
+ * Deliberately no `<h2>` of the block's title, unlike Terms: `RspSection`
+ * printed `rsp.agreement`'s body straight under the hardcoded section heading
+ * and never rendered the block's own title, and `DocumentsSection` now prints
+ * the `QuoteDocument.title` in exactly that position. Adding the block title
+ * here would introduce a heading no quote has ever carried — and the seeded
+ * body already opens with its own `## Pathfinder Remote Support Program (RSP)`
+ * heading, which stays exactly where it has always been.
+ */
+export function assembleSingleBlockBody(block: LegalBlock): string {
+  return renderBlock(block.body);
+}
+
+/**
+ * The three functions above, each finished with `sanitizeIfHtml` — the same
+ * write-boundary sanitizer `updateQuoteDocument` applies to every editor save.
+ * Without it a migrated body would be the only `QuoteDocument.body` in the
+ * database never to have met the allowlist, and an admin's first re-save
+ * through the editor would silently change it.
+ *
+ * These are the functions the migration writes from. They are idempotent under
+ * `sanitizeRichText` by construction, which the tests pin: if the sanitizer
+ * strips something one of them emits, the assembly emitted the wrong thing.
+ */
+export function buildTermsBody(blocks: readonly LegalBlock[]): string {
+  return sanitizeIfHtml(assembleTermsBody(blocks));
+}
+
+export function buildConditionsBody(blocks: readonly LegalBlock[]): string {
+  return sanitizeIfHtml(assembleConditionsBody(blocks));
+}
+
+export function buildSingleBlockBody(block: LegalBlock): string {
+  return sanitizeIfHtml(assembleSingleBlockBody(block));
+}
+
+/** How many `<li>` a `<ol>`-shaped body has, and how many `<h2>` an
+ * `<h2>`-shaped one has — the "clause or section count" the dry run prints
+ * beside each assembled document so a missing clause is visible without
+ * reading the whole body. Counted off the assembled string rather than the
+ * input rows on purpose: the point is to describe what came OUT. */
+export function countStructure(body: string): { listItems: number; headings: number } {
+  return {
+    listItems: (body.match(/<li\b/gi) ?? []).length,
+    headings: (body.match(/<h2\b/gi) ?? []).length,
+  };
+}
