@@ -20,6 +20,7 @@ import { getHiddenCatalogIds } from "@/lib/queries/catalog-visibility";
 import { getQuoteValidityDays, getShowOptionIcons } from "@/lib/queries/settings";
 import { getSpecImages } from "@/lib/queries/spec-images";
 import { getUser } from "@/lib/queries/users";
+import { canAuthorSign } from "@/lib/signing/state";
 import { concessionCapMessage, markupCapMessage } from "@/lib/pricing";
 import { renderStoredRichText } from "@/lib/rich-text";
 import { PageHeader, SectionCard, StatusBadge, STATUS_TONE } from "@/components/ui-kit";
@@ -446,12 +447,18 @@ function DocumentActions({
         // Signing is offered to whoever this page already scoped the
         // document to (its author, or any admin — see `signQuoteAsAuthor`'s
         // own `documentWhereForUser` check), independently of Unfinalize
-        // staying admin-only below.
-        <SignButton
-          documentId={document.id}
-          hasAuthorSignature={document.signatures.some((s) => s.role === "AUTHOR")}
-          savedSignatureUrl={mySignatureUrl}
-        />
+        // staying admin-only below. Gated on `canAuthorSign` — the same
+        // function the action itself checks — rather than "any FINAL
+        // document": nothing sets `signingStatus` away from NOT_SENT yet, so
+        // this is currently a no-op, but it stops the button from being
+        // shown (and refused) once sending/revoking/declining exist.
+        canAuthorSign(document.signingStatus) ? (
+          <SignButton
+            documentId={document.id}
+            hasAuthorSignature={document.signatures.some((s) => s.role === "AUTHOR")}
+            savedSignatureUrl={mySignatureUrl}
+          />
+        ) : null
       )}
       {!isDraft && isAdmin ? <UnfinalizeButton documentId={document.id} /> : null}
 

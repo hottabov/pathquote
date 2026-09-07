@@ -28,8 +28,10 @@ export function SignButton({
 }: {
   documentId: string;
   /** Whether an AUTHOR row already exists on this document — only changes
-   * the button's label ("Sign" vs "Re-sign"); re-signing before the quote is
-   * sent is allowed (see `signQuoteAsAuthor`'s NOT_SENT/DECLINED check). */
+   * the button's label ("Sign" vs "Re-sign"); re-signing is allowed in
+   * exactly the states this button is rendered for (see `canAuthorSign`,
+   * src/lib/signing/state.ts, which both this button's caller and
+   * `signQuoteAsAuthor` gate on). */
   hasAuthorSignature: boolean;
   savedSignatureUrl: string | null;
 }) {

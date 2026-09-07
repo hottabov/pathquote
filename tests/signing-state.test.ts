@@ -5,6 +5,7 @@ import {
   canUnfinalize,
   canComplete,
   canDecline,
+  canAuthorSign,
   statusAfterView,
   signatureRolesClearedBy,
   NO_AUTHOR_SIGNATURE,
@@ -153,6 +154,23 @@ describe("canComplete", () => {
     expect(canComplete("DECLINED", true)).toBe(false);
     expect(canComplete("NOT_SENT", true)).toBe(false);
   });
+});
+
+describe("canAuthorSign", () => {
+  it("allows a quote that hasn't been sent yet", () => {
+    expect(canAuthorSign("NOT_SENT")).toBe(true);
+  });
+
+  it("allows re-signing after the client declined", () => {
+    expect(canAuthorSign("DECLINED")).toBe(true);
+  });
+
+  it.each(["SENT", "VIEWED", "SIGNED"] as const)(
+    "refuses while a link is outstanding or already completed (%s)",
+    (status) => {
+      expect(canAuthorSign(status)).toBe(false);
+    }
+  );
 });
 
 describe("canDecline", () => {

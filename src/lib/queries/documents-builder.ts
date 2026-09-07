@@ -1,5 +1,5 @@
 import { cache } from "react";
-import type { DocumentStatus, LineKind, OptionRole, ProductKind, ProductionForm } from "@prisma/client";
+import type { DocumentStatus, LineKind, OptionRole, ProductKind, ProductionForm, SigningStatus } from "@prisma/client";
 import { db } from "@/lib/db";
 import { documentWhereForUser, type ScopeUser } from "@/lib/scope";
 import { computeTotals, type CommissionResult, type DocumentConcession, type EngineInput } from "@/lib/pricing";
@@ -365,6 +365,13 @@ export type DocumentForBuilder = {
     signerName: string;
     signedAt: Date;
   }[];
+  /** `Document.signingStatus` — feeds `canAuthorSign` (src/lib/signing/state.ts)
+   * so the builder page can gate `SignButton`'s visibility on the exact same
+   * rule `signQuoteAsAuthor` enforces server-side, rather than rendering the
+   * button for every FINAL document and relying on the action alone to
+   * refuse it. `NOT_SENT` for a document that predates the signing feature or
+   * has never been sent, same as the column's own default. */
+  signingStatus: SigningStatus;
   /** The document's *region*'s four standard-terms figures — the fallback
    * for the four per-quote overrides below (see `resolveQuoteTerms` in
    * src/lib/quote-terms.ts). Read live off `Region`, like `entityName` and
@@ -779,6 +786,7 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
     showOptionPrices: document.showOptionPrices,
     heroImageUrl: document.heroImageUrl,
     signatures: document.signatures,
+    signingStatus: document.signingStatus,
     updatedAt: document.updatedAt,
   };
 });

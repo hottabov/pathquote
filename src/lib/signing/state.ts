@@ -63,6 +63,29 @@ export function canRevoke(status: SigningStatus): boolean {
 }
 
 /**
+ * Whether the document's author (or an admin signing on their behalf — see
+ * `signQuoteAsAuthor`'s own doc comment) may apply their signature right
+ * now. True for exactly two statuses:
+ *
+ * - NOT_SENT: nobody has been asked to sign yet, the ordinary starting point.
+ * - DECLINED: the client said no. The author may re-sign (typically after a
+ *   revision) and re-send — same reasoning as `canSendToClient`'s own
+ *   comment on why DECLINED is sendable: a client who calls back to say they
+ *   misread it shouldn't force a brand-new quote number.
+ *
+ * False for SENT/VIEWED (a link is already outstanding — revoke it first,
+ * `canRevoke` above) and SIGNED (the quote is done; see `SIGNED_IS_FINAL`).
+ *
+ * Lives here, beside every other transition rule, rather than as a
+ * hand-written `!==`/`!==` check inside the action itself — the whole point
+ * of this module (see its header comment) is that a rule like this one is
+ * testable without a database.
+ */
+export function canAuthorSign(status: SigningStatus): boolean {
+  return status === "NOT_SENT" || status === "DECLINED";
+}
+
+/**
  * The one new lock in the whole feature. Every other guarantee already
  * comes from the `status: "DRAFT"` clause every editing action carries (see
  * src/lib/actions/documents/_internal.ts), which is what makes FINAL
