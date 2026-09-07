@@ -81,12 +81,6 @@ export type BuilderLine = {
    * the manager's own picks. `null` for a line with no `refId`, an option
    * with no role, or any non-OPTION line. */
   role: OptionRole | null;
-  /** For an OPTION line: `Option.contentBlockKey`, resolved by `refId` the
-   * same live way `role` is -- the `option.*` content block that describes
-   * this option on the quotation (see `buildQuotationData`'s option rows).
-   * `null` for an option with no block, a line with no `refId`, or any
-   * non-OPTION line. */
-  contentBlockKey: string | null;
   /** For an OPTION line: `Option.imageUrl`, resolved by `refId` against the
    * catalog (see `getDocumentForBuilder`'s `optionImageMap`) — not a
    * snapshot column on `DocumentLine` itself, so this always reflects the
@@ -161,11 +155,11 @@ export type BuilderItem = {
    * shape defensively at runtime. `null` for an item with no resolving
    * product or no specs recorded. */
   specs: unknown;
-  /** `Product.contentBlockKey`, read live off the joined product -- which
-   * `machine.*`/`equipment.*`/`software.*` content block describes this
-   * item on the quotation (see `buildQuotationData`). `null` for a product
-   * no block covers, or an item whose product no longer resolves. */
-  contentBlockKey: string | null;
+  /** `Series.quoteDescription` of the item's product's category, read live
+   * from the catalog (not snapshotted on the item) so fixing a typo in a
+   * category's copy shows on every DRAFT quote at once. A FINAL quote reads
+   * its frozen snapshot instead — see Plan 3. */
+  seriesQuoteDescription: string | null;
   /** `DocumentItem.serialNumber` — set post-installation, used as-is in the
    * quotation's RSP coverage table. Not editable anywhere in the builder for
    * an ordinary item; for a credit item (`isCredit`) it's opened up via
@@ -358,12 +352,11 @@ type OptionRow = {
   imageUrl: string | null;
   noCommission: boolean;
   role: OptionRole | null;
-  contentBlockKey: string | null;
 };
 
 /**
- * `optionRowMap` (optionId -> the option's live `imageUrl`/`role`/
- * `contentBlockKey`, built once per `getDocumentForBuilder` call from every
+ * `optionRowMap` (optionId -> the option's live `imageUrl`/`role`, built
+ * once per `getDocumentForBuilder` call from every
  * OPTION line's `refId` — see below) resolves those for an OPTION line (an
  * OPTION with no `refId` or no matching catalog row gets `null` for all); a
  * CUSTOM line uses its own `imageUrl`/`showImage` columns instead (there's
@@ -405,7 +398,6 @@ function toBuilderLine(
         : null,
     sortOrder: line.sortOrder,
     role: optionRow?.role ?? null,
-    contentBlockKey: optionRow?.contentBlockKey ?? null,
     imageUrl: line.kind === "OPTION" ? (optionRow?.imageUrl ?? null) : line.imageUrl,
     showImage: line.kind === "OPTION" ? false : line.showImage,
   };
@@ -517,23 +509,19 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
         .map((line) => line.refId)
     )
   );
-  // `Option.noCommission` (see the commission section below), `Option.role`
-  // (see `BuilderLine.role`) and `Option.contentBlockKey` (see
-  // `BuilderLine.contentBlockKey`) are read the same way — live off the
-  // option, not a line snapshot — so this one query covers every need
+  // `Option.noCommission` (see the commission section below) and
+  // `Option.role` (see `BuilderLine.role`) are read the same way — live off
+  // the option, not a line snapshot — so this one query covers both needs
   // rather than adding a round trip per fact.
   const optionRows =
     optionRefIds.length > 0
       ? await db.option.findMany({
           where: { id: { in: optionRefIds } },
-          select: { id: true, imageUrl: true, noCommission: true, role: true, contentBlockKey: true },
+          select: { id: true, imageUrl: true, noCommission: true, role: true },
         })
       : [];
   const optionRowMap = new Map<string, OptionRow>(
-    optionRows.map((o) => [
-      o.id,
-      { imageUrl: o.imageUrl, noCommission: o.noCommission, role: o.role, contentBlockKey: o.contentBlockKey },
-    ])
+    optionRows.map((o) => [o.id, { imageUrl: o.imageUrl, noCommission: o.noCommission, role: o.role }])
   );
   const optionNoCommissionMap = new Map(optionRows.map((o) => [o.id, o.noCommission]));
 
@@ -685,7 +673,7 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
       kind: item.product?.kind ?? "ACCESSORY",
       form: item.product?.form ?? null,
       specs: item.product?.specs ?? null,
-      contentBlockKey: item.product?.contentBlockKey ?? null,
+      seriesQuoteDescription: item.product?.series?.quoteDescription ?? null,
       serialNumber: item.serialNumber,
       isCredit: item.product?.isCredit ?? false,
       noCommission: item.product?.noCommission ?? false,
