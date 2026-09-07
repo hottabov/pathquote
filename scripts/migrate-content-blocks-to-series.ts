@@ -3,6 +3,10 @@ import { writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { categorySpecPresence, categoryTokensFor, findUnknownTokens } from "../src/lib/quote-variables";
+// The same write-boundary sanitizer `updateSeriesQuoteDescription` applies to
+// every editor save. Pure (no `@/lib/db`, no `next/*` -- see rich-text.ts's
+// header), so importing it here costs this script nothing.
+import { sanitizeIfHtml } from "../src/lib/rich-text";
 
 /**
  * One-shot data migration for Task 10 of
@@ -49,6 +53,13 @@ import { categorySpecPresence, categoryTokensFor, findUnknownTokens } from "../s
  *    skipped or missing target keeps its ContentBlock row(s) and keeps
  *    reporting the same skip/error on every subsequent run until a human
  *    resolves it by hand -- that is not a bug, it is the point
+ *  - each body goes through `sanitizeIfHtml` on its way onto the series, the
+ *    same write-boundary sanitizer `updateSeriesQuoteDescription` applies to
+ *    every editor save. Without it, migrated copy would be the only
+ *    `Series.quoteDescription` in the database never to have met the
+ *    allowlist -- a different shape from every other row in the same column,
+ *    which the author's first re-save through the editor would then silently
+ *    change. The report says so whenever the sanitizer actually alters a body
  *  - each body is validated against the tokens ITS OWN target category can
  *    fill -- `categoryTokensFor(categorySpecPresence(series.products))`, the
  *    exact pair `updateSeriesQuoteDescription` uses when an admin saves. A
@@ -178,8 +189,16 @@ type KeyPlan = {
   blockKey: string;
   targetSeriesCodes: readonly string[];
   /** null when the default (regionId: null) block for this key no longer
-   * exists -- i.e. an earlier run already migrated and deleted it. */
-  defaultBlock: { id: string; body: string } | null;
+   * exists -- i.e. an earlier run already migrated and deleted it.
+   *
+   * `body` is the row exactly as stored; `bodyToWrite` is that body through
+   * `sanitizeIfHtml`, and is what actually lands on the series -- see the
+   * header's note on the sanitizer. The two are equal for every body the
+   * allowlist already accepts, which is expected to be all of them; they are
+   * kept apart so the report and the backup describe the SOURCE row while the
+   * write and the already-written comparison both use the value that ends up
+   * in the column. */
+  defaultBlock: { id: string; body: string; bodyToWrite: string } | null;
   overrides: Array<{ id: string; regionCode: string; body: string }>;
   writes: SeriesWritePlan[];
   /** True only when every target series for this key holds this body -- either
@@ -257,6 +276,13 @@ async function computePlan(db: Db) {
 
     const writes: SeriesWritePlan[] = [];
     let fullyResolved = true;
+    // Every editor save goes through `sanitizeIfHtml`
+    // (updateSeriesQuoteDescription), so a body written raw by this script
+    // would be the one Series.quoteDescription in the database that had never
+    // met the allowlist -- a different shape from every other row in the same
+    // column, and one whose first re-save through the editor would silently
+    // change it. Both paths now store the same thing.
+    const bodyToWrite = defaultRow ? sanitizeIfHtml(defaultRow.body) : "";
     if (defaultRow) {
       for (const seriesCode of migration.targetSeriesCodes) {
         const series = seriesByCode.get(seriesCode);
@@ -266,7 +292,9 @@ async function computePlan(db: Db) {
           continue;
         }
         const existing = series.quoteDescription?.trim() ?? "";
-        if (existing !== "" && existing !== defaultRow.body.trim()) {
+        // Compared against the SANITIZED body, since that is what an earlier
+        // run of this script would have written.
+        if (existing !== "" && existing !== bodyToWrite.trim()) {
           writes.push({
             status: "skip-nonempty",
             seriesCode,
@@ -293,7 +321,7 @@ async function computePlan(db: Db) {
           seriesId: series.id,
           alreadyMatches: existing !== "",
           outOfScopeTokens: findUnknownTokens(
-            defaultRow.body,
+            bodyToWrite,
             categoryTokensFor(categorySpecPresence(series.products))
           ),
         });
@@ -307,7 +335,7 @@ async function computePlan(db: Db) {
     keyPlans.push({
       blockKey: migration.blockKey,
       targetSeriesCodes: migration.targetSeriesCodes,
-      defaultBlock: defaultRow ? { id: defaultRow.id, body: defaultRow.body } : null,
+      defaultBlock: defaultRow ? { id: defaultRow.id, body: defaultRow.body, bodyToWrite } : null,
       overrides: overrideRows.map((o) => ({ id: o.id, regionCode: o.region?.code ?? "?", body: o.body })),
       writes,
       fullyResolved,
@@ -395,6 +423,14 @@ function printPlan(plan: Plan): { hadUnexpectedIssue: boolean; skipsNonempty: nu
       console.log("  no default (regionId: null) ContentBlock row -- already migrated, nothing to write");
     } else {
       console.log(`  source body: ${key.defaultBlock.body.length} chars, "${preview(key.defaultBlock.body)}"`);
+      if (key.defaultBlock.bodyToWrite !== key.defaultBlock.body) {
+        // Not an issue -- the sanitizer is the same one every editor save
+        // applies -- but the run should say out loud that what lands on the
+        // series is not byte-for-byte the source row, and what it will be.
+        console.log(
+          `  [SANITIZED] the allowlist changed this body (${key.defaultBlock.body.length} -> ${key.defaultBlock.bodyToWrite.length} chars): "${preview(key.defaultBlock.bodyToWrite)}"`
+        );
+      }
       for (const w of key.writes) {
         if (w.status === "write") {
           if (w.alreadyMatches) {
@@ -502,7 +538,10 @@ async function apply(tx: Tx, plan: Plan) {
         console.log(`Series ${w.seriesCode}.quoteDescription already holds ${key.blockKey}'s body -- no write needed`);
         continue;
       }
-      await tx.series.update({ where: { id: w.seriesId }, data: { quoteDescription: key.defaultBlock.body } });
+      await tx.series.update({
+        where: { id: w.seriesId },
+        data: { quoteDescription: key.defaultBlock.bodyToWrite },
+      });
       console.log(`wrote Series ${w.seriesCode}.quoteDescription from ${key.blockKey}`);
     }
     if (key.fullyResolved) {
