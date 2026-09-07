@@ -14,6 +14,12 @@ import type { ActionResult } from "@/lib/actions/users";
  * takes that data URL itself — the byte validation happens server-side in
  * `parseSignatureDataUrl` (src/lib/signing/data-url.ts), which is the actual
  * trust boundary, so nothing here re-checks the image before sending it.
+ *
+ * The displayed image comes from `onSave`'s returned `url` (the stored
+ * `/api/files/…` path), not the raw `dataUrl` handed to it — matching
+ * `AvatarEditor`, which likewise shows the true persisted value rather than
+ * an optimistic stand-in, and per `_shared.ts`'s convention an action that
+ * returns data widens `ActionResult` rather than replacing it.
  */
 export function SignatureEditor({
   signatureUrl,
@@ -21,7 +27,7 @@ export function SignatureEditor({
   onClear,
 }: {
   signatureUrl: string | null;
-  onSave: (dataUrl: string) => Promise<ActionResult>;
+  onSave: (dataUrl: string) => Promise<ActionResult & { url?: string }>;
   onClear: () => Promise<ActionResult>;
 }) {
   const [url, setUrl] = useState(signatureUrl);
@@ -30,14 +36,17 @@ export function SignatureEditor({
   const toast = useToast();
 
   function handleConfirm(dataUrl: string) {
-    setDialogOpen(false);
+    // Left open until the save resolves: closing immediately (as this used
+    // to) would lose the drawing on a failed save, forcing a redraw from
+    // scratch. Only a success closes it.
     startTransition(async () => {
       const result = await onSave(dataUrl);
       if (result.error) {
         toast.error(result.error);
         return;
       }
-      setUrl(dataUrl);
+      setDialogOpen(false);
+      setUrl(result.url ?? null);
       toast.success("Signature saved");
     });
   }

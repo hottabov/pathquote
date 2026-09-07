@@ -20,7 +20,7 @@ import {
   canSetAvatar,
 } from "@/lib/validation/users";
 import { countActiveAdmins } from "@/lib/queries/users";
-import { IMAGE_URL_PATTERN, saveUpload } from "@/lib/uploads";
+import { IMAGE_URL_PATTERN, saveUpload, UploadValidationError } from "@/lib/uploads";
 import { parseSignatureDataUrl } from "@/lib/signing/data-url";
 import { NOT_FOUND_ERROR, flattenZodError, type ActionResult } from "./_shared";
 
@@ -294,19 +294,42 @@ export async function setUserAvatar(userId: string, url: string | null): Promise
  * file (a later task, signQuoteAsAuthor), so changing it here never alters a
  * signature already on an issued quote — see Signature.imageUrl's doc
  * comment in schema.prisma.
+ *
+ * Every redraw orphans the previous upload the same way `clearMySignature`
+ * orphans it on removal, and for the same reason (see that action's doc
+ * comment) — this mirrors `setUserAvatar`'s existing behaviour, which is
+ * likewise never garbage-collected.
  */
-export async function saveMySignature(dataUrl: string): Promise<ActionResult> {
+export async function saveMySignature(dataUrl: string): Promise<ActionResult & { url?: string }> {
   const session = await requireSession();
 
   const parsed = parseSignatureDataUrl(dataUrl);
   if (!parsed.ok) return { error: "That signature could not be read. Please draw it again." };
 
   const file = new File([new Uint8Array(parsed.bytes)], "signature.png", { type: "image/png" });
-  const url = await saveUpload(file, ["png"]);
+
+  // saveUpload returns just the filename (its own doc comment says so) —
+  // every other caller builds the `/api/files/<name>` URL itself (see
+  // src/app/api/uploads/route.ts), and this one must too, or the stored
+  // value resolves relative to whatever page renders it. Named `filename`
+  // rather than `url` so that contract can't be missed again at this call
+  // site. `parseSignatureDataUrl`'s magic-byte check and saveUpload's own
+  // `sniffImageType` can disagree on malformed input (see that module's doc
+  // comment), so this — unlike the rest of this action, which has no reason
+  // to fail past validation — is wrapped the same way
+  // src/app/api/uploads/route.ts wraps its own call.
+  let filename: string;
+  try {
+    filename = await saveUpload(file, ["png"]);
+  } catch (error) {
+    if (error instanceof UploadValidationError) return { error: error.message };
+    throw error;
+  }
+  const url = `/api/files/${filename}`;
 
   await db.user.update({ where: { id: session.user.id }, data: { signatureUrl: url } });
   revalidateSettings();
-  return {};
+  return { url };
 }
 
 /**
