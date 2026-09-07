@@ -11,8 +11,10 @@ import {
 } from "@/lib/queries/catalog";
 import { catalogVisibilityUserId, isSeriesHidden } from "@/lib/catalog-visibility";
 import { getHiddenCatalogIds } from "@/lib/queries/catalog-visibility";
-import { updateSeriesImage, reorderProducts } from "@/lib/actions/catalog";
+import { updateSeriesImage, updateSeriesQuoteDescription, reorderProducts } from "@/lib/actions/catalog";
+import { categoryTokensFor } from "@/lib/quote-variables";
 import { SeriesImageCard } from "@/components/catalog/series-image-card";
+import { SeriesQuoteDescriptionCard } from "@/components/catalog/series-quote-description-card";
 import { ProductReorderList } from "@/components/catalog/product-reorder-list";
 import { PriceDisplay, InactiveBadge } from "@/components/catalog-badges";
 import { CatalogThumb } from "@/components/catalog/catalog-thumb";
@@ -162,12 +164,24 @@ export default async function SeriesProductsPage({ params }: { params: Promise<P
       )}
 
       {isAdmin ? (
-        <SeriesImageCard
-          currentUrl={series.imageUrl}
-          fallbackImageUrl={fallbackImageUrl}
-          alt={series.name}
-          onSave={updateSeriesImage.bind(null, series.id)}
-        />
+        <>
+          {/* Copy sits above the image because it is the thing an admin
+              comes here to write; the image override is set once and
+              forgotten. */}
+          <SeriesQuoteDescriptionCard
+            seriesId={series.id}
+            seriesName={series.name}
+            defaultValue={series.quoteDescription}
+            tokens={categoryTokensFor(series.specPresence)}
+            action={updateSeriesQuoteDescription.bind(null, series.id)}
+          />
+          <SeriesImageCard
+            currentUrl={series.imageUrl}
+            fallbackImageUrl={fallbackImageUrl}
+            alt={series.name}
+            onSave={updateSeriesImage.bind(null, series.id)}
+          />
+        </>
       ) : null}
     </div>
   );
