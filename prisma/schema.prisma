@@ -238,6 +238,16 @@ model Series {
   maxDiscountPct    Decimal?              @db.Decimal(5, 2) // unused: discount caps moved to Region.maxDiscountPct; column kept, not read anywhere
   sortOrder         Int                   @default(0)
   imageUrl          String? // admin override for the /catalog series card image; null falls back to the first active product's imageUrl -- see listSeriesWithCounts in src/lib/queries/catalog.ts
+  /// The category's quote copy: the prose printed under a product's heading
+  /// in the Equipment Detail section, authored once per category and shared
+  /// by every product in it. HTML, and may contain `{{token}}` placeholders
+  /// resolved per product at render time — see src/lib/quote-variables.ts for
+  /// the token list and which of them a given category may use. Null or
+  /// empty prints nothing at all under the heading, which is the state every
+  /// category starts in. Replaces the old Product.contentBlockKey ->
+  /// ContentBlock lookup: one text per category rather than a key on all 57
+  /// products pointing into a separate table.
+  quoteDescription  String?
   products          Product[]
   compat            OptionCompatibility[]
   catalogVisibility CatalogVisibility[]
