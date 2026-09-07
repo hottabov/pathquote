@@ -10,31 +10,55 @@
 import { revalidateDocument, revalidateDocumentList } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { requireSession } from "@/lib/authz";
+import { requireRegion, requireSession } from "@/lib/authz";
 import { isAdminRole } from "@/lib/roles";
-import { companyWhereForUser, documentWhereForUser } from "@/lib/scope";
+import { companyWhereForUser, documentWhereForUser, REGION_REQUIRED_ERROR } from "@/lib/scope";
 import { idSchema, optionalIdSchema } from "@/lib/validation/documents";
 import { NOT_FOUND_ERROR } from "../_shared";
 import type { ActionResult } from "./_internal";
-
-const FALLBACK_REGION_CODE = "AU";
 
 /**
  * Creates a DRAFT quote and redirects straight into its builder — the
  * "New quote" button on /documents submits with no fields, so the draft
  * exists before a client is even picked (companyId stays null until
  * setDocumentClient). Region/currency/tax are snapshotted from the author's
- * own region, falling back to AU for an author with no region assigned yet.
+ * own region, which is required: an author with no region cannot create a
+ * quote at all.
  */
 export async function createDraft(): Promise<void> {
-  const session = await requireSession();
+  // `requireRegion`, not `requireSession`, and not a bare throw. No fallback
+  // region: this used to resolve a region-less author to AU and copy AU's
+  // currency and tax rate onto the quote — wrong in every region but AU, and
+  // silent in all of them.
+  //
+  // This guards itself rather than leaning on the Documents layout because
+  // NO caller goes through that layout — a server action never does. The
+  // action body runs before any layout renders, so a form under
+  // `documents/` inherits nothing from `DocumentsLayout`; both call sites
+  // (the dashboard, src/app/(app)/page.tsx, and the Documents list,
+  // src/app/(app)/documents/page.tsx) post this action directly. Calling the
+  // same guard here is what makes a region-less manager land on /no-region
+  // by either route instead of on the error boundary.
+  const { session } = await requireRegion();
 
-  const region = session.user.regionId
-    ? await db.region.findUnique({ where: { id: session.user.regionId } })
-    : null;
-  const resolvedRegion = region ?? (await db.region.findUnique({ where: { code: FALLBACK_REGION_CODE } }));
+  // Deliberately `session.user.regionId` rather than `requireRegion`'s
+  // returned `regionId`: for a MANAGER the two are equal, and for an ADMIN
+  // the return is `null` (meaning "may read every region"), which is not an
+  // answer to "which region does a quote this person authors belong to".
+  // That is always their own.
+  const authorRegionId = session.user.regionId;
+  if (!authorRegionId) {
+    // Only an ADMIN reaches this: `requireRegion` already redirected any
+    // manager without a region. The message is theirs to act on, and it
+    // differs from REGION_REQUIRED_ERROR because "contact your
+    // administrator" is nonsense advice to the administrator.
+    throw new Error(
+      "Your account has no region, so there is no region to create this quote in. Set one on your user in Settings."
+    );
+  }
+  const resolvedRegion = await db.region.findUnique({ where: { id: authorRegionId } });
   if (!resolvedRegion) {
-    throw new Error("No region configured");
+    throw new Error(REGION_REQUIRED_ERROR);
   }
 
   const created = await db.document.create({
