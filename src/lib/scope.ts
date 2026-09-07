@@ -46,8 +46,12 @@ export const FOREIGN_REGION_ERROR = "That region is not available to you.";
  * prices across regions and could not do that through a filter.
  *
  * A manager with no region also resolves to `null`, which looks permissive
- * in isolation and is not: such a manager never reaches a page that calls
+ * in isolation and is not: such a manager never *renders* a page that calls
  * this, because `requireRegion` (src/lib/authz.ts) redirects them first.
+ * "Renders", not "reaches", is the precise claim — Next starts a layout and
+ * its page in parallel, so a page's data fetch can begin before the
+ * layout's `redirect()` aborts the response. Nothing reaches a user either
+ * way, but do not read this as a guarantee that the call never executes.
  * Callers that need a fail-closed value instead of a routing guarantee want
  * `priceWhereForUser` below, which returns an unmatchable filter for that
  * same user. */
@@ -67,16 +71,41 @@ export function priceWhereForUser(user: RegionScopeUser): { regionId?: string } 
   return { regionId: user.regionId ?? "" };
 }
 
+/** The same answer `priceWhereForUser` gives, as a bare region id for a
+ * caller that filters a list in memory rather than building a Prisma
+ * `where` — `null` means "every region" (admin only).
+ *
+ * Exists as its own export purely so the unwrap below is testable. `??`
+ * substitutes only for null/undefined, so the `""` a region-less viewer
+ * gets survives it and narrows the list to nothing; `||` in its place would
+ * collapse `""` to `null` and show that viewer EVERY region. One operator
+ * separates fail-closed from fail-open, and it is now pinned by a test
+ * rather than living inside a module the no-database suite cannot import
+ * (src/lib/authz.ts reaches @/auth). See `priceRegionIdForSessionUser`
+ * there for the session-shaped adapter over this. */
+export function priceRegionIdForUser(user: RegionScopeUser): string | null {
+  return priceWhereForUser(user).regionId ?? null;
+}
+
 /** Throws unless `user` may write a row belonging to `regionId`. An admin
  * may write anywhere; a manager may write only their own region, and a
  * manager with no region may write nowhere.
  *
- * Throws rather than returning a boolean so that forgetting to check the
- * result is not a silent authorization bypass — an unused boolean compiles
- * fine, an uncalled guard does not exist. Callers wrap it and return
- * `{ error: message }`; see `createCompany` in src/lib/actions/clients.ts. */
+ * Throws rather than returning a boolean so that ignoring the *result* is
+ * not a silent authorization bypass: `assertRegionWritable(user, id);` as a
+ * bare statement compiles fine under this tsconfig if it returns a boolean,
+ * and reads exactly like a check that happened. This does nothing about
+ * forgetting to call it at all — that is what the structural test in
+ * tests/scope-coverage.test.ts is for. Callers wrap it and return
+ * `{ error: message }`; see `createCompany` in src/lib/actions/clients.ts.
+ *
+ * Falsy rather than `=== null` on the region: `interface User` in
+ * src/types/next-auth.d.ts declares `regionId` optional, so an untyped or
+ * cast caller can hand this `undefined`. That was already fail-closed, but
+ * it reported FOREIGN_REGION_ERROR — the wrong reason, which sends the user
+ * to fix the wrong thing. */
 export function assertRegionWritable(user: RegionScopeUser, regionId: string): void {
   if (isAdminRole(user.role)) return;
-  if (user.regionId === null) throw new Error(REGION_REQUIRED_ERROR);
+  if (!user.regionId) throw new Error(REGION_REQUIRED_ERROR);
   if (user.regionId !== regionId) throw new Error(FOREIGN_REGION_ERROR);
 }
