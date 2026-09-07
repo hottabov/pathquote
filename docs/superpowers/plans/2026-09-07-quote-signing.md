@@ -1845,7 +1845,7 @@ export async function signQuoteAsAuthor(
     update: { imageUrl, signedAt: new Date() },
   });
 
-  revalidatePath(`/documents/${document.id}`);
+  revalidateDocument(document.id);
   return {};
 }
 ```
@@ -2241,7 +2241,7 @@ export async function sendQuoteForSignature(documentId: string): Promise<ActionR
     return { error: "The quote was prepared but the email could not be sent. Try resending." };
   }
 
-  revalidatePath(`/documents/${document.id}`);
+  revalidateDocument(document.id);
   return {};
 }
 ```
@@ -2354,7 +2354,7 @@ export async function revokeSigningLink(documentId: string): Promise<ActionResul
     }
   }
 
-  revalidatePath(`/documents/${document.id}`);
+  revalidateDocument(document.id);
   return {};
 }
 ```
@@ -3361,7 +3361,7 @@ Expected: PASS, including the four new cases.
 - [ ] **Step 3: Extract the renderer**
 
 Move the render sequence out of
-`src/app/api/documents/[documentId]/quotation-pdf/route.ts` into
+`src/app/api/quotes/[documentId]/quotation-pdf/route.ts` into
 `src/lib/pdf.ts` as `renderQuotationPdfForDocument(documentId): Promise<Buffer>`
 — `getContentBlocksForRegion`, `buildQuotationData` with `fileImageResolver`,
 `renderQuotationHtml`, `htmlToPdf` with `buildFooterHtml`. Have the existing
@@ -3380,7 +3380,7 @@ confirm the second matches the stored digest.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add "src/app/(sign)/sign/[token]/pdf" src/lib/uploads.ts src/lib/pdf.ts "src/app/api/documents" tests/uploads.test.ts
+git add "src/app/(sign)/sign/[token]/pdf" src/lib/uploads.ts src/lib/pdf.ts "src/app/api/quotes" tests/uploads.test.ts
 git commit -m "feat: clients print their quote, archived bytes once signed"
 ```
 
@@ -3391,8 +3391,8 @@ git commit -m "feat: clients print their quote, archived bytes once signed"
 ### Task 16: Show signing state in the app
 
 **Files:**
-- Modify: `src/app/(app)/documents/page.tsx`
-- Modify: `src/app/(app)/documents/[documentId]/page.tsx`
+- Modify: `src/app/(app)/quotes/page.tsx`
+- Modify: `src/app/(app)/quotes/[documentId]/page.tsx`
 - Modify: `src/components/ui-kit/status-badge.tsx` if new tones are needed
 
 - [ ] **Step 1: Add the badge**
@@ -3421,7 +3421,7 @@ appears in both places.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add "src/app/(app)/documents" src/components/ui-kit/status-badge.tsx
+git add "src/app/(app)/quotes" src/components/ui-kit/status-badge.tsx
 git commit -m "feat: managers see where each quote sits in the signing flow"
 ```
 
