@@ -201,11 +201,21 @@ model Region {
   // concession is a markup -- see documentConcession/recalcAndEnforce.
   maxMarkupPct    Decimal?         @db.Decimal(5, 2)
   active          Boolean          @default(true)
+  /// The standard-terms figures the legal documents quote back at the
+  /// customer. Region-level because a region is effectively its own
+  /// company, with its own lead times and warranty. Defaults are the
+  /// figures the original Word template carried and the code hardcoded
+  /// until now (src/lib/quotation-data.ts's globalVars).
+  deliveryWeeks    Int @default(14)
+  installationDays Int @default(2)
+  trainingDays     Int @default(3)
+  warrantyMonths   Int @default(12)
   users           User[]
   companies       Company[]
   prices          Price[]
   documents       Document[]
   contentBlocks   ContentBlock[]
+  quoteDocuments  QuoteDocument[]
   supportMessages SupportMessage[]
 }
 
@@ -736,6 +746,24 @@ model Document {
   // the printed quote -- no frame, no placeholder -- see the `heroImage`
   // block in quotation-sheet.tsx.
   heroImageUrl      String?
+  // Per-quote overrides of the region's standard-terms figures — null
+  // means inherit. Delivery and warranty are negotiated per deal, and a
+  // signed quote promising 14 weeks when the salesperson agreed 10 is a
+  // commitment nobody made.
+  deliveryWeeks     Int?
+  installationDays  Int?
+  trainingDays      Int?
+  warrantyMonths    Int?
+  // Every rendered document body and every item's category copy, frozen
+  // when the quote went FINAL, with placeholders already substituted.
+  // Fixing a typo in General Conditions must not rewrite a quote signed
+  // three months ago. Written by finalizeDocument alongside
+  // entitySnapshot; overwritten wholesale on a re-finalize after
+  // unfinalizeDocument, exactly like entitySnapshot and the commission
+  // columns. Null on a DRAFT and on any quote finalised before this
+  // column existed — buildQuotationData falls back to live text then.
+  documentsSnapshot Json?
+  exclusions        DocumentExclusion[]
   items             DocumentItem[]
   lines             DocumentLine[]
   createdAt         DateTime         @default(now())
@@ -881,6 +909,50 @@ model ContentBlock {
   // `OR: [{ regionId: null }, { regionId }]`. A btree index covers IS NULL as
   // well as equality in Postgres, so one plain index answers both branches.
   @@index([regionId])
+}
+
+/// One whole legal document printed on a quote — Terms, General Conditions
+/// of Sale, the RSP agreement, and whatever a region adds later. Replaces
+/// the ContentBlock rows that held the same text as 7 and 14 separate
+/// fragments: a lawyer hands over a document, not a list of clauses, and a
+/// region variant is a copy of the whole thing rather than an override per
+/// piece.
+///
+/// `regionId: null` is the global default; a non-null `regionId` is that
+/// region's own version, resolved by the same two-pass rule ContentBlock
+/// used (defaults first, then this region's rows, so an override wins
+/// regardless of array order). A row may exist for a region with NO global
+/// default — that is how a region-only document works, e.g. a Data
+/// Processing Agreement offered only by an EU entity.
+model QuoteDocument {
+  id                String   @id @default(cuid())
+  key               String // "terms" | "conditions" | "rsp" | future keys
+  regionId          String?
+  title             String // the printed heading
+  body              String // HTML, may contain document-scope {{tokens}}
+  sortOrder         Int      @default(0)
+  /// Whether a new quote includes this document unless its author unticks
+  /// it. Every document starts true; RSP is the one an author routinely
+  /// turns off, for a small order nothing in the programme covers.
+  includedByDefault Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  region            Region?  @relation(fields: [regionId], references: [id], onDelete: SetNull)
+
+  @@unique([key, regionId])
+  @@index([regionId])
+}
+
+/// A document an individual quote leaves out. Stores the document's `key`,
+/// not its id, so the exclusion still means the same thing if the quote's
+/// region changes and a different QuoteDocument row becomes the resolved
+/// one. Absence means included — the common case writes no row at all.
+model DocumentExclusion {
+  documentId       String
+  quoteDocumentKey String
+  document         Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@id([documentId, quoteDocumentKey])
 }
 
 model NumberSequence {
