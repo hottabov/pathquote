@@ -1,6 +1,8 @@
 import "dotenv/config";
-import type { PrismaClient } from "@prisma/client";
-import { CATEGORY_TOKENS, tokensIn } from "../src/lib/quote-variables";
+import { writeFileSync } from "node:fs";
+import path from "node:path";
+import type { Prisma, PrismaClient } from "@prisma/client";
+import { categorySpecPresence, categoryTokensFor, findUnknownTokens } from "../src/lib/quote-variables";
 
 /**
  * One-shot data migration for Task 10 of
@@ -20,34 +22,72 @@ import { CATEGORY_TOKENS, tokensIn } from "../src/lib/quote-variables";
  *  - dry run by default; only --apply writes or deletes anything
  *  - the FULL plan (every write, skip, discard and delete) is computed and
  *    printed before a single row is touched
- *  - refuses to overwrite a Series.quoteDescription that is already
- *    non-empty -- reports and skips that one write, and does not fail the
- *    whole run over it. Crucially, a key's ContentBlock row(s) are only ever
- *    deleted once EVERY one of its target series was actually written (see
- *    `machine.m-series`, which targets both M and X) -- if even one target
- *    was skipped or had a missing series code, the source row is left in
- *    place so the body still exists somewhere and a human can reconcile it
- *    by hand
- *  - safe to run twice: a key whose every target series was actually written
- *    has its ContentBlock row(s) gone after the first --apply, so a second
- *    run (dry or --apply) finds nothing left to do for that key. A key with
- *    a skipped or missing target keeps its ContentBlock row(s) and keeps
+ *  - --apply writes a JSON backup to `migration-backup-<ISO8601>.json` in the
+ *    repo root BEFORE the first write or delete: every ContentBlock row this
+ *    run touches (all columns, full body, region overrides included) plus the
+ *    current `Series.quoteDescription` of every target series. The terminal
+ *    report only ever shows an 80-character preview of a body, which is not a
+ *    record of legal-adjacent prose; the backup file is. If the backup cannot
+ *    be written the run aborts without touching the database. The filename
+ *    pattern is gitignored -- these bodies do not belong in git
+ *  - every write and delete of an --apply run happens inside ONE
+ *    `db.$transaction`, so an interrupt or a crash rolls the whole thing back
+ *    rather than leaving the catalog half-migrated
+ *  - refuses to overwrite a Series.quoteDescription that holds copy DIFFERENT
+ *    from the block body -- reports and skips that one write, and does not
+ *    fail the whole run over it. A destination already holding exactly this
+ *    body (`.trim()`-equal) is not a skip: it is a write an earlier run
+ *    already made, so it counts as resolved and needs no second write.
+ *    Crucially, a key's ContentBlock row(s) are only ever deleted once EVERY
+ *    one of its target series holds the body (see `machine.m-series`, which
+ *    targets both M and X) -- if even one target was skipped or had a missing
+ *    series code, the source row is left in place so the body still exists
+ *    somewhere and a human can reconcile it by hand
+ *  - safe to run twice: a key whose every target series holds the body has
+ *    its ContentBlock row(s) gone after the first --apply, so a second run
+ *    (dry or --apply) finds nothing left to do for that key. A key with a
+ *    skipped or missing target keeps its ContentBlock row(s) and keeps
  *    reporting the same skip/error on every subsequent run until a human
  *    resolves it by hand -- that is not a bug, it is the point
- *  - a run whose only unresolved items are non-empty-destination skips (no
- *    missing series, no unrecognized keys) exits with status 2, not 0 and
- *    not 1 -- a skip is a human decision waiting to happen, not a clean run
- *    and not a malfunction, so it gets its own distinct exit code
+ *  - each body is validated against the tokens ITS OWN target category can
+ *    fill -- `categoryTokensFor(categorySpecPresence(series.products))`, the
+ *    exact pair `updateSeriesQuoteDescription` uses when an admin saves. A
+ *    token the target cannot fill would render as a silently stripped line on
+ *    every quote AND make that category unsavable through the editor
+ *    afterwards, so it is a [WARN] that fails the run (status 1), not a note.
+ *    The body is still written and the source row still deleted: the copy is
+ *    not lost (it is on the series, and in the backup file), it just needs a
+ *    human to edit the offending token out
  *  - a target series code that does not exist is reported clearly and does
  *    not crash the script -- but it does leave that key's ContentBlock
  *    row(s) in place (not fully migrated) and makes the run exit non-zero
- *    (status 1, same as an unrecognized key -- see below)
  *  - a ContentBlock key this script doesn't recognise (not a migration
  *    source, not one of the delete-outright keys, not terms./conditions./
  *    rsp.) is reported and left completely untouched, and also makes the
  *    run exit non-zero -- an unrecognised key is far more likely a sign this
  *    script has drifted from a database that changed underneath it than
  *    something safe to silently ignore
+ *
+ * Exit codes -- the full contract:
+ *
+ *   0  Clean. Every target series holds its body, every doomed row is gone,
+ *      and nothing unexpected was reported.
+ *   1  Unexpected -- a human must look. Any one of: a target series code not
+ *      found in the catalog; a ContentBlock key this script does not
+ *      recognise; a body carrying a token its target category cannot fill;
+ *      the backup file could not be written (in which case NOTHING was
+ *      written or deleted); unexpected leftover rows after applying; or an
+ *      uncaught error (the top-level catch exits 1 too).
+ *   2  Skip-only. The run's ONLY unresolved items are non-empty-destination
+ *      skips: a series already holds copy that differs from the block body,
+ *      so the write was refused and the source row kept. A human decision is
+ *      pending; this is neither a clean run nor a malfunction, so it gets its
+ *      own status, visible to a script checking `$?` without being mistaken
+ *      for a crash.
+ *
+ *   1 outranks 2: a run with both an unexpected issue and a pending skip
+ *   exits 1. The dry run reports the same status the corresponding --apply
+ *   would, so `$?` means the same thing either way.
  *
  * Mapping (spec's migration table, global defaults only -- regionId: null):
  *   machine.m-series      -> Series M and Series X (same body, both)
@@ -84,7 +124,15 @@ const DELETE_EXACT_KEYS = ["equipment.fabric-master", "equipment.spreading-table
 /** Never touched by this script -- a separate plan migrates these. */
 const UNTOUCHED_PREFIXES = ["terms.", "conditions.", "rsp."] as const;
 
-const KNOWN_TOKENS = new Set(CATEGORY_TOKENS.map((t) => t.token));
+/** Interactive-transaction bounds for the one `$transaction` in `apply`.
+ * Nothing in this codebase configures a client-wide `transactionOptions`
+ * (src/lib/db.ts constructs `new PrismaClient({ adapter })` and nothing
+ * else), so Prisma's 5s default would apply unless overridden here. ~30
+ * statements over a local database finish in well under a second, but these
+ * match the sibling one-shot script (scripts/migrate-catalog-v2.ts:272) so
+ * a slow or contended local database cannot abort a half-run migration on a
+ * timer -- the whole point of wrapping it. */
+const TRANSACTION_OPTIONS = { maxWait: 30_000, timeout: 300_000 } as const;
 
 function isMigrationKey(key: string): boolean {
   return MIGRATIONS.some((m) => m.blockKey === key);
@@ -98,16 +146,31 @@ function isUntouchedKey(key: string): boolean {
 
 /** Flattens a body to a single line and caps it at ~80 characters, purely so
  * the dry-run report reads as one line per row rather than reproducing whole
- * multi-paragraph bodies. */
+ * multi-paragraph bodies. Never the record of a body -- see `writeBackup`. */
 function preview(body: string, max = 80): string {
   const flat = body.replace(/\s+/g, " ").trim();
   return flat.length > max ? `${flat.slice(0, max)}…` : flat;
 }
 
 type Db = PrismaClient;
+/** Accepts both the bare client (reads, outside any transaction) and the
+ * `tx` handed to a `db.$transaction(async (tx) => ...)` callback (`apply`). */
+type Tx = Prisma.TransactionClient | PrismaClient;
 
 type SeriesWritePlan =
-  | { status: "write"; seriesCode: string; seriesId: string }
+  | {
+      status: "write";
+      seriesCode: string;
+      seriesId: string;
+      /** True when this series ALREADY holds exactly this body (`.trim()`-
+       * equal) -- an earlier, interrupted run wrote it. Counts as resolved
+       * (so a multi-target key can finish), and `apply` issues no statement
+       * for it. */
+      alreadyMatches: boolean;
+      /** Tokens in the body that THIS target category has no data for --
+       * see the header. Empty is the only good value. */
+      outOfScopeTokens: string[];
+    }
   | { status: "skip-nonempty"; seriesCode: string; existingLength: number }
   | { status: "missing-series"; seriesCode: string };
 
@@ -119,21 +182,72 @@ type KeyPlan = {
   defaultBlock: { id: string; body: string } | null;
   overrides: Array<{ id: string; regionCode: string; body: string }>;
   writes: SeriesWritePlan[];
-  unknownTokens: string[];
-  /** True only when every target series for this key was actually written
-   * (status "write") -- i.e. there is nothing left for a human or a future
-   * run to do, so this key's ContentBlock row(s) may be deleted. False when
-   * at least one target resolved to "skip-nonempty" (destination already has
-   * copy) or "missing-series" (series code not found): either way, at least
-   * one destination never got this body, so the source row must survive so
-   * the body isn't lost from both places at once. */
+  /** True only when every target series for this key holds this body -- either
+   * because this run will write it, or because an earlier run already did
+   * (status "write", with or without `alreadyMatches`). Then there is nothing
+   * left for a human or a future run to do, so this key's ContentBlock row(s)
+   * may be deleted. False when at least one target resolved to
+   * "skip-nonempty" (destination holds DIFFERENT copy) or "missing-series"
+   * (series code not found): either way at least one destination never got
+   * this body, so the source row must survive so the body isn't lost from
+   * both places at once. */
   fullyResolved: boolean;
 };
 
 type DeleteRow = { id: string; key: string; regionCode: string | null; bodyLength: number; preview: string };
 
+/** One ContentBlock row, every column, verbatim -- what goes in the backup
+ * file. `disposition` says what this run intends to do with it. */
+type BackupBlock = {
+  id: string;
+  key: string;
+  regionId: string | null;
+  regionCode: string | null;
+  title: string | null;
+  body: string;
+  sortOrder: number;
+  disposition: "delete-with-migrated-key" | "delete-outright" | "kept-pending-human-review";
+};
+
+type SeriesBefore = { code: string; id: string | null; found: boolean; quoteDescription: string | null };
+
 async function computePlan(db: Db) {
   const allBlocks = await db.contentBlock.findMany({ include: { region: true } });
+
+  // One lookup per distinct target series code, reused by both the write
+  // classification and the token check below (which needs the category's
+  // products to know which tokens it can fill).
+  const targetCodes = [...new Set(MIGRATIONS.flatMap((m) => m.targetSeriesCodes))];
+  const seriesByCode = new Map<
+    string,
+    { id: string; quoteDescription: string | null; products: Array<{ specs: unknown; kind: string }> }
+  >();
+  for (const code of targetCodes) {
+    const series = await db.series.findUnique({
+      where: { code },
+      include: { products: { select: { specs: true, kind: true } } },
+    });
+    if (series) {
+      seriesByCode.set(code, {
+        id: series.id,
+        quoteDescription: series.quoteDescription,
+        products: series.products,
+      });
+    }
+  }
+
+  /** Recorded in the backup before anything is written, so the pre-migration
+   * value of every destination is on disk even for the destinations this run
+   * overwrites nothing in. */
+  const seriesBefore: SeriesBefore[] = targetCodes.map((code) => {
+    const series = seriesByCode.get(code);
+    return {
+      code,
+      id: series?.id ?? null,
+      found: series !== undefined,
+      quoteDescription: series?.quoteDescription ?? null,
+    };
+  });
 
   const keyPlans: KeyPlan[] = [];
   for (const migration of MIGRATIONS) {
@@ -145,22 +259,44 @@ async function computePlan(db: Db) {
     let fullyResolved = true;
     if (defaultRow) {
       for (const seriesCode of migration.targetSeriesCodes) {
-        const series = await db.series.findUnique({ where: { code: seriesCode } });
+        const series = seriesByCode.get(seriesCode);
         if (!series) {
           writes.push({ status: "missing-series", seriesCode });
           fullyResolved = false;
-        } else if (series.quoteDescription && series.quoteDescription.trim() !== "") {
-          writes.push({ status: "skip-nonempty", seriesCode, existingLength: series.quoteDescription.length });
-          // A skipped destination means this key is NOT fully migrated: the
-          // body still needs to live somewhere, so the source ContentBlock
-          // row(s) must not be deleted below (see `apply`'s `fullyResolved`
-          // check). This is the fix for the data-loss path where a
-          // hand-authored Series.quoteDescription caused the write to be
-          // (correctly) skipped but the source row was deleted anyway.
-          fullyResolved = false;
-        } else {
-          writes.push({ status: "write", seriesCode, seriesId: series.id });
+          continue;
         }
+        const existing = series.quoteDescription?.trim() ?? "";
+        if (existing !== "" && existing !== defaultRow.body.trim()) {
+          writes.push({
+            status: "skip-nonempty",
+            seriesCode,
+            existingLength: series.quoteDescription?.length ?? 0,
+          });
+          // A destination holding DIFFERENT copy means this key is NOT fully
+          // migrated: that body still needs to live somewhere, so the source
+          // ContentBlock row(s) must not be deleted below (see `apply`'s
+          // `fullyResolved` check). This is the fix for the data-loss path
+          // where a hand-authored Series.quoteDescription caused the write to
+          // be (correctly) skipped but the source row was deleted anyway.
+          fullyResolved = false;
+          continue;
+        }
+        // Empty, or already holding exactly this body. The second case is an
+        // earlier run that got interrupted partway through a multi-target key
+        // (machine.m-series writes M then X): treating it as a skip would set
+        // `fullyResolved = false` and strand X forever, since the source row
+        // is kept but M keeps re-classifying as "already has copy". It is a
+        // write that has already happened, so it resolves.
+        writes.push({
+          status: "write",
+          seriesCode,
+          seriesId: series.id,
+          alreadyMatches: existing !== "",
+          outOfScopeTokens: findUnknownTokens(
+            defaultRow.body,
+            categoryTokensFor(categorySpecPresence(series.products))
+          ),
+        });
       }
     }
     // No default row: either already migrated by an earlier run (nothing
@@ -174,7 +310,6 @@ async function computePlan(db: Db) {
       defaultBlock: defaultRow ? { id: defaultRow.id, body: defaultRow.body } : null,
       overrides: overrideRows.map((o) => ({ id: o.id, regionCode: o.region?.code ?? "?", body: o.body })),
       writes,
-      unknownTokens: defaultRow ? tokensIn(defaultRow.body).filter((t) => !KNOWN_TOKENS.has(t)) : [],
       fullyResolved,
     });
   }
@@ -193,12 +328,64 @@ async function computePlan(db: Db) {
     (b) => !isMigrationKey(b.key) && !isDeleteOutrightKey(b.key) && !isUntouchedKey(b.key)
   );
 
-  return { keyPlans, deleteRows, unrecognized };
+  // Every row this run touches, in full. A superset of "about to be deleted":
+  // the rows a not-fully-resolved key keeps are recorded too, labelled as
+  // kept, since a human reconciling one by hand wants it in the same file.
+  const dispositionById = new Map<string, BackupBlock["disposition"]>();
+  for (const key of keyPlans) {
+    const disposition = key.fullyResolved ? "delete-with-migrated-key" : "kept-pending-human-review";
+    if (key.defaultBlock) dispositionById.set(key.defaultBlock.id, disposition);
+    for (const o of key.overrides) dispositionById.set(o.id, disposition);
+  }
+  const backupBlocks: BackupBlock[] = allBlocks
+    .filter((b) => dispositionById.has(b.id) || isDeleteOutrightKey(b.key))
+    .map((b) => ({
+      id: b.id,
+      key: b.key,
+      regionId: b.regionId,
+      regionCode: b.region?.code ?? null,
+      title: b.title,
+      body: b.body,
+      sortOrder: b.sortOrder,
+      disposition: dispositionById.get(b.id) ?? "delete-outright",
+    }));
+
+  return { keyPlans, deleteRows, unrecognized, seriesBefore, backupBlocks };
 }
 
-function printPlan(
-  plan: Awaited<ReturnType<typeof computePlan>>
-): { hadUnexpectedIssue: boolean; skipsNonempty: number } {
+type Plan = Awaited<ReturnType<typeof computePlan>>;
+
+/** ISO 8601 basic format (`20260907T131415Z`) -- the same instant
+ * `toISOString()` gives, without the `:` and `.` that make a filename
+ * awkward to type, quote and copy between machines. */
+function timestampForFilename(now: Date): string {
+  return now.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+
+/** Serialises every ContentBlock row this run touches (all columns, full
+ * body, region overrides included) and the current `Series.quoteDescription`
+ * of every target series to the repo root, and returns the absolute path.
+ *
+ * Called before the first write or delete: once `apply` runs, the only other
+ * trace of a deleted body is an 80-character preview in terminal scrollback,
+ * which is not a record of copy that is legal-adjacent and was, in places,
+ * hand-authored. Throws on any failure -- the caller aborts the run rather
+ * than deleting anything it has not first written down. `wx` so a backup
+ * from an earlier run in the same second is never clobbered. */
+function writeBackup(plan: Plan, now = new Date()): string {
+  const file = path.resolve(__dirname, "..", `migration-backup-${timestampForFilename(now)}.json`);
+  const payload = {
+    generatedAt: now.toISOString(),
+    script: "scripts/migrate-content-blocks-to-series.ts",
+    what: "Pre-migration snapshot, written before the first write or delete of an --apply run.",
+    seriesQuoteDescriptionBefore: plan.seriesBefore,
+    contentBlocks: plan.backupBlocks,
+  };
+  writeFileSync(file, `${JSON.stringify(payload, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+  return file;
+}
+
+function printPlan(plan: Plan): { hadUnexpectedIssue: boolean; skipsNonempty: number } {
   let hadUnexpectedIssue = false;
 
   console.log("=== Category copy migration: machine.*/equipment.* -> Series.quoteDescription ===\n");
@@ -210,23 +397,30 @@ function printPlan(
       console.log(`  source body: ${key.defaultBlock.body.length} chars, "${preview(key.defaultBlock.body)}"`);
       for (const w of key.writes) {
         if (w.status === "write") {
-          console.log(`  [WRITE]  Series ${w.seriesCode}.quoteDescription <- this body`);
+          if (w.alreadyMatches) {
+            console.log(
+              `  [DONE]   Series ${w.seriesCode}.quoteDescription already holds exactly this body -- an earlier run wrote it, nothing to do`
+            );
+          } else {
+            console.log(`  [WRITE]  Series ${w.seriesCode}.quoteDescription <- this body`);
+          }
+          if (w.outOfScopeTokens.length > 0) {
+            console.log(
+              `  [WARN]   Series ${w.seriesCode} has no data for ${w.outOfScopeTokens.map((t) => `{{${t}}}`).join(", ")} -- no product in that category carries the figure. The line using it is stripped from every quote, and the category cannot be re-saved from the editor until a human removes the token (updateSeriesQuoteDescription rejects it)`
+            );
+            hadUnexpectedIssue = true;
+          }
         } else if (w.status === "skip-nonempty") {
           console.log(
-            `  [SKIP]   Series ${w.seriesCode} already has a non-empty quoteDescription (${w.existingLength} chars) -- refusing to overwrite`
+            `  [SKIP]   Series ${w.seriesCode} already has a non-empty quoteDescription (${w.existingLength} chars) that differs from this body -- refusing to overwrite`
           );
           console.log(
-            `  [KEEP]   ContentBlock "${key.blockKey}" retained -- ${w.seriesCode} already has copy`
+            `  [KEEP]   ContentBlock "${key.blockKey}" retained -- ${w.seriesCode} already has different copy`
           );
         } else {
           console.log(`  [ERROR]  Series code "${w.seriesCode}" not found in the catalog -- cannot migrate ${key.blockKey}`);
           hadUnexpectedIssue = true;
         }
-      }
-      if (key.unknownTokens.length > 0) {
-        console.log(
-          `  [NOTE]   body uses token(s) not in the quote-variable registry: ${key.unknownTokens.map((t) => `{{${t}}}`).join(", ")} -- will render as unresolved/stripped; review after migrating`
-        );
       }
     }
     for (const o of key.overrides) {
@@ -240,7 +434,7 @@ function printPlan(
         console.log(`  [DELETE] ${rowCount} ContentBlock row(s) for key "${key.blockKey}" once every write above is resolved`);
       } else {
         console.log(
-          `  [KEEP]   ${rowCount} ContentBlock row(s) for key "${key.blockKey}" left in place -- not every target series was written (see [SKIP]/[ERROR] above)`
+          `  [KEEP]   ${rowCount} ContentBlock row(s) for key "${key.blockKey}" left in place -- not every target series holds this body (see [SKIP]/[ERROR] above)`
         );
       }
     }
@@ -270,16 +464,21 @@ function printPlan(
     hadUnexpectedIssue = true;
   }
 
-  const writesPlanned = plan.keyPlans.flatMap((k) => k.writes).filter((w) => w.status === "write").length;
-  const skipsNonempty = plan.keyPlans.flatMap((k) => k.writes).filter((w) => w.status === "skip-nonempty").length;
-  const missingSeries = plan.keyPlans.flatMap((k) => k.writes).filter((w) => w.status === "missing-series").length;
+  const allWrites = plan.keyPlans.flatMap((k) => k.writes);
+  const writesPlanned = allWrites.filter((w) => w.status === "write" && !w.alreadyMatches).length;
+  const alreadyWritten = allWrites.filter((w) => w.status === "write" && w.alreadyMatches).length;
+  const skipsNonempty = allWrites.filter((w) => w.status === "skip-nonempty").length;
+  const missingSeries = allWrites.filter((w) => w.status === "missing-series").length;
+  const outOfScope = allWrites.filter((w) => w.status === "write" && w.outOfScopeTokens.length > 0).length;
   const overridesDiscarded = plan.keyPlans.reduce((n, k) => n + k.overrides.length, 0);
   const keyBlocksDeleted = plan.keyPlans.filter((k) => k.fullyResolved && (k.defaultBlock || k.overrides.length > 0)).reduce((n, k) => n + (k.defaultBlock ? 1 : 0) + k.overrides.length, 0);
 
   console.log("=== Summary ===");
   console.log(`  Series.quoteDescription writes planned: ${writesPlanned}`);
-  console.log(`  skipped (already non-empty):            ${skipsNonempty}`);
+  console.log(`  already written by an earlier run:      ${alreadyWritten}`);
+  console.log(`  skipped (destination has other copy):   ${skipsNonempty}`);
   console.log(`  errors (target series code not found):  ${missingSeries}`);
+  console.log(`  bodies with out-of-scope token(s):      ${outOfScope}`);
   console.log(`  region overrides discarded:              ${overridesDiscarded}`);
   console.log(`  ContentBlock rows to delete (3 migrated keys): ${keyBlocksDeleted}`);
   console.log(`  ContentBlock rows to delete (delete-outright): ${plan.deleteRows.length}`);
@@ -289,39 +488,50 @@ function printPlan(
   return { hadUnexpectedIssue, skipsNonempty };
 }
 
-async function apply(db: Db, plan: Awaited<ReturnType<typeof computePlan>>) {
+/** Every write and delete of the migration. Runs inside one
+ * `db.$transaction`, so an interrupt between two of its statements rolls the
+ * whole thing back: a half-applied multi-target key (M written, X not, source
+ * row already gone) is the one state from which this migration cannot be
+ * finished by re-running it. `tx`, not the bare client, for exactly that
+ * reason -- never call this with `db`. */
+async function apply(tx: Tx, plan: Plan) {
   for (const key of plan.keyPlans) {
     for (const w of key.writes) {
       if (w.status !== "write" || !key.defaultBlock) continue;
-      await db.series.update({ where: { id: w.seriesId }, data: { quoteDescription: key.defaultBlock.body } });
+      if (w.alreadyMatches) {
+        console.log(`Series ${w.seriesCode}.quoteDescription already holds ${key.blockKey}'s body -- no write needed`);
+        continue;
+      }
+      await tx.series.update({ where: { id: w.seriesId }, data: { quoteDescription: key.defaultBlock.body } });
       console.log(`wrote Series ${w.seriesCode}.quoteDescription from ${key.blockKey}`);
     }
     if (key.fullyResolved) {
       const idsToDelete = [...(key.defaultBlock ? [key.defaultBlock.id] : []), ...key.overrides.map((o) => o.id)];
       if (idsToDelete.length > 0) {
-        await db.contentBlock.deleteMany({ where: { id: { in: idsToDelete } } });
+        await tx.contentBlock.deleteMany({ where: { id: { in: idsToDelete } } });
         console.log(`deleted ${idsToDelete.length} ContentBlock row(s) for key ${key.blockKey}`);
       }
     }
   }
 
   if (plan.deleteRows.length > 0) {
-    await db.contentBlock.deleteMany({ where: { id: { in: plan.deleteRows.map((r) => r.id) } } });
+    await tx.contentBlock.deleteMany({ where: { id: { in: plan.deleteRows.map((r) => r.id) } } });
     console.log(`deleted ${plan.deleteRows.length} ContentBlock row(s) (option.*/software.*/equipment orphans)`);
   }
 }
 
 /** Exit-code policy for a run whose only unresolved items are non-empty-
- * destination skips (no missing series, no unrecognized keys): that is a
- * human decision waiting to happen, not a clean run (status 0) and not a
- * malfunction (status 1, reserved for `hadUnexpectedIssue`) -- so it gets
- * its own status, 2, visible to a script or CI checking `$?` without being
- * mistaken for a crash. No-op (and does not touch `process.exitCode`) once
- * `hadUnexpectedIssue` is true, since status 1 already covers that run. */
+ * destination skips (no missing series, no unrecognized keys, no out-of-scope
+ * tokens): that is a human decision waiting to happen, not a clean run
+ * (status 0) and not a malfunction (status 1, reserved for
+ * `hadUnexpectedIssue`) -- so it gets its own status, 2, visible to a script
+ * or CI checking `$?` without being mistaken for a crash. No-op (and does not
+ * touch `process.exitCode`) once `hadUnexpectedIssue` is true, since status 1
+ * already covers that run. */
 function reportPendingSkips(hadUnexpectedIssue: boolean, skipsNonempty: number): void {
   if (hadUnexpectedIssue || skipsNonempty === 0) return;
   console.log(
-    `note: ${skipsNonempty} write(s) skipped because the destination already has copy -- exiting with status 2 (a human decision is pending; this is not a failure).`
+    `note: ${skipsNonempty} write(s) skipped because the destination already has different copy -- exiting with status 2 (a human decision is pending; this is not a failure).`
   );
   process.exitCode = 2;
 }
@@ -334,8 +544,14 @@ async function main() {
   const plan = await computePlan(db);
   const { hadUnexpectedIssue, skipsNonempty } = printPlan(plan);
 
+  // `plan.unrecognized` belongs in this condition: without it a run whose
+  // only finding is an unrecognized key prints that warning and then claims
+  // "the database already reflects the target state", which is precisely the
+  // claim an unrecognized key disproves.
   const nothingToDo =
-    plan.keyPlans.every((k) => !k.defaultBlock && k.overrides.length === 0) && plan.deleteRows.length === 0;
+    plan.keyPlans.every((k) => !k.defaultBlock && k.overrides.length === 0) &&
+    plan.deleteRows.length === 0 &&
+    plan.unrecognized.length === 0;
   if (nothingToDo) {
     console.log("nothing to do -- the database already reflects the target state");
     if (hadUnexpectedIssue) process.exitCode = 1;
@@ -352,7 +568,33 @@ async function main() {
     return;
   }
 
-  await apply(db, plan);
+  // Before the first write or delete: get every doomed body onto disk, and
+  // abort untouched if that fails.
+  let backupPath: string;
+  try {
+    backupPath = writeBackup(plan);
+  } catch (e) {
+    console.error("FAILED to write the pre-migration backup -- aborting. NOTHING was written or deleted.");
+    console.error(e);
+    process.exitCode = 1;
+    return;
+  }
+  const rule = "=".repeat(78);
+  console.log(rule);
+  console.log("BACKUP WRITTEN -- before any write or delete:");
+  console.log(`  ${backupPath}`);
+  console.log(
+    `  ${plan.backupBlocks.length} ContentBlock row(s), every column and the full body, region overrides included`
+  );
+  console.log(`  ${plan.seriesBefore.length} Series.quoteDescription value(s) as they stand right now`);
+  console.log("  This is the only copy of every body deleted below. Keep it until the migration is confirmed good.");
+  console.log(rule);
+  console.log("");
+
+  // One transaction for every write and delete: an interrupt rolls back to
+  // the state the backup above describes, rather than leaving a multi-target
+  // key half-written with its source row already gone.
+  await db.$transaction((tx) => apply(tx, plan), TRANSACTION_OPTIONS);
 
   // Prove idempotence right away: a second plan over the migrated rows
   // should find nothing left to migrate or delete for any key that was
