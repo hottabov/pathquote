@@ -6,6 +6,8 @@ export type RegionAdminListItem = {
   code: string;
   name: string;
   currency: string;
+  /** Null means "derive it from `currency`" — see Region.currencySymbol. */
+  currencySymbol: string | null;
   taxName: string;
   taxRate: string;
   entityName: string;
@@ -23,6 +25,7 @@ export async function listRegionsAdmin(): Promise<RegionAdminListItem[]> {
     code: r.code,
     name: r.name,
     currency: r.currency,
+    currencySymbol: r.currencySymbol,
     taxName: r.taxName,
     taxRate: r.taxRate.toString(),
     entityName: r.entityName,
@@ -35,6 +38,8 @@ export type RegionAdminDetail = {
   code: string;
   name: string;
   currency: string;
+  /** Null means "derive it from `currency`" — see Region.currencySymbol. */
+  currencySymbol: string | null;
   taxName: string;
   taxRate: string;
   entityName: string;
@@ -86,6 +91,7 @@ export const getRegionAdmin = cache(async function getRegionAdmin(
     code: region.code,
     name: region.name,
     currency: region.currency,
+    currencySymbol: region.currencySymbol,
     taxName: region.taxName,
     taxRate: region.taxRate.toString(),
     entityName: region.entityName,

@@ -8,11 +8,9 @@ import { useToast } from "@/components/ui-kit/client";
 import {
   CompanyDeliverySameAsMainField,
   CompanyField,
-  CompanyRegionField,
   emptyCompanyFields,
   type CompanyFieldBinding,
   type CompanyFieldValues,
-  type RegionOption,
 } from "@/components/clients/company-fields";
 import {
   ContactFields,
@@ -23,8 +21,6 @@ import { cn } from "@/lib/utils";
 import { setDocumentClient } from "@/lib/actions/documents";
 import { createCompanyInline, createContactInline } from "@/lib/actions/clients";
 import type { ClientPickerCompany } from "@/lib/queries/documents";
-
-export type { RegionOption };
 
 /**
  * The builder's "Client" section: a search box over every company `user`
@@ -63,16 +59,12 @@ export function ClientSection({
   companies,
   initialCompanyId,
   initialContactId,
-  regions,
-  defaultRegionCode,
   readOnly = false,
 }: {
   documentId: string;
   companies: ClientPickerCompany[];
   initialCompanyId: string | null;
   initialContactId: string | null;
-  regions: RegionOption[];
-  defaultRegionCode: string;
   readOnly?: boolean;
 }) {
   const toast = useToast();
@@ -86,9 +78,7 @@ export function ClientSection({
 
   const [showCompanyForm, setShowCompanyForm] = useState(false);
   const [showMoreCompanyFields, setShowMoreCompanyFields] = useState(false);
-  const [companyForm, setCompanyForm] = useState<CompanyFieldValues>(() =>
-    emptyCompanyFields(defaultRegionCode)
-  );
+  const [companyForm, setCompanyForm] = useState<CompanyFieldValues>(emptyCompanyFields);
   const [companyFormPending, setCompanyFormPending] = useState(false);
   const [companyFormError, setCompanyFormError] = useState<string | null>(null);
 
@@ -160,7 +150,7 @@ export function ClientSection({
   function closeCompanyForm() {
     setShowCompanyForm(false);
     setCompanyFormError(null);
-    setCompanyForm(emptyCompanyFields(defaultRegionCode));
+    setCompanyForm(emptyCompanyFields());
     setShowMoreCompanyFields(false);
   }
 
@@ -315,7 +305,6 @@ export function ClientSection({
             <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <CompanyField binding={companyBinding} field="name" required />
-                <CompanyRegionField binding={companyBinding} regions={regions} required />
                 <CompanyField binding={companyBinding} field="city" />
                 <CompanyField binding={companyBinding} field="country" />
                 <CompanyField binding={companyBinding} field="website" className="sm:col-span-2" />
@@ -374,7 +363,7 @@ export function ClientSection({
                 <Button
                   type="button"
                   onClick={handleCreateCompany}
-                  disabled={companyFormPending || !companyForm.name.trim() || !companyForm.regionCode}
+                  disabled={companyFormPending || !companyForm.name.trim()}
                   className="h-11 bg-brand text-white hover:bg-brand/90 sm:h-9"
                 >
                   {companyFormPending ? "Creating…" : "Create company"}

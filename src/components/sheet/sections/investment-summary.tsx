@@ -67,6 +67,7 @@ export function InvestmentSummary({
               breakdown={item.breakdown}
               code={item.code}
               currency={totals.currency}
+              currencySymbol={totals.currencySymbol}
               showPrices={itemPriceVisible}
             />
           </tbody>
@@ -93,7 +94,7 @@ export function InvestmentSummary({
                   <td className={isNegative && itemPriceVisible ? "pq-col-qty pq-negative" : "pq-col-qty"}>
                     {itemPriceVisible ? (
                       <>
-                        {line.qty} × {formatMoney(line.unitPrice, totals.currency)}
+                        {line.qty} × {formatMoney(line.unitPrice, totals.currency, totals.currencySymbol)}
                       </>
                     ) : (
                       line.qty
@@ -106,7 +107,7 @@ export function InvestmentSummary({
                         : "pq-col-amount pq-amount"
                     }
                   >
-                    {itemPriceVisible ? formatMoney(line.lineTotal, totals.currency) : null}
+                    {itemPriceVisible ? formatMoney(line.lineTotal, totals.currency, totals.currencySymbol) : null}
                   </td>
                 </tr>
               );
@@ -118,7 +119,7 @@ export function InvestmentSummary({
       <div className="pq-totals">
         <div className="pq-totals-row">
           <span>Subtotal</span>
-          <span>{formatMoney(totals.subtotal, totals.currency)}</span>
+          <span>{formatMoney(totals.subtotal, totals.currency, totals.currencySymbol)}</span>
         </div>
         {/* An explicit `0` discount (as opposed to no discount set at
             all, `discountValue === null`) must print nothing — a "Discount
@@ -129,9 +130,9 @@ export function InvestmentSummary({
         {totals.discountValue !== null && Number(totals.discountValue) !== 0 ? (
           <div className="pq-totals-row">
             <span>
-              Discount {totals.discountMode === "PERCENT" ? `${totals.discountValue}%` : formatMoney(totals.discountValue, totals.currency)}
+              Discount {totals.discountMode === "PERCENT" ? `${totals.discountValue}%` : formatMoney(totals.discountValue, totals.currency, totals.currencySymbol)}
             </span>
-            <span>-{formatMoney(totals.discountAmount, totals.currency)}</span>
+            <span>-{formatMoney(totals.discountAmount, totals.currency, totals.currencySymbol)}</span>
           </div>
         ) : null}
         {totals.deliveryTerms === "EX_WORKS" ? (
@@ -140,20 +141,20 @@ export function InvestmentSummary({
           // deliberate export-terms choice it is.
           <div className="pq-totals-row">
             <span>Ex Works — no {totals.taxName} applicable</span>
-            <span>{formatMoney(totals.taxAmount, totals.currency)}</span>
+            <span>{formatMoney(totals.taxAmount, totals.currency, totals.currencySymbol)}</span>
           </div>
         ) : (
           <div className="pq-totals-row">
             <span>
               {totals.taxName} {totals.taxRate}%
             </span>
-            <span>{formatMoney(totals.taxAmount, totals.currency)}</span>
+            <span>{formatMoney(totals.taxAmount, totals.currency, totals.currencySymbol)}</span>
           </div>
         )}
         <div className="pq-totals-row pq-totals-final">
           <span>TOTAL</span>
           <span>
-            {formatMoney(totals.total, totals.currency)} {totals.currency}
+            {formatMoney(totals.total, totals.currency, totals.currencySymbol)} {totals.currency}
           </span>
         </div>
       </div>

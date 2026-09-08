@@ -19,7 +19,8 @@
     "db:verify-seed": "tsx scripts/verify-seed.ts",
     "user:create": "tsx scripts/create-user.ts",
     "images:import": "tsx scripts/import-product-images.ts",
-    "import:industries": "tsx scripts/import-industries.ts"
+    "import:industries": "tsx scripts/import-industries.ts",
+    "import:act-industries": "tsx scripts/import-act-industries.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",

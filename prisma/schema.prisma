@@ -189,6 +189,13 @@ model Region {
   code            String           @unique // AU, US, UK
   name            String
   currency        String // AUD, USD, GBP
+  /// What to PRINT in front of an amount, when the admin wants something
+  /// other than what Intl derives from `currency`. Intl's en-AU narrow symbol
+  /// for AUD is "$" and for GBP "£", but for USD it is "USD" and for AUD seen
+  /// from elsewhere "A$" -- readable, and not always what a region wants on
+  /// its own paperwork. Null means "whatever Intl says", which is the
+  /// behaviour every region had before this column existed.
+  currencySymbol  String?
   taxName         String // GST, Sales Tax, VAT
   taxRate         Decimal          @db.Decimal(5, 2) // 10.00
   entityName      String // Pathfinder Australia Pty Ltd
@@ -216,7 +223,6 @@ model Region {
   trainingDays     Int @default(3)
   warrantyMonths   Int @default(12)
   users           User[]
-  companies       Company[]
   prices          Price[]
   documents       Document[]
   quoteDocuments  QuoteDocument[]
@@ -625,8 +631,12 @@ model Company {
   deliveryPhone       String? // Stored E.164 when parseable (see validatePhone in src/lib/phone.ts), raw otherwise.
   deliveryNotes       String?
 
-  regionId   String
-  region     Region     @relation(fields: [regionId], references: [id])
+  // Deliberately NO region. A company is a client of the business, not of one
+  // office -- a director in the Australian head office quotes a European buyer
+  // without either of them moving. Region belongs on the things that really are
+  // per-office: the User, the Price, and the Document (which fixes one quote's
+  // currency, tax and discount caps). Company reads were never region-scoped
+  // anyway -- ownerId is what scopes them (see companyWhereForUser).
   ownerId    String?
   owner      User?      @relation("CompanyOwner", fields: [ownerId], references: [id])
   industryId String?
@@ -682,6 +692,12 @@ model Document {
   issueDate         DateTime         @default(now())
   validityDays      Int?
   currency          String
+  /// Snapshotted from Region.currencySymbol at createDraft, exactly like
+  /// currency/taxName/taxRate beside it: a quote prints the same amounts on
+  /// the day it is signed as on the day it was drafted, and an admin fixing
+  /// a region's symbol later must not silently reprint quotes already out
+  /// with a customer. Null means "whatever Intl derives from `currency`".
+  currencySymbol    String?
   taxName           String
   taxRate           Decimal          @db.Decimal(5, 2)
   // DELIVERED (default) or EX_WORKS -- an Ex Works quote's tax is zeroed by

@@ -5,7 +5,6 @@
 import { z } from "zod";
 import { isValidCountryCode } from "@/lib/countries";
 import { validatePhone } from "@/lib/phone";
-import { regionCodeSchema } from "./region-code";
 
 // --- shared field pieces -----------------------------------------------
 
@@ -114,7 +113,12 @@ const websiteSchema = z.preprocess(
     .optional()
 );
 
-// `regionCode` on a company is the shared rule verbatim; see ./region-code.
+// A company carries NO region. It is a client of the whole business, not of
+// one office: a director in the Australian head office quotes a European
+// buyer without either of them changing hands. Region lives on the User (who
+// may write catalogue prices), on the Document (which fixes the currency,
+// tax and discount caps of one quote) and on the Price itself — never on the
+// counterparty. `country` is the only geography a company has.
 
 
 // --- delivery address ------------------------------------------------------
@@ -167,7 +171,6 @@ const baseCompanySchema = z.object({
   website: websiteSchema,
   taxId: taxIdSchema,
   notes: notesSchema,
-  regionCode: regionCodeSchema,
   deliverySameAsMain: deliverySameAsMainSchema,
   deliveryStreet: deliveryStreetSchema,
   deliveryCity: deliveryCitySchema,

@@ -64,7 +64,8 @@ export function validateFinalizable(
   documentConcession: DocumentConcession,
   role: FinalizerRole,
   regionName: string,
-  currency: string
+  currency: string,
+  currencySymbol: string | null = null
 ): string | null {
   if (!doc.companyId) {
     return "Select a client before finalizing";
@@ -83,7 +84,7 @@ export function validateFinalizable(
   }
 
   if (documentConcession.exceedsCap && !isAdminRole(role)) {
-    return concessionCapMessage(documentConcession, regionName, currency);
+    return concessionCapMessage(documentConcession, regionName, currency, currencySymbol);
   }
 
   return null;

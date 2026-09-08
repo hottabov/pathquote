@@ -11,14 +11,13 @@ export type CompanyListItem = {
    * (src/lib/countries.ts), never directly. */
   country: string | null;
   website: string | null;
-  regionCode: string;
   contactCount: number;
 };
 
 /**
  * Companies visible to `user` (all for ADMIN, own-only for MANAGER),
  * optionally filtered by a case-insensitive name search, ordered by name.
- * Each row carries its contact count and region code for the list cards.
+ * Each row carries its contact count for the list cards.
  */
 export async function listCompanies(
   user: ScopeUser,
@@ -38,7 +37,6 @@ export async function listCompanies(
     where,
     orderBy: { name: "asc" },
     include: {
-      region: true,
       _count: { select: { contacts: true } },
     },
   });
@@ -49,7 +47,6 @@ export async function listCompanies(
     city: c.city,
     country: c.country,
     website: c.website,
-    regionCode: c.region.code,
     contactCount: c._count.contacts,
   }));
 }
@@ -77,7 +74,6 @@ export type CompanyDetail = {
   website: string | null;
   taxId: string | null;
   notes: string | null;
-  regionCode: string;
   /** Null when unset. See `src/components/clients/industry-picker.tsx`. */
   industryId: string | null;
   deliverySameAsMain: boolean;
@@ -124,7 +120,6 @@ const getCompanyDetailInScope = cache(async function getCompanyDetailInScope(
   const company = await db.company.findFirst({
     where: { id: companyId, ...companyWhereForUser(user) },
     include: {
-      region: true,
       contacts: {
         orderBy: [{ isPrimary: "desc" }, { firstName: "asc" }],
       },
@@ -143,7 +138,6 @@ const getCompanyDetailInScope = cache(async function getCompanyDetailInScope(
     website: company.website,
     taxId: company.taxId,
     notes: company.notes,
-    regionCode: company.region.code,
     industryId: company.industryId,
     deliverySameAsMain: company.deliverySameAsMain,
     deliveryStreet: company.deliveryStreet,

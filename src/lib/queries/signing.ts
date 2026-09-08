@@ -171,6 +171,7 @@ export async function getDocumentForSigning(tokenHash: string): Promise<Document
           issueDate: true,
           validityDays: true,
           currency: true,
+          currencySymbol: true,
           taxName: true,
           taxRate: true,
           deliveryTerms: true,
@@ -436,6 +437,8 @@ export async function getDocumentForSigning(tokenHash: string): Promise<Document
     validityDays: document.validityDays,
     defaultValidityDays,
     currency: document.currency,
+    // The document's own frozen symbol, not `document.region`'s current one.
+    currencySymbol: document.currencySymbol,
     taxName: document.taxName,
     taxRate: document.taxRate.toString(),
     deliveryTerms: document.deliveryTerms,

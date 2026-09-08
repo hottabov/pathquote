@@ -29,6 +29,7 @@ export default async function NewRegionPage() {
             code: "",
             name: "",
             currency: "",
+            currencySymbol: "",
             taxName: "",
             taxRate: "",
             entityName: "",

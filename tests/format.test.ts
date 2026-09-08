@@ -67,7 +67,10 @@ describe("formatMoney", () => {
   });
 
   it("respects an explicit locale override", () => {
-    expect(formatMoney(1234.5, "USD", "en-US")).toBe(expectedMoney(1234.5, "USD", "en-US"));
+    // Locale is the FOURTH argument — the third is the region's optional
+    // currency-symbol override (see `formatMoney`), so `null` here means
+    // "no override" and leaves Intl's own symbol in place.
+    expect(formatMoney(1234.5, "USD", null, "en-US")).toBe(expectedMoney(1234.5, "USD", "en-US"));
   });
 });
 

@@ -1,6 +1,6 @@
 "use server";
 
-import { revalidateCompany, revalidateCompanyList } from "@/lib/revalidate";
+import { revalidateCompany, revalidateCompanyList, revalidateIndustryList } from "@/lib/revalidate";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireAdmin, requireSession } from "@/lib/authz";
@@ -46,6 +46,7 @@ export async function createIndustry(name: string): Promise<ActionResult & { id?
   try {
     const created = await db.industry.create({ data: { name: parsed.data } });
     revalidateCompanyList();
+    revalidateIndustryList();
     return { id: created.id };
   } catch (error) {
     // The findByNormalizedName() check above is check-then-act and can
@@ -104,6 +105,94 @@ export async function renameIndustry(industryId: string, name: string): Promise<
   }
 
   revalidateCompanyList();
+  revalidateIndustryList();
+  return {};
+}
+
+/**
+ * Deletes an industry nothing is using.
+ *
+ * Refuses while any company still points at it, rather than relying on the
+ * schema's `onDelete: SetNull` to quietly unset the field on every one of
+ * them. That FK exists so a delete can never orphan a row; it is not a
+ * decision about whether the delete was wanted. An admin who genuinely wants
+ * the rows moved has `mergeIndustries` for it, which says where they go.
+ *
+ * The count is re-read here rather than trusted from the screen: the list was
+ * rendered at some earlier moment, and a manager may have picked this industry
+ * for a company since.
+ */
+export async function deleteIndustry(industryId: string): Promise<ActionResult> {
+  await requireAdmin();
+
+  const parsedId = idSchema.safeParse(industryId);
+  if (!parsedId.success) return { error: NOT_FOUND_ERROR };
+
+  const industry = await db.industry.findUnique({ where: { id: parsedId.data } });
+  if (!industry) return { error: NOT_FOUND_ERROR };
+
+  const inUse = await db.company.count({ where: { industryId: industry.id } });
+  if (inUse > 0) {
+    return {
+      error: `"${industry.name}" is used by ${inUse} ${inUse === 1 ? "company" : "companies"}. Merge it into another industry instead.`,
+    };
+  }
+
+  // Between the count above and this delete, a company could be pointed at
+  // the row. `onDelete: SetNull` means that company survives with a blank
+  // industry rather than the delete failing, which is the acceptable end of
+  // that race — the alternative is a transaction taken out on a table every
+  // company edit touches, to close a window measured in milliseconds on an
+  // action an admin performs by hand.
+  await db.industry.delete({ where: { id: industry.id } });
+
+  revalidateCompanyList();
+  revalidateIndustryList();
+  return {};
+}
+
+/**
+ * Moves every company off `sourceId` onto `targetId` and deletes the source —
+ * the fix for the duplicates the inline picker's "Create ..." accumulates
+ * ("Retail" / "Retail trade" / "Retailing"), which `createIndustry`'s
+ * case-insensitive dedupe cannot catch because they are not the same word.
+ *
+ * One transaction: a half-done merge would leave companies split across two
+ * rows with the source gone or still there, and no way to tell which half ran.
+ *
+ * Deliberately not reversible and deliberately not asked twice here — the
+ * caller confirms, naming both rows and the number of companies about to
+ * move.
+ */
+export async function mergeIndustries(sourceId: string, targetId: string): Promise<ActionResult> {
+  await requireAdmin();
+
+  const parsedSource = idSchema.safeParse(sourceId);
+  const parsedTarget = idSchema.safeParse(targetId);
+  if (!parsedSource.success || !parsedTarget.success) return { error: NOT_FOUND_ERROR };
+
+  // Not merely pointless: it would delete the row every affected company was
+  // just moved onto, taking the industry off all of them.
+  if (parsedSource.data === parsedTarget.data) {
+    return { error: "Can't merge an industry into itself." };
+  }
+
+  const [source, target] = await Promise.all([
+    db.industry.findUnique({ where: { id: parsedSource.data } }),
+    db.industry.findUnique({ where: { id: parsedTarget.data } }),
+  ]);
+  if (!source || !target) return { error: NOT_FOUND_ERROR };
+
+  await db.$transaction(async (tx) => {
+    await tx.company.updateMany({
+      where: { industryId: source.id },
+      data: { industryId: target.id },
+    });
+    await tx.industry.delete({ where: { id: source.id } });
+  });
+
+  revalidateCompanyList();
+  revalidateIndustryList();
   return {};
 }
 
@@ -129,9 +218,8 @@ export async function setCompanyIndustry(
   if (!company) return { error: NOT_FOUND_ERROR };
 
   // A well-formed id naming no Industry row would otherwise reach the
-  // foreign key and throw an unhandled Prisma error -- same shape of check
-  // clients.ts does for Company.regionId before writing it. `undefined`
-  // here means "clear the field" and must not trigger this lookup.
+  // foreign key and throw an unhandled Prisma error. `undefined` here means
+  // "clear the field" and must not trigger this lookup.
   if (parsedIndustryId.data !== undefined) {
     const industry = await db.industry.findUnique({ where: { id: parsedIndustryId.data } });
     if (!industry) return { error: NOT_FOUND_ERROR };
@@ -143,5 +231,6 @@ export async function setCompanyIndustry(
   });
 
   revalidateCompany(company.id);
+  revalidateIndustryList();
   return {};
 }

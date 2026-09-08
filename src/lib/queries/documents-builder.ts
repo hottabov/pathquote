@@ -257,6 +257,12 @@ export type DocumentForBuilder = {
    * display plumbing and never fed back into that write. */
   defaultValidityDays: number;
   currency: string;
+  /** The symbol to print instead of the one `Intl` derives from `currency`
+   * — snapshotted onto the document at creation from `Region.currencySymbol`,
+   * so this is the document's frozen value and not whatever the region says
+   * today. `null` means "no override" and every formatter falls back to the
+   * derived symbol. */
+  currencySymbol: string | null;
   taxName: string;
   taxRate: string;
   /** DELIVERED (the default) or EX_WORKS — see the `DeliveryTerms` enum in
@@ -776,6 +782,9 @@ async function loadDocumentForBuilder(
     validityDays: document.validityDays,
     defaultValidityDays,
     currency: document.currency,
+    // The document's own column, deliberately not `document.region`'s — the
+    // symbol was frozen here when the draft was created.
+    currencySymbol: document.currencySymbol,
     taxName: document.taxName,
     taxRate: document.taxRate.toString(),
     deliveryTerms: document.deliveryTerms,

@@ -2,10 +2,9 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { ExternalLink } from "lucide-react";
 import { auth } from "@/auth";
-import { requireRegion } from "@/lib/authz";
+import { requireSession } from "@/lib/authz";
 import { isAdminRole } from "@/lib/roles";
 import { getCompanyDetail } from "@/lib/queries/clients";
-import { listActiveRegions } from "@/lib/queries/catalog";
 import { listIndustries, countCompaniesUsingIndustry } from "@/lib/queries/industries";
 import { updateCompany, deleteCompany, createContact, updateContact, deleteContact } from "@/lib/actions/clients";
 import { normalizeCountryInput } from "@/lib/countries";
@@ -36,27 +35,14 @@ export default async function CompanyEditorPage({ params }: { params: Promise<Pa
   const { companyId } = await params;
   // AppLayout (src/app/(app)/layout.tsx) already calls requireSession and
   // redirects unauthenticated requests, so a session is always present here.
-  // `requireRegion` additionally hands back the region this viewer may write
-  // — `null` for an admin, meaning every region.
-  const { session, regionId } = await requireRegion();
+  // No region check: a company has none, and editing one never depends on
+  // which office the viewer sits in — only on whether they own it.
+  const session = await requireSession();
 
-  const [company, allRegions, industries] = await Promise.all([
+  const [company, industries] = await Promise.all([
     getCompanyDetail(session.user, companyId),
-    listActiveRegions(),
     listIndustries(),
   ]);
-
-  // Same rule as /clients/new: offer a manager only their own region, so the
-  // field renders as static text rather than a choice `updateCompany` would
-  // reject. The enforcement itself is assertRegionWritable in that action.
-  //
-  // "Offered" is not "displayed": `CompanyRegionField` shows and submits
-  // `defaultValues.regionCode` — this company's own region — and uses the
-  // offered one only to put a name to it. A manager an admin has since
-  // re-homed therefore sees the company's real region and gets
-  // FOREIGN_REGION_ERROR in the form's error slot on save, rather than
-  // silently dragging the company into their new one.
-  const regions = regionId === null ? allRegions : allRegions.filter((r) => r.id === regionId);
 
   // A foreign company (belongs to another manager) resolves to the same
   // `null` as a nonexistent one — never leak which case it was.
@@ -112,7 +98,6 @@ export default async function CompanyEditorPage({ params }: { params: Promise<Pa
             website: company.website ?? "",
             taxId: company.taxId ?? "",
             notes: company.notes ?? "",
-            regionCode: company.regionCode,
             deliverySameAsMain: company.deliverySameAsMain,
             deliveryStreet: company.deliveryStreet ?? "",
             deliveryCity: company.deliveryCity ?? "",
@@ -123,7 +108,6 @@ export default async function CompanyEditorPage({ params }: { params: Promise<Pa
             deliveryPhone: company.deliveryPhone ?? "",
             deliveryNotes: company.deliveryNotes ?? "",
           }}
-          regions={regions.map((r) => ({ code: r.code, name: r.name }))}
           submitLabel="Save changes"
           industryPicker={{
             companyId: company.id,

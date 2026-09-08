@@ -226,10 +226,21 @@ export async function recalcDocument(documentId: string, client: RecalcClient = 
   const totals = computeTotals(engineInput);
 
   const concessionMessage = totals.documentConcession.exceedsCap
-    ? concessionCapMessage(totals.documentConcession, document.region.name, document.currency)
+    ? concessionCapMessage(
+        totals.documentConcession,
+        document.region.name,
+        document.currency,
+        // The document's snapshotted symbol, not `document.region`'s live one.
+        document.currencySymbol
+      )
     : null;
   const markupMessage = totals.documentConcession.exceedsMarkupCap
-    ? markupCapMessage(totals.documentConcession, document.region.name, document.currency)
+    ? markupCapMessage(
+        totals.documentConcession,
+        document.region.name,
+        document.currency,
+        document.currencySymbol
+      )
     : null;
 
   await client.document.update({

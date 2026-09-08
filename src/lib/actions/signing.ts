@@ -279,6 +279,7 @@ export async function sendQuoteForSignature(documentId: string): Promise<ActionR
       signingStatus: true,
       total: true,
       currency: true,
+      currencySymbol: true,
       contactId: true,
       contact: { select: { id: true, email: true, firstName: true, lastName: true } },
       author: { select: { name: true, email: true, active: true } },
@@ -359,7 +360,7 @@ export async function sendQuoteForSignature(documentId: string): Promise<ActionR
   const mail = buildSigningInviteEmail({
     url: `${resolvedAuthUrl.baseUrl}/sign/${token}`,
     quoteNumber: document.number ?? "",
-    total: formatMoney(document.total, document.currency),
+    total: formatMoney(document.total, document.currency, document.currencySymbol),
     authorName: document.author.name ?? document.author.email,
     entityName: document.region.entityName,
     expiresOn: formatDateAU(expiresAt),

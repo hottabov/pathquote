@@ -1,6 +1,4 @@
 import type { Metadata } from "next";
-import { listActiveRegions } from "@/lib/queries/catalog";
-import { requireRegion } from "@/lib/authz";
 import { createCompany } from "@/lib/actions/clients";
 import { CompanyForm } from "@/components/clients/company-form";
 import { PageHeader, SectionCard } from "@/components/ui-kit";
@@ -8,16 +6,12 @@ import { PageHeader, SectionCard } from "@/components/ui-kit";
 export const metadata: Metadata = { title: "New company" };
 export const dynamic = "force-dynamic";
 
+// No `requireRegion` here any more. A company carries no region — it is a
+// client of the business, not of one office — so there is nothing on this
+// screen a region could gate. A manager without a region configured is still
+// stopped at the screens where region genuinely decides something (prices,
+// and the document builder), which is where that check belongs.
 export default async function NewCompanyPage() {
-  const { regionId } = await requireRegion();
-  const allRegions = await listActiveRegions();
-  // A manager is offered exactly their own region, so there is nothing to
-  // choose and CompanyForm renders the field as static text instead of a
-  // select. An admin keeps the full list. The server-side rule lives in
-  // createCompany (assertRegionWritable); this only stops offering a choice
-  // that would be rejected.
-  const regions = regionId === null ? allRegions : allRegions.filter((r) => r.id === regionId);
-
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -40,7 +34,6 @@ export default async function NewCompanyPage() {
             website: "",
             taxId: "",
             notes: "",
-            regionCode: regions[0]?.code ?? "",
             deliverySameAsMain: true,
             deliveryStreet: "",
             deliveryCity: "",
@@ -51,7 +44,6 @@ export default async function NewCompanyPage() {
             deliveryPhone: "",
             deliveryNotes: "",
           }}
-          regions={regions.map((r) => ({ code: r.code, name: r.name }))}
           submitLabel="Create company"
         />
       </SectionCard>

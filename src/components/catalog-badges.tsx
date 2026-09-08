@@ -20,7 +20,7 @@ export function PriceDisplay({ price, className }: { price?: CatalogPrice; class
 
   return (
     <span className={cn("text-sm font-medium tabular-nums text-brand-dark", className)}>
-      {formatMoney(price.amount, price.currency)}
+      {formatMoney(price.amount, price.currency, price.currencySymbol)}
     </span>
   );
 }

@@ -26,6 +26,7 @@ function readRegionForm(formData: FormData) {
   return {
     name: formData.get("name"),
     currency: formData.get("currency"),
+    currencySymbol: formData.get("currencySymbol"),
     taxName: formData.get("taxName"),
     taxRate: formData.get("taxRate"),
     entityName: formData.get("entityName"),
@@ -77,6 +78,7 @@ export async function createRegion(formData: FormData): Promise<ActionResult> {
         code: parsed.data.code,
         name: parsed.data.name,
         currency: parsed.data.currency,
+        currencySymbol: parsed.data.currencySymbol ?? null,
         taxName: parsed.data.taxName,
         taxRate: new Prisma.Decimal(parsed.data.taxRate),
         entityName: parsed.data.entityName,
@@ -136,6 +138,7 @@ export async function updateRegion(regionId: string, formData: FormData): Promis
     data: {
       name: parsed.data.name,
       currency: parsed.data.currency,
+      currencySymbol: parsed.data.currencySymbol ?? null,
       taxName: parsed.data.taxName,
       taxRate: new Prisma.Decimal(parsed.data.taxRate),
       entityName: parsed.data.entityName,

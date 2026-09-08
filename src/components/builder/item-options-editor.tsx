@@ -110,6 +110,7 @@ export function ItemOptionsEditor({
   currentLines,
   compatibleOptions,
   currency,
+  currencySymbol,
   showOptionIcons = true,
   readOnly = false,
   lockedRoles,
@@ -119,6 +120,7 @@ export function ItemOptionsEditor({
   currentLines: CurrentLine[];
   compatibleOptions: CompatibleOption[];
   currency: string;
+  currencySymbol: string | null;
   /** Option roles this item's own builder owns, and that a manager must not
    * hand-edit here. Today that is the EasyLoader's table (`EL_MODULE_ROLES`):
    * its drive modules, lengths, busbar and rail are computed from the layout
@@ -418,7 +420,7 @@ export function ItemOptionsEditor({
                                 </span>
                               ) : priced ? (
                                 <span className="text-xs text-slate-500">
-                                  {formatMoney(option.price!.amount, currency)}
+                                  {formatMoney(option.price!.amount, currency, currencySymbol)}
                                 </span>
                               ) : (
                                 <span className="mt-0.5 w-fit rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">

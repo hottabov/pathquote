@@ -1106,12 +1106,17 @@ function joinParts(phrases: string[]): string {
  * exactly zero is omitted entirely, so a document with only a discount (no
  * trade-in, no manual price cut) still gets a clean one-clause message.
  */
-export function concessionCapMessage(dc: DocumentConcession, regionName: string, currency: string): string {
+export function concessionCapMessage(
+  dc: DocumentConcession,
+  regionName: string,
+  currency: string,
+  currencySymbol: string | null = null
+): string {
   const discountCentsTotal = toCents(dc.parts.documentDiscount) + toCents(dc.parts.itemDiscounts);
   const priceAdjustmentsCents = toCents(dc.parts.priceAdjustments);
   const tradeInCents = toCents(dc.parts.tradeIns);
 
-  const money = (cents: number) => formatMoney(fromCents(cents).toFixed(2), currency);
+  const money = (cents: number) => formatMoney(fromCents(cents).toFixed(2), currency, currencySymbol);
 
   const additions: string[] = [];
   if (discountCentsTotal !== 0) additions.push(`${money(discountCentsTotal)} discount`);
@@ -1126,7 +1131,7 @@ export function concessionCapMessage(dc: DocumentConcession, regionName: string,
 
   const partsSegment = partsClause ? ` — ${partsClause}` : "";
 
-  return `Concessions total ${formatMoney(dc.concession, currency)} (${formatPct(dc.effectivePct)}% of list price)${partsSegment} — above the ${dc.allowedPct}% limit for ${regionName}.`;
+  return `Concessions total ${formatMoney(dc.concession, currency, currencySymbol)} (${formatPct(dc.effectivePct)}% of list price)${partsSegment} — above the ${dc.allowedPct}% limit for ${regionName}.`;
 }
 
 /**
@@ -1150,12 +1155,17 @@ export function concessionCapMessage(dc: DocumentConcession, regionName: string,
  * once `exceedsMarkupCap` is true, which already implies a non-null ceiling
  * (see `computeTotals`).
  */
-export function markupCapMessage(dc: DocumentConcession, regionName: string, currency: string): string {
+export function markupCapMessage(
+  dc: DocumentConcession,
+  regionName: string,
+  currency: string,
+  currencySymbol: string | null = null
+): string {
   // `dc.concession` is negative for a markup (a price raised above list) —
   // negate it back to a plain positive "how much over list" figure, the
   // same way `dc.effectivePct` is negated to a plain positive markup
   // percentage below.
   const overListCents = -toCents(dc.concession);
   const markupPct = -dc.effectivePct;
-  return `This quote is priced ${formatMoney(fromCents(overListCents).toFixed(2), currency)} above list (${formatPct(markupPct)}% markup) — above the ${dc.allowedMarkupPct}% markup ceiling for ${regionName}.`;
+  return `This quote is priced ${formatMoney(fromCents(overListCents).toFixed(2), currency, currencySymbol)} above list (${formatPct(markupPct)}% markup) — above the ${dc.allowedMarkupPct}% markup ceiling for ${regionName}.`;
 }

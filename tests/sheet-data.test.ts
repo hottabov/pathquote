@@ -441,12 +441,14 @@ describe("toSheetData — totals passthrough", () => {
       taxAmount: "90.00",
       total: "990.00",
       currency: "USD",
+      currencySymbol: null,
       taxName: "Sales Tax",
       taxRate: "0",
     });
     const sheet = toSheetData(doc);
     expect(sheet.totals).toEqual({
       currency: "USD",
+      currencySymbol: null,
       subtotal: "1000.00",
       discountMode: "PERCENT",
       discountValue: "10",

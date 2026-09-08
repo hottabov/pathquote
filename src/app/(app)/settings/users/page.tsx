@@ -56,10 +56,10 @@ export default async function UsersPage() {
               <thead>
                 <tr className={tableHeadRowClassName}>
                   <th scope="col" className="px-4 py-3">
-                    Email
+                    Name
                   </th>
                   <th scope="col" className="px-4 py-3">
-                    Name
+                    Email
                   </th>
                   <th scope="col" className="px-4 py-3">
                     Role
@@ -98,15 +98,17 @@ function UserRow({ user: u }: { user: UserListItem }) {
     // legible — sat above the link too: the one part of the row a person
     // naturally clicks was the one part that did nothing.
     <tr className={tableRowClassName}>
-      <RowCell href={href} primary={`Open ${u.email}`}>
+      <RowCell href={href} primary={`Open ${u.name ?? u.email}`}>
         <span className="flex items-center gap-3">
           <Avatar name={u.name} email={u.email} image={u.image} size={32} />
-          <span className="font-medium text-brand-dark">{u.email}</span>
+          <span className="font-medium text-brand-dark">{u.name ?? u.email}</span>
         </span>
         {u.magicLinkOnly ? <span className="mt-0.5 block text-xs text-slate-500">Magic link only</span> : null}
       </RowCell>
       <RowCell href={href}>
-        <span className="text-sm text-slate-600">{u.name ?? "—"}</span>
+        {/* Blank rather than the email repeated when the name column already fell
+            back to it — one identity per row, never the same string twice. */}
+        <span className="text-sm text-slate-600">{u.name ? u.email : "—"}</span>
       </RowCell>
       <RowCell href={href}>
         <StatusBadge tone={STATUS_TONE[u.role]}>{u.role}</StatusBadge>
@@ -128,14 +130,14 @@ function UserCard({ user: u }: { user: UserListItem }) {
         href={`/settings/users/${u.id}`}
         className="focus-ring absolute inset-0 rounded-xl focus-visible:z-10"
       >
-        <span className="sr-only">Open {u.email}</span>
+        <span className="sr-only">Open {u.name ?? u.email}</span>
       </Link>
       <div className="flex items-start justify-between gap-3">
         <div className="relative flex min-w-0 items-center gap-3">
           <Avatar name={u.name} email={u.email} image={u.image} size={36} />
           <div className="min-w-0">
-            <p className="truncate font-medium text-brand-dark">{u.email}</p>
-            <p className="truncate text-sm text-slate-500">{u.name ?? "No name set"}</p>
+            <p className="truncate font-medium text-brand-dark">{u.name ?? u.email}</p>
+            <p className="truncate text-sm text-slate-500">{u.name ? u.email : "No name set"}</p>
           </div>
         </div>
         <StatusBadge tone={u.active ? "green" : "slate"} className="relative shrink-0">

@@ -170,7 +170,7 @@ function RecentDocumentRow({ document }: { document: DocumentListItem }) {
             {document.status === "DRAFT" ? "Draft" : "Final"}
           </StatusBadge>
           <span className="text-sm font-medium text-brand-dark">
-            {formatMoney(document.total, document.currency)}
+            {formatMoney(document.total, document.currency, document.currencySymbol)}
           </span>
         </div>
       </Link>

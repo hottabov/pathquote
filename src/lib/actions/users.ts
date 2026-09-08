@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  revalidateCompanyList,
   revalidateHome,
   revalidateSettings,
   revalidateUser,
@@ -19,7 +20,7 @@ import {
   canModifyUser,
   canSetAvatar,
 } from "@/lib/validation/users";
-import { countActiveAdmins } from "@/lib/queries/users";
+import { countActiveAdmins, getUserFootprint, type UserFootprint } from "@/lib/queries/users";
 import { IMAGE_URL_PATTERN, saveUpload, UploadValidationError } from "@/lib/uploads";
 import { parseSignatureDataUrl } from "@/lib/signing/data-url";
 import { NOT_FOUND_ERROR, flattenZodError, type ActionResult } from "./_shared";
@@ -49,7 +50,6 @@ function readUpdateUserForm(formData: FormData) {
     phone: formData.get("phone"),
     role: formData.get("role"),
     regionCode: formData.get("regionCode"),
-    active: formData.get("active"),
   };
 }
 
@@ -113,11 +113,14 @@ export async function createUser(formData: FormData): Promise<ActionResult> {
 }
 
 /**
- * Updates a user's name/role/region and active flag. Guarded by
- * `canModifyUser` so an admin can neither lock themselves out (deactivating
- * or demoting their own account) nor strand the system with zero active
- * admins — see src/lib/validation/users.ts for the full rationale. Email and
- * password are never touched here (see `setUserPassword` for the latter).
+ * Updates a user's name, phone, role and region. Guarded by `canModifyUser` so
+ * an admin can't demote their own account or the last remaining one — see
+ * src/lib/validation/users.ts for the full rationale.
+ *
+ * Access (`active`) is NOT here: it has its own action and its own button (see
+ * `setUserActive`), so revoking someone's sign-in can't happen as a side effect
+ * of correcting their phone number. Email and password aren't here either (see
+ * `setUserPassword` for the latter).
  */
 export async function updateUser(userId: string, formData: FormData): Promise<ActionResult> {
   const session = await requireAdmin();
@@ -137,7 +140,7 @@ export async function updateUser(userId: string, formData: FormData): Promise<Ac
   const blockedReason = canModifyUser(
     session.user.id,
     { id: target.id, role: target.role, active: target.active },
-    { role: parsed.data.role, active: parsed.data.active },
+    { role: parsed.data.role },
     activeAdminCount
   );
   if (blockedReason) return { error: blockedReason };
@@ -152,12 +155,186 @@ export async function updateUser(userId: string, formData: FormData): Promise<Ac
       phone: parsed.data.phone ?? null,
       role: parsed.data.role,
       regionId: resolved.regionId,
-      active: parsed.data.active,
     },
   });
 
   revalidateUserPaths(userId);
   return {};
+}
+
+/**
+ * Turns one user's access on or off, as a single deliberate act.
+ *
+ * Deactivating is the answer to "a manager left" — it is the only thing this
+ * app does about a departure, and it is enough: `src/auth.ts` refuses an
+ * inactive account at sign-in and drops its existing sessions on the next JWT
+ * refresh, while every quote they wrote and every client they owned stays
+ * exactly where it is. Nothing is deleted, because a quote a customer signed
+ * names its author, and the row that name comes from has to still be there.
+ *
+ * This used to be a checkbox inside `updateUser`'s details form — two rows
+ * above "Save changes", indistinguishable from editing a phone number, and
+ * silently equivalent to "revoke" for any caller that stopped sending the
+ * field (an absent checkbox and an unticked one submit the same nothing). It
+ * is now its own action behind its own button, and `updateUserSchema` has no
+ * `active` field at all. Same `canModifyUser` guard: no self-lockout, never the
+ * last active admin.
+ *
+ * The companies of a manager being deactivated are worth handing over first —
+ * see `reassignUserCompanies`. Deactivating without doing so is allowed (an
+ * admin still sees everything, and the clients can be handed over afterwards),
+ * so this does not block on it; the screen warns instead.
+ */
+export async function setUserActive(userId: string, active: boolean): Promise<ActionResult> {
+  const session = await requireAdmin();
+
+  const idParsed = idSchema.safeParse(userId);
+  if (!idParsed.success) return { error: NOT_FOUND_ERROR };
+
+  const target = await db.user.findUnique({ where: { id: userId } });
+  if (!target) return { error: NOT_FOUND_ERROR };
+
+  const activeAdminCount = await countActiveAdmins();
+  const blockedReason = canModifyUser(
+    session.user.id,
+    { id: target.id, role: target.role, active: target.active },
+    { active },
+    activeAdminCount
+  );
+  if (blockedReason) return { error: blockedReason };
+
+  await db.user.update({ where: { id: userId }, data: { active } });
+
+  revalidateUserPaths(userId);
+  return {};
+}
+
+/**
+ * Hands every client company owned by `fromUserId` to `toUserId`.
+ *
+ * The problem this solves: a company is visible to a manager only if they own
+ * it (`companyWhereForUser`). When a manager leaves, their clients stay owned
+ * by an account nobody signs into, which means no other manager can see them at
+ * all — the clients effectively vanish, while looking perfectly fine to the
+ * admin who checks.
+ *
+ * Companies move; quotes do not. Ownership of a client is a live fact about who
+ * looks after them, and it is meant to change hands. Authorship of a quote is a
+ * record of who wrote it — it is printed on the document and, once signed, is
+ * part of what the customer agreed to. Rewriting that to tidy up a leaver's
+ * account would be falsifying the paperwork, so a departed author's quotes stay
+ * theirs and stay visible to admins.
+ *
+ * Idempotent and safe to run on a user with no companies: it moves whatever is
+ * there and reports how many.
+ */
+export async function reassignUserCompanies(
+  fromUserId: string,
+  toUserId: string
+): Promise<ActionResult & { moved?: number }> {
+  await requireAdmin();
+
+  const fromParsed = idSchema.safeParse(fromUserId);
+  const toParsed = idSchema.safeParse(toUserId);
+  if (!fromParsed.success || !toParsed.success) return { error: NOT_FOUND_ERROR };
+
+  if (fromParsed.data === toParsed.data) {
+    return { error: "Pick a different user to hand the clients to." };
+  }
+
+  const [from, to] = await Promise.all([
+    db.user.findUnique({ where: { id: fromParsed.data } }),
+    db.user.findUnique({ where: { id: toParsed.data } }),
+  ]);
+  if (!from || !to) return { error: NOT_FOUND_ERROR };
+
+  // Handing clients to an account that can't sign in is the same as leaving
+  // them with the departing one. The screen only offers active users; this is
+  // the check.
+  if (!to.active) {
+    return { error: "That account is deactivated — pick someone who can sign in." };
+  }
+
+  const { count } = await db.company.updateMany({
+    where: { ownerId: from.id },
+    data: { ownerId: to.id },
+  });
+
+  revalidateCompanyList();
+  revalidateUserPaths(fromUserId);
+  revalidateUser(toUserId);
+  return { moved: count };
+}
+
+/**
+ * Deletes a user who left nothing behind.
+ *
+ * Deleting is deliberately the narrow case, not the general answer to someone
+ * leaving — that is `setUserActive`. It exists for the account created with a
+ * typo in the address, or the person who never signed in: a row whose removal
+ * costs nothing because nothing points at it.
+ *
+ * Refused the moment anything does. Three of the four references
+ * (`Document.author`, `SupportMessage.author`, `CatalogImport.user`) are
+ * required columns the database would refuse to orphan anyway, so without this
+ * check the admin would meet a raw constraint error instead of a sentence. The
+ * fourth (`Company.owner`) is nullable and would go through — silently blanking
+ * the owner of every client that user had, which is the outcome
+ * `reassignUserCompanies` exists to prevent. So the footprint is re-read here
+ * and the delete refused with what to do instead.
+ *
+ * Sessions, accounts and catalogue-visibility rows cascade (see the schema) —
+ * those are per-login state, not records of anything the person did.
+ */
+export async function deleteUser(userId: string): Promise<ActionResult> {
+  const session = await requireAdmin();
+
+  const idParsed = idSchema.safeParse(userId);
+  if (!idParsed.success) return { error: NOT_FOUND_ERROR };
+
+  const target = await db.user.findUnique({ where: { id: userId } });
+  if (!target) return { error: NOT_FOUND_ERROR };
+
+  // Deleting yourself is deactivating yourself and then some, and
+  // `canModifyUser` already refuses that. Reusing it keeps both rules in one
+  // place: no self-lockout, and never the last active admin.
+  const activeAdminCount = await countActiveAdmins();
+  const blockedReason = canModifyUser(
+    session.user.id,
+    { id: target.id, role: target.role, active: target.active },
+    { active: false },
+    activeAdminCount
+  );
+  if (blockedReason) return { error: blockedReason };
+
+  const footprint = await getUserFootprint(userId);
+  const blocking = describeUserFootprint(footprint);
+  if (blocking) {
+    return {
+      error: `This account can't be deleted — it still has ${blocking}. Deactivate it instead, and hand over its clients.`,
+    };
+  }
+
+  await db.user.delete({ where: { id: userId } });
+
+  revalidateUserList();
+  redirect("/settings/users");
+}
+
+/** "3 clients, 12 quotes" — the parts of a footprint that are not zero, or
+ * `null` when it is empty and the user can be deleted. Written out rather than
+ * a bare count so the refusal names what is actually in the way. */
+function describeUserFootprint(footprint: UserFootprint): string | null {
+  const parts: string[] = [];
+  const push = (count: number, one: string, many: string) => {
+    if (count > 0) parts.push(`${count} ${count === 1 ? one : many}`);
+  };
+  push(footprint.companies, "client", "clients");
+  push(footprint.documents, "quote", "quotes");
+  push(footprint.supportMessages, "support message", "support messages");
+  push(footprint.catalogImports, "catalogue import", "catalogue imports");
+  if (parts.length === 0) return null;
+  return parts.join(", ");
 }
 
 /**

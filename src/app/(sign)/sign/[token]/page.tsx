@@ -83,7 +83,7 @@ export default async function SignPage({ params }: { params: Promise<{ token: st
         completed={completed}
         hasClientSignature={data.signatures.client !== null}
         quoteNumber={data.number ?? ""}
-        total={formatMoney(data.totals.total, data.totals.currency)}
+        total={formatMoney(data.totals.total, data.totals.currency, data.totals.currencySymbol)}
         authorName={data.preparedBy.name ?? data.preparedBy.email}
         authorEmail={data.preparedBy.email}
         signedOn={data.signatures.client?.signedAt ?? null}

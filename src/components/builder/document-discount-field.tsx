@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AutosaveIndicator } from "@/components/builder/autosave-indicator";
 import { fieldInputClass } from "@/components/ui-kit";
 import { useAutosave } from "@/lib/use-autosave";
-import { currencySymbol, formatMoney } from "@/lib/format";
+import { currencySymbol as deriveCurrencySymbol, formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { setDocumentDiscount } from "@/lib/actions/documents";
 import type { DiscountMode } from "@/lib/pricing";
@@ -23,12 +23,14 @@ export function DocumentDiscountField({
   discountMode,
   discountValue,
   currency,
+  currencySymbol,
   readOnly = false,
 }: {
   documentId: string;
   discountMode: DiscountMode;
   discountValue: string | null;
   currency: string;
+  currencySymbol: string | null;
   readOnly?: boolean;
 }) {
   const [mode, setMode] = useState<DiscountMode>(discountMode);
@@ -65,11 +67,14 @@ export function DocumentDiscountField({
     // quotation-sheet.tsx).
     if (!discountValue || Number(discountValue) === 0)
       return <p className="text-sm text-slate-700">No document discount applied.</p>;
-    const label = discountMode === "PERCENT" ? `${discountValue}% off the subtotal` : `${formatMoney(discountValue, currency)} off the subtotal`;
+    const label = discountMode === "PERCENT" ? `${discountValue}% off the subtotal` : `${formatMoney(discountValue, currency, currencySymbol)} off the subtotal`;
     return <p className="text-sm text-slate-700">{label}</p>;
   }
 
-  const symbol = currencySymbol(currency);
+  // Aliased on import because this component now also takes a
+  // `currencySymbol` prop (the document's snapshotted override), which
+  // would otherwise shadow the helper here.
+  const symbol = deriveCurrencySymbol(currency, currencySymbol);
 
   return (
     <div className="flex flex-col gap-1">

@@ -84,6 +84,7 @@ export function sheetDoc(overrides: Partial<ToSheetDataDoc> = {}): ToSheetDataDo
     validityDays: null,
     defaultValidityDays: 7,
     currency: "AUD",
+    currencySymbol: null,
     taxName: "GST",
     taxRate: "10",
     deliveryTerms: "DELIVERED",

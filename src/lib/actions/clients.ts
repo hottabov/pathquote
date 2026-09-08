@@ -4,7 +4,7 @@ import { revalidateCompany, revalidateCompanyList } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/authz";
-import { assertRegionWritable, companyWhereForUser } from "@/lib/scope";
+import { companyWhereForUser } from "@/lib/scope";
 import { companySchema, contactSchema } from "@/lib/validation/clients";
 import { idSchema } from "@/lib/validation/documents";
 import { NOT_FOUND_ERROR, flattenZodError, type ActionResult } from "./_shared";
@@ -24,7 +24,6 @@ function readCompanyForm(formData: FormData) {
     website: formData.get("website"),
     taxId: formData.get("taxId"),
     notes: formData.get("notes"),
-    regionCode: formData.get("regionCode"),
     // `FormData.get` returns the FIRST value for a repeated name — see
     // CompanyForm's doc comment for why the checkbox is listed before its
     // hidden "false" fallback, so this returns "true" only when checked.
@@ -57,6 +56,12 @@ function readContactForm(formData: FormData) {
  * Creates a company owned by the current session's user — managers create
  * their own clients; an admin who creates one also becomes its owner (they
  * can see and edit every company regardless, via companyWhereForUser).
+ *
+ * No region is involved: a company belongs to the business, not to an
+ * office, so there is nothing here for `assertRegionWritable` to guard.
+ * Ownership (`companyWhereForUser`) is what scopes a company; region still
+ * guards the things that genuinely are per-office — prices, and the
+ * currency/tax/caps a Document carries.
  */
 export async function createCompany(formData: FormData): Promise<ActionResult> {
   const session = await requireSession();
@@ -64,18 +69,6 @@ export async function createCompany(formData: FormData): Promise<ActionResult> {
   const parsed = companySchema.safeParse(readCompanyForm(formData));
   if (!parsed.success) {
     return { error: flattenZodError(parsed.error) };
-  }
-
-  const region = await db.region.findUnique({ where: { code: parsed.data.regionCode } });
-  if (!region) return { error: "Region not found" };
-
-  // The form field is the client's *claim* about which region this company
-  // belongs to. This is the check. Hiding the picker for a manager (see
-  // /clients/new) is only the UI consequence of this rule, never the rule.
-  try {
-    assertRegionWritable(session.user, region.id);
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "Region not available" };
   }
 
   const created = await db.company.create({
@@ -89,7 +82,6 @@ export async function createCompany(formData: FormData): Promise<ActionResult> {
       website: parsed.data.website ?? null,
       taxId: parsed.data.taxId ?? null,
       notes: parsed.data.notes ?? null,
-      regionId: region.id,
       ownerId: session.user.id,
       deliverySameAsMain: parsed.data.deliverySameAsMain,
       deliveryStreet: parsed.data.deliveryStreet ?? null,
@@ -125,18 +117,6 @@ export async function updateCompany(companyId: string, formData: FormData): Prom
   });
   if (!existing) return { error: NOT_FOUND_ERROR };
 
-  const region = await db.region.findUnique({ where: { code: parsed.data.regionCode } });
-  if (!region) return { error: "Region not found" };
-
-  // The submitted region is checked, not the one already on the row — so this
-  // also stops a manager MOVING one of their own companies into a region that
-  // isn't theirs, not just filing a new one there.
-  try {
-    assertRegionWritable(session.user, region.id);
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "Region not available" };
-  }
-
   await db.company.update({
     where: { id: companyId },
     data: {
@@ -149,7 +129,6 @@ export async function updateCompany(companyId: string, formData: FormData): Prom
       website: parsed.data.website ?? null,
       taxId: parsed.data.taxId ?? null,
       notes: parsed.data.notes ?? null,
-      regionId: region.id,
       deliverySameAsMain: parsed.data.deliverySameAsMain,
       deliveryStreet: parsed.data.deliveryStreet ?? null,
       deliveryCity: parsed.data.deliveryCity ?? null,
@@ -316,7 +295,6 @@ export async function deleteContact(contactId: string): Promise<ActionResult> {
 
 export type CompanyInlineInput = {
   name: string;
-  regionCode: string;
   website?: string;
   street?: string;
   city?: string;
@@ -352,18 +330,6 @@ export async function createCompanyInline(input: CompanyInlineInput): Promise<Cr
     return { error: flattenZodError(parsed.error) };
   }
 
-  const region = await db.region.findUnique({ where: { code: parsed.data.regionCode } });
-  if (!region) return { error: "Region not found" };
-
-  // Same rule and same reason as `createCompany` above — the builder's
-  // inline panel is a second door into company creation, and a guard on one
-  // door is not a guard.
-  try {
-    assertRegionWritable(session.user, region.id);
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "Region not available" };
-  }
-
   const created = await db.company.create({
     data: {
       name: parsed.data.name,
@@ -375,7 +341,6 @@ export async function createCompanyInline(input: CompanyInlineInput): Promise<Cr
       website: parsed.data.website ?? null,
       taxId: parsed.data.taxId ?? null,
       notes: null,
-      regionId: region.id,
       ownerId: session.user.id,
       deliverySameAsMain: parsed.data.deliverySameAsMain,
       deliveryStreet: parsed.data.deliveryStreet ?? null,

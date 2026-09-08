@@ -22,11 +22,13 @@ export function ExtraLinesSection({
   documentId,
   lines,
   currency,
+  currencySymbol,
   readOnly = false,
 }: {
   documentId: string;
   lines: BuilderLine[];
   currency: string;
+  currencySymbol: string | null;
   readOnly?: boolean;
 }) {
   return (
@@ -55,13 +57,13 @@ export function ExtraLinesSection({
                     <span className="truncate text-xs text-slate-500">{line.description}</span>
                   ) : null}
                   <span className="text-xs text-slate-500">
-                    {line.qty} × {formatMoney(line.unitPrice, currency)}
+                    {line.qty} × {formatMoney(line.unitPrice, currency, currencySymbol)}
                   </span>
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 <span className="text-sm font-medium tabular-nums text-brand-dark">
-                  {formatMoney(fromCents(line.qty * toCents(line.unitPrice)), currency)}
+                  {formatMoney(fromCents(line.qty * toCents(line.unitPrice)), currency, currencySymbol)}
                 </span>
                 {!readOnly && (
                   <RemoveItemButton action={removeLine.bind(null, line.id)} itemName={line.name} />

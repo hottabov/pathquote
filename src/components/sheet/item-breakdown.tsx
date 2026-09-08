@@ -75,11 +75,13 @@ export function ItemBreakdownRows({
   breakdown,
   code,
   currency,
+  currencySymbol,
   showPrices,
 }: {
   breakdown: ItemBreakdown;
   code: string;
   currency: string;
+  currencySymbol: string | null;
   showPrices: boolean;
 }) {
   const baseNegative = isNegativeAmount(breakdown.basePrice);
@@ -92,7 +94,7 @@ export function ItemBreakdownRows({
           </td>
           <td className={baseNegative && showPrices ? "pq-col-qty pq-negative" : "pq-col-qty"}>{breakdown.qty}</td>
           <td className={baseNegative && showPrices ? "pq-col-amount pq-amount pq-negative" : "pq-col-amount pq-amount"}>
-            {showPrices && !breakdown.basePriceUnquoted ? formatMoney(breakdown.basePrice, currency) : null}
+            {showPrices && !breakdown.basePriceUnquoted ? formatMoney(breakdown.basePrice, currency, currencySymbol) : null}
           </td>
         </tr>
       )}
@@ -110,7 +112,7 @@ export function ItemBreakdownRows({
                 optionNegative && showPrices ? "pq-col-amount pq-amount pq-negative" : "pq-col-amount pq-amount"
               }
             >
-              {showPrices && option.lineTotal !== null ? formatMoney(option.lineTotal, currency) : null}
+              {showPrices && option.lineTotal !== null ? formatMoney(option.lineTotal, currency, currencySymbol) : null}
             </td>
           </tr>
         );
@@ -119,7 +121,7 @@ export function ItemBreakdownRows({
         <tr className="pq-discount-row">
           <td className="pq-col-item pq-option-indent">{discountLabel(breakdown.discount)}</td>
           <td className="pq-col-qty" />
-          <td className="pq-col-amount pq-amount">-{formatMoney(breakdown.discount.amount, currency)}</td>
+          <td className="pq-col-amount pq-amount">-{formatMoney(breakdown.discount.amount, currency, currencySymbol)}</td>
         </tr>
       ) : null}
       {showPrices && breakdown.options.length > 0 ? (
@@ -127,7 +129,7 @@ export function ItemBreakdownRows({
           <td className="pq-col-item pq-option-indent">{code} subtotal</td>
           <td className="pq-col-qty" />
           <td className={isNegativeAmount(breakdown.subtotal) ? "pq-col-amount pq-amount pq-negative" : "pq-col-amount pq-amount"}>
-            {formatMoney(breakdown.subtotal, currency)}
+            {formatMoney(breakdown.subtotal, currency, currencySymbol)}
           </td>
         </tr>
       ) : null}

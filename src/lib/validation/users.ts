@@ -95,15 +95,20 @@ export const createUserSchema = z.object({
 });
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 
+/**
+ * No `active` field, deliberately. Whether someone can sign in is not a detail
+ * of the same form as their phone number: as a checkbox in a five-field save it
+ * was two rows above "Save changes" and looked like any other edit, and — worse
+ * — a checkbox that is simply absent from a submit is indistinguishable from
+ * one that was unticked, so any caller that stopped sending the field would
+ * revoke access on every save. It has its own action and its own button now
+ * (`setUserActive`), which is also where `canModifyUser` guards it.
+ */
 export const updateUserSchema = z.object({
   name: userNameSchema,
   phone: userPhoneSchema,
   role: userRoleSchema,
   regionCode: userRegionCodeSchema,
-  active: z.preprocess(
-    (value) => value === "on" || value === true || value === "true" || value === "1",
-    z.boolean()
-  ),
 });
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 

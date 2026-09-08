@@ -155,7 +155,8 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
         documentConcession,
         session.user.role,
         document.region.name,
-        document.currency
+        document.currency,
+        document.currencySymbol
       );
       if (validationError) throw new NotFinalizableError(validationError);
 

@@ -27,6 +27,22 @@ export const currencyCodeSchema = z
     message: "Currency must be exactly 3 letters",
   });
 
+/** What to print in front of an amount ("$", "A$", "£", "€", "US$"). Optional:
+ * blank means "let Intl derive one from the currency code", which is what every
+ * region did before this field existed. Deliberately not restricted to a known
+ * symbol list — the whole point is that the admin overrides a locale table that
+ * disagreed with them, so a rule about which symbols are "real" would just be
+ * the same disagreement one layer down. Capped at 6 characters: long enough for
+ * "CHF"/"US$", short enough that a pasted paragraph can't get in front of every
+ * price on a quote. */
+export const currencySymbolSchema = z.preprocess(
+  (value) =>
+    value === null || value === undefined || (typeof value === "string" && value.trim() === "")
+      ? undefined
+      : value,
+  z.string().trim().max(6, "Currency symbol must be at most 6 characters").optional()
+);
+
 export const regionNameSchema = z
   .string()
   .trim()
@@ -148,6 +164,7 @@ export const bankDetailsSchema = z
 const regionFormFields = {
   name: regionNameSchema,
   currency: currencyCodeSchema,
+  currencySymbol: currencySymbolSchema,
   taxName: taxNameSchema,
   taxRate: taxRateSchema,
   entityName: entityNameSchema,

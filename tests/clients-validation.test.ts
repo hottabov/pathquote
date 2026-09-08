@@ -12,13 +12,12 @@ describe("companySchema", () => {
     country: "AU",
     taxId: "64 072 458 667",
     notes: "Prefers email contact.",
-    regionCode: "AU",
   };
 
   accepts(companySchema, [["a fully populated valid company", base]]);
 
-  it("accepts a company with only name and regionCode", () => {
-    const result = companySchema.safeParse({ name: "Acme", regionCode: "AU" });
+  it("accepts a company with only a name", () => {
+    const result = companySchema.safeParse({ name: "Acme" });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.street).toBeUndefined();
@@ -29,7 +28,7 @@ describe("companySchema", () => {
   rejects(companySchema, [
     ["a name shorter than 2 characters", { ...base, name: "A" }],
     ["a name over 200 characters", { ...base, name: "A".repeat(201) }],
-    ["a missing name", { regionCode: "AU" }],
+    ["a missing name", {}],
   ]);
 
   it("treats a missing/null optional field as absent, not an error", () => {
@@ -54,23 +53,12 @@ describe("companySchema", () => {
     ["notes over 2000 characters", { ...base, notes: "A".repeat(2001) }],
   ]);
 
-  describe("regionCode", () => {
-    rejects(companySchema, [["a missing regionCode", { name: "Acme" }]]);
-
-    it("uppercases a lowercase region code", () => {
-      const result = companySchema.safeParse({ ...base, regionCode: "au" });
-      expect(result.success).toBe(true);
-      if (result.success) expect(result.data.regionCode).toBe("AU");
-    });
-
-    accepts(companySchema, [["a 3-letter region code", { ...base, regionCode: "usa" }]]);
-
-    rejects(companySchema, [
-      ["a 1-letter region code", { ...base, regionCode: "A" }],
-      ["a 4-letter region code", { ...base, regionCode: "ABCD" }],
-      ["a region code with digits", { ...base, regionCode: "A1" }],
-      ["a blank region code", { ...base, regionCode: "" }],
-    ]);
+  // No `regionCode` case: a company has no region. It is a client of the
+  // business, not of one office — see the note in src/lib/validation/clients.ts.
+  it("ignores a regionCode a stale caller still sends", () => {
+    const result = companySchema.safeParse({ ...base, regionCode: "AU" });
+    expect(result.success).toBe(true);
+    if (result.success) expect("regionCode" in result.data).toBe(false);
   });
 
   describe("country", () => {
@@ -110,7 +98,6 @@ describe("companySchema - delivery address", () => {
     state: "NSW",
     postcode: "2000",
     country: "AU",
-    regionCode: "AU",
   };
 
   it("defaults deliverySameAsMain to true when omitted, requiring no delivery fields", () => {
@@ -283,7 +270,6 @@ describe("companySchema - website validation", () => {
     country: "AU",
     taxId: "64 072 458 667",
     notes: "Prefers email contact.",
-    regionCode: "AU",
   };
 
   accepts(companySchema, [

@@ -34,6 +34,14 @@ const ALLOWLIST = new Map<string, string>([
     "countCompaniesUsingIndustry counts across every owner on purpose — it warns an admin how wide a shared-row rename reaches. Its caller shows the number to admins only; see the client card.",
   ],
   [
+    "src/lib/actions/users.ts",
+    "reassignUserCompanies moves every company off a departing user, and deleteUser counts what one leaves behind — both are about a user's whole footprint, so scoping either to the acting admin's own rows would defeat the point. Both are behind requireAdmin(), and an admin is unscoped by definition.",
+  ],
+  [
+    "src/lib/queries/users.ts",
+    "getUserFootprint counts every company and document belonging to one user, across every owner, on purpose — it answers 'what does this person leave behind', and an owner-scoped count would answer it wrong. Its only caller is the ADMIN-only user editor, which is also the only screen allowed to see it.",
+  ],
+  [
     "src/lib/actions/signing-client.ts",
     "Unauthenticated client actions reached only via a signing token — there is no session to call documentWhereForUser with. Every db.document read/write here is instead re-scoped by loadLiveRequest, which re-resolves the token through getDocumentForSigning and resolveLinkState before any of it runs (see this file's own header comment). The token is the authorization boundary, not a User.",
   ],

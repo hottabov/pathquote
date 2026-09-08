@@ -11,13 +11,15 @@ export type EditUserFormValues = {
   phone: string;
   role: "ADMIN" | "MANAGER" | "DEVELOPER";
   regionCode: string;
-  active: boolean;
 };
 
 const initialState: ActionResult = {};
 
 /**
- * Edit form for name/role/region and the active flag. Unlike `UserForm`,
+ * Edit form for name, phone, role and region. Whether the account can sign in
+ * is NOT here — it is its own button in the Access section below (see
+ * `UserAccessSection` and `setUserActive`), so revoking someone's access is
+ * never a by-product of saving this form. Unlike `UserForm`,
  * saving here never navigates away (mirrors `CompanyForm` on the company
  * edit page), so a successful submit just quietly revalidates — only the
  * error path needs rendering.
@@ -51,12 +53,12 @@ export function EditUserForm({
     <form action={formAction} autoComplete="off" className="flex flex-col gap-4">
       {isSelf ? (
         <p className="rounded-lg border border-brand-accent-ink/30 bg-brand-accent-ink/5 px-3 py-2 text-sm text-brand-accent-ink">
-          This is your own account — you can&apos;t deactivate it or remove your own admin role.
+          This is your own account — you can&apos;t remove your own admin role.
         </p>
       ) : null}
       {isLastActiveAdmin ? (
         <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          This is the last active admin — it can&apos;t be deactivated or demoted until another admin exists.
+          This is the last active admin — it can&apos;t be demoted until another admin exists.
         </p>
       ) : null}
 
@@ -112,16 +114,6 @@ export function EditUserForm({
             ))}
           </select>
         </FieldRow>
-
-        <label className="flex h-11 items-center gap-2 text-sm font-medium text-brand-dark">
-          <input
-            name="active"
-            type="checkbox"
-            defaultChecked={defaultValues.active}
-            className="size-4 rounded border-slate-300 accent-brand disabled:cursor-not-allowed"
-          />
-          Active
-        </label>
       </div>
 
       {state.error ? (

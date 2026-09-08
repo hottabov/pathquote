@@ -73,6 +73,7 @@ export function ItemsList({
   documentId,
   items,
   currency,
+  currencySymbol,
   compatibleOptionsByItemKey,
   showOptionIcons = true,
   screenSideImages,
@@ -81,6 +82,7 @@ export function ItemsList({
   documentId: string;
   items: BuilderItem[];
   currency: string;
+  currencySymbol: string | null;
   compatibleOptionsByItemKey: Record<string, CompatibleOption[]>;
   showOptionIcons?: boolean;
   /** `value -> imageUrl` for the "screenSide" `SpecImage` field — see
@@ -382,7 +384,7 @@ export function ItemsList({
                   full width and keeps its controls right-aligned. */}
               <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
                 <span className="text-sm font-medium tabular-nums text-brand-dark sm:pt-2">
-                  {formatMoney(item.total, currency)}
+                  {formatMoney(item.total, currency, currencySymbol)}
                 </span>
                 {!readOnly && (
                   <>
@@ -453,7 +455,7 @@ export function ItemsList({
                     repeating the same lines below it with a "Price" input
                     each. */}
                 <div className="mb-3">
-                  <ItemBreakdownEditor item={item} currency={currency} readOnly={readOnly} />
+                  <ItemBreakdownEditor item={item} currency={currency} currencySymbol={currencySymbol} readOnly={readOnly} />
                 </div>
 
                 {item.isCredit ? (
@@ -493,6 +495,7 @@ export function ItemsList({
                     }))}
                   compatibleOptions={compatKey ? (compatibleOptionsByItemKey[compatKey] ?? []) : []}
                   currency={currency}
+                  currencySymbol={currencySymbol}
                   showOptionIcons={showOptionIcons}
                   readOnly={readOnly}
                   lockedRoles={isEasyLoader ? EL_MODULE_ROLES : undefined}
@@ -514,6 +517,7 @@ export function ItemsList({
                         discountValue={item.discountValue}
                         maxDiscountPct={item.maxDiscountPct}
                         currency={currency}
+                        currencySymbol={currencySymbol}
                         readOnly={readOnly}
                       />
                     ) : null}

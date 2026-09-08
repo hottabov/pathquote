@@ -23,3 +23,43 @@ export async function listIndustries() {
 export async function countCompaniesUsingIndustry(industryId: string): Promise<number> {
   return db.company.count({ where: { industryId } });
 }
+
+export type IndustryAdminListItem = {
+  id: string;
+  name: string;
+  /** Companies pointing at this row, across every owner. */
+  companyCount: number;
+};
+
+/**
+ * Every industry with the number of companies using it — the whole table, for
+ * the ADMIN-only /settings/industries screen.
+ *
+ * ADMIN-ONLY BY CONTRACT, for the same reason as `countCompaniesUsingIndustry`
+ * above: the counts are unscoped, so they are cross-manager data. That is the
+ * point here — the screen exists so an admin can see which rows are unused
+ * (safe to delete) and which duplicates are worth merging, and a per-owner
+ * count would answer neither question.
+ *
+ * One grouped count rather than a count per row: the table is small, but a
+ * screen whose whole job is showing every row must not issue a query per row.
+ * Industries with no companies at all are absent from the group-by, hence the
+ * `?? 0`.
+ */
+export async function listIndustriesWithCounts(): Promise<IndustryAdminListItem[]> {
+  const [industries, grouped] = await Promise.all([
+    db.industry.findMany({ orderBy: { name: "asc" } }),
+    db.company.groupBy({
+      by: ["industryId"],
+      where: { industryId: { not: null } },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const counts = new Map(grouped.map((row) => [row.industryId, row._count._all]));
+  return industries.map((industry) => ({
+    id: industry.id,
+    name: industry.name,
+    companyCount: counts.get(industry.id) ?? 0,
+  }));
+}

@@ -904,14 +904,22 @@ export function buildQuotationData(
       // of the category's copy entirely (never a blank "Price: ____") and —
       // unlike a genuinely missing figure — never report it as stripped: a
       // hidden price is deliberate, not a gap.
-      price: itemPriceVisible ? formatMoney(lineSummary.total, sheet.totals.currency) : OMIT,
+      price: itemPriceVisible
+        ? formatMoney(lineSummary.total, sheet.totals.currency, sheet.totals.currencySymbol)
+        : OMIT,
       // The machine on its own, with no options folded in (see
       // `ItemBreakdown.basePrice` in src/lib/sheet-data.ts) — owner: "we
       // have included options, but we don't have the base model." Gated by
       // the same toggle as `{{price}}` above; `{{price}}` itself keeps
       // meaning the combined subtotal so catalogue templates that already
       // reference it keep working unchanged.
-      basePrice: itemPriceVisible ? formatMoney(lineSummary.breakdown.basePrice, sheet.totals.currency) : OMIT,
+      basePrice: itemPriceVisible
+        ? formatMoney(
+            lineSummary.breakdown.basePrice,
+            sheet.totals.currency,
+            sheet.totals.currencySymbol
+          )
+        : OMIT,
     };
 
     const categoryCopy = item.seriesQuoteDescription ?? "";
@@ -954,7 +962,9 @@ export function buildQuotationData(
     // above, exposed separately so the sheet prints it under EVERY section
     // heading rather than depending on the category copy happening to
     // reference `{{price}}` itself.
-    const sectionPrice = itemPriceVisible ? formatMoney(lineSummary.total, sheet.totals.currency) : null;
+    const sectionPrice = itemPriceVisible
+      ? formatMoney(lineSummary.total, sheet.totals.currency, sheet.totals.currencySymbol)
+      : null;
 
     // Does the copy print a price of its own, so the sheet must not print the
     // structural one under the heading as well (`equipment-detail.tsx`:
@@ -1016,7 +1026,13 @@ export function buildQuotationData(
         descriptionHtml,
         attributesLine: attributesLine(line.attributes),
         qty: docLine?.qty ?? line.qty,
-        price: doc.showOptionPrices ? formatMoney(docLine?.lineTotal ?? "0", sheet.totals.currency) : null,
+        price: doc.showOptionPrices
+          ? formatMoney(
+              docLine?.lineTotal ?? "0",
+              sheet.totals.currency,
+              sheet.totals.currencySymbol
+            )
+          : null,
       });
     }
 
@@ -1035,7 +1051,11 @@ export function buildQuotationData(
           qty: lineSummary.breakdown.qty,
           price:
             doc.showOptionPrices && !basePriceUnquoted
-              ? formatMoney(lineSummary.breakdown.basePrice, sheet.totals.currency)
+              ? formatMoney(
+                  lineSummary.breakdown.basePrice,
+                  sheet.totals.currency,
+                  sheet.totals.currencySymbol
+                )
               : null,
         };
 

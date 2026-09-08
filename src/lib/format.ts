@@ -9,34 +9,63 @@ export type Moneyish = number | string | { toString(): string };
  * without decimals (e.g. "A$175,000"); anything with a fractional part
  * keeps exactly 2 decimal places. Accepts a Prisma Decimal (or any
  * Decimal-like object) via its `toString()`.
+ *
+ * `symbol` overrides what Intl would put in front of the number — the region's
+ * own `currencySymbol`, snapshotted onto each document (see
+ * Region.currencySymbol in prisma/schema.prisma for why an admin ever wants
+ * this). It replaces only the currency part; grouping, decimals and the sign's
+ * position are still Intl's, so "-USD 1,234.50" becomes "-$1,234.50" rather
+ * than something hand-spaced. Null/omitted keeps the derived symbol, which is
+ * what every amount rendered before the column existed.
  */
-export function formatMoney(amount: Moneyish, currency: string, locale = "en-AU"): string {
+export function formatMoney(
+  amount: Moneyish,
+  currency: string,
+  symbol?: string | null,
+  locale = "en-AU"
+): string {
   const value = typeof amount === "number" ? amount : Number(amount.toString());
   const isWhole = Number.isInteger(value);
 
-  return new Intl.NumberFormat(locale, {
+  const parts = new Intl.NumberFormat(locale, {
     style: "currency",
     currency,
     minimumFractionDigits: isWhole ? 0 : 2,
     maximumFractionDigits: isWhole ? 0 : 2,
-  }).format(value);
+  }).formatToParts(value);
+
+  return parts
+    .map((part) => (part.type === "currency" && symbol ? symbol : part.value))
+    .join("");
 }
 
 /**
- * The currency's bare symbol (e.g. "$", "A$", "£") derived from
+ * The currency's bare symbol (e.g. "$", "A$", "£"). The region's own
+ * `symbol` wins when it has one; otherwise it is derived from
  * `Intl.NumberFormat` rather than a hardcoded currency->symbol map, so a
  * distributor/region added later with an unusual currency code still gets a
  * sensible symbol for free. Used by the discount field's mode toggle (see
  * item-discount-field.tsx/document-discount-field.tsx) to label the "cash
  * amount" option next to "%". Falls back to the currency code itself if the
- * formatter's parts (for some exotic/invalid code) don't include one.
+ * formatter's parts (for some exotic code) don't include one.
+ *
+ * Intl throws a RangeError on a malformed code rather than returning
+ * anything, and one caller is a live text input the admin is still typing
+ * into (the region form's placeholder), so an unparseable code degrades to
+ * the code itself instead of taking the screen down.
  */
-export function currencySymbol(currency: string, locale = "en-AU"): string {
-  const parts = new Intl.NumberFormat(locale, {
-    style: "currency",
-    currency,
-    currencyDisplay: "narrowSymbol",
-  }).formatToParts(0);
+export function currencySymbol(currency: string, symbol?: string | null, locale = "en-AU"): string {
+  if (symbol) return symbol;
+  let parts: Intl.NumberFormatPart[];
+  try {
+    parts = new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency,
+      currencyDisplay: "narrowSymbol",
+    }).formatToParts(0);
+  } catch {
+    return currency;
+  }
   return parts.find((part) => part.type === "currency")?.value ?? currency;
 }
 

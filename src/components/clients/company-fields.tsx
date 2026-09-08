@@ -19,7 +19,6 @@ import { PhoneField } from "@/components/ui-kit/client";
  */
 export type CompanyFieldValues = {
   name: string;
-  regionCode: string;
   website: string;
   taxId: string;
   street: string;
@@ -37,15 +36,11 @@ export type CompanyFieldValues = {
   deliveryPhone: string;
 };
 
-export type RegionOption = { code: string; name: string };
-
-/** A blank company, for a "new company" form's initial state. `regionCode`
- * is the caller's because a sensible default differs by screen — the
- * document's own region in the builder, the first configured one on /clients. */
-export function emptyCompanyFields(regionCode: string): CompanyFieldValues {
+/** A blank company, for a "new company" form's initial state. A company has no
+ * region to default — it is a client of the business, not of one office. */
+export function emptyCompanyFields(): CompanyFieldValues {
   return {
     name: "",
-    regionCode,
     website: "",
     taxId: "",
     street: "",
@@ -193,92 +188,6 @@ export function CompanyField({
           disabled={binding.disabled}
         />
       )}
-    </FieldRow>
-  );
-}
-
-/**
- * The company's "Region", which needs the configured region list and so can't
- * be driven by the spec table above. Empty list renders a single disabled-
- * looking placeholder rather than an empty select the manager could stare at.
- */
-export function CompanyRegionField({
-  binding,
-  regions,
-  hint,
-  required,
-  className,
-}: {
-  binding: CompanyFieldBinding;
-  regions: RegionOption[];
-  hint?: string;
-  required?: boolean;
-  className?: string;
-}) {
-  const id = fieldId(binding.idPrefix, "region");
-
-  // One region means no choice. A select with one option invites a click
-  // that can do nothing and implies other regions exist. Render the value
-  // instead — but keep feeding the form exactly what the select would have:
-  // a `regionCode` input when this binding is named (the /clients form
-  // posts FormData), and nothing extra when it is not (the builder submits
-  // `binding.values` from state).
-  //
-  // What is rendered is the binding's OWN `regionCode`, not the offered
-  // region. Those normally agree, and diverge on the client card when an
-  // admin re-homes a manager: `updateUser` moves the manager, it does not
-  // move the companies they already filed, so a manager now in US can open
-  // a company that still belongs to AU. Displaying (and submitting) the
-  // offered region there would rewrite that company's region — and with it
-  // its currency and tax rules — on any save, including one that only
-  // touched a phone number, and `assertRegionWritable` would wave it
-  // through because the submitted region genuinely is the manager's. So the
-  // offered region is used for nothing but looking up a display name, and
-  // only when it is the region actually being displayed; a company sitting
-  // in a region this viewer is not offered shows its bare code rather than
-  // an invented name, submits that same code, and is rejected by
-  // `assertRegionWritable` with FOREIGN_REGION_ERROR into `CompanyForm`'s
-  // error slot. Visible and fail-closed beats silent and wrong.
-  //
-  // `FieldRow.htmlFor` is required, so it still points at `id` and the
-  // rendered value carries it — a label on a non-form control, which is
-  // inert rather than wrong, and keeps the row's markup identical to every
-  // other field's.
-  if (regions.length === 1) {
-    // The fallback is for a genuinely empty value only — a "new company"
-    // screen that seeded nothing — where the offered region is the right
-    // default and there is no current value to contradict it.
-    const code = binding.values.regionCode || regions[0].code;
-    const offered = regions.find((r) => r.code === code);
-    return (
-      <FieldRow label="Region" htmlFor={id} hint={hint} required={required} className={className}>
-        <span id={id} className="text-sm font-medium text-brand-dark">
-          {offered ? `${offered.name} (${offered.code})` : code}
-          {binding.named && <input type="hidden" name="regionCode" value={code} />}
-        </span>
-      </FieldRow>
-    );
-  }
-
-  return (
-    <FieldRow label="Region" htmlFor={id} hint={hint} required={required} className={className}>
-      <select
-        id={id}
-        name={binding.named ? "regionCode" : undefined}
-        value={binding.values.regionCode}
-        onChange={(e) => binding.set("regionCode", e.target.value)}
-        autoComplete="off"
-        required={required && binding.named}
-        disabled={binding.disabled}
-        className={fieldInputClass}
-      >
-        {regions.length === 0 && <option value="">No regions configured</option>}
-        {regions.map((r) => (
-          <option key={r.code} value={r.code}>
-            {r.name} ({r.code})
-          </option>
-        ))}
-      </select>
     </FieldRow>
   );
 }

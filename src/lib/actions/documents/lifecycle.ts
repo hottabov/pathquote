@@ -70,6 +70,11 @@ export async function createDraft(): Promise<void> {
       authorId: session.user.id,
       regionId: resolvedRegion.id,
       currency: resolvedRegion.currency,
+      // Snapshotted beside currency/taxName/taxRate and for the same reason:
+      // a quote must print the same amounts on the day it is signed as on the
+      // day it was drafted, so an admin correcting a region's symbol later
+      // changes new quotes only.
+      currencySymbol: resolvedRegion.currencySymbol,
       taxName: resolvedRegion.taxName,
       taxRate: resolvedRegion.taxRate,
     },

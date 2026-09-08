@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FieldRow, fieldInputClass } from "@/components/ui-kit";
 import { cn } from "@/lib/utils";
+import { currencySymbol } from "@/lib/format";
 import { BankDetailsEditor } from "./bank-details-editor";
 import type { ActionResult } from "@/lib/actions/regions";
 
@@ -11,6 +12,7 @@ export type RegionFormValues = {
   code: string;
   name: string;
   currency: string;
+  currencySymbol: string;
   taxName: string;
   taxRate: string;
   entityName: string;
@@ -106,17 +108,35 @@ export function RegionForm({
           />
         </FieldRow>
 
-        <FieldRow label="Currency" htmlFor="region-currency" required hint="3 letters (AUD, USD, GBP...).">
-          <input
-            id="region-currency"
-            name="currency"
-            value={values.currency}
-            onChange={(e) => set("currency", e.target.value)}
-            required
-            maxLength={3}
-            className={cn(fieldInputClass, "uppercase")}
-          />
-        </FieldRow>
+        <div className="grid grid-cols-2 gap-4">
+          <FieldRow label="Currency" htmlFor="region-currency" required hint="3 letters (AUD, USD, GBP...).">
+            <input
+              id="region-currency"
+              name="currency"
+              value={values.currency}
+              onChange={(e) => set("currency", e.target.value)}
+              required
+              maxLength={3}
+              className={cn(fieldInputClass, "uppercase")}
+            />
+          </FieldRow>
+
+          <FieldRow
+            label="Currency symbol"
+            htmlFor="region-currency-symbol"
+            hint="What prints in front of an amount ($, A$, £, €). Leave blank to derive it from the code."
+          >
+            <input
+              id="region-currency-symbol"
+              name="currencySymbol"
+              value={values.currencySymbol}
+              onChange={(e) => set("currencySymbol", e.target.value)}
+              maxLength={6}
+              placeholder={currencySymbol(values.currency)}
+              className={fieldInputClass}
+            />
+          </FieldRow>
+        </div>
 
         <div className="grid grid-cols-2 gap-4">
           <FieldRow label="Tax name" htmlFor="region-tax-name" required hint="e.g. GST, Sales Tax, VAT.">

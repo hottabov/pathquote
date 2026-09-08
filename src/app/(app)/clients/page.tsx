@@ -13,7 +13,6 @@ import {
   tableClassName,
   tableHeadRowClassName,
   tableRowClassName,
-  StatusBadge,
   EmptyState,
   fieldInputClass,
 } from "@/components/ui-kit";
@@ -95,9 +94,6 @@ export default async function ClientsPage({
                     Location
                   </th>
                   <th scope="col" className="px-4 py-3">
-                    Region
-                  </th>
-                  <th scope="col" className="px-4 py-3">
                     Contacts
                   </th>
                   <th scope="col" className="px-4 py-3">
@@ -134,9 +130,6 @@ function CompanyRow({ company: c }: { company: CompanyListItem }) {
       </RowCell>
       <RowCell href={href}>
         <span className="text-sm text-slate-600">{location}</span>
-      </RowCell>
-      <RowCell href={href}>
-        <StatusBadge tone="slate">{c.regionCode}</StatusBadge>
       </RowCell>
       <RowCell href={href}>
         <span className="text-sm text-slate-500">
@@ -182,9 +175,6 @@ function CompanyCard({ company: c }: { company: CompanyListItem }) {
           <Building2 className="size-4 shrink-0 text-brand" aria-hidden="true" />
           <p className="truncate font-medium text-brand-dark">{c.name}</p>
         </div>
-        <StatusBadge tone="slate" className="relative shrink-0">
-          {c.regionCode}
-        </StatusBadge>
       </div>
       <div className="relative flex items-center justify-between gap-3 text-sm text-slate-500">
         <span className="truncate">{location}</span>

@@ -9,6 +9,10 @@ export type DocumentListItem = {
   companyName: string | null;
   total: string;
   currency: string;
+  /** The document's frozen `currencySymbol` (see `Document.currencySymbol`
+   * in prisma/schema.prisma) — passed to `formatMoney` so a list row prints
+   * the same symbol the document itself does. */
+  currencySymbol: string | null;
   updatedAt: Date;
   /** `Document.signingStatus` — feeds the list's signing badge (see
    * `signingStatusLabel`, src/lib/signing/state.ts) beside the existing
@@ -46,6 +50,7 @@ export async function listDocuments(
       number: true,
       total: true,
       currency: true,
+      currencySymbol: true,
       updatedAt: true,
       signingStatus: true,
       company: { select: { name: true } },
@@ -59,6 +64,7 @@ export async function listDocuments(
     companyName: d.company?.name ?? null,
     total: d.total.toString(),
     currency: d.currency,
+    currencySymbol: d.currencySymbol,
     updatedAt: d.updatedAt,
     signingStatus: d.signingStatus,
   }));

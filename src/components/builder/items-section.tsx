@@ -18,6 +18,7 @@ export function ItemsSection({
   documentId,
   items,
   currency,
+  currencySymbol,
   catalog,
   compatibleOptionsByItemKey,
   showOptionIcons = true,
@@ -27,6 +28,7 @@ export function ItemsSection({
   documentId: string;
   items: BuilderItem[];
   currency: string;
+  currencySymbol: string | null;
   catalog: ItemPickerSeries[];
   compatibleOptionsByItemKey: Record<string, CompatibleOption[]>;
   /** "ui.showOptionIcons" app setting, read server-side by the builder page
@@ -45,6 +47,7 @@ export function ItemsSection({
           documentId={documentId}
           items={items}
           currency={currency}
+          currencySymbol={currencySymbol}
           compatibleOptionsByItemKey={compatibleOptionsByItemKey}
           showOptionIcons={showOptionIcons}
           screenSideImages={screenSideImages}

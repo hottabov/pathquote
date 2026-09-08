@@ -185,7 +185,7 @@ function DocumentRow({ document: d, canDelete }: { document: DocumentListItem; c
       </RowCell>
       <RowCell href={href} align="right">
         <span className="text-sm font-medium tabular-nums text-brand-dark">
-          {formatMoney(d.total, d.currency)}
+          {formatMoney(d.total, d.currency, d.currencySymbol)}
         </span>
       </RowCell>
       <RowCell href={href}>
@@ -248,7 +248,7 @@ function DocumentCard({ document: d, canDelete }: { document: DocumentListItem; 
             </p>
           </div>
           <span className="shrink-0 text-sm font-medium tabular-nums text-brand-dark">
-            {formatMoney(d.total, d.currency)}
+            {formatMoney(d.total, d.currency, d.currencySymbol)}
           </span>
         </div>
       </Link>

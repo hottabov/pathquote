@@ -1,4 +1,4 @@
-// The Settings area's own left-hand navigation — six sections, each shown
+// The Settings area's own left-hand navigation — one section per row, each shown
 // immediately on click rather than behind an intermediate card (see the
 // commit that introduced this file: "feat: settings gets its own
 // navigation"). Kept as a plain, dependency-light data module (only
@@ -6,7 +6,16 @@
 // visibility rule below — which section a given role gets to see — is
 // unit-testable without a database or a rendered component.
 import type { LucideIcon } from "lucide-react";
-import { User, SlidersHorizontal, Users, Package, MapPin, LifeBuoy, ArrowLeftRight } from "lucide-react";
+import {
+  User,
+  SlidersHorizontal,
+  Users,
+  Package,
+  MapPin,
+  Factory,
+  LifeBuoy,
+  ArrowLeftRight,
+} from "lucide-react";
 import { isAdminRole } from "./roles";
 
 export type SettingsNavItem = {
@@ -43,6 +52,10 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
     activePrefixes: ["/settings/spec-images"],
   },
   { href: "/settings/regions", label: "Regions", icon: MapPin, adminOnly: true },
+  // The shared industry list. Its own section rather than a Catalogue tab:
+  // industries describe clients, not equipment, and the only other place they
+  // can be touched is the typeahead on a single client's card.
+  { href: "/settings/industries", label: "Industries", icon: Factory, adminOnly: true },
   // The catalogue as a workbook: download, edit in Excel, upload back with a
   // preview of every change (docs/plans/2026-09-05-catalog-import-export.md).
   // Its own section rather than a Catalogue sub-page because it is a global,

@@ -36,8 +36,13 @@ import { assertStillDraft, mapDraftWriteError, type ActionResult } from "./_inte
  * Never called with a `null` value (both call sites below only build the
  * message once `exceedsCap` is true, which already implies a non-null
  * value). */
-function discountValueLabel(mode: DiscountModeInput, value: string, currency: string): string {
-  return mode === "PERCENT" ? `${value}%` : formatMoney(value, currency);
+function discountValueLabel(
+  mode: DiscountModeInput,
+  value: string,
+  currency: string,
+  currencySymbol: string | null
+): string {
+  return mode === "PERCENT" ? `${value}%` : formatMoney(value, currency, currencySymbol);
 }
 
 /** Trims a computed cap-comparison percentage (see `capPct`) to a
@@ -65,9 +70,10 @@ function discountCapMessage(
   cap: number,
   regionName: string,
   currency: string,
+  currencySymbol: string | null,
   scope: "item" | "quote"
 ): string {
-  const valueLabel = discountValueLabel(mode, value, currency);
+  const valueLabel = discountValueLabel(mode, value, currency, currencySymbol);
   return `A ${valueLabel} discount is ${formatEffectivePct(effPct)}% of this ${scope} — above the ${cap}% limit for ${regionName}.`;
 }
 
@@ -187,6 +193,8 @@ export async function setItemDiscount(itemId: string, formData: FormData): Promi
         cap,
         item.document.region.name,
         item.document.currency,
+        // The document's frozen symbol, not its region's current one.
+        item.document.currencySymbol,
         "item"
       );
       if (!isAdminRole(session.user.role)) {
@@ -331,6 +339,7 @@ export async function setDocumentDiscount(documentId: string, formData: FormData
         cap,
         document.region.name,
         document.currency,
+        document.currencySymbol,
         "quote"
       );
       if (!isAdminRole(session.user.role)) {

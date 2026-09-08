@@ -60,10 +60,12 @@ import type { BuilderItem } from "@/lib/queries/documents";
 export function ItemBreakdownEditor({
   item,
   currency,
+  currencySymbol,
   readOnly = false,
 }: {
   item: BuilderItem;
   currency: string;
+  currencySymbol: string | null;
   readOnly?: boolean;
 }) {
   // Always built with showOptionPrices=true — see buildItemBreakdown's own
@@ -94,6 +96,7 @@ export function ItemBreakdownEditor({
           unitPrice={item.unitPrice}
           listPrice={item.listPrice}
           currency={currency}
+          currencySymbol={currencySymbol}
           editable={!readOnly}
           setAction={setItemUnitPrice}
           resetAction={resetItemUnitPrice}
@@ -116,6 +119,7 @@ export function ItemBreakdownEditor({
             unitPrice={line.unitPrice}
             listPrice={line.listPrice}
             currency={currency}
+            currencySymbol={currencySymbol}
             editable={!readOnly}
             setAction={setLineUnitPrice}
             resetAction={resetLineUnitPrice}
@@ -125,12 +129,12 @@ export function ItemBreakdownEditor({
       {breakdown.discount ? (
         <StaticRow
           label={discountLabel(breakdown.discount)}
-          amount={`-${formatMoney(breakdown.discount.amount, currency)}`}
+          amount={`-${formatMoney(breakdown.discount.amount, currency, currencySymbol)}`}
           muted
         />
       ) : null}
       {breakdown.options.length > 0 ? (
-        <StaticRow label={`${item.code} subtotal`} amount={formatMoney(breakdown.subtotal, currency)} strong />
+        <StaticRow label={`${item.code} subtotal`} amount={formatMoney(breakdown.subtotal, currency, currencySymbol)} strong />
       ) : null}
     </div>
   );
@@ -179,6 +183,7 @@ function BreakdownRow({
   unitPrice,
   listPrice,
   currency,
+  currencySymbol,
   editable,
   setAction,
   resetAction,
@@ -190,6 +195,7 @@ function BreakdownRow({
   unitPrice: string;
   listPrice: string | null;
   currency: string;
+  currencySymbol: string | null;
   editable: boolean;
   setAction: (id: string, formData: FormData) => Promise<ActionResult>;
   resetAction: (id: string) => Promise<ActionResult>;
@@ -206,6 +212,7 @@ function BreakdownRow({
           unitPrice={unitPrice}
           listPrice={listPrice}
           currency={currency}
+          currencySymbol={currencySymbol}
           editable={editable}
           setAction={setAction}
           resetAction={resetAction}
@@ -254,6 +261,7 @@ function EditablePrice({
   unitPrice,
   listPrice,
   currency,
+  currencySymbol,
   editable,
   setAction,
   resetAction,
@@ -264,6 +272,7 @@ function EditablePrice({
   unitPrice: string;
   listPrice: string | null;
   currency: string;
+  currencySymbol: string | null;
   editable: boolean;
   setAction: (id: string, formData: FormData) => Promise<ActionResult>;
   resetAction: (id: string) => Promise<ActionResult>;
@@ -330,9 +339,9 @@ function EditablePrice({
     return (
       <span className="inline-flex items-center gap-1.5">
         {hasConcession ? (
-          <span className="text-slate-400 line-through">{formatMoney(listPrice!, currency)}</span>
+          <span className="text-slate-400 line-through">{formatMoney(listPrice!, currency, currencySymbol)}</span>
         ) : null}
-        <span>{formatMoney(displayAmount, currency)}</span>
+        <span>{formatMoney(displayAmount, currency, currencySymbol)}</span>
       </span>
     );
   }
@@ -365,7 +374,7 @@ function EditablePrice({
     <span className="group relative inline-flex items-center gap-1.5 pr-3">
       {hasConcession ? (
         <>
-          <span className="text-slate-400 line-through">{formatMoney(listPrice!, currency)}</span>
+          <span className="text-slate-400 line-through">{formatMoney(listPrice!, currency, currencySymbol)}</span>
           <button
             type="button"
             onClick={reset}
@@ -376,7 +385,7 @@ function EditablePrice({
           </button>
         </>
       ) : null}
-      <span>{formatMoney(displayAmount, currency)}</span>
+      <span>{formatMoney(displayAmount, currency, currencySymbol)}</span>
       <button
         type="button"
         onClick={openEditor}

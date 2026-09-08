@@ -154,6 +154,12 @@ export type ToSheetDataDoc = {
    * instead of none at all. Never written back onto `validityDays` itself. */
   defaultValidityDays: number;
   currency: string;
+  /** The document's own frozen currency symbol, snapshotted from its region
+   * at creation (see `createDraft`) — NOT the region's current one, so an
+   * admin editing `Region.currencySymbol` later never reprints an existing
+   * document's amounts differently. `null` means "no override", and
+   * `formatMoney` falls back to the Intl-derived symbol for `currency`. */
+  currencySymbol: string | null;
   taxName: string;
   taxRate: string;
   /** DELIVERED (the default) or EX_WORKS — see the `DeliveryTerms` enum in
@@ -395,6 +401,10 @@ export type DocSheetPreparedBy = {
 
 export type DocSheetTotals = {
   currency: string;
+  /** The document's snapshotted symbol override — passed as `formatMoney`'s
+   * third argument everywhere the sheet renders an amount. Never used in
+   * place of the currency CODE, which the totals still print verbatim. */
+  currencySymbol: string | null;
   subtotal: string;
   /** Whether `discountValue` (below) is a percentage or a cash amount —
    * the sheet's "Discount" row label reads accordingly ("Discount 5%" vs.
@@ -809,6 +819,7 @@ export function toSheetData(doc: ToSheetDataDoc, resolveImage: ImageResolver = i
     showOptionPrices: doc.showOptionPrices,
     totals: {
       currency: doc.currency,
+      currencySymbol: doc.currencySymbol,
       subtotal: doc.subtotal,
       discountMode: doc.discountMode,
       discountValue: doc.discountValue,

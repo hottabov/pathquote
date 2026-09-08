@@ -123,6 +123,10 @@ export function revalidateRegion(regionId: string): void {
   revalidatePath(`/settings/regions/${regionId}`);
 }
 
+export function revalidateIndustryList(): void {
+  revalidatePath("/settings/industries");
+}
+
 export function revalidateConflictGroupList(): void {
   revalidatePath("/settings/option-conflict-groups");
 }

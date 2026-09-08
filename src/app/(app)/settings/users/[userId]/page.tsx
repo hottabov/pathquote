@@ -3,11 +3,12 @@ import { notFound } from "next/navigation";
 import { auth } from "@/auth";
 import { getUser } from "@/lib/queries/users";
 import { listActiveRegions } from "@/lib/queries/catalog";
-import { countActiveAdmins } from "@/lib/queries/users";
+import { countActiveAdmins, getUserFootprint, listHandoverCandidates } from "@/lib/queries/users";
 import { getCatalogVisibilityTree } from "@/lib/queries/catalog-visibility-admin";
 import { updateUser, setUserPassword, setUserAvatar } from "@/lib/actions/users";
 import { setCatalogVisibility } from "@/lib/actions/catalog-visibility";
 import { EditUserForm } from "@/components/users/edit-user-form";
+import { UserAccessSection } from "@/components/users/user-access-section";
 import { SetPasswordForm } from "@/components/users/set-password-form";
 import { CatalogVisibilityEditor } from "@/components/settings/catalog-visibility-editor";
 import { PageHeader, SectionCard, StatusBadge, STATUS_TONE, Avatar } from "@/components/ui-kit";
@@ -21,7 +22,7 @@ type Params = { userId: string };
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
   const { userId } = await params;
   const user = await getUser(userId);
-  return { title: user ? user.email : "User" };
+  return { title: user ? (user.name ?? user.email) : "User" };
 }
 
 export default async function EditUserPage({ params }: { params: Promise<Params> }) {
@@ -38,27 +39,34 @@ export default async function EditUserPage({ params }: { params: Promise<Params>
   ]);
   if (!user) notFound();
 
-  // Only fetched once we know the user exists — the whole-catalogue tree
-  // (see getCatalogVisibilityTree's own comment) is the more expensive of
-  // this page's reads, so there's no point running it in the Promise.all
-  // above only to throw it away on a 404.
-  const visibilitySeries = await getCatalogVisibilityTree(user.id);
+  // Only fetched once we know the user exists. The whole-catalogue tree (see
+  // getCatalogVisibilityTree's own comment) is the more expensive of this
+  // page's reads, so there's no point running it in the Promise.all above only
+  // to throw it away on a 404; the other two are simply about this user.
+  const [visibilitySeries, footprint, handoverCandidates] = await Promise.all([
+    getCatalogVisibilityTree(user.id),
+    getUserFootprint(user.id),
+    listHandoverCandidates(user.id),
+  ]);
 
   const isSelf = session.user.id === user.id;
   const isLastActiveAdmin = isAdminRole(user.role) && user.active && activeAdminCount <= 1;
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Name leads, email reads as the subtitle. A user without a name still
+          needs an identity in the heading, so the email moves up and the
+          subtitle drops rather than repeating it. */}
       <PageHeader
         backHref="/settings/users"
         backLabel="Users"
         title={
           <span className="inline-flex items-center gap-3">
             <Avatar name={user.name} email={user.email} image={user.image} size={40} />
-            {user.email}
+            {user.name ?? user.email}
           </span>
         }
-        description={user.name ?? undefined}
+        description={user.name ? user.email : undefined}
       />
 
       <div className="flex flex-wrap items-center gap-2">
@@ -89,7 +97,6 @@ export default async function EditUserPage({ params }: { params: Promise<Params>
             phone: user.phone ?? "",
             role: user.role,
             regionCode: user.regionCode ?? "",
-            active: user.active,
           }}
           regions={regions.map((r) => ({ code: r.code, name: r.name }))}
           isSelf={isSelf}
@@ -102,6 +109,21 @@ export default async function EditUserPage({ params }: { params: Promise<Params>
         description="Checking hides a series or product from this user's own catalogue everywhere they'd meet it — the item picker, catalogue browsing, and adding it to a quote. Another user is unaffected. A quote that already has a now-hidden item keeps it, unchanged."
       >
         <CatalogVisibilityEditor userId={user.id} series={visibilitySeries} action={setCatalogVisibility} />
+      </SectionCard>
+
+      <SectionCard
+        title="Access"
+        description="Whether this account can sign in, who its clients belong to, and — for an account with no history — removing it."
+      >
+        <UserAccessSection
+          userId={user.id}
+          userLabel={user.name ?? user.email}
+          active={user.active}
+          isSelf={isSelf}
+          isLastActiveAdmin={isLastActiveAdmin}
+          footprint={footprint}
+          handoverCandidates={handoverCandidates}
+        />
       </SectionCard>
 
       <SectionCard

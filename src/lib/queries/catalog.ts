@@ -87,6 +87,11 @@ export type CatalogPrice = {
   amount: string;
   needsReview: boolean;
   currency: string;
+  /** The region's CURRENT symbol override, read live off `Region` — unlike a
+   * document's, a catalog price is not a snapshot of anything, so it must
+   * follow the region as an admin edits it. `null` falls back to the
+   * Intl-derived symbol. */
+  currencySymbol: string | null;
 };
 
 export type ProductListItem = {
@@ -184,6 +189,7 @@ async function seriesProductsResult(
               amount: price.amount.toString(),
               needsReview: price.needsReview,
               currency: price.region.currency,
+              currencySymbol: price.region.currencySymbol,
             }
           : undefined,
       };
@@ -314,6 +320,7 @@ export async function listOptions(params: {
             amount: price.amount.toString(),
             needsReview: price.needsReview,
             currency: price.region.currency,
+            currencySymbol: price.region.currencySymbol,
           }
         : undefined,
       compatSeriesCodes: o.compat

@@ -16,6 +16,7 @@ import {
   EmptyState,
 } from "@/components/ui-kit";
 import { cn } from "@/lib/utils";
+import { currencySymbol } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Regions" };
 export const dynamic = "force-dynamic";
@@ -92,6 +93,14 @@ function taxLabel(region: RegionAdminListItem): string {
   return `${region.taxName} ${region.taxRate}%`;
 }
 
+/** "£ GBP" — the symbol amounts actually print with, next to the code they are
+ * stored under. Shown for every region, not only the ones with an explicit
+ * symbol, so this column answers "what will a quote look like" rather than
+ * "which regions has someone bothered to configure". */
+function currencyLabel(region: RegionAdminListItem): string {
+  return `${currencySymbol(region.currency, region.currencySymbol)} ${region.currency}`;
+}
+
 function RegionRow({ region: r }: { region: RegionAdminListItem }) {
   return (
     <tr className={cn(tableRowClassName, "relative")}>
@@ -107,7 +116,7 @@ function RegionRow({ region: r }: { region: RegionAdminListItem }) {
         </span>
       </td>
       <td className="px-4 py-3 text-sm text-slate-600">{r.name}</td>
-      <td className="px-4 py-3 text-sm text-slate-600">{r.currency}</td>
+      <td className="px-4 py-3 text-sm text-slate-600">{currencyLabel(r)}</td>
       <td className="px-4 py-3 text-sm text-slate-600">{taxLabel(r)}</td>
       <td className="px-4 py-3 text-sm text-slate-600">{r.entityName}</td>
       <td className="px-4 py-3">
@@ -136,7 +145,7 @@ function RegionCard({ region: r }: { region: RegionAdminListItem }) {
         </StatusBadge>
       </div>
       <div className="relative flex items-center justify-between gap-3 text-sm text-slate-500">
-        <span>{r.currency}</span>
+        <span>{currencyLabel(r)}</span>
         <span>{taxLabel(r)}</span>
       </div>
       <p className="relative truncate text-sm text-slate-500">{r.entityName}</p>

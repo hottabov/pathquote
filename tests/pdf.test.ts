@@ -73,6 +73,7 @@ function baseQuotationData(overrides: Partial<QuotationData> = {}): QuotationDat
     extraLines: [],
     totals: {
       currency: "AUD",
+      currencySymbol: null,
       subtotal: "1000.00",
       discountMode: "PERCENT",
       discountValue: null,
@@ -774,6 +775,7 @@ describe("renderQuotationHtml — Ex Works delivery terms", () => {
       baseQuotationData({
         totals: {
           currency: "AUD",
+          currencySymbol: null,
           subtotal: "1000.00",
           discountMode: "PERCENT",
           discountValue: null,
@@ -811,6 +813,7 @@ describe("renderQuotationHtml — an explicit zero discount must not print", () 
       baseQuotationData({
         totals: {
           currency: "AUD",
+          currencySymbol: null,
           subtotal: "1000.00",
           discountMode: "PERCENT",
           discountValue: "0",
@@ -830,6 +833,7 @@ describe("renderQuotationHtml — an explicit zero discount must not print", () 
       baseQuotationData({
         totals: {
           currency: "AUD",
+          currencySymbol: null,
           subtotal: "1000.00",
           discountMode: "PERCENT",
           discountValue: "10",
@@ -931,6 +935,7 @@ describe("renderQuotationHtml — commission never appears in the rendered quota
         ],
         totals: {
           currency: "AUD",
+          currencySymbol: null,
           subtotal: "54000.00",
           discountMode: "PERCENT",
           discountValue: "10",

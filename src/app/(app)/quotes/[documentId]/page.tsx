@@ -14,7 +14,6 @@ import {
   type CompatibleOption,
   type DocumentForBuilder,
 } from "@/lib/queries/documents";
-import { listActiveRegions } from "@/lib/queries/catalog";
 import { getQuoteDocumentsForRegion } from "@/lib/queries/quote-documents";
 import { resolveQuoteDocuments } from "@/lib/quotation-data";
 import { catalogVisibilityUserId } from "@/lib/catalog-visibility";
@@ -71,10 +70,12 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
   const { documentId } = await params;
   // AppLayout (src/app/(app)/layout.tsx) already calls requireSession and
   // redirects unauthenticated requests, so a session is always present here.
-  // `requireRegion` rather than a bare `auth()` because this page also has to
-  // decide which regions the inline "+ New company" panel may offer — it is
-  // the same session, plus the viewer's region (`null` for an admin).
-  const { session, regionId } = await requireRegion();
+  // `requireRegion` rather than a bare `auth()`: the builder prices items, and
+  // a manager with no usable region has no price list to quote from, so this is
+  // where they get redirected rather than shown an empty catalogue. Only the
+  // session is needed below — the inline "+ New company" panel no longer asks
+  // for a region, because a company doesn't have one.
+  const { session } = await requireRegion();
 
   const document = await getDocumentForBuilder(session.user, documentId);
   // A foreign document (belongs to another manager) resolves to the same
@@ -104,9 +105,19 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
   // can never both be true for the same document at once, so at most one of
   // these two ternary branches ever actually applies.
   const capMessageText = document.documentConcession.exceedsCap
-    ? concessionCapMessage(document.documentConcession, document.regionName, document.currency)
+    ? concessionCapMessage(
+        document.documentConcession,
+        document.regionName,
+        document.currency,
+        document.currencySymbol
+      )
     : document.documentConcession.exceedsMarkupCap
-      ? markupCapMessage(document.documentConcession, document.regionName, document.currency)
+      ? markupCapMessage(
+          document.documentConcession,
+          document.regionName,
+          document.currency,
+          document.currencySymbol
+        )
       : null;
   const capExceeded = document.documentConcession.exceedsCap || document.documentConcession.exceedsMarkupCap;
 
@@ -144,7 +155,6 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
     companies,
     catalog,
     showOptionIcons,
-    regions,
     orgDefaultValidityDays,
     formsDocument,
     screenSideImages,
@@ -156,7 +166,6 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
       getItemPickerCatalog(document.regionCode, hiddenCatalogIds)
     ),
     getShowOptionIcons(),
-    listActiveRegions(),
     getQuoteValidityDays(),
     // Separate, narrower payload (see `productionFormsInclude`) than
     // `document` above -- `ProductionFormsSection` returns `null` itself
@@ -192,36 +201,6 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((row) => ({ key: row.key, title: row.title, includedByDefault: row.includedByDefault }));
 
-  // Same rule as /clients/new: a manager is offered only their own region,
-  // so the inline "new company" form shows it as text rather than a select.
-  // The enforcement is still createCompanyInline's assertRegionWritable.
-  const offeredRegions = regionId === null ? regions : regions.filter((r) => r.id === regionId);
-
-  // What the panel SHOWS and what it SUBMITS have to be the same region.
-  // `defaultRegionCode` seeds `companyForm.regionCode` (its only use in
-  // ClientSection — it also feeds the reset on cancel, which is the same
-  // seed), and for a manager the field is now static text reading
-  // `offeredRegions[0]`. Those two normally agree, because a document's
-  // region is snapshotted from its author's at creation; they diverge when
-  // an admin moves a manager to another region after that manager's quotes
-  // exist. Seeding from the offered region keeps display and submission in
-  // step and matches what the guard will actually accept. An admin
-  // (`regionId === null`) is unaffected: full list, working select, still
-  // defaulted to the document's own region.
-  //
-  // The `??` fallback is no longer a route a manager can walk into:
-  // `requireRegion` now redirects anyone whose region is missing, deleted or
-  // deactivated, so a manager who reaches this line has exactly one offered
-  // region. It stays for the one case that outlives that guard — its check
-  // and `listActiveRegions()` are two separate reads, so a region
-  // deactivated between them would leave `offeredRegions` empty on a
-  // request already past the redirect — and because seeding "" latches the
-  // panel's Create button disabled with no control to fix it. It is a floor
-  // under a race, not the manager-without-an-active-region case it used to
-  // describe.
-  const defaultRegionCode =
-    regionId === null ? document.regionCode : (offeredRegions[0]?.code ?? document.regionCode);
-
   // Sanitized here rather than inside `NotesSection`, which renders it through
   // `dangerouslySetInnerHTML`: `Document.notes` is a raw column that may
   // predate the write-boundary allowlist (`setDocumentNotes`), so the
@@ -248,8 +227,6 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
             companies={companies}
             initialCompanyId={document.company?.id ?? null}
             initialContactId={document.contactId}
-            regions={offeredRegions.map((r) => ({ code: r.code, name: r.name }))}
-            defaultRegionCode={defaultRegionCode}
             readOnly={!isDraft}
           />
 
@@ -257,6 +234,7 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
             documentId={document.id}
             items={document.items}
             currency={document.currency}
+            currencySymbol={document.currencySymbol}
             catalog={catalog}
             compatibleOptionsByItemKey={compatibleOptionsByItemKey}
             showOptionIcons={showOptionIcons}
@@ -268,6 +246,7 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
             documentId={document.id}
             lines={document.extraLines}
             currency={document.currency}
+            currencySymbol={document.currencySymbol}
             readOnly={!isDraft}
           />
 
@@ -277,6 +256,7 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
               discountMode={document.discountMode}
               discountValue={document.discountValue}
               currency={document.currency}
+              currencySymbol={document.currencySymbol}
               readOnly={!isDraft}
             />
           </SectionCard>
@@ -389,6 +369,7 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
                   taxAmount={document.taxAmount}
                   total={document.total}
                   currency={document.currency}
+                  currencySymbol={document.currencySymbol}
                   commission={document.commission}
                 />
               </div>
@@ -446,6 +427,7 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
         taxAmount={document.taxAmount}
         total={document.total}
         currency={document.currency}
+        currencySymbol={document.currencySymbol}
         commission={document.commission}
       />
     </div>

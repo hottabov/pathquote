@@ -160,22 +160,25 @@ describe("createUserSchema", () => {
 });
 
 describe("updateUserSchema", () => {
-  const base = { name: "Jane", phone: "0400 000 000", role: "ADMIN", regionCode: "US", active: "on" };
+  const base = { name: "Jane", phone: "0400 000 000", role: "ADMIN", regionCode: "US" };
 
-  it("accepts a fully populated valid submission and coerces active", () => {
+  it("accepts a fully populated valid submission", () => {
     const result = updateUserSchema.safeParse(base);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.active).toBe(true);
       expect(result.data.phone).toBe("0400 000 000");
     }
   });
 
-  it("treats a missing active checkbox as false", () => {
-    const rest = { name: base.name, role: base.role, regionCode: base.regionCode };
-    const result = updateUserSchema.safeParse(rest);
+  // The details form no longer carries the active flag — it has its own action
+  // and button (`setUserActive`). This is the regression that mattered: an
+  // absent checkbox and an unticked one submit the same nothing, so while the
+  // field lived here, any caller that stopped sending it revoked access on
+  // every save. Now the schema has no such field to misread.
+  it("ignores an active flag a stale caller still sends", () => {
+    const result = updateUserSchema.safeParse({ ...base, active: "on" });
     expect(result.success).toBe(true);
-    if (result.success) expect(result.data.active).toBe(false);
+    if (result.success) expect("active" in result.data).toBe(false);
   });
 
   it("rejects an invalid role", () => {

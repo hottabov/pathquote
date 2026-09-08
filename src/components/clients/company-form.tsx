@@ -7,10 +7,8 @@ import { IndustryPicker, type IndustryOption } from "@/components/clients/indust
 import {
   CompanyDeliverySameAsMainField,
   CompanyField,
-  CompanyRegionField,
   type CompanyFieldBinding,
   type CompanyFieldValues,
-  type RegionOption,
 } from "@/components/clients/company-fields";
 import { cn } from "@/lib/utils";
 import type { ActionResult } from "@/lib/actions/clients";
@@ -22,8 +20,6 @@ export type CompanyFormValues = CompanyFieldValues & {
   notes: string;
   deliveryNotes: string;
 };
-
-export type { RegionOption };
 
 /**
  * Bundled props for the `IndustryPicker` field. The picker writes through
@@ -49,7 +45,7 @@ const initialState: ActionResult = {};
  * put and just revalidates, so this only ever needs to render an error
  * state (mirrors src/components/catalog/option-form.tsx). Laid out as the
  * two-column desktop grid the design direction calls for: name pairs with
- * website, region with tax ID, then the full address block, then a
+ * website, tax ID with industry, then the full address block, then a
  * full-width notes field, then the delivery address section.
  *
  * The fields themselves come from `@/components/clients/company-fields`,
@@ -59,13 +55,11 @@ const initialState: ActionResult = {};
 export function CompanyForm({
   action,
   defaultValues,
-  regions,
   submitLabel,
   industryPicker,
 }: {
   action: (formData: FormData) => Promise<ActionResult>;
   defaultValues: CompanyFormValues;
-  regions: RegionOption[];
   submitLabel: string;
   /** Omitted on the "new client" screen — see `IndustryPickerProps`. */
   industryPicker?: IndustryPickerProps;
@@ -101,12 +95,6 @@ export function CompanyForm({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <CompanyField binding={binding} field="name" required minLength={2} />
         <CompanyField binding={binding} field="website" />
-        <CompanyRegionField
-          binding={binding}
-          regions={regions}
-          hint="Sets the company's currency and tax rules."
-          required
-        />
         <CompanyField binding={binding} field="taxId" hint="ABN, EIN, VAT number, etc." />
 
         {industryPicker && (

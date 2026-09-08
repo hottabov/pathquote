@@ -18,7 +18,7 @@ export function TotalBanner({
     <div className="pq-total-banner">
       <span className="pq-total-banner-label">Total investment</span>
       <span className="pq-total-banner-amount">
-        {formatMoney(totals.total, totals.currency)} {totals.currency}
+        {formatMoney(totals.total, totals.currency, totals.currencySymbol)} {totals.currency}
       </span>
       <span className="pq-total-banner-note">
         {totals.deliveryTerms === "EX_WORKS"
