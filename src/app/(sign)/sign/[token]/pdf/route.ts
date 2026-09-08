@@ -1,11 +1,12 @@
 import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { getDocumentForSigning } from "@/lib/queries/signing";
 import { getQuoteDocumentsForRegion } from "@/lib/queries/quote-documents";
 import { hashSigningToken } from "@/lib/signing/token";
 import { resolveLinkState } from "@/lib/signing/link";
 import { resolveSignedPdfPath } from "@/lib/uploads";
-import { renderQuotationPdfForDocument } from "@/lib/pdf";
+import { renderQuotationPdfForDocument, quotationPdfFilename } from "@/lib/pdf";
 
 // renderQuotationPdfForDocument (transitively, via src/lib/pdf.ts) and the
 // archived-file stream both need real filesystem/Node APIs — not available
@@ -48,16 +49,42 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
     return new Response("Not found", { status: 404 });
   }
 
-  const filename = `${found.document.number ?? "quotation"}.pdf`;
+  const filename = quotationPdfFilename(found.document.number);
 
-  if (state.kind === "completed" && found.document.signedPdfName) {
+  if (state.kind === "completed") {
+    // Fail closed instead of falling back to a live render below.
+    // `completeSigning` (src/lib/actions/signing-client.ts) is the only
+    // place that ever sets `signingStatus: "SIGNED"`, and it always writes
+    // `signedPdfName`/`signedPdfSha256` in that same statement — so a
+    // `completed` link with no archived name can only mean the data is
+    // corrupt (wrong `UPLOADS_DIR`, a restore skew, disk trouble), and that
+    // is exactly when a fresh render is most dangerous: templates, catalogue
+    // data and the quote's own documents can all have moved since the client
+    // signed, so a live re-render could show them something other than what
+    // they signed, presented as their signed copy. Logged, since a 404 here
+    // is silent evidence of corruption a human should go looking for.
+    if (!found.document.signedPdfName) {
+      console.error("[signing] completed link has no archived PDF", found.document.id);
+      return new Response("Not found", { status: 404 });
+    }
+
     const diskPath = resolveSignedPdfPath(found.document.signedPdfName);
-    // `signedPdfName` is written only by `completeSigning`
-    // (src/lib/actions/signing-client.ts) via `signedPdfFilename()` — it
-    // cannot fail this check in practice. Still checked rather than trusted:
-    // a `null` here means an unreadable filesystem state gets a 404 instead
+    // A `null` here means an unreadable filesystem state gets a 404 instead
     // of a path-traversal-guard bypass or a thrown 500.
     if (!diskPath) return new Response("Not found", { status: 404 });
+
+    // `stat` first, inside its own try/catch, before opening the stream —
+    // same pattern as src/app/api/files/[name]/route.ts. Opening the stream
+    // first would mean any headers this response sets are already committed
+    // by the time a missing file surfaces, turning a clean 404 into a
+    // truncated connection instead.
+    try {
+      await stat(diskPath);
+    } catch {
+      console.error("[signing] archived PDF missing on disk", found.document.id);
+      return new Response("Not found", { status: 404 });
+    }
+
     return new Response(Readable.toWeb(createReadStream(diskPath)) as ReadableStream, {
       headers: {
         "Content-Type": "application/pdf",
@@ -69,10 +96,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tok
   }
 
   // Live render, sharing the pipeline the in-app route and `completeSigning`
-  // both use (`renderQuotationPdfForDocument`, src/lib/pdf.ts). Falls through
-  // to here even for a `completed` link whose `signedPdfName` is somehow
-  // unset — better an on-the-fly render of the FINAL, SIGNED document than a
-  // 404 for a client who signed successfully.
+  // both use (`renderQuotationPdfForDocument`, src/lib/pdf.ts). Only reached
+  // for a `live` link now — every `completed` one returns above, one way or
+  // another.
   const quoteDocuments = await getQuoteDocumentsForRegion(found.document.regionId);
   const pdf = await renderQuotationPdfForDocument(found.document, quoteDocuments);
   return new Response(new Uint8Array(pdf), {
