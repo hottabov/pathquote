@@ -380,6 +380,39 @@ export type DocumentForBuilder = {
    * refuse it. `NOT_SENT` for a document that predates the signing feature or
    * has never been sent, same as the column's own default. */
   signingStatus: SigningStatus;
+  /** `Document.completedAt` — when the client's signature was confirmed
+   * (`completeSigning`, src/lib/actions/signing-client.ts), which is also
+   * the moment `signingStatus` became SIGNED. `null` until then. Feeds the
+   * document page's signing panel; distinct from any `SigningRequest.*At`
+   * column below, which timestamp events on the *link*, not the document. */
+  completedAt: Date | null;
+  /** `Document.signedPdfName` — set in the same write as `completedAt`
+   * above, never independently. Only read here so the document page's
+   * signing panel can decide whether to render a link to
+   * `/api/quotes/[id]/signed-pdf` (that route re-reads it from the same
+   * column rather than trusting this one, the way every other file-serving
+   * route in this app re-resolves its own path — see that route's own doc
+   * comment); the panel itself never needs the raw filename. */
+  signedPdfName: string | null;
+  /** `Document.signingRequests`, newest first. One row per send — a resend
+   * revokes the previous row and inserts a new one (see the model's own doc
+   * comment in schema.prisma) — so index 0 is always "the current one" (the
+   * only row with `revokedAt: null`, or the most recently sent when the
+   * document is SIGNED/DECLINED and nothing was ever revoked). The document
+   * page's signing panel reads only that first row for the audit detail
+   * (sent-to address, viewed/declined timestamps, decline reason) and the
+   * array's own `length` for "sent N times" — never rendering the rest as a
+   * list of revoked rows, which would bury the one row a manager actually
+   * needs behind history nobody asked for. */
+  signingRequests: {
+    id: string;
+    email: string;
+    sentAt: Date;
+    firstViewedAt: Date | null;
+    revokedAt: Date | null;
+    declinedAt: Date | null;
+    declineReason: string | null;
+  }[];
   /** The document's *region*'s four standard-terms figures — the fallback
    * for the four per-quote overrides below (see `resolveQuoteTerms` in
    * src/lib/quote-terms.ts). Read live off `Region`, like `entityName` and
@@ -580,6 +613,22 @@ async function loadDocumentForBuilder(
       // this quote's author unticked. Absence means included, so the common
       // quote selects nothing here.
       exclusions: { select: { quoteDocumentKey: true } },
+      // Feeds the document page's signing panel (see `signingRequests`'
+      // own doc comment on `DocumentForBuilder` above) — newest first so
+      // that array's index 0 is always "the current request" without the
+      // caller re-sorting.
+      signingRequests: {
+        orderBy: { sentAt: "desc" },
+        select: {
+          id: true,
+          email: true,
+          sentAt: true,
+          firstViewedAt: true,
+          revokedAt: true,
+          declinedAt: true,
+          declineReason: true,
+        },
+      },
     },
   });
   if (!document) return null;
@@ -831,6 +880,9 @@ async function loadDocumentForBuilder(
     heroImageUrl: document.heroImageUrl,
     signatures: document.signatures,
     signingStatus: document.signingStatus,
+    completedAt: document.completedAt,
+    signedPdfName: document.signedPdfName,
+    signingRequests: document.signingRequests,
     updatedAt: document.updatedAt,
   };
 }

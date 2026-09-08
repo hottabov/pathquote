@@ -1,4 +1,4 @@
-import type { DocumentStatus } from "@prisma/client";
+import type { DocumentStatus, SigningStatus } from "@prisma/client";
 import { db } from "@/lib/db";
 import { documentWhereForUser, type ScopeUser } from "@/lib/scope";
 
@@ -10,6 +10,10 @@ export type DocumentListItem = {
   total: string;
   currency: string;
   updatedAt: Date;
+  /** `Document.signingStatus` — feeds the list's signing badge (see
+   * `signingStatusLabel`, src/lib/signing/state.ts) beside the existing
+   * DRAFT/FINAL one. `NOT_SENT` is the common case and renders nothing. */
+  signingStatus: SigningStatus;
 };
 
 /**
@@ -43,6 +47,7 @@ export async function listDocuments(
       total: true,
       currency: true,
       updatedAt: true,
+      signingStatus: true,
       company: { select: { name: true } },
     },
   });
@@ -55,5 +60,6 @@ export async function listDocuments(
     total: d.total.toString(),
     currency: d.currency,
     updatedAt: d.updatedAt,
+    signingStatus: d.signingStatus,
   }));
 }

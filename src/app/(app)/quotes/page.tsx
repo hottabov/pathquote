@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { isAdminRole } from "@/lib/roles";
 import { listDocuments, type DocumentListItem } from "@/lib/queries/documents";
 import { createDraft, deleteDocument } from "@/lib/actions/documents";
+import { signingStatusLabel } from "@/lib/signing/state";
 import { formatMoney, relativeDate } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { DeleteDocumentButton } from "@/components/documents/delete-document-button";
@@ -133,6 +134,15 @@ export default async function DocumentsPage({
   );
 }
 
+/** Beside the DRAFT/FINAL badge on both the table row and the card — see
+ * `signingStatusLabel`'s own doc comment for why NOT_SENT renders nothing
+ * here rather than an empty pill. */
+function SigningBadge({ signingStatus }: { signingStatus: DocumentListItem["signingStatus"] }) {
+  const label = signingStatusLabel(signingStatus);
+  if (!label) return null;
+  return <StatusBadge tone={STATUS_TONE[signingStatus]}>{label}</StatusBadge>;
+}
+
 function DocumentRow({ document: d, canDelete }: { document: DocumentListItem; canDelete: boolean }) {
   const statusLabel = d.status === "DRAFT" ? "Draft" : "Final";
   const numberLabel = d.number ?? "Quote draft";
@@ -160,7 +170,10 @@ function DocumentRow({ document: d, canDelete }: { document: DocumentListItem; c
         </span>
       </RowCell>
       <RowCell href={href}>
-        <StatusBadge tone={STATUS_TONE[d.status]}>{statusLabel}</StatusBadge>
+        <span className="flex flex-wrap items-center gap-1.5">
+          <StatusBadge tone={STATUS_TONE[d.status]}>{statusLabel}</StatusBadge>
+          <SigningBadge signingStatus={d.signingStatus} />
+        </span>
       </RowCell>
       <RowCell href={href}>
         <span className="text-sm text-slate-500">{relativeDate(d.updatedAt)}</span>
@@ -202,7 +215,10 @@ function DocumentCard({ document: d, canDelete }: { document: DocumentListItem; 
             <FileText className="size-3.5 text-brand" aria-hidden="true" />
             Quote
           </span>
-          <StatusBadge tone={STATUS_TONE[d.status]}>{statusLabel}</StatusBadge>
+          <span className="flex flex-wrap items-center justify-end gap-1.5">
+            <StatusBadge tone={STATUS_TONE[d.status]}>{statusLabel}</StatusBadge>
+            <SigningBadge signingStatus={d.signingStatus} />
+          </span>
         </div>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">

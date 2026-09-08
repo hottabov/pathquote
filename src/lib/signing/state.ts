@@ -140,3 +140,32 @@ export type SignerRole = "AUTHOR" | "CLIENT";
 export function signatureRolesClearedBy(event: "unfinalize" | "revoke"): SignerRole[] {
   return event === "unfinalize" ? ["AUTHOR", "CLIENT"] : ["CLIENT"];
 }
+
+/**
+ * The manager-facing label for a signing badge (src/components/ui-kit/status-badge.tsx),
+ * or `null` for NOT_SENT — the ordinary, unlabelled case for both the quotes
+ * list and the document page's signing panel (see those two files). Kept
+ * here, not duplicated in each caller, so the two places that render this
+ * badge (the list row and the document panel) can never drift on wording.
+ *
+ * Returns a bare label rather than a `{ label, tone }` pair: the tone for
+ * each of these four keys already lives in `STATUS_TONE`
+ * (src/components/ui-kit/status-badge.tsx), keyed by these same strings —
+ * this module stays free of any `@/components` import (see the header
+ * comment on why it has no UI or Prisma-generated dependency) and leaves
+ * `STATUS_TONE[status]` to the caller.
+ */
+export function signingStatusLabel(status: SigningStatus): string | null {
+  switch (status) {
+    case "NOT_SENT":
+      return null;
+    case "SENT":
+      return "Sent";
+    case "VIEWED":
+      return "Viewed";
+    case "SIGNED":
+      return "Signed";
+    case "DECLINED":
+      return "Declined";
+  }
+}

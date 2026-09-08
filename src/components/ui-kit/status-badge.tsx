@@ -30,6 +30,18 @@ export const STATUS_TONE: Record<string, StatusTone> = {
   PRICE_REQUIRED: "rose",
   ACTIVE: "green",
   INACTIVE: "slate",
+  // Quote signing (Document.signingStatus, src/lib/signing/state.ts) — NOT_SENT
+  // has no entry here on purpose: it's the ordinary case and renders no badge
+  // at all (see signingStatusLabel returning null for it), so it never looks
+  // this map up. SIGNED reuses the same green as FINAL/ACTIVE and DECLINED
+  // the same rose as PRICE_REQUIRED rather than minting dedicated hues —
+  // signing is positive/negative in exactly the sense those already are, and
+  // a new color per feature would fragment the four-tone vocabulary this map
+  // exists to keep small.
+  SENT: "slate",
+  VIEWED: "brand-outline",
+  SIGNED: "green",
+  DECLINED: "rose",
 };
 
 type StatusBadgeProps = {

@@ -8,6 +8,7 @@ import {
   canAuthorSign,
   statusAfterView,
   signatureRolesClearedBy,
+  signingStatusLabel,
   NO_AUTHOR_SIGNATURE,
   NOT_FINAL,
   NO_CONTACT_EMAIL,
@@ -217,5 +218,20 @@ describe("signatureRolesClearedBy", () => {
     first.push("AUTHOR");
     const second = signatureRolesClearedBy("unfinalize");
     expect(second).toHaveLength(2);
+  });
+});
+
+describe("signingStatusLabel", () => {
+  it("has no label for NOT_SENT -- the ordinary, unlabelled case", () => {
+    expect(signingStatusLabel("NOT_SENT")).toBeNull();
+  });
+
+  it.each([
+    ["SENT", "Sent"],
+    ["VIEWED", "Viewed"],
+    ["SIGNED", "Signed"],
+    ["DECLINED", "Declined"],
+  ] as const)("labels %s as %s", (status, label) => {
+    expect(signingStatusLabel(status)).toBe(label);
   });
 });

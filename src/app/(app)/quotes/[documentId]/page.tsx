@@ -22,8 +22,9 @@ import { getHiddenCatalogIds } from "@/lib/queries/catalog-visibility";
 import { getQuoteValidityDays, getShowOptionIcons } from "@/lib/queries/settings";
 import { getSpecImages } from "@/lib/queries/spec-images";
 import { getUser } from "@/lib/queries/users";
-import { canAuthorSign, canRevoke, canSendToClient } from "@/lib/signing/state";
+import { canAuthorSign, canRevoke, canSendToClient, signingStatusLabel } from "@/lib/signing/state";
 import { concessionCapMessage, markupCapMessage } from "@/lib/pricing";
+import { formatDateAU } from "@/lib/format";
 import { renderStoredRichText } from "@/lib/rich-text";
 import { PageHeader, SectionCard, StatusBadge, STATUS_TONE } from "@/components/ui-kit";
 import { ClientSection } from "@/components/builder/client-section";
@@ -238,6 +239,8 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
     <div className="flex flex-col gap-6 pb-4">
       <PageHeader backHref="/quotes" title={title} description={description} />
 
+      <SigningPanel document={document} />
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
         <div className="flex flex-col gap-4 lg:col-span-2">
           <ClientSection
@@ -446,6 +449,109 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
         commission={document.commission}
       />
     </div>
+  );
+}
+
+/**
+ * The audit trail `SigningRequest`/`Document.completedAt` already record but
+ * that, until this panel, no screen in the app ever showed a manager — see
+ * this task's own framing ("the manager cannot see where a quote sits").
+ *
+ * Renders nothing at all when `signingRequests` is empty: an unsent quote is
+ * the ordinary case (most quotes, always, while DRAFT and often for a while
+ * after FINAL), and a panel that says "not sent" on every single one of them
+ * would be pure noise. Once a quote has been sent even once, though, the
+ * panel stays -- including after a revoke resets `signingStatus` back to
+ * NOT_SENT, because "this was sent and pulled back" is exactly the kind of
+ * history a manager opening the quote later would want, unlike "never sent",
+ * which needs no telling.
+ *
+ * Shows only the most recent `SigningRequest` (`signingRequests[0]`, already
+ * sorted newest-first by the query -- see that field's own doc comment on
+ * `DocumentForBuilder`) rather than the full history: a resend is common
+ * (a typo in the address, a revision after a decline) and a wall of revoked
+ * rows repeating the same quote number would bury the one row that matters
+ * behind noise nobody asked for. The one piece of history that *is* worth
+ * keeping -- how many times this has gone out -- survives as the request
+ * count in the card's description instead of a full row each.
+ */
+function SigningPanel({ document }: { document: DocumentForBuilder }) {
+  const current = document.signingRequests[0];
+  if (!current) return null;
+
+  const label = signingStatusLabel(document.signingStatus);
+  const sentCount = document.signingRequests.length;
+
+  return (
+    <SectionCard
+      title="Signing"
+      description={sentCount > 1 ? `Sent to the client ${sentCount} times.` : undefined}
+    >
+      <div className="flex flex-col gap-3 text-sm text-brand-dark">
+        {label ? (
+          <div>
+            <StatusBadge tone={STATUS_TONE[document.signingStatus]}>{label}</StatusBadge>
+          </div>
+        ) : null}
+
+        <dl className="flex flex-col gap-1.5">
+          <div>
+            <dt className="inline font-medium text-slate-500">Sent to </dt>
+            <dd className="inline">
+              {current.email} on {formatDateAU(current.sentAt)}
+            </dd>
+          </div>
+          {current.firstViewedAt ? (
+            <div>
+              <dt className="inline font-medium text-slate-500">First viewed </dt>
+              <dd className="inline">{formatDateAU(current.firstViewedAt)}</dd>
+            </div>
+          ) : null}
+          {document.signingStatus === "SIGNED" && document.completedAt ? (
+            <div>
+              <dt className="inline font-medium text-slate-500">Signed </dt>
+              <dd className="inline">{formatDateAU(document.completedAt)}</dd>
+            </div>
+          ) : null}
+          {current.declinedAt ? (
+            <div>
+              <dt className="inline font-medium text-slate-500">Declined </dt>
+              <dd className="inline">{formatDateAU(current.declinedAt)}</dd>
+            </div>
+          ) : null}
+          {/* Only reachable when `label` above is null (NOT_SENT) -- a live
+              request is never revoked (see `revokeSigningLink`'s own doc
+              comment), so `current.revokedAt` and a rendered signing badge
+              never coexist. */}
+          {!label && current.revokedAt ? (
+            <div>
+              <dt className="inline font-medium text-slate-500">Link revoked </dt>
+              <dd className="inline">{formatDateAU(current.revokedAt)}</dd>
+            </div>
+          ) : null}
+        </dl>
+
+        {/* The single most useful fact on this panel (see the task's own
+            framing) -- given its own callout rather than folded into the
+            `<dl>` above so it cannot be scanned past. */}
+        {current.declineReason ? (
+          <div className="rounded-lg border border-rose-200 bg-rose-50 p-3">
+            <p className="text-xs font-semibold tracking-wide text-rose-700 uppercase">Decline reason</p>
+            <p className="mt-1 text-rose-900">{current.declineReason}</p>
+          </div>
+        ) : null}
+
+        {document.signingStatus === "SIGNED" ? (
+          <a
+            href={`/api/quotes/${document.id}/signed-pdf`}
+            className="focus-ring inline-flex w-fit items-center gap-1.5 rounded text-sm font-medium text-brand underline underline-offset-2"
+          >
+            <Download className="size-4" aria-hidden="true" />
+            View signed PDF
+          </a>
+        ) : null}
+      </div>
+    </SectionCard>
   );
 }
 
