@@ -258,10 +258,20 @@ Chromium. The page is heavier; the number of new public filesystem routes is
 zero.
 
 **Archived PDFs cannot be orphaned.** `deleteDocument` (`lifecycle.ts`) checks
-`canDeleteDocument` (`state.ts`), which refuses a SIGNED document for anyone,
-admin included -- the same restriction `canUnfinalize` already places on
-reopening one. A signed PDF therefore only ever belongs to a document that
-cannot be deleted. No cleanup job is needed.
+`canDeleteDocument` (`state.ts`), which refuses a SIGNED document for a
+MANAGER or an ADMIN -- the same restriction `canUnfinalize` already places on
+reopening one -- so for those two roles a signed PDF only ever belongs to a
+document that cannot be deleted.
+
+One later exception: a DEVELOPER *can* delete a SIGNED document, added as a
+testing affordance (a developer needs to clear a signed quote out of a
+test/staging environment without a database console) -- the one right a
+DEVELOPER has that an ADMIN does not, see `isDeveloperRole` and the `Role`
+enum's own comment in `schema.prisma`. That path still cannot orphan the
+file: `deleteDocument` reads `signedPdfName` and every `Signature.imageUrl`
+before deleting the row, then unlinks each one, best-effort, only after the
+row delete has committed. No cleanup job is needed either way -- the row and
+its files are deleted together, atomically from the row's point of view.
 
 ## UI
 

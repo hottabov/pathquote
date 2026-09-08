@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { FileText, Plus, Search } from "lucide-react";
 import { auth } from "@/auth";
-import { isAdminRole } from "@/lib/roles";
+import { isAdminRole, isDeveloperRole } from "@/lib/roles";
 import { listDocuments, type DocumentListItem } from "@/lib/queries/documents";
 import { createDraft, deleteDocument } from "@/lib/actions/documents";
 import { signingStatusLabel } from "@/lib/signing/state";
@@ -115,7 +115,7 @@ export default async function DocumentsPage({
                   <DocumentRow
                     key={d.id}
                     document={d}
-                    canDelete={isAdminRole(session.user.role) || d.status === "DRAFT"}
+                    canDelete={canDeleteFromList(d, session.user.role)}
                   />
                 ))}
               </tbody>
@@ -125,13 +125,32 @@ export default async function DocumentsPage({
             <DocumentCard
               key={d.id}
               document={d}
-              canDelete={isAdminRole(session.user.role) || d.status === "DRAFT"}
+              canDelete={canDeleteFromList(d, session.user.role)}
             />
           ))}
         />
       )}
     </div>
   );
+}
+
+/**
+ * Whether the /quotes list should render a delete button for `d` at all --
+ * mirrors, but does not replace, what `deleteDocument`
+ * (src/lib/actions/documents/lifecycle.ts) itself re-checks server-side.
+ *
+ * A SIGNED document is its own branch, checked first: `canDeleteDocument`
+ * (src/lib/signing/state.ts) refuses it for everyone except a DEVELOPER, a
+ * narrower rule than the ordinary "ADMIN, or a DRAFT" one below, so it must
+ * be decided before that one rather than folded into it -- an ADMIN viewing
+ * a signed quote must NOT see this button just because `isAdminRole` is
+ * true for them too. Every other status keeps the existing rule: any
+ * MANAGER may delete a DRAFT they can see, an ADMIN (or DEVELOPER, via
+ * `isAdminRole`) may delete anything else.
+ */
+function canDeleteFromList(d: DocumentListItem, role: string | null | undefined): boolean {
+  if (d.signingStatus === "SIGNED") return isDeveloperRole(role);
+  return isAdminRole(role) || d.status === "DRAFT";
 }
 
 /** Beside the DRAFT/FINAL badge on both the table row and the card — see
@@ -188,6 +207,7 @@ function DocumentRow({ document: d, canDelete }: { document: DocumentListItem; c
               documentId={d.id}
               numberLabel={numberLabel}
               status={d.status}
+              signingStatus={d.signingStatus}
               action={deleteDocument}
             />
           </div>
@@ -238,6 +258,7 @@ function DocumentCard({ document: d, canDelete }: { document: DocumentListItem; 
             documentId={d.id}
             numberLabel={numberLabel}
             status={d.status}
+            signingStatus={d.signingStatus}
             action={deleteDocument}
           />
         </div>

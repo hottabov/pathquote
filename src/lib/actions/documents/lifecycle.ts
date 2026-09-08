@@ -7,6 +7,7 @@
  * does lives in the sibling modules.
  */
 
+import { unlink } from "fs/promises";
 import { revalidateDocument, revalidateDocumentList } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
@@ -15,6 +16,7 @@ import { isAdminRole } from "@/lib/roles";
 import { companyWhereForUser, documentWhereForUser, REGION_REQUIRED_ERROR } from "@/lib/scope";
 import { idSchema, optionalIdSchema } from "@/lib/validation/documents";
 import { canDeleteDocument } from "@/lib/signing/state";
+import { IMAGE_URL_PATTERN, resolveSignedPdfPath, resolveUploadPath } from "@/lib/uploads";
 import { NOT_FOUND_ERROR } from "../_shared";
 import type { ActionResult } from "./_internal";
 
@@ -113,16 +115,107 @@ export async function deleteDraft(documentId: string): Promise<{ error: string }
 }
 
 /**
+ * Best-effort delete of the archived signed PDF behind `Document.signedPdfName`,
+ * called only from `deleteDocument` below, only after its row delete has
+ * already committed. Resolved through `resolveSignedPdfPath` (src/lib/uploads.ts)
+ * -- the same validated helper the client's own PDF route
+ * (src/app/(sign)/sign/[token]/pdf/route.ts) and the manager's
+ * (src/app/api/quotes/[documentId]/signed-pdf/route.ts) use -- never a
+ * string-slice on the stored value.
+ *
+ * Never throws: by the time this runs the `Document` row is already gone, so
+ * a filesystem failure here (missing file, wrong volume, permissions) must
+ * not resurrect it or make an already-successful delete look like it failed.
+ * Matches `deleteSupersededClientImage`'s own reasoning
+ * (src/lib/actions/signing-client.ts) for the same shape of best-effort
+ * cleanup.
+ */
+async function deleteArchivedPdfFile(documentId: string, signedPdfName: string): Promise<void> {
+  const filePath = resolveSignedPdfPath(signedPdfName);
+  if (!filePath) {
+    console.error(
+      "[signing] signedPdfName did not resolve to a path, skipping delete",
+      documentId,
+      signedPdfName
+    );
+    return;
+  }
+  try {
+    await unlink(filePath);
+  } catch (error) {
+    console.error("[signing] failed to delete archived PDF after document delete", documentId, filePath, error);
+  }
+}
+
+/**
+ * Best-effort delete of one `Signature.imageUrl` file -- called once per row
+ * still attached to the document at the moment it was read, for the AUTHOR's
+ * signature and the CLIENT's alike. Both are safe to remove here because each
+ * is a per-document *copy* (see `Signature`'s own comment in schema.prisma):
+ * the author's saved profile signature is copied onto every quote it signs
+ * precisely so redrawing the profile one never rewrites history, which means
+ * the copy on this row is referenced by nothing else once this row is gone.
+ * `User.signatureUrl` itself is never touched here and never resolved by this
+ * function -- it isn't this row's `imageUrl` and has its own, unrelated
+ * lifecycle (`clearMySignature`, src/lib/actions/users.ts).
+ *
+ * Same validated-then-resolve idiom as `deleteSupersededClientImage`
+ * (src/lib/actions/signing-client.ts): match `IMAGE_URL_PATTERN`, slice its
+ * own matched prefix, hand the remainder to `resolveUploadPath`. Never
+ * throws, for the same reason `deleteArchivedPdfFile` above doesn't: the
+ * `Signature` row is already gone by the time this runs.
+ */
+async function deleteSignatureImageFile(documentId: string, imageUrl: string): Promise<void> {
+  const match = imageUrl.match(IMAGE_URL_PATTERN);
+  if (!match) {
+    console.error(
+      "[signing] signature imageUrl did not match the expected shape, skipping delete",
+      documentId,
+      imageUrl
+    );
+    return;
+  }
+  const filename = match[0].slice("/api/files/".length);
+  const filePath = resolveUploadPath(filename);
+  if (!filePath) {
+    console.error("[signing] could not resolve path for signature image, skipping delete", documentId, imageUrl);
+    return;
+  }
+  try {
+    await unlink(filePath);
+  } catch (error) {
+    console.error("[signing] failed to delete signature image after document delete", documentId, filePath, error);
+  }
+}
+
+/**
  * Permanently deletes a document of any status, from the /quotes list.
  * Items/lines cascade via `onDelete: Cascade` (schema.prisma) -- and so, for
- * a signed quote, would its `Signature` and `SigningRequest` rows, leaving
- * the archived PDF (`Document.signedPdfSha256`) on disk referenced by
- * nothing. `canDeleteDocument` (src/lib/signing/state.ts) exists to stop
- * that: it is checked first, before the FINAL/admin rule below, so a signed
- * quote is refused with the accurate reason rather than "only an admin can
- * delete a finalized document" -- advice that would send a manager looking
- * for an admin who, being subject to the same signed-quote rule, could not
- * do it either.
+ * a signed quote, do its `Signature` and `SigningRequest` rows. Left alone,
+ * that would leave the archived PDF (`Document.signedPdfName`) and both
+ * `Signature.imageUrl` files (the AUTHOR's and the CLIENT's frozen copies) on
+ * disk referenced by nothing. `canDeleteDocument` (src/lib/signing/state.ts)
+ * exists to stop that for everyone except a DEVELOPER: it is checked first,
+ * before the FINAL/admin rule below, so a MANAGER or an ADMIN is refused with
+ * the accurate reason rather than "only an admin can delete a finalized
+ * document" -- advice that would send a manager looking for an admin who,
+ * being subject to the same signed-quote rule, could not do it either. A
+ * DEVELOPER is the one role `canDeleteDocument` lets through for a SIGNED
+ * quote (see its own comment on why) -- so when that happens, this function
+ * is also the one place that must actually remove the three files above
+ * itself, since nothing else will.
+ *
+ * The filenames are read in the same query as the status check, before any
+ * delete -- the `select` below -- and the files are only unlinked after
+ * `db.document.delete` has committed. That order matters: if
+ * the row delete fails or throws, the function returns before touching the
+ * filesystem, so a surviving row is never left pointing at files that have
+ * already been removed. Once the row delete has succeeded, the row is gone
+ * either way, so each unlink afterwards is wrapped and best-effort
+ * (`deleteArchivedPdfFile`/`deleteSignatureImageFile` above) -- a filesystem
+ * failure at that point cannot be undone by failing the request, since there
+ * is no row left to roll back to, and must not be reported to the caller as
+ * if the delete itself failed.
  *
  * Scoped like every other action here (`documentWhereForUser`: a MANAGER
  * only ever finds their own documents, an ADMIN finds any), plus one extra
@@ -139,11 +232,18 @@ export async function deleteDocument(documentId: string): Promise<ActionResult> 
 
   const document = await db.document.findFirst({
     where: { id: parsedId.data, ...documentWhereForUser(session.user) },
-    select: { id: true, status: true, signingStatus: true },
+    select: {
+      id: true,
+      status: true,
+      signingStatus: true,
+      number: true,
+      signedPdfName: true,
+      signatures: { select: { imageUrl: true } },
+    },
   });
   if (!document) return { error: NOT_FOUND_ERROR };
 
-  const deletable = canDeleteDocument(document.signingStatus);
+  const deletable = canDeleteDocument(document.signingStatus, session.user.role);
   if (!deletable.ok) return { error: deletable.reason };
 
   if (document.status === "FINAL" && !isAdminRole(session.user.role)) {
@@ -151,6 +251,27 @@ export async function deleteDocument(documentId: string): Promise<ActionResult> 
   }
 
   await db.document.delete({ where: { id: document.id } });
+
+  // Reached only when `document.signingStatus === "SIGNED"`, which
+  // `canDeleteDocument` above only lets through for a DEVELOPER -- so this is
+  // exactly the "a developer destroyed a signed commercial record" case that
+  // needs a trace, in the same shape as `finalizeDocument`'s own admin-action
+  // logging (src/lib/actions/finalize.ts) since there is likewise no
+  // dedicated audit table for it yet.
+  if (document.signingStatus === "SIGNED") {
+    console.warn("[signing] developer deleted a signed quote", {
+      documentNumber: document.number,
+      documentId: document.id,
+      userId: session.user.id,
+    });
+  }
+
+  if (document.signedPdfName) {
+    await deleteArchivedPdfFile(document.id, document.signedPdfName);
+  }
+  for (const signature of document.signatures) {
+    await deleteSignatureImageFile(document.id, signature.imageUrl);
+  }
 
   revalidateDocumentList();
   return {};

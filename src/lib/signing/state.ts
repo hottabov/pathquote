@@ -12,6 +12,8 @@
  * types and can be imported by tests without a `prisma generate` having
  * run. The two are kept in step by `tests/signing-status-parity.test.ts`.
  */
+import { isDeveloperRole } from "@/lib/roles";
+
 export type SigningStatus = "NOT_SENT" | "SENT" | "VIEWED" | "SIGNED" | "DECLINED";
 
 /** Use `Verdict` when a function can fail for more than one reason and the
@@ -100,25 +102,38 @@ export function canUnfinalize(status: SigningStatus): Verdict {
 
 /**
  * Whether a document may be permanently deleted (`deleteDocument`,
- * src/lib/actions/documents/lifecycle.ts). Refuses only SIGNED, for
- * everyone -- deliberately including admins, so this takes no role
- * parameter at all.
+ * src/lib/actions/documents/lifecycle.ts).
  *
  * `canUnfinalize` above already refuses to reopen a SIGNED quote no matter
  * who is asking, because `Document.signedPdfSha256` is a durable commercial
  * record: the archived PDF proves the bytes the client actually signed.
  * Deleting the row would cascade away its `Signature` and `SigningRequest`
- * rows and leave that archived PDF on disk referenced by nothing -- the
+ * rows and leave that archived PDF (and both `Signature.imageUrl` files --
+ * see `deleteDocument`'s own comment) on disk referenced by nothing -- the
  * same destruction `canUnfinalize` blocks, just reached by a longer route.
- * An admin who cannot reopen a signed quote should not be able to delete it
- * either.
+ * For that reason an ADMIN who cannot reopen a signed quote still cannot
+ * delete it either.
  *
- * Every other status may be deleted without restriction here: a quote that
- * was sent and then ignored, or one the client declined, is still just a
- * quote, with no signed record to protect.
+ * The one exception: a DEVELOPER may delete a SIGNED quote anyway. This is a
+ * testing affordance the product owner asked for -- a developer needs to be
+ * able to clear a signed quote out of a test/staging environment without a
+ * database console -- not a business capability, and it is deliberately the
+ * one place a DEVELOPER outranks an ADMIN (see `isAdminRole`'s and
+ * `isDeveloperRole`'s own comments in src/lib/roles.ts, and the `Role` enum's
+ * comment in schema.prisma, all three updated alongside this to say so). The
+ * refusal message for everyone else is unchanged: it still reads as an
+ * absolute rule to a MANAGER or an ADMIN, because for them it is one.
+ *
+ * Every other status may be deleted by anyone this action's scope check
+ * already lets see the document: a quote that was sent and then ignored, or
+ * one the client declined, is still just a quote, with no signed record to
+ * protect. The FINAL-requires-admin rule is a separate concern, layered on
+ * top by `deleteDocument` itself, not decided here.
  */
-export function canDeleteDocument(status: SigningStatus): Verdict {
-  if (status === "SIGNED") return { ok: false, reason: SIGNED_QUOTE_NOT_DELETABLE };
+export function canDeleteDocument(status: SigningStatus, role: string | null | undefined): Verdict {
+  if (status === "SIGNED" && !isDeveloperRole(role)) {
+    return { ok: false, reason: SIGNED_QUOTE_NOT_DELETABLE };
+  }
   return { ok: true };
 }
 

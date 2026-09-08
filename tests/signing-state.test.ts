@@ -190,17 +190,53 @@ describe("canDecline", () => {
 });
 
 describe("canDeleteDocument", () => {
-  it("refuses a signed document and says why", () => {
-    expect(canDeleteDocument("SIGNED")).toEqual({
+  it.each(["MANAGER", "ADMIN"] as const)(
+    "refuses a signed document for %s and says why",
+    (role) => {
+      expect(canDeleteDocument("SIGNED", role)).toEqual({
+        ok: false,
+        reason: SIGNED_QUOTE_NOT_DELETABLE,
+      });
+    }
+  );
+
+  it("allows a signed document for DEVELOPER -- the one right DEVELOPER has that ADMIN does not", () => {
+    expect(canDeleteDocument("SIGNED", "DEVELOPER")).toEqual({ ok: true });
+  });
+
+  it("refuses a signed document for a missing or unrecognised role", () => {
+    expect(canDeleteDocument("SIGNED", null)).toEqual({
+      ok: false,
+      reason: SIGNED_QUOTE_NOT_DELETABLE,
+    });
+    expect(canDeleteDocument("SIGNED", undefined)).toEqual({
+      ok: false,
+      reason: SIGNED_QUOTE_NOT_DELETABLE,
+    });
+    expect(canDeleteDocument("SIGNED", "SOMETHING_ELSE")).toEqual({
       ok: false,
       reason: SIGNED_QUOTE_NOT_DELETABLE,
     });
   });
 
   it.each(["NOT_SENT", "SENT", "VIEWED", "DECLINED"] as const)(
-    "allows every other state (%s), including a sent-and-ignored or declined quote",
+    "allows every other state (%s) for MANAGER, including a sent-and-ignored or declined quote",
     (status) => {
-      expect(canDeleteDocument(status)).toEqual({ ok: true });
+      expect(canDeleteDocument(status, "MANAGER")).toEqual({ ok: true });
+    }
+  );
+
+  it.each(["NOT_SENT", "SENT", "VIEWED", "DECLINED"] as const)(
+    "allows every other state (%s) for ADMIN",
+    (status) => {
+      expect(canDeleteDocument(status, "ADMIN")).toEqual({ ok: true });
+    }
+  );
+
+  it.each(["NOT_SENT", "SENT", "VIEWED", "DECLINED"] as const)(
+    "allows every other state (%s) for DEVELOPER",
+    (status) => {
+      expect(canDeleteDocument(status, "DEVELOPER")).toEqual({ ok: true });
     }
   );
 });

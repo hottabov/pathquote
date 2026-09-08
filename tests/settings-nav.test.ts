@@ -4,7 +4,7 @@ import {
   visibleSettingsNavItems,
   SETTINGS_NAV_ITEMS,
 } from "../src/lib/settings-nav";
-import { isAdminRole } from "../src/lib/roles";
+import { isAdminRole, isDeveloperRole } from "../src/lib/roles";
 
 describe("visibleSettingsNavItems", () => {
   it("includes every section for an ADMIN", () => {
@@ -132,5 +132,27 @@ describe("isAdminRole", () => {
     expect(isAdminRole(null)).toBe(false);
     expect(isAdminRole(undefined)).toBe(false);
     expect(isAdminRole("SOMETHING_ELSE")).toBe(false);
+  });
+});
+
+// isDeveloperRole (src/lib/roles.ts) -- added alongside `canDeleteDocument`'s
+// DEVELOPER-only exception for deleting a SIGNED quote (src/lib/signing/state.ts).
+describe("isDeveloperRole", () => {
+  it("returns true for DEVELOPER", () => {
+    expect(isDeveloperRole("DEVELOPER")).toBe(true);
+  });
+
+  it("returns false for ADMIN, unlike isAdminRole", () => {
+    expect(isDeveloperRole("ADMIN")).toBe(false);
+  });
+
+  it("returns false for MANAGER", () => {
+    expect(isDeveloperRole("MANAGER")).toBe(false);
+  });
+
+  it("returns false for null/undefined/an unrecognised role", () => {
+    expect(isDeveloperRole(null)).toBe(false);
+    expect(isDeveloperRole(undefined)).toBe(false);
+    expect(isDeveloperRole("SOMETHING_ELSE")).toBe(false);
   });
 });

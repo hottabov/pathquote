@@ -892,26 +892,48 @@ docker run --rm -v pathquote_uploads:/data:ro alpine \
 The two hashes must match exactly. If the file is missing entirely, that is
 its own row in the troubleshooting table below.
 
-A signed quote's document genuinely cannot be deleted, by anyone, including
-an admin. `deleteDraft` (`src/lib/actions/documents/lifecycle.ts`) only ever
-touches a DRAFT, `unfinalizeDocument` refuses once `signingStatus ===
-"SIGNED"`, and SIGNED implies `status === "FINAL"` (enforced by the
+A signed quote's document cannot be deleted by a MANAGER or an ADMIN, ever.
+`deleteDraft` (`src/lib/actions/documents/lifecycle.ts`) only ever touches a
+DRAFT, `unfinalizeDocument` refuses once `signingStatus === "SIGNED"`, and
+SIGNED implies `status === "FINAL"` (enforced by the
 `Document_signed_implies_final` CHECK constraint added in migration
 `z35_quote_signing`) — and the separate `deleteDocument` action
 (`src/lib/actions/documents/lifecycle.ts`, wired to the Delete icon on the
 `/quotes` list) checks `canDeleteDocument` (`src/lib/signing/state.ts`)
-*before* its "FINAL requires admin" rule, refusing any SIGNED document
-outright, admin or not, with "This quote was signed by the client and is a
-permanent commercial record. It cannot be deleted." So the archived PDF can
-never be orphaned by a deletion: the row that references it
-(`Document.signedPdfName`/`signedPdfSha256`) cannot be removed while it is
-signed, and there is accordingly no cleanup job for this file.
+*before* its "FINAL requires admin" rule, refusing any SIGNED document for a
+MANAGER or an ADMIN with "This quote was signed by the client and is a
+permanent commercial record. It cannot be deleted."
 
-The reasoning is the same one `canUnfinalize` already applies one section
-below: both signatures attest to the exact archived PDF, so an admin who
-cannot *reopen* a signed quote should not be able to destroy the same record
-by deleting it instead — reopening and deleting are two routes to the same
-loss of the signed commercial record, and both are closed for everyone.
+**One role is the exception: a DEVELOPER can delete a SIGNED quote.** This
+was added as a testing affordance — clearing a signed quote out of a
+test/staging environment without a database console — and it is the one
+right a DEVELOPER has that an ADMIN does not (see `isDeveloperRole` and the
+`Role` enum's own comment in `schema.prisma`). It is not a routine operation:
+the delete confirmation a developer sees on `/quotes` for a signed quote is
+its own, more explicit warning, distinct from the ordinary delete prompt,
+naming what is about to be destroyed and stating it cannot be recovered.
+
+The archived PDF still cannot be silently orphaned, either way: a MANAGER or
+an ADMIN simply cannot remove the row that references it
+(`Document.signedPdfName`/`signedPdfSha256`), and when a DEVELOPER does
+remove it, `deleteDocument` itself deletes the referenced files as part of
+the same action — the archived PDF and both `Signature.imageUrl` files (the
+author's and the client's frozen copies) — logging a `[signing] developer
+deleted a signed quote` line with the quote number, document id and acting
+user's id first. There is accordingly still no cleanup job for these files:
+either the row survives, or the developer deletion took the files with it.
+If a `[signing] failed to delete ...` line appears in the logs afterward, the
+row is already gone (the delete itself always succeeds first) and the named
+file is what's left on disk — safe to remove by hand once you've confirmed
+which file it is.
+
+The reasoning for refusing MANAGER and ADMIN is the same one `canUnfinalize`
+already applies one section below: both signatures attest to the exact
+archived PDF, so an ADMIN who cannot *reopen* a signed quote should not be
+able to destroy the same record by deleting it instead — reopening and
+deleting are two routes to the same loss of the signed commercial record.
+DEVELOPER's exemption from that rule is deliberate and narrow: it exists for
+testing, not for correcting or discarding a real signed quote.
 
 The nightly backup (§4) still matters here — it is what protects every other
 irreplaceable row in Postgres, and a `SIGNED` document is no exception if its

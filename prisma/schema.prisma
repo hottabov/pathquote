@@ -6,14 +6,19 @@ datasource db {
   provider = "postgresql"
 }
 
-// DEVELOPER carries the exact same rights as ADMIN everywhere in the app
-// (see isAdminRole, src/lib/roles.ts, which every "is this an admin?" check
-// routes through) -- the only thing distinguishing it is that the support
-// form (src/app/(app)/settings/support) addresses its message to whoever
-// holds this role. Added rather than repurposing ADMIN because Postgres can
-// add an enum value but can never drop one -- see migration
-// z23_developer_role's own comment for why that made this the only
+// DEVELOPER carries the exact same rights as ADMIN almost everywhere in the
+// app (see isAdminRole, src/lib/roles.ts, which every "is this an admin?"
+// check routes through) -- historically the only thing distinguishing it was
+// that the support form (src/app/(app)/settings/support) addresses its
+// message to whoever holds this role. Added rather than repurposing ADMIN
+// because Postgres can add an enum value but can never drop one -- see
+// migration z23_developer_role's own comment for why that made this the only
 // direction worth building.
+//
+// One exception: DEVELOPER may delete a SIGNED quote (a testing affordance,
+// not a business capability) where ADMIN may not -- see `canDeleteDocument`,
+// src/lib/signing/state.ts, and `isDeveloperRole`, src/lib/roles.ts. This is
+// the first right DEVELOPER has that ADMIN does not.
 enum Role {
   ADMIN
   MANAGER
