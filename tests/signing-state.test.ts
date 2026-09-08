@@ -6,6 +6,7 @@ import {
   canComplete,
   canDecline,
   canAuthorSign,
+  canDeleteDocument,
   statusAfterView,
   signatureRolesClearedBy,
   signingStatusLabel,
@@ -14,6 +15,7 @@ import {
   NO_CONTACT_EMAIL,
   ALREADY_IN_FLIGHT,
   SIGNED_IS_FINAL,
+  SIGNED_QUOTE_NOT_DELETABLE,
 } from "../src/lib/signing/state";
 
 const sendable = {
@@ -185,6 +187,22 @@ describe("canDecline", () => {
     expect(canDecline("DECLINED")).toBe(false);
     expect(canDecline("NOT_SENT")).toBe(false);
   });
+});
+
+describe("canDeleteDocument", () => {
+  it("refuses a signed document and says why", () => {
+    expect(canDeleteDocument("SIGNED")).toEqual({
+      ok: false,
+      reason: SIGNED_QUOTE_NOT_DELETABLE,
+    });
+  });
+
+  it.each(["NOT_SENT", "SENT", "VIEWED", "DECLINED"] as const)(
+    "allows every other state (%s), including a sent-and-ignored or declined quote",
+    (status) => {
+      expect(canDeleteDocument(status)).toEqual({ ok: true });
+    }
+  );
 });
 
 describe("statusAfterView", () => {

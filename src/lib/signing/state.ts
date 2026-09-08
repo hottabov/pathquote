@@ -26,6 +26,8 @@ export const NO_AUTHOR_SIGNATURE = "Sign the quote before sending it.";
 export const NO_CONTACT_EMAIL = "This quote's contact has no email address.";
 export const ALREADY_IN_FLIGHT = "This quote is already with the client. Revoke the link first.";
 export const SIGNED_IS_FINAL = "A signed quote cannot be reopened. Create a new quote instead.";
+export const SIGNED_QUOTE_NOT_DELETABLE =
+  "This quote was signed by the client and is a permanent commercial record. It cannot be deleted.";
 
 /** A link is outstanding: sent, and neither completed nor declined. */
 function isInFlight(status: SigningStatus): boolean {
@@ -93,6 +95,30 @@ export function canAuthorSign(status: SigningStatus): boolean {
  */
 export function canUnfinalize(status: SigningStatus): Verdict {
   if (status === "SIGNED") return { ok: false, reason: SIGNED_IS_FINAL };
+  return { ok: true };
+}
+
+/**
+ * Whether a document may be permanently deleted (`deleteDocument`,
+ * src/lib/actions/documents/lifecycle.ts). Refuses only SIGNED, for
+ * everyone -- deliberately including admins, so this takes no role
+ * parameter at all.
+ *
+ * `canUnfinalize` above already refuses to reopen a SIGNED quote no matter
+ * who is asking, because `Document.signedPdfSha256` is a durable commercial
+ * record: the archived PDF proves the bytes the client actually signed.
+ * Deleting the row would cascade away its `Signature` and `SigningRequest`
+ * rows and leave that archived PDF on disk referenced by nothing -- the
+ * same destruction `canUnfinalize` blocks, just reached by a longer route.
+ * An admin who cannot reopen a signed quote should not be able to delete it
+ * either.
+ *
+ * Every other status may be deleted without restriction here: a quote that
+ * was sent and then ignored, or one the client declined, is still just a
+ * quote, with no signed record to protect.
+ */
+export function canDeleteDocument(status: SigningStatus): Verdict {
+  if (status === "SIGNED") return { ok: false, reason: SIGNED_QUOTE_NOT_DELETABLE };
   return { ok: true };
 }
 

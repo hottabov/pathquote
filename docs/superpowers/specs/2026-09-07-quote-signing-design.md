@@ -257,10 +257,11 @@ the same resolver the PDF pipeline already uses for Gotenberg's cookie-less
 Chromium. The page is heavier; the number of new public filesystem routes is
 zero.
 
-**Archived PDFs cannot be orphaned.** Document deletion is DRAFT-only
-(`lifecycle.ts`), SIGNED implies FINAL, and unfinalize is blocked at SIGNED. A
-signed PDF therefore only ever belongs to a document that cannot be deleted. No
-cleanup job is needed.
+**Archived PDFs cannot be orphaned.** `deleteDocument` (`lifecycle.ts`) checks
+`canDeleteDocument` (`state.ts`), which refuses a SIGNED document for anyone,
+admin included -- the same restriction `canUnfinalize` already places on
+reopening one. A signed PDF therefore only ever belongs to a document that
+cannot be deleted. No cleanup job is needed.
 
 ## UI
 

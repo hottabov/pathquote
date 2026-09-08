@@ -14,6 +14,7 @@ import { requireRegion, requireSession } from "@/lib/authz";
 import { isAdminRole } from "@/lib/roles";
 import { companyWhereForUser, documentWhereForUser, REGION_REQUIRED_ERROR } from "@/lib/scope";
 import { idSchema, optionalIdSchema } from "@/lib/validation/documents";
+import { canDeleteDocument } from "@/lib/signing/state";
 import { NOT_FOUND_ERROR } from "../_shared";
 import type { ActionResult } from "./_internal";
 
@@ -113,7 +114,15 @@ export async function deleteDraft(documentId: string): Promise<{ error: string }
 
 /**
  * Permanently deletes a document of any status, from the /quotes list.
- * Items/lines cascade via `onDelete: Cascade` (schema.prisma).
+ * Items/lines cascade via `onDelete: Cascade` (schema.prisma) -- and so, for
+ * a signed quote, would its `Signature` and `SigningRequest` rows, leaving
+ * the archived PDF (`Document.signedPdfSha256`) on disk referenced by
+ * nothing. `canDeleteDocument` (src/lib/signing/state.ts) exists to stop
+ * that: it is checked first, before the FINAL/admin rule below, so a signed
+ * quote is refused with the accurate reason rather than "only an admin can
+ * delete a finalized document" -- advice that would send a manager looking
+ * for an admin who, being subject to the same signed-quote rule, could not
+ * do it either.
  *
  * Scoped like every other action here (`documentWhereForUser`: a MANAGER
  * only ever finds their own documents, an ADMIN finds any), plus one extra
@@ -130,9 +139,12 @@ export async function deleteDocument(documentId: string): Promise<ActionResult> 
 
   const document = await db.document.findFirst({
     where: { id: parsedId.data, ...documentWhereForUser(session.user) },
-    select: { id: true, status: true },
+    select: { id: true, status: true, signingStatus: true },
   });
   if (!document) return { error: NOT_FOUND_ERROR };
+
+  const deletable = canDeleteDocument(document.signingStatus);
+  if (!deletable.ok) return { error: deletable.reason };
 
   if (document.status === "FINAL" && !isAdminRole(session.user.role)) {
     return { error: "Only an admin can delete a finalized document" };
