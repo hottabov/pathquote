@@ -14,12 +14,12 @@
  * one exists for someone else — the same reasoning `LinkProblem` (src/
  * components/signing/link-problem.tsx) already applies to the page itself.
  */
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, writeFile, unlink } from "fs/promises";
 import path from "path";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
-import { uploadsDir, saveUpload, UploadValidationError } from "@/lib/uploads";
+import { uploadsDir, saveUpload, UploadValidationError, IMAGE_URL_PATTERN, resolveUploadPath } from "@/lib/uploads";
 import { parseSignatureDataUrl } from "@/lib/signing/data-url";
 import { hashSigningToken } from "@/lib/signing/token";
 import { resolveLinkState } from "@/lib/signing/link";
@@ -63,6 +63,51 @@ const COMPLETABLE_SIGNING_STATUSES: SigningStatus[] = ALL_SIGNING_STATUSES.filte
   canComplete(status, true)
 );
 const DECLINABLE_SIGNING_STATUSES: SigningStatus[] = ALL_SIGNING_STATUSES.filter(canDecline);
+
+/**
+ * Best-effort delete of the file behind a CLIENT signature's superseded
+ * `imageUrl`, called only from `signAsClient` below, only after the upsert
+ * that repointed the row has committed. Resolves the stored value the same
+ * validated way `readSavedSignatureBytes` (src/lib/signing/saved-signature.ts)
+ * does: match against `IMAGE_URL_PATTERN`, slice the matched text's own
+ * `/api/files/` prefix, and hand the remainder to `resolveUploadPath` --
+ * rather than a bare string-slice on the raw column value, so a malformed or
+ * hand-edited value is skipped instead of being turned into a path fragment
+ * `path.join` would otherwise accept.
+ *
+ * Never throws and never changes what its caller returns: a redraw that
+ * successfully repointed the row must not fail, or appear to fail, because
+ * the old file was already gone, sitting on a different volume, or hit a
+ * permissions error. A failure here is logged and otherwise swallowed --
+ * matching how this codebase already treats best-effort filesystem cleanup
+ * (`clearMySignature`'s revalidation, the orphan-tolerant reasoning `saveUpload`
+ * itself documents), even though, unlike `clearMySignature`
+ * (src/lib/actions/users.ts), this delete is not itself optional: a saved
+ * profile signature may already have been *copied* onto one or more issued
+ * quotes (`signQuoteAsAuthor`, src/lib/actions/signing.ts) by the time it's
+ * cleared, so `clearMySignature` keeps its file because it has no way to know
+ * whether anything still points at it. A CLIENT signature is never copied
+ * anywhere -- this document's row is its only referent -- and that referent
+ * just moved, so the old file is unreachable the moment the upsert commits.
+ */
+async function deleteSupersededClientImage(imageUrl: string): Promise<void> {
+  const match = imageUrl.match(IMAGE_URL_PATTERN);
+  if (!match) {
+    console.error("[signing] superseded CLIENT signature has a malformed imageUrl, skipping delete", imageUrl);
+    return;
+  }
+  const filename = match[0].slice("/api/files/".length);
+  const filePath = resolveUploadPath(filename);
+  if (!filePath) {
+    console.error("[signing] could not resolve path for superseded CLIENT signature, skipping delete", imageUrl);
+    return;
+  }
+  try {
+    await unlink(filePath);
+  } catch (error) {
+    console.error("[signing] failed to delete superseded CLIENT signature file", filePath, error);
+  }
+}
 
 /** Thrown inside a `$transaction` below when its status-guarded claim
  * matches nothing — another request (a second tab, a double-tap, a manager's
@@ -186,6 +231,19 @@ export async function signAsClient(token: string, dataUrl: string): Promise<Acti
   const ip = clientIp(head);
   const userAgent = head.get("user-agent");
 
+  // Read the row's *current* image before the upsert below repoints it --
+  // never after. Reading first means a write that fails for any reason
+  // leaves both the old row and the old file untouched; the delete below
+  // only ever runs once the replacement has actually committed, so a failed
+  // write can never leave a row pointing at a file this call already
+  // removed. Scoped to CLIENT only -- an AUTHOR signature (a separate row,
+  // written only by `signQuoteAsAuthor`, src/lib/actions/signing.ts) is never
+  // read or touched by this query.
+  const outgoing = await db.signature.findUnique({
+    where: { documentId_role: { documentId: request.documentId, role: "CLIENT" } },
+    select: { imageUrl: true },
+  });
+
   await db.signature.upsert({
     where: { documentId_role: { documentId: request.documentId, role: "CLIENT" } },
     create: {
@@ -209,6 +267,18 @@ export async function signAsClient(token: string, dataUrl: string): Promise<Acti
       userAgent,
     },
   });
+
+  // Nothing bounds how many times an unauthenticated visitor holding one
+  // valid, unrevoked token can redraw -- `saveUpload` above always writes a
+  // fresh randomly-named file, and without this, the upsert's repoint would
+  // leave the previous one behind forever. `outgoing` is `null` the first
+  // time a CLIENT signs (nothing to delete yet); on every redraw after that
+  // it names exactly the file this upsert just stopped pointing at, deleted
+  // only now that the replacement is committed (see `deleteSupersededClientImage`'s
+  // own doc comment for why this differs from `clearMySignature`).
+  if (outgoing?.imageUrl) {
+    await deleteSupersededClientImage(outgoing.imageUrl);
+  }
 
   revalidatePath(`/sign/${token}`);
   return {};
@@ -290,16 +360,21 @@ export async function completeSigning(token: string): Promise<ActionResult> {
   // Mirrors saveUpload's own mkdir -- this write bypasses saveUpload (the
   // bytes are a PDF, not one of its accepted image types), so it takes on
   // that same "the directory may not exist yet" responsibility itself.
+  // Captured in its own local rather than re-joined later: the catch below
+  // must delete exactly the file this call just wrote, never a path
+  // re-derived from `name` or from anything else.
+  const filePath = path.join(/* turbopackIgnore: true */ uploadsDir(), name);
   await mkdir(uploadsDir(), { recursive: true });
-  await writeFile(path.join(/* turbopackIgnore: true */ uploadsDir(), name), pdf);
+  await writeFile(filePath, pdf);
 
   // A second tab, or a double-tap on a phone, that loses the claim below
-  // lands here having already written an archived PDF nobody will ever
-  // point to -- an orphaned file on disk, not a half-signed document. Cheap
-  // to accept: uploads already tolerate orphans (a replaced avatar, a
-  // removed catalogue image), and refusing to write until *after* the claim
-  // would mean holding the transaction open across the Gotenberg call this
-  // function exists to keep out of it.
+  // lands here having already written an archived PDF nobody will ever point
+  // to. Rendering and writing before the claim is still correct -- refusing
+  // to write until *after* the claim would mean holding the transaction open
+  // across the Gotenberg call this function exists to keep out of it -- but
+  // the orphan that ordering can produce is no longer left behind: the catch
+  // below deletes `filePath`, the exact local path just written above, the
+  // moment the claim comes back empty.
   try {
     await db.$transaction(async (tx) => {
       const result = await tx.document.updateMany({
@@ -314,7 +389,26 @@ export async function completeSigning(token: string): Promise<ActionResult> {
       if (result.count === 0) throw new LostRaceError();
     });
   } catch (error) {
-    if (error instanceof LostRaceError) return { error: UNAVAILABLE };
+    if (error instanceof LostRaceError) {
+      // No row was ever updated to point at `name`, so the PDF this call
+      // just rendered and wrote is referenced by nothing -- best-effort
+      // delete it rather than leave a permanent orphan. Never lets a
+      // filesystem failure change what the client is told: logged and
+      // swallowed, exactly like `deleteSupersededClientImage` above.
+      //
+      // This closes the ordinary races this function was built to survive
+      // (a stray double-tap, two open tabs) but not a determined holder of
+      // one live token calling this repeatedly -- each such call still
+      // renders a fresh PDF via Gotenberg before losing its own claim, so
+      // repeated Gotenberg load is an operational concern (rate limiting,
+      // e.g.) this function cannot solve alone.
+      try {
+        await unlink(filePath);
+      } catch (unlinkError) {
+        console.error("[signing] failed to delete orphaned PDF after lost completion race", filePath, unlinkError);
+      }
+      return { error: UNAVAILABLE };
+    }
     throw error;
   }
 

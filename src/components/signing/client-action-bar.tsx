@@ -208,7 +208,8 @@ function ConfirmSend({
         <AlertDialog.Popup className="fixed top-1/2 left-1/2 z-50 w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white p-6 shadow-lg outline-none">
           <AlertDialog.Title className="text-base font-semibold">Send signed quote?</AlertDialog.Title>
           <AlertDialog.Description className="mt-3 text-sm text-neutral-700">
-            {quoteNumber} for <strong>{total}</strong> will be sent to <strong>{authorName}</strong>.
+            {quoteNumber} for <strong>{total}</strong> will be sent to <strong>{authorName}</strong>. A copy of
+            the signed quote will be emailed to you.
           </AlertDialog.Description>
           <p className="mt-2 text-sm text-neutral-500">
             Once sent, this signature cannot be changed.
