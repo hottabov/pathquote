@@ -874,7 +874,7 @@ asymmetrically, on purpose**:
   contradict something that already happened. If a completion email is
   missing, see the troubleshooting table below for the manual recovery.
 
-### Where archived PDFs live, and the one place "cannot be deleted" is wrong
+### Where archived PDFs live, and why deletion can't orphan them
 
 Archived PDFs sit in the same directory as every other upload — `UPLOADS_DIR`
 (`/data/uploads` on the VPS, the `pathquote_uploads` volume; `data/uploads` in
@@ -892,28 +892,37 @@ docker run --rm -v pathquote_uploads:/data:ro alpine \
 The two hashes must match exactly. If the file is missing entirely, that is
 its own row in the troubleshooting table below.
 
-The design behind this feature reasoned that a signed quote's document "can
-never be deleted" — `deleteDraft` (`src/lib/actions/documents/lifecycle.ts`)
-only ever touches a DRAFT, `unfinalizeDocument` refuses once
-`signingStatus === "SIGNED"`, and SIGNED implies `status === "FINAL"`
-(enforced by the `Document_signed_implies_final` CHECK constraint added in
-migration `z35_quote_signing`) — so the conclusion was that the archived PDF
-can never be orphaned and needs no cleanup job.
+A signed quote's document genuinely cannot be deleted, by anyone, including
+an admin. `deleteDraft` (`src/lib/actions/documents/lifecycle.ts`) only ever
+touches a DRAFT, `unfinalizeDocument` refuses once `signingStatus ===
+"SIGNED"`, and SIGNED implies `status === "FINAL"` (enforced by the
+`Document_signed_implies_final` CHECK constraint added in migration
+`z35_quote_signing`) — and the separate `deleteDocument` action
+(`src/lib/actions/documents/lifecycle.ts`, wired to the Delete icon on the
+`/quotes` list) checks `canDeleteDocument` (`src/lib/signing/state.ts`)
+*before* its "FINAL requires admin" rule, refusing any SIGNED document
+outright, admin or not, with "This quote was signed by the client and is a
+permanent commercial record. It cannot be deleted." So the archived PDF can
+never be orphaned by a deletion: the row that references it
+(`Document.signedPdfName`/`signedPdfSha256`) cannot be removed while it is
+signed, and there is accordingly no cleanup job for this file.
 
-**That conclusion does not hold for admins.** The separate `deleteDocument`
-action (`src/lib/actions/documents.ts`, wired to the Delete icon on the
-`/quotes` list) permanently deletes a document of *any* status for an ADMIN,
-with no `signingStatus` check anywhere in it or in the button that calls it —
-only "FINAL requires admin" is enforced. An admin who deletes a SIGNED
-document from that list cascades away its `Signature` and `SigningRequest`
-rows (both are `onDelete: Cascade`), but the archived PDF file on disk is
-never touched — it becomes a genuine orphan, referenced by nothing, with no
-job that will ever clean it up. Treat a SIGNED document like any other
-irreplaceable record: the nightly backup (§4) is what actually protects it,
-not the application. If a signed quote is ever deleted by mistake, restore
-`Document`/`Signature`/`SigningRequest` from the matching Postgres dump —
-the uploads tarball from the same night still has the PDF file itself, since
-that backup runs against the volume, not against live application state.
+The reasoning is the same one `canUnfinalize` already applies one section
+below: both signatures attest to the exact archived PDF, so an admin who
+cannot *reopen* a signed quote should not be able to destroy the same record
+by deleting it instead — reopening and deleting are two routes to the same
+loss of the signed commercial record, and both are closed for everyone.
+
+The nightly backup (§4) still matters here — it is what protects every other
+irreplaceable row in Postgres, and a `SIGNED` document is no exception if its
+data is ever lost outside the application entirely (a bad migration, a manual
+`DELETE` run directly against Postgres, a botched restore) — but it is no
+longer standing in for an application-level guard against deletion through
+the app itself. If a signed quote's rows are ever missing and `deleteDocument`
+was not the cause, restore `Document`/`Signature`/`SigningRequest` from the
+matching Postgres dump — the uploads tarball from the same night still has the
+PDF file itself, since that backup runs against the volume, not against live
+application state.
 
 ### A signed quote cannot be reopened
 
