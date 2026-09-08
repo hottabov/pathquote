@@ -245,6 +245,10 @@ Reply-To, resolved by `resolveReplyTo()` in `src/lib/email/reply-to.ts`:
 |---|---|
 | Quote email, author is an active user | that manager (`Document.author`) |
 | Quote email, author deactivated or missing | `EMAIL_REPLY_TO` (`sales@pathfindercut.com`) |
+| Signing invite, to the client (`sendQuoteForSignature`) | same rule as above — the quote's author if active, else `EMAIL_REPLY_TO` |
+| Revoked-link notice, to the client (`revokeSigningLink`) | same rule as above |
+| Completion copy, to the client, PDF attached (`sendCompletionEmails`) | same rule as above |
+| Completion notice, to the quote's own author (`sendCompletionEmails`) | none — always `undefined`. A message telling someone they themselves just got a quote signed needs no Reply-To, so this one is hardcoded rather than resolved |
 | Sign-in / magic-link email (no author) | `EMAIL_REPLY_TO` |
 | `EMAIL_REPLY_TO` blank and no author | no Reply-To header at all |
 
@@ -255,12 +259,24 @@ worse than the shared inbox.
 Display names are RFC 5322-quoted when they contain specials (`Smith, John` →
 `"Smith, John" <…>`), and CR/LF is stripped so an editable profile name can't inject headers.
 
-**Not wired up yet.** Quote emailing to clients is post-v1 (see the design doc); today the only
-outgoing mail is the magic link. When the quote sender is built, pass the document's author:
+**Wired up.** Quote emailing to clients shipped with electronic quote signing
+(`docs/superpowers/plans/2026-09-07-quote-signing.md`). The real callers are
+`sendQuoteForSignature` and `revokeSigningLink` in `src/lib/actions/signing.ts`
+(the invite and the withdrawal notice) and the `sendCompletionEmails` helper
+inside `src/lib/actions/signing-client.ts` (the two emails sent once a client
+finishes signing — one to the client with the archived PDF attached, one to
+the author with a link back into the app). Three of the four resolve
+Reply-To exactly as sketched here, passing the document's author straight
+through:
 
 ```ts
 replyTo: resolveReplyTo(document.author, process.env.EMAIL_REPLY_TO)
 ```
+
+The fourth — the completion notice to the author themselves — passes no
+Reply-To at all rather than calling `resolveReplyTo`, since a message telling
+someone they just received their own client's signature needs no reply
+address. See the table below for all four side by side.
 
 ## Implementation notes
 

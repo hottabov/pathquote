@@ -835,3 +835,181 @@ server-action POST. Every attempt must return 404 or an error, never a 200 —
 a 403 is itself a finding, because it confirms the row exists. Re-run it
 after any change to `src/lib/scope.ts`, `src/lib/authz.ts`, or the Settings
 layout guards.
+
+## 8. Quote signing
+
+A manager signs a FINAL quote from a signature saved on their profile
+(`/settings/account`), sends it to the client at a tokenised `/sign/<token>`
+link, and the client signs it back. Completion writes an archived PDF and its
+SHA-256 to `Document.signedPdfName`/`signedPdfSha256`. The whole feature is
+built as pure rule modules under `src/lib/signing/` plus thin server actions
+in `src/lib/actions/signing.ts` (manager side) and
+`src/lib/actions/signing-client.ts` (the unauthenticated client side, reached
+from the public `/sign` route added to `PUBLIC_PATHS` in `src/proxy.ts`) —
+start there for the actual transition rules
+(`src/lib/signing/state.ts`) before changing behaviour described below.
+
+### The four emails
+
+| To | When | Contents | Reply-To |
+|---|---|---|---|
+| Client | manager presses **Send to client** (`sendQuoteForSignature`) | The `/sign/<token>` link, as a button — the raw URL is never visible HTML text, only in the plain-text part | Author, via `resolveReplyTo()` |
+| Client | client presses **Confirm** (`completeSigning` → `sendCompletionEmails`) | The archived PDF as an attachment — the client has no account and their link expires | Author, via `resolveReplyTo()` |
+| Author | client presses **Confirm** (`completeSigning` → `sendCompletionEmails`) | A link back into the app (`/quotes/<id>`) — no attachment, the author already has full access | None — a message to yourself needs no Reply-To |
+| Client | manager presses **Revoke link** (`revokeSigningLink`) | "This quote is no longer current; your manager will be in touch" — no reason given | Author, via `resolveReplyTo()` |
+
+Templates are pure functions in `src/lib/email/signing.ts`. All four failures
+are logged with a `[signing] ... failed` prefix (`grep` for it in
+`docker compose logs app`), but **the send and the invite are handled
+asymmetrically, on purpose**:
+
+- If the **invite** email fails, `sendQuoteForSignature` undoes the send: the
+  just-created `SigningRequest` is re-revoked and `signingStatus` is put back
+  to what it was. The manager sees "The quote could not be emailed. Nothing
+  was sent — try again," and pressing Send again is the correct fix — nothing
+  needs manual cleanup.
+- If the **revoke** notice, or either **completion** email, fails, nothing is
+  rolled back. By the time those sends are attempted the link is already dead
+  (revoke) or the quote is already SIGNED (completion) — undoing either would
+  contradict something that already happened. If a completion email is
+  missing, see the troubleshooting table below for the manual recovery.
+
+### Where archived PDFs live, and the one place "cannot be deleted" is wrong
+
+Archived PDFs sit in the same directory as every other upload — `UPLOADS_DIR`
+(`/data/uploads` on the VPS, the `pathquote_uploads` volume; `data/uploads` in
+a local checkout) — named `<uuid>.pdf` and recorded in
+`Document.signedPdfName`. Verify one against its recorded digest:
+
+```bash
+docker compose exec -T postgres psql -U pathquote -d pathquote -c \
+  "select \"number\", \"signedPdfName\", \"signedPdfSha256\" from \"Document\" where id = '<documentId>';"
+
+docker run --rm -v pathquote_uploads:/data:ro alpine \
+  sh -c "sha256sum /data/<signedPdfName>"
+```
+
+The two hashes must match exactly. If the file is missing entirely, that is
+its own row in the troubleshooting table below.
+
+The design behind this feature reasoned that a signed quote's document "can
+never be deleted" — `deleteDraft` (`src/lib/actions/documents/lifecycle.ts`)
+only ever touches a DRAFT, `unfinalizeDocument` refuses once
+`signingStatus === "SIGNED"`, and SIGNED implies `status === "FINAL"`
+(enforced by the `Document_signed_implies_final` CHECK constraint added in
+migration `z35_quote_signing`) — so the conclusion was that the archived PDF
+can never be orphaned and needs no cleanup job.
+
+**That conclusion does not hold for admins.** The separate `deleteDocument`
+action (`src/lib/actions/documents.ts`, wired to the Delete icon on the
+`/quotes` list) permanently deletes a document of *any* status for an ADMIN,
+with no `signingStatus` check anywhere in it or in the button that calls it —
+only "FINAL requires admin" is enforced. An admin who deletes a SIGNED
+document from that list cascades away its `Signature` and `SigningRequest`
+rows (both are `onDelete: Cascade`), but the archived PDF file on disk is
+never touched — it becomes a genuine orphan, referenced by nothing, with no
+job that will ever clean it up. Treat a SIGNED document like any other
+irreplaceable record: the nightly backup (§4) is what actually protects it,
+not the application. If a signed quote is ever deleted by mistake, restore
+`Document`/`Signature`/`SigningRequest` from the matching Postgres dump —
+the uploads tarball from the same night still has the PDF file itself, since
+that backup runs against the volume, not against live application state.
+
+### A signed quote cannot be reopened
+
+Once `signingStatus` is `SIGNED`, `unfinalizeDocument` refuses with "A signed
+quote cannot be reopened. Create a new quote instead." — `canUnfinalize` in
+`src/lib/signing/state.ts` is the one place this is decided, and it is
+deliberate: both signatures attest to the exact archived PDF, and editing the
+underlying document after that would make the signed record describe a quote
+that no longer exists. There is no clone-to-revision feature (v1 explicitly
+left it out — see the design doc's "Out of scope"), so when someone asks to
+revise a signed quote, the honest answer is a new quote, not a reopened one.
+
+### How to revoke and resend
+
+**Revoke** (the ✖ "Revoke link" button on a SENT/VIEWED quote, `canRevoke` in
+`src/lib/signing/state.ts`) only shows while a link is actually outstanding —
+it disappears the moment the client completes or declines, and is refused
+server-side too if either happens in the same instant the button is pressed.
+The confirmation is explicit about the one-way part: "The client's link stops
+working immediately, even if they have it open right now." Concretely, the
+client's next action against that token — opening the page, hitting Print —
+gets the same "no longer available" screen as an expired or foreign one, and
+they're emailed the withdrawal notice (previous section) unless that send
+itself fails (logged, not retried automatically — tell the client yourself if
+you need to be sure they know).
+
+**Resend** is just pressing **Send to client** again. `canSendToClient`
+permits sending from `NOT_SENT` and from `DECLINED` — a declined quote does
+not need to be revoked first, since there is no live link to kill — but
+refuses while a link is still `SENT`/`VIEWED` ("This quote is already with
+the client. Revoke the link first.") and refuses forever once `SIGNED`. A
+resend always mints a fresh token and a new `SigningRequest` row; the
+previous request (if the quote was revoked rather than declined) was already
+revoked when the new one was created, so there is never a moment where two
+links both work.
+
+### The `signing.linkValidityDays` setting
+
+`/settings/preferences` (ADMIN only), "Signing link validity (days)", 1–90,
+default 30. **The mistake to watch for:** the value is read once, at the
+moment a link is issued, and frozen onto that `SigningRequest.expiresAt`
+(`sendQuoteForSignature`, `src/lib/actions/signing.ts`). Lowering — or
+raising — the setting afterwards changes nothing about links already sent; it
+only takes effect on the next Send. If a manager insists a client's link
+should still be valid because "we just changed it to 90 days," check what the
+setting actually was at that request's `sentAt`, not what it is now:
+
+```sql
+select "sentAt", "expiresAt", "expiresAt" - "sentAt" as validity
+from "SigningRequest"
+where "documentId" = '<documentId>'
+order by "sentAt" desc;
+```
+
+### `AUTH_URL`
+
+The emailed link is built as `${AUTH_URL}/sign/<token>` — this is Auth.js
+v5's `AUTH_URL` (§1), not `NEXTAUTH_URL`. `sendQuoteForSignature` validates it
+*before* generating a token or writing a row (`resolveSigningBaseUrl`,
+`src/lib/actions/signing.ts`): if `AUTH_URL` is unset, blank, or not a
+syntactically valid `http(s)` URL, Send fails immediately with an on-screen
+error and nothing is sent — that failure mode is caught by us, at send time.
+
+What that check cannot catch is `AUTH_URL` being syntactically fine but
+*wrong* — pointing at a decommissioned domain, an internal-only hostname, or
+a stale value left over from a migration. A malformed-but-parseable value
+like that produces a perfectly deliverable email containing a dead link, and
+nothing on the server ever visits `/sign/<token>` itself to notice. That
+failure is discovered by the client, when they click it — which is why, if a
+client reports a broken link and the token itself checks out in the database
+(not expired, not revoked), the next thing to check is not the token but
+whether `AUTH_URL` in `.env` actually resolves to `https://q.pathfindercut.com`:
+
+```bash
+docker compose exec app printenv AUTH_URL
+```
+
+### Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| Client reports a 404 (or a "not available" page) on their signing link | By design, indistinguishable causes: an unknown token, or a live one that has since expired, been revoked, been declined, or already completed under a different device. `getDocumentForSigning` and `resolveLinkState` (`src/lib/signing/link.ts`) deliberately return the same non-committal state for all of them so a foreign or dead token can never be told apart from someone else's live one. Look the token's `SigningRequest` up by document to find out which it actually is (`revokedAt`, `declinedAt`, `expiresAt` vs now). |
+| Client says the link expired | Check that request's own `expiresAt` (query above) — it was frozen from whatever `signing.linkValidityDays` was *at send time*, not today's value. |
+| Manager can't press Send and doesn't know why | The on-screen message always names the specific reason — `canSendToClient` in `src/lib/signing/state.ts` returns one of: not FINAL yet, no author signature yet, the contact has no email, a link is already outstanding (revoke it first), or the quote is already SIGNED. If instead the error mentions `AUTH_URL`, see that section above — nothing was sent. |
+| A completion email never arrived | The two completion emails (client + author) are sent independently and are best-effort — `grep -i '\[signing\] completion email failed' ` in `docker compose logs app` to see which one and why. The signing itself already succeeded regardless (`signingStatus` is already `SIGNED`), so this is never a "did it complete" question — only a "did the notice arrive" one. For the client's missing copy specifically: the archived PDF is still on disk and its hash is still in `Document.signedPdfSha256`; verify it (previous section) and send it manually rather than trying to trigger a resend, since there is no resend action for this email. |
+| The archived PDF is missing from disk | `signedPdfName`/`signedPdfSha256` are only ever written together, by `completeSigning`, and enforced by the `Document_signed_pdf_pair` CHECK constraint (migration `z35_quote_signing`) — so a `SIGNED` row with a name but no file on disk means the file and the database have drifted apart, not that the write half-failed. The client's own Print button and the `/sign/[token]/pdf` route fail closed (404, logged as `"[signing] archived PDF missing on disk"`) rather than silently falling back to a live re-render — a live render could legitimately show different numbers today than what was actually signed, which would be worse than an error. Usual cause: `UPLOADS_DIR` pointing somewhere different than it did at completion time, or a Postgres restore (§4) done without the matching `uploads-*.tar.gz` from the same backup run — restore both together, always, exactly as the backup script writes them together. |
+
+`tests/scope-coverage.test.ts` fails the build if a module under
+`src/lib/queries/` or `src/lib/actions/` queries `db.company`, `db.document`
+or `db.price` without importing `@/lib/scope`. That catches a forgotten
+filter, not a wrong one.
+
+For the rest, the adversarial script lives in
+`docs/superpowers/plans/2026-09-06-manager-permissions.md`, Task 11: two
+managers, one attempting the other's ids by direct URL and by replayed
+server-action POST. Every attempt must return 404 or an error, never a 200 —
+a 403 is itself a finding, because it confirms the row exists. Re-run it
+after any change to `src/lib/scope.ts`, `src/lib/authz.ts`, or the Settings
+layout guards.
