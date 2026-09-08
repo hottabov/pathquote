@@ -12,10 +12,13 @@ import type { ActionResult } from "@/lib/actions/settings";
 const MAX_ROWS = 12;
 
 /** Both columns and the remove button, shared by the header row and every
- * tier row so they line up by construction. Stacks on a phone, where the
- * per-cell labels take over from the column headings. */
+ * tier row so they line up by construction. On a phone this is a 2-column,
+ * 2-row grid — discount above commission on the left, the remove button
+ * pinned to the right and spanning both rows — so each field stays a single
+ * compact line instead of stretching full-width. At sm+ it reverts to the
+ * three-column row (discount | commission | remove). */
 const TIER_GRID =
-  "grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.75rem] sm:items-center sm:gap-3";
+  "grid grid-cols-[minmax(0,1fr)_2.75rem] grid-rows-[auto_auto] items-center gap-x-3 gap-y-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.75rem] sm:grid-rows-none sm:gap-3";
 
 /** The percentage a row starts at: 0 for the first, one hundredth past the
  * row above for the rest — the same derivation `toTiers` performs, shown to
@@ -166,7 +169,7 @@ export function CommissionTiersForm({
         const fromPct = lowerBoundOf(rows, index);
         return (
           <div key={row.id} className={TIER_GRID}>
-            <div className="flex items-center gap-2">
+            <div className="col-start-1 row-start-1 flex items-center gap-2 sm:col-auto sm:row-auto">
               <span className="w-24 shrink-0 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:hidden">
                 Discount
               </span>
@@ -190,12 +193,12 @@ export function CommissionTiersForm({
                     value={row.upToPct}
                     onChange={(e) => updateRow(row.id, { upToPct: e.target.value })}
                     disabled={pending}
-                    className={cn(fieldInputClass, "w-full min-w-0")}
+                    className={cn(fieldInputClass, "w-20 shrink-0 sm:w-full sm:min-w-0")}
                   />
                 </>
               )}
             </div>
-            <div className="flex items-center gap-2 sm:border-l sm:border-slate-200 sm:pl-3">
+            <div className="col-start-1 row-start-2 flex items-center gap-2 sm:col-auto sm:row-auto sm:border-l sm:border-slate-200 sm:pl-3">
               <span className="w-24 shrink-0 text-xs font-semibold uppercase tracking-wide text-brand sm:hidden">
                 Commission
               </span>
@@ -209,7 +212,7 @@ export function CommissionTiersForm({
                 value={row.ratePct}
                 onChange={(e) => updateRow(row.id, { ratePct: e.target.value })}
                 disabled={pending}
-                className={cn(fieldInputClass, "w-full min-w-0")}
+                className={cn(fieldInputClass, "w-20 shrink-0 sm:w-full sm:min-w-0")}
               />
             </div>
             {pending ? (
@@ -219,7 +222,7 @@ export function CommissionTiersForm({
                 type="button"
                 variant="outline"
                 onClick={() => removeRow(row.id)}
-                className="h-11 shrink-0 sm:w-11"
+                className="col-start-2 row-start-1 row-span-2 h-11 w-11 shrink-0 self-center justify-self-end sm:col-auto sm:row-auto sm:row-span-1 sm:self-auto sm:justify-self-auto"
                 aria-label={`Remove tier ${index + 1}`}
               >
                 <Trash2 className="size-4" aria-hidden="true" />

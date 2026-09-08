@@ -2,8 +2,9 @@
 
 import { useState, useTransition, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
-import { FieldRow, fieldInputClass } from "@/components/ui-kit";
+import { fieldInputClass } from "@/components/ui-kit";
 import { useToast } from "@/components/ui-kit/client";
+import { cn } from "@/lib/utils";
 import type { ActionResult } from "@/lib/actions/settings";
 
 /**
@@ -48,13 +49,11 @@ export function SigningLinkValidityForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <FieldRow
-        label="Signing link validity (days)"
-        htmlFor="signing-link-validity-days"
-        hint="How long a client's signing link stays usable. Changing this does not affect links already sent."
-        className="max-w-40"
-      >
+    <form onSubmit={handleSubmit} className="flex flex-col gap-1.5">
+      <label htmlFor="signing-link-validity-days" className="text-sm font-medium text-brand-dark">
+        Signing link validity (days)
+      </label>
+      <div className="flex items-center gap-2">
         <input
           id="signing-link-validity-days"
           name="value"
@@ -65,19 +64,24 @@ export function SigningLinkValidityForm({
           defaultValue={defaultValue}
           required
           disabled={pending}
-          className={fieldInputClass}
+          aria-describedby={error ? "signing-link-validity-days-error" : "signing-link-validity-days-hint"}
+          aria-invalid={error ? true : undefined}
+          className={cn(fieldInputClass, "w-24 shrink-0")}
         />
-      </FieldRow>
+        <Button type="submit" disabled={pending} className="h-11 shrink-0" variant="outline">
+          {pending ? "Saving…" : "Save"}
+        </Button>
+      </div>
 
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p id="signing-link-validity-days-error" role="alert" className="text-sm text-destructive">
           {error}
         </p>
-      ) : null}
-
-      <Button type="submit" disabled={pending} className="h-11 w-full sm:w-auto sm:self-start" variant="outline">
-        {pending ? "Saving…" : "Save"}
-      </Button>
+      ) : (
+        <p id="signing-link-validity-days-hint" className="text-sm text-slate-500">
+          How long a client&apos;s signing link stays usable. Changing this does not affect links already sent.
+        </p>
+      )}
     </form>
   );
 }
