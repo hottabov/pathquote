@@ -1000,16 +1000,3 @@ docker compose exec app printenv AUTH_URL
 | Manager can't press Send and doesn't know why | The on-screen message always names the specific reason — `canSendToClient` in `src/lib/signing/state.ts` returns one of: not FINAL yet, no author signature yet, the contact has no email, a link is already outstanding (revoke it first), or the quote is already SIGNED. If instead the error mentions `AUTH_URL`, see that section above — nothing was sent. |
 | A completion email never arrived | The two completion emails (client + author) are sent independently and are best-effort — `grep -i '\[signing\] completion email failed' ` in `docker compose logs app` to see which one and why. The signing itself already succeeded regardless (`signingStatus` is already `SIGNED`), so this is never a "did it complete" question — only a "did the notice arrive" one. For the client's missing copy specifically: the archived PDF is still on disk and its hash is still in `Document.signedPdfSha256`; verify it (previous section) and send it manually rather than trying to trigger a resend, since there is no resend action for this email. |
 | The archived PDF is missing from disk | `signedPdfName`/`signedPdfSha256` are only ever written together, by `completeSigning`, and enforced by the `Document_signed_pdf_pair` CHECK constraint (migration `z35_quote_signing`) — so a `SIGNED` row with a name but no file on disk means the file and the database have drifted apart, not that the write half-failed. The client's own Print button and the `/sign/[token]/pdf` route fail closed (404, logged as `"[signing] archived PDF missing on disk"`) rather than silently falling back to a live re-render — a live render could legitimately show different numbers today than what was actually signed, which would be worse than an error. Usual cause: `UPLOADS_DIR` pointing somewhere different than it did at completion time, or a Postgres restore (§4) done without the matching `uploads-*.tar.gz` from the same backup run — restore both together, always, exactly as the backup script writes them together. |
-
-`tests/scope-coverage.test.ts` fails the build if a module under
-`src/lib/queries/` or `src/lib/actions/` queries `db.company`, `db.document`
-or `db.price` without importing `@/lib/scope`. That catches a forgotten
-filter, not a wrong one.
-
-For the rest, the adversarial script lives in
-`docs/superpowers/plans/2026-09-06-manager-permissions.md`, Task 11: two
-managers, one attempting the other's ids by direct URL and by replayed
-server-action POST. Every attempt must return 404 or an error, never a 200 —
-a 403 is itself a finding, because it confirms the row exists. Re-run it
-after any change to `src/lib/scope.ts`, `src/lib/authz.ts`, or the Settings
-layout guards.
