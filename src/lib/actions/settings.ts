@@ -8,6 +8,7 @@ import {
   quoteValidityDaysSchema,
   showOptionIconsSchema,
   commissionTiersSchema,
+  signingLinkValidityDaysSchema,
 } from "@/lib/validation/settings";
 import type { ActionResult } from "./_shared";
 
@@ -34,6 +35,18 @@ export async function updateSetting(key: string, formData: FormData): Promise<Ac
   switch (key) {
     case "quote.validityDays": {
       const parsed = quoteValidityDaysSchema.safeParse(formData.get("value"));
+      if (!parsed.success) {
+        return { error: parsed.error.issues[0]?.message ?? "Invalid value" };
+      }
+      await db.setting.upsert({
+        where: { key },
+        create: { key, value: parsed.data },
+        update: { value: parsed.data },
+      });
+      break;
+    }
+    case "signing.linkValidityDays": {
+      const parsed = signingLinkValidityDaysSchema.safeParse(formData.get("value"));
       if (!parsed.success) {
         return { error: parsed.error.issues[0]?.message ?? "Invalid value" };
       }

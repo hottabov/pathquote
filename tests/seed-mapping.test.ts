@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import catalogData from "../prisma/seed-data/catalog.json";
-import contentBlocksData from "../prisma/seed-data/content-blocks.json";
+import quoteDocumentsData from "../prisma/seed-data/quote-documents.json";
 import usPricesData from "../prisma/seed-data/prices-us.json";
 import {
   type Catalog,
-  type ContentBlocksJson,
+  type QuoteDocumentsJson,
   type UsPricesJson,
   REGIONS,
   mapUsPrices,
@@ -14,16 +14,16 @@ import {
   mapOptions,
   mapPrices,
   mapCompatibility,
-  mapContentBlocks,
+  mapQuoteDocuments,
   resolveOptionIdentity,
   resolveProductIdentity,
-  shouldMigrateBlock,
-  BLOCK_BODY_MIGRATIONS,
-  M_SERIES_OLD_BODY,
 } from "../prisma/seed-lib";
+import { sanitizeIfHtml } from "../src/lib/rich-text";
+import { countStructure } from "../scripts/lib/quote-document-bodies";
+import { DOCUMENT_TOKENS, findUnknownTokens } from "../src/lib/quote-variables";
 
 const catalog = catalogData as Catalog;
-const contentBlocksJson = contentBlocksData as ContentBlocksJson;
+const quoteDocumentsJson = quoteDocumentsData as QuoteDocumentsJson;
 
 /**
  * Small, handcrafted catalog used to assert literal expected outputs of the
@@ -40,11 +40,10 @@ const contentBlocksJson = contentBlocksData as ContentBlocksJson;
  * compatibleProducts: ["A-100"]) mirroring EasyLoader-style accessories, so
  * mapCompatibility's product fan-out is exercised too.
  *
- * Every entry carries its identity explicitly (kind/form/specs/
- * contentBlockKey on products, role/parentProductCode/unitLengthM/
- * contentBlockKey on options): the seed has no rule that derives any of
- * them from a code, and refuses an entry that omits `kind` or the `role`
- * key (see the "refuses" tests below).
+ * Every entry carries its identity explicitly (kind/form/specs on products,
+ * role/parentProductCode/unitLengthM on options): the seed has no rule that
+ * derives any of them from a code, and refuses an entry that omits `kind` or
+ * the `role` key (see the "refuses" tests below).
  */
 const FIXTURE: Catalog = {
   extractedAt: "2026-01-01T00:00:00.000Z",
@@ -63,7 +62,6 @@ const FIXTURE: Catalog = {
           kind: "MACHINE",
           form: "M_SERIES",
           specs: { cutHeightCm: 3, cutWidthCm: 180, modelTier: "M3", widthCode: 180 },
-          contentBlockKey: "machine.m-series",
         },
         {
           code: "A-200",
@@ -74,7 +72,6 @@ const FIXTURE: Catalog = {
           kind: "ACCESSORY",
           form: null,
           specs: null,
-          contentBlockKey: null,
         },
       ],
     },
@@ -92,7 +89,6 @@ const FIXTURE: Catalog = {
           kind: "TABLE",
           form: "EASYLOADER",
           specs: { tableWidthMm: 2000 },
-          contentBlockKey: "equipment.easy-loader",
         },
       ],
     },
@@ -108,7 +104,6 @@ const FIXTURE: Catalog = {
       role: "MTS",
       parentProductCode: null,
       unitLengthM: null,
-      contentBlockKey: "option.MTS",
     },
     {
       code: "OPT-2",
@@ -120,7 +115,6 @@ const FIXTURE: Catalog = {
       role: null,
       parentProductCode: null,
       unitLengthM: null,
-      contentBlockKey: null,
     },
     {
       code: "OPT-3",
@@ -133,7 +127,6 @@ const FIXTURE: Catalog = {
       role: "EL_CONVEYOR",
       parentProductCode: "A-100",
       unitLengthM: 1.2,
-      contentBlockKey: null,
     },
   ],
 };
@@ -159,7 +152,6 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
         kind: "MACHINE",
         form: "M_SERIES",
         specs: { cutHeightCm: 3, cutWidthCm: 180, modelTier: "M3", widthCode: 180 },
-        contentBlockKey: "machine.m-series",
       },
       {
         code: "A-200",
@@ -172,7 +164,6 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
         kind: "ACCESSORY",
         form: null,
         specs: null,
-        contentBlockKey: null,
       },
       {
         code: "B-100",
@@ -185,12 +176,11 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
         kind: "TABLE",
         form: "EASYLOADER",
         specs: { tableWidthMm: 2000 },
-        contentBlockKey: "equipment.easy-loader",
       },
     ]);
   });
 
-  it("mapProducts passes noCommission through and normalises absent form/specs/contentBlockKey to null", () => {
+  it("mapProducts passes noCommission through and normalises absent form/specs to null", () => {
     const explicit: Catalog = {
       ...FIXTURE,
       series: [
@@ -207,9 +197,8 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
               kind: "MACHINE",
               form: "M_SERIES",
               specs: { cutHeightCm: 3, cutWidthCm: 180 },
-              contentBlockKey: "machine.m-series",
             },
-            // Only `kind` given: form/specs/contentBlockKey absent (not null)
+            // Only `kind` given: form/specs absent (not null)
             // and an empty specs object all map to null.
             { code: "PTW-S", name: "PW", description: "", price: 1, needsReview: false, kind: "SOFTWARE" },
             { code: "EMPTY", name: "E", description: "", price: 1, needsReview: false, kind: "ACCESSORY", specs: {} },
@@ -223,9 +212,8 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
       kind: "MACHINE",
       form: "M_SERIES",
       specs: { cutHeightCm: 3, cutWidthCm: 180 },
-      contentBlockKey: "machine.m-series",
     });
-    expect(ptw).toMatchObject({ kind: "SOFTWARE", form: null, specs: null, contentBlockKey: null });
+    expect(ptw).toMatchObject({ kind: "SOFTWARE", form: null, specs: null });
     expect(empty).toMatchObject({ noCommission: false, kind: "ACCESSORY", specs: null });
   });
 
@@ -273,7 +261,6 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
         role: "MTS",
         parentProductCode: null,
         unitLengthM: null,
-        contentBlockKey: "option.MTS",
       },
       {
         code: "OPT-2",
@@ -284,7 +271,6 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
         role: null,
         parentProductCode: null,
         unitLengthM: null,
-        contentBlockKey: null,
       },
       {
         code: "OPT-3",
@@ -295,12 +281,11 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
         role: "EL_CONVEYOR",
         parentProductCode: "A-100",
         unitLengthM: 1.2,
-        contentBlockKey: null,
       },
     ]);
   });
 
-  it("mapOptions takes role/parentProductCode/unitLengthM/contentBlockKey from the entry, with absent ones as null", () => {
+  it("mapOptions takes role/parentProductCode/unitLengthM from the entry, with absent ones as null", () => {
     const opts: Catalog = {
       ...FIXTURE,
       options: [
@@ -315,7 +300,6 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
           role: "EL_CONVEYOR",
           parentProductCode: "EL-2020",
           unitLengthM: 1.2,
-          contentBlockKey: null,
         },
         // Only the `role` key: nothing is inferred from the code.
         { code: "MTS-M", name: "x", description: "", price: 1, needsReview: false, compatibleSeries: ["M"], role: "MTS_TRAVEL" },
@@ -323,9 +307,9 @@ describe("seed-lib: pure mapping (FIXTURE -> literal expected outputs)", () => {
       ],
     };
     const [dm12, mts, abr] = mapOptions(opts);
-    expect(dm12).toMatchObject({ role: "EL_CONVEYOR", parentProductCode: "EL-2020", unitLengthM: 1.2, contentBlockKey: null });
-    expect(mts).toMatchObject({ role: "MTS_TRAVEL", parentProductCode: null, unitLengthM: null, contentBlockKey: null });
-    expect(abr).toMatchObject({ role: null, parentProductCode: null, unitLengthM: null, contentBlockKey: null, noCommission: true });
+    expect(dm12).toMatchObject({ role: "EL_CONVEYOR", parentProductCode: "EL-2020", unitLengthM: 1.2 });
+    expect(mts).toMatchObject({ role: "MTS_TRAVEL", parentProductCode: null, unitLengthM: null });
+    expect(abr).toMatchObject({ role: null, parentProductCode: null, unitLengthM: null, noCommission: true });
   });
 
   it("mapOptions refuses an option without a role key (null is fine, absent is not), naming the code", () => {
@@ -368,8 +352,12 @@ describe("seed-lib: smoke assertions against the real catalog.json (counts only)
   // 9 -> 10: HDRF was split out of the EasyFeeder ("EF") series into its own
   // "HDRF" series (owner decision -- see docs/reference/catalog-v2-decisions.md
   // and tests/catalog.test.ts's "catalog.json: series" describe block).
-  it("has exactly 10 series", () => {
-    expect(mapSeries(catalog)).toHaveLength(10);
+  // 10 -> 11: FP-TROLLEY was split out of the FabricPro ("FP") series into
+  // its own "FPT" series, same reasoning as the HDRF split -- an ACCESSORY
+  // does not belong under a SPREADER's quote copy (see
+  // docs/superpowers/plans/2026-09-07-category-quote-copy.md).
+  it("has exactly 11 series", () => {
+    expect(mapSeries(catalog)).toHaveLength(11);
   });
 
   it("has as many product payloads as catalog.json has products, and one option payload per option", () => {
@@ -384,68 +372,90 @@ describe("seed-lib: smoke assertions against the real catalog.json (counts only)
   });
 });
 
-describe("mapContentBlocks", () => {
-  const FIXTURE_JSON: ContentBlocksJson = {
-    blocks: [
-      { key: "terms.delivery", title: "Delivery", sortOrder: 1, body: "Delivered in {{weeks}} weeks." },
-      { key: "option.OFD", title: "OFD", sortOrder: 2, body: "**OFD** offload display." },
+describe("mapQuoteDocuments", () => {
+  const FIXTURE_JSON: QuoteDocumentsJson = {
+    documents: [
+      { key: "terms", title: "Terms", body: "<p>Delivery in {{deliveryWeeks}} weeks.</p>", sortOrder: 10, includedByDefault: true },
+      { key: "rsp", title: "Remote Support Program", body: "<p>RSP.</p>", sortOrder: 30, includedByDefault: false },
     ],
-    placeholders: { weeks: "Delivery time in weeks" },
   };
 
-  it("maps each block's key/title/body/sortOrder 1:1 from the JSON", () => {
-    expect(mapContentBlocks(FIXTURE_JSON)).toEqual([
-      { key: "terms.delivery", title: "Delivery", body: "Delivered in {{weeks}} weeks.", sortOrder: 1 },
-      { key: "option.OFD", title: "OFD", body: "**OFD** offload display.", sortOrder: 2 },
+  it("maps each document's key/title/body/sortOrder/includedByDefault 1:1 from the JSON", () => {
+    expect(mapQuoteDocuments(FIXTURE_JSON)).toEqual([
+      { key: "terms", title: "Terms", body: "<p>Delivery in {{deliveryWeeks}} weeks.</p>", sortOrder: 10, includedByDefault: true },
+      { key: "rsp", title: "Remote Support Program", body: "<p>RSP.</p>", sortOrder: 30, includedByDefault: false },
     ]);
   });
+});
 
-  it("real content-blocks.json has exactly 51 blocks", () => {
-    expect(mapContentBlocks(contentBlocksJson)).toHaveLength(51);
+describe("quote-documents.json well-formedness", () => {
+  const documents = mapQuoteDocuments(quoteDocumentsJson);
+
+  // The three the migration assembled out of the 21 terms./conditions. blocks
+  // and rsp.agreement. A fresh database that comes up missing any of them
+  // prints a quote with no legal text on it -- which looks complete and is
+  // not, the failure this file exists to catch.
+  it("seeds exactly Terms, General Conditions of Sale and the RSP agreement, in print order", () => {
+    expect(documents.map((d) => d.key)).toEqual(["terms", "conditions", "rsp"]);
+    expect(documents.map((d) => d.title)).toEqual(["Terms", "General Conditions of Sale", "Remote Support Program"]);
+    expect(documents.map((d) => d.sortOrder)).toEqual([10, 20, 30]);
   });
 
-  it("real content-blocks.json has unique keys", () => {
-    const keys = mapContentBlocks(contentBlocksJson).map((b) => b.key);
-    expect(new Set(keys).size).toBe(keys.length);
+  it("includes every document on a new quote by default", () => {
+    // RSP is the one an author routinely unticks, but that is a per-quote
+    // exclusion (DocumentExclusion), not a different default.
+    for (const d of documents) expect(d.includedByDefault, d.key).toBe(true);
   });
 
-  it("real content-blocks.json has no empty (or whitespace-only) bodies", () => {
-    for (const block of mapContentBlocks(contentBlocksJson)) {
-      expect(block.body.trim().length, `expected "${block.key}" to have a non-empty body`).toBeGreaterThan(0);
+  it("has unique keys and no empty title or body", () => {
+    expect(new Set(documents.map((d) => d.key)).size).toBe(documents.length);
+    for (const d of documents) {
+      expect(d.title.trim().length, d.key).toBeGreaterThan(0);
+      expect(d.body.trim().length, d.key).toBeGreaterThan(0);
     }
   });
 
-  it("real content-blocks.json has no empty titles and non-negative sort orders", () => {
-    for (const block of mapContentBlocks(contentBlocksJson)) {
-      expect(block.title.trim().length, `expected "${block.key}" to have a non-empty title`).toBeGreaterThan(0);
-      expect(block.sortOrder).toBeGreaterThanOrEqual(0);
+  // The bodies were generated by scripts/lib/quote-document-bodies.ts over the
+  // 23 ContentBlock rows that used to hold this text, exactly as the one-shot
+  // migration generated them against the live database. That source file is
+  // gone (deleted with ContentBlock), so this cannot re-derive them -- what it
+  // pins instead is the structure that assembly produces, so a hand-edit that
+  // mangles the <ol> or drops a clause fails here rather than on a quote.
+  it("keeps the shape the assembly produced: 7 Terms sections, 14 numbered clauses", () => {
+    const byKey = new Map(documents.map((d) => [d.key, d]));
+    expect(countStructure(byKey.get("terms")!.body).headings).toBe(7);
+    const conditions = byKey.get("conditions")!.body;
+    expect(conditions.startsWith("<ol>")).toBe(true);
+    expect(countStructure(conditions).listItems).toBe(14);
+  });
+
+  // Every body must already be what `sanitizeIfHtml` would make of it: the
+  // same write-boundary sanitizer runs on every editor save, so a body that is
+  // not stable under it would be silently rewritten the first time an admin
+  // re-saved the seeded document.
+  it("stores bodies the sanitizer leaves alone", () => {
+    for (const d of documents) expect(sanitizeIfHtml(d.body), d.key).toBe(d.body);
+  });
+
+  // A seeded body may contain NO token the document scope cannot fill. This
+  // used to allow one — `{{rspYear2Cost}}` in Terms, carried over from the
+  // migration so an admin would be presented with the same commercial
+  // decision — and the cost of carrying it was not the missing figure but the
+  // document: `findUnknownTokens` is also what the editor's save validator
+  // runs, so an admin who opened Terms and pressed Save was rejected over a
+  // token they never typed, with no way to find it. A fresh database seeded a
+  // document that could not be saved. The clause says "quoted separately"
+  // now; the figure returns with the RSP pricing work, which is out of scope
+  // for this whole workstream (D10, and the spec's Out of scope section).
+  //
+  // Asserted across every document, not just Terms, so a future seed edit
+  // that reintroduces an unfillable token anywhere fails here.
+  it("carries no token the document scope cannot fill", () => {
+    for (const d of documents) {
+      expect(findUnknownTokens(d.body, DOCUMENT_TOKENS), d.key).toEqual([]);
     }
   });
 });
-
-describe("shouldMigrateBlock / BLOCK_BODY_MIGRATIONS", () => {
-  it("returns true when the existing body exactly matches the old body", () => {
-    expect(shouldMigrateBlock("old text", "old text")).toBe(true);
-  });
-
-  it("returns false when the existing body differs at all (admin-edited, or already migrated)", () => {
-    expect(shouldMigrateBlock("old text, tweaked", "old text")).toBe(false);
-    expect(shouldMigrateBlock("new text", "old text")).toBe(false);
-    expect(shouldMigrateBlock("", "old text")).toBe(false);
-  });
-
-  it("machine.m-series's registered old body differs from the current seed-data body", () => {
-    // Guards against the migration entry going stale: the hardcoded
-    // M_SERIES_OLD_BODY (captured pre-315e089) must not equal what
-    // content-blocks.json seeds today, or shouldMigrateBlock would never
-    // fire for an already-current-format DB.
-    const current = contentBlocksJson.blocks.find((b) => b.key === "machine.m-series");
-    expect(current).toBeDefined();
-    expect(current!.body).not.toBe(M_SERIES_OLD_BODY);
-    expect(shouldMigrateBlock(M_SERIES_OLD_BODY, BLOCK_BODY_MIGRATIONS["machine.m-series"].oldBody)).toBe(true);
-  });
-});
-
 
 // --- was tests/us-prices.test.ts: prices-us.json (mapUsPrices / missingUsPriceCodes) ------------------
 

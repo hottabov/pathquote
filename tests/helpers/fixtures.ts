@@ -114,10 +114,15 @@ export function sheetDoc(overrides: Partial<ToSheetDataDoc> = {}): ToSheetDataDo
 }
 
 /** An M-Series machine: `sheetItem`'s shape plus the fields the quotation
- * renderer needs (`serialNumber`, `kind`, `seriesName`, `specs`,
- * `contentBlockKey`). The `specs` deliberately disagree with the code
+ * renderer needs (`serialNumber`, `kind`, `seriesName`, `seriesId`, `specs`,
+ * `seriesQuoteDescription`). The `specs` deliberately disagree with the code
  * "M5180" (18cm, not 5cm) so a test can tell the column apart from the
- * label: the renderer reads the column. */
+ * label: the renderer reads the column.
+ *
+ * `seriesQuoteDescription` defaults to `null` — the state every category
+ * starts in — so a test that cares about the copy printed under the heading
+ * passes its own body in, and one that doesn't gets a section with no copy
+ * rather than inheriting a shared template it never read. */
 export function quotationItem(overrides: Partial<QuotationItemInput> = {}): QuotationItemInput {
   return {
     ...sheetItem({
@@ -130,8 +135,13 @@ export function quotationItem(overrides: Partial<QuotationItemInput> = {}): Quot
     serialNumber: null,
     kind: "MACHINE",
     seriesName: "M-Series",
+    // A real `Series.id` is a cuid; any stable non-null string does here —
+    // what matters is that the draft banner has something to link to, and
+    // that a test can override it to `null` to exercise the unresolved-
+    // category path.
+    seriesId: "series-m",
     specs: { cutHeightCm: 18, cutWidthCm: 180 },
-    contentBlockKey: "machine.m-series",
+    seriesQuoteDescription: null,
     lines: [],
     ...overrides,
   };
@@ -160,9 +170,21 @@ export function quotationDoc(overrides: Partial<QuotationDataDoc> = {}): Quotati
       },
     }),
     regionId: "region-au",
+    /** The region's own standard-terms figures — the `Region` column defaults
+     * from schema.prisma, so a test that overrides one of the four on the
+     * quote itself can assert which of the two sources won (the same trick
+     * `sheetDoc`'s "Live ..." entity strings play against `entitySnapshot`). */
+    region: { deliveryWeeks: 14, installationDays: 2, trainingDays: 3, warrantyMonths: 12 },
+    deliveryWeeks: null,
+    installationDays: null,
+    trainingDays: null,
+    warrantyMonths: null,
+    excludedDocumentKeys: [],
+    documentsSnapshot: null,
     items: [quotationItem()],
     showItemPrices: false,
     showOptionPrices: false,
+    signatures: [],
     ...overrides,
   };
 }

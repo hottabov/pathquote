@@ -3,7 +3,8 @@
  * the implementations live in `./documents/` split by what they touch:
  * lifecycle (existence and client), items, options, extra lines, pricing
  * (discounts and hand-set prices), presentation (display flags, validity,
- * delivery terms).
+ * delivery terms), terms (the standard-terms overrides and which legal
+ * documents the quote prints).
  *
  * This file is a barrel and nothing else. Every consumer of these actions
  * sits in src/app/ or src/components/ and imports from
@@ -47,3 +48,4 @@ export {
   setValidityDays,
   setDeliveryTerms,
 } from "./documents/presentation";
+export { setQuoteTerms, setDocumentExclusions } from "./documents/terms";

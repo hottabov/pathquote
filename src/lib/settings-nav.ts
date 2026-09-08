@@ -20,10 +20,10 @@ export type SettingsNavItem = {
    * that are none of their concern. */
   adminOnly: boolean;
   /** Extra path prefixes (besides `href`) that should also mark this item
-   * active. Catalogue bundles independent list pages — content blocks,
-   * option conflict groups, and spec diagrams — under one nav entry (see
-   * the section's own page for the in-page switcher between them), so each
-   * needs to light the same nav item up. */
+   * active. Catalogue bundles independent list pages — option conflict
+   * groups and spec diagrams — under one nav entry (see the section's own
+   * page for the in-page switcher between them), so each needs to light the
+   * same nav item up. */
   activePrefixes?: string[];
 };
 
@@ -31,12 +31,16 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
   { href: "/settings", label: "Account", icon: User, adminOnly: false },
   { href: "/settings/preferences", label: "Preferences", icon: SlidersHorizontal, adminOnly: true },
   { href: "/settings/users", label: "Users", icon: Users, adminOnly: true },
+  // Catalogue's landing page was /settings/content until
+  // z37_drop_content_block deleted that route with the ContentBlock table:
+  // the section's first surviving tab is now its href, so the entry points
+  // at a page that exists rather than 404ing everyone who clicks it.
   {
-    href: "/settings/content",
+    href: "/settings/option-conflict-groups",
     label: "Catalogue",
     icon: Package,
     adminOnly: true,
-    activePrefixes: ["/settings/option-conflict-groups", "/settings/spec-images"],
+    activePrefixes: ["/settings/spec-images"],
   },
   { href: "/settings/regions", label: "Regions", icon: MapPin, adminOnly: true },
   // The catalogue as a workbook: download, edit in Excel, upload back with a

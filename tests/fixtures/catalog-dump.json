@@ -70,10 +70,16 @@
       "sortOrder": 8
     },
     {
+      "id": "7a3f4e2d-9c1b-4f6a-8e5d-2b6c1a9f0d3e",
+      "code": "FPT",
+      "name": "Fabric Pro Trolley",
+      "sortOrder": 9
+    },
+    {
       "id": "cmtgnnby3000c4o9kxbgpitbr",
       "code": "SVC",
       "name": "Service",
-      "sortOrder": 9
+      "sortOrder": 10
     }
   ],
   "products": [

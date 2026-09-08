@@ -284,8 +284,20 @@ describe("catalog.json: prices", () => {
 });
 
 describe("catalog.json: series", () => {
-  it("has the ten series in the owner's order", () => {
-    expect(catalog.series.map((s) => s.seriesCode)).toEqual(["X", "M", "L", "SW", "LNS", "EL", "EF", "HDRF", "FP", "SVC"]);
+  it("has the eleven series in the owner's order", () => {
+    expect(catalog.series.map((s) => s.seriesCode)).toEqual([
+      "X",
+      "M",
+      "L",
+      "SW",
+      "LNS",
+      "EL",
+      "EF",
+      "HDRF",
+      "FP",
+      "FPT",
+      "SVC",
+    ]);
     expect(catalog.series.find((s) => s.seriesCode === "L")?.maxDiscountPct).toBe(10);
   });
 

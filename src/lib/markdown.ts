@@ -1,8 +1,8 @@
-// Minimal, pure markdown -> HTML renderer for trusted admin content
-// (ContentBlock.body — written by admins in the settings/content editor, never
-// by an end user). Deliberately NOT a general-purpose markdown parser: it
-// only understands the handful of constructs prisma/seed-data/content-blocks.json
-// actually uses — paragraphs, **bold**, *italic*, #/##/### headings, "- "
+// Minimal, pure markdown -> HTML renderer for trusted admin content, never
+// for anything an end user typed. Deliberately NOT a general-purpose markdown
+// parser: it only understands the handful of constructs the legal text was
+// originally authored in and that `renderStoredRichText` still has to read
+// back — paragraphs, **bold**, *italic*, #/##/### headings, "- "
 // bullet lists (one level of nesting via a 2+ space indent), and line breaks
 // within a paragraph. No `@/lib/db` or `next/*` imports, same reasoning as
 // src/lib/sheet-data.ts: a plain `vitest run` of this file must never need

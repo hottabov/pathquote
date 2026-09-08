@@ -40,10 +40,6 @@ export interface CatalogItem {
   kind?: ProductKind;
   form?: ProductionForm | null;
   specs?: ProductSpecs | null;
-  /** `Product.contentBlockKey` / `Option.contentBlockKey`: the quotation
-   * content block (prisma/seed-data/content-blocks.json key) that describes
-   * this row, or null for none. Absent = null. */
-  contentBlockKey?: string | null;
 }
 
 export interface CatalogSeries {
@@ -171,19 +167,18 @@ export interface ProductPayload {
   form: ProductionForm | null;
   /** `null` = no specs (the column stays NULL). */
   specs: ProductSpecs | null;
-  contentBlockKey: string | null;
 }
 
 /**
- * Product identity for a catalog entry: its explicit `kind`/`form`/`specs`/
- * `contentBlockKey`. The file is the only source -- an entry without a
- * `kind` is a broken file, not a row to guess at, so this throws naming the
- * code. Pure, so a fresh seed and the tests agree.
+ * Product identity for a catalog entry: its explicit `kind`/`form`/`specs`.
+ * The file is the only source -- an entry without a `kind` is a broken file,
+ * not a row to guess at, so this throws naming the code. Pure, so a fresh
+ * seed and the tests agree.
  */
 export function resolveProductIdentity(
   p: CatalogItem,
   seriesCode: string
-): { kind: ProductKind; form: ProductionForm | null; specs: ProductSpecs | null; contentBlockKey: string | null } {
+): { kind: ProductKind; form: ProductionForm | null; specs: ProductSpecs | null } {
   if (!p.kind) {
     throw new Error(`seed: product ${p.code} (series ${seriesCode}) has no kind in catalog.json`);
   }
@@ -191,7 +186,6 @@ export function resolveProductIdentity(
     kind: p.kind,
     form: p.form ?? null,
     specs: p.specs && Object.keys(p.specs).length ? p.specs : null,
-    contentBlockKey: p.contentBlockKey ?? null,
   };
 }
 
@@ -224,27 +218,24 @@ export interface OptionPayload {
   /** Product code (current, as in catalog.json) -- resolved to an id by the seed. */
   parentProductCode: string | null;
   unitLengthM: number | null;
-  contentBlockKey: string | null;
 }
 
 /**
  * Option identity for a catalog entry: its explicit `role`/
- * `parentProductCode`/`unitLengthM`/`contentBlockKey`. Same rule as
- * `resolveProductIdentity`, keyed on the presence of the `role` key (null
- * is a valid role; a missing key is a broken file and throws).
+ * `parentProductCode`/`unitLengthM`. Same rule as `resolveProductIdentity`,
+ * keyed on the presence of the `role` key (null is a valid role; a missing
+ * key is a broken file and throws).
  */
 export function resolveOptionIdentity(o: CatalogOption): {
   role: OptionRole | null;
   parentProductCode: string | null;
   unitLengthM: number | null;
-  contentBlockKey: string | null;
 } {
   if (!("role" in o)) throw new Error(`seed: option ${o.code} has no role key in catalog.json`);
   return {
     role: o.role ?? null,
     parentProductCode: o.parentProductCode ?? null,
     unitLengthM: o.unitLengthM ?? null,
-    contentBlockKey: o.contentBlockKey ?? null,
   };
 }
 
@@ -399,91 +390,73 @@ export function missingUsPriceCodes(catalog: Catalog, usPrices: UsPricesJson): s
   return allCodes.filter((code) => !pricedCodes.has(code)).sort((a, b) => a.localeCompare(b, "en"));
 }
 
-// --- content blocks ------------------------------------------------------
+// --- quote documents ------------------------------------------------------
 
-/** One entry of prisma/seed-data/content-blocks.json's `blocks` array. */
-export interface ContentBlockJsonItem {
+/** One entry of prisma/seed-data/quote-documents.json's `documents` array. */
+export interface QuoteDocumentJsonItem {
+  /** `QuoteDocument.key` -- "terms", "conditions", "rsp". */
   key: string;
+  /** The heading printed above the document on a quote. */
   title: string;
-  sortOrder: number;
-  body: string;
-}
-
-/** Shape of prisma/seed-data/content-blocks.json. `placeholders` maps a
- * `{{token}}` name (as it appears in one or more block bodies) to a
- * human-readable description — consumed directly by the admin editor's
- * placeholder hint panel, not by this mapper. */
-export interface ContentBlocksJson {
-  blocks: ContentBlockJsonItem[];
-  placeholders: Record<string, string>;
-}
-
-export interface ContentBlockPayload {
-  key: string;
-  title: string;
+  /** HTML, sanitizer-stable, and it may carry document-scope `{{tokens}}`. */
   body: string;
   sortOrder: number;
+  includedByDefault: boolean;
 }
 
 /**
- * Pure passthrough mapping from content-blocks.json's `blocks` array to the
- * flat payload prisma/seed.ts writes as each key's regionId:null default row.
- * No validation here (that's the admin editor's zod schema's job for
- * *edits*) — this just shapes the seed data 1:1, kept as its own function so
- * it's unit-testable and so the IO shell (prisma/seed.ts) never touches the
- * JSON's field names directly.
+ * Shape of prisma/seed-data/quote-documents.json.
+ *
+ * Every entry is a GLOBAL default (`regionId: null`). A region's own version
+ * of a document is a copy an admin makes in the Documents section, not seed
+ * data: it is the whole point of a region version that it says something the
+ * default does not, and there is nothing about "Mexico's Terms" a fresh
+ * database could know.
+ *
+ * The bodies were generated, not retyped: `scripts/lib/quote-document-bodies.ts`
+ * (still here, still unit-tested in tests/quote-document-bodies.test.ts) run
+ * over the 23 `ContentBlock` rows that used to hold this text, exactly as the
+ * one-shot migration ran it against the live database -- so a fresh database
+ * and a migrated one print the same Terms.
+ *
+ * One edit was made to the assembled text: the Terms RSP clause read "2nd
+ * Year: {{rspYear2Cost}} + GST", and `{{rspYear2Cost}}` is a token no document
+ * scope fills and never did. Carrying it cost more than the missing figure.
+ * `findUnknownTokens` is what the editor's save validator runs, so every fresh
+ * database seeded a Terms document that silently lost that line on every quote
+ * AND could not be saved at all — an admin who opened it and pressed Save was
+ * rejected over a token they had never typed and had no way to find. It now
+ * reads "2nd Year: quoted separately.", which carries no token; the figure
+ * returns with the RSP pricing work, which is out of scope for this
+ * workstream (D10, and the spec's Out of scope section). Nothing else in the
+ * assembled bodies was touched, and tests/seed-mapping.test.ts asserts that
+ * no seeded body carries an unfillable token again.
  */
-export function mapContentBlocks(json: ContentBlocksJson): ContentBlockPayload[] {
-  return json.blocks.map((b) => ({
-    key: b.key,
-    title: b.title,
-    body: b.body,
-    sortOrder: b.sortOrder,
+export interface QuoteDocumentsJson {
+  documents: QuoteDocumentJsonItem[];
+}
+
+export interface QuoteDocumentPayload {
+  key: string;
+  title: string;
+  body: string;
+  sortOrder: number;
+  includedByDefault: boolean;
+}
+
+/**
+ * Pure passthrough from quote-documents.json's `documents` array to the flat
+ * payload prisma/seed.ts writes as each key's `regionId: null` default row.
+ * No validation (that is the admin editor's zod schema's job, for *edits*) --
+ * this shapes the seed data 1:1, kept as its own function so it is unit
+ * testable and so the IO shell never touches the JSON's field names directly.
+ */
+export function mapQuoteDocuments(json: QuoteDocumentsJson): QuoteDocumentPayload[] {
+  return json.documents.map((d) => ({
+    key: d.key,
+    title: d.title,
+    body: d.body,
+    sortOrder: d.sortOrder,
+    includedByDefault: d.includedByDefault,
   }));
-}
-
-// --- targeted content-block body migrations -------------------------------
-
-/**
- * Exact body of the "machine.m-series" content block as seeded before commit
- * 315e089 ("fix: quotation renders heading and all options for every item
- * section"), which removed a duplicate inline "## Pathfinder {{model}}
- * Cutting System" heading from the body — the quotation renderer already
- * prints its own heading from the block's `title`, so the old body produced
- * a duplicate heading on the rendered quotation. Captured verbatim via
- * `git show 8d4c4de:prisma/seed-data/content-blocks.json` (the commit
- * immediately before 315e089). prisma/seed.ts's normal content-block seeding
- * never overwrites an existing row (an admin's own edits always win), so any
- * DB seeded before 315e089 is stuck showing the duplicate heading forever
- * without this targeted migration.
- */
-export const M_SERIES_OLD_BODY =
-  "## Pathfinder {{model}} Cutting System\n\nModel {{model}} conveyorised computer controlled cutting system. Maximum compressed cutting height {{cutHeightCm}}cm. Maximum cutting width {{cutWidthCm}}cm.\n\n- Conveyorised precision cutting table\n- High efficiency vacuum generator\n- Vacuum VSD (Variable Speed Device) - computer controlled vacuum level for optimising cut quality and reducing power consumption.\n- VRB (Vacuum Recovery Blind) - computer controlled blind that reduces vacuum loss and power consumption.\n- Unloading conveyor\n- Roll holder (used for plastic overlay)\n- Operator console with utility drawer\n- Touch screen with wireless keyboard and mouse\n\n### Software\n\n- Windows 10™ operating system\n- PathCut™ cutting software V12.x (graphic user interface)\n\n### Accessories\n\n- Operator manual\n- Operator tool kit\n- 1 roll plastic overlay\n- 1 roll perforated paper\n- 10 knives\n- 1 diamond sharpening stone\n\n**Price: {{price}}**";
-
-/**
- * Content-block keys with a targeted, exact-match body migration for
- * existing DBs — distinct from the seed's normal "never touch an existing
- * row" rule for content blocks (see prisma/seed.ts's content-blocks step): a
- * key listed here gets its title+body force-updated by prisma/seed.ts's
- * migration step, but only when the existing row's body is byte-for-byte
- * `oldBody` (see `shouldMigrateBlock`) — i.e. still exactly what an older
- * version of the seed itself put there, never touched by an admin. Add a new
- * entry here (and nowhere else — prisma/seed.ts's migration loop iterates
- * this map generically) whenever a future seed-data body/title edit needs
- * the same safe, targeted forward-fix treatment.
- */
-export const BLOCK_BODY_MIGRATIONS: Record<string, { oldBody: string }> = {
-  "machine.m-series": { oldBody: M_SERIES_OLD_BODY },
-};
-
-/**
- * True when `existingBody` (a `ContentBlock` row's current body, read from
- * the DB) is exactly `oldBody` (a migration's hardcoded pre-change string,
- * see `BLOCK_BODY_MIGRATIONS`) — i.e. safe to force-update to the new
- * seed-data title/body without clobbering an admin's own edit. Any
- * difference at all (an admin edit, or a row already migrated to the new
- * body) means this returns false and the row must be left alone.
- */
-export function shouldMigrateBlock(existingBody: string, oldBody: string): boolean {
-  return existingBody === oldBody;
 }

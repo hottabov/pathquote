@@ -48,7 +48,7 @@ describe("activeSettingsNavHref", () => {
     for (const path of [
       "/settings/preferences",
       "/settings/users",
-      "/settings/content",
+      "/settings/option-conflict-groups",
       "/settings/regions",
       "/settings/import-export",
       "/settings/support",
@@ -71,13 +71,22 @@ describe("activeSettingsNavHref", () => {
     expect(activeSettingsNavHref("/settings/regions/AU/edit")).toBe("/settings/regions");
   });
 
-  it("honours activePrefixes — conflict groups light up Catalogue", () => {
-    expect(activeSettingsNavHref("/settings/option-conflict-groups")).toBe("/settings/content");
-    expect(activeSettingsNavHref("/settings/option-conflict-groups/g1")).toBe("/settings/content");
+  it("keeps Catalogue active on a conflict group's own nested route", () => {
+    expect(activeSettingsNavHref("/settings/option-conflict-groups/g1")).toBe("/settings/option-conflict-groups");
   });
 
   it("honours activePrefixes — spec diagrams also light up Catalogue", () => {
-    expect(activeSettingsNavHref("/settings/spec-images")).toBe("/settings/content");
+    expect(activeSettingsNavHref("/settings/spec-images")).toBe("/settings/option-conflict-groups");
+  });
+
+  it("has no nav item left pointing at the deleted /settings/content route", () => {
+    // z37_drop_content_block deleted that route with the ContentBlock table.
+    // A nav entry surviving it would 404 every admin who clicked Catalogue.
+    for (const item of SETTINGS_NAV_ITEMS) {
+      expect(item.href).not.toBe("/settings/content");
+      expect(item.activePrefixes ?? []).not.toContain("/settings/content");
+    }
+    expect(activeSettingsNavHref("/settings/content")).toBe("/settings");
   });
 
   it("only matches at a segment boundary, not mid-segment", () => {

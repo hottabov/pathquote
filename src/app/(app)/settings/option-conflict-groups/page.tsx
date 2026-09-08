@@ -21,9 +21,8 @@ import { cn } from "@/lib/utils";
 export const metadata: Metadata = { title: "Option conflict groups" };
 export const dynamic = "force-dynamic";
 
-// See src/app/(app)/settings/content/page.tsx for why this is notFound()
-// rather than a redirect: a Manager hitting a stale bookmark shouldn't be
-// told the page exists at all.
+// notFound() rather than a redirect: a Manager hitting a stale bookmark
+// shouldn't be told the page exists at all.
 export default async function ConflictGroupsPage() {
   const session = await auth();
   if (!isAdminRole(session?.user?.role)) notFound();

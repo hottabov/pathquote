@@ -28,7 +28,6 @@ export const PRODUCT_COLUMNS = [
   "kind",
   "form",
   "specs",
-  "contentBlockKey",
   "isCredit",
   "noCommission",
   "active",
@@ -46,7 +45,6 @@ export const OPTION_COLUMNS = [
   "unitLengthM",
   "compatSeries",
   "compatProducts",
-  "contentBlockKey",
   "noCommission",
   "active",
   "sortOrder",
@@ -69,6 +67,33 @@ export const PRICE_COLUMNS = [
   "amount",
   "needsReview",
 ] as const;
+
+/**
+ * Headers a workbook may still carry that the contract above no longer knows,
+ * and that the import must ignore rather than reject.
+ *
+ * `readHeader` treats an unrecognised header as an error, on purpose -- it is
+ * almost always a typo that would otherwise drop a whole column of edits on
+ * the floor. But a column that used to be part of the contract is not a typo:
+ * an export somebody took last week, and is halfway through editing on their
+ * desktop right now, carries `contentBlockKey` on both data sheets because
+ * this file listed it then. Failing their upload with `Unknown column
+ * "contentBlockKey"` would cost them the whole file's worth of work for a
+ * column whose values nothing reads any more.
+ *
+ * So these are matched BY NAME, silently skipped, and never written back --
+ * re-exporting produces the current contract, and the stale column disappears
+ * from that copy of the workbook the first time it is round-tripped.
+ *
+ * `contentBlockKey` (Product and Option): dropped with the ContentBlock table
+ * itself in migration z37_drop_content_block. Category copy lives on the
+ * category (`Series.quoteDescription`) and legal text in `QuoteDocument`, so
+ * the column named a row in a table that no longer exists.
+ *
+ * Entries here are permanent-ish, not a migration step: keep one until it is
+ * safe to assume nobody holds a workbook that old.
+ */
+export const RETIRED_COLUMNS = ["contentBlockKey"] as const;
 
 export type ProductColumn = (typeof PRODUCT_COLUMNS)[number];
 export type OptionColumn = (typeof OPTION_COLUMNS)[number];

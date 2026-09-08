@@ -1,5 +1,5 @@
 // Server-only: template loading + Gotenberg conversion for production forms
-// (src/app/api/documents/[documentId]/production-forms/route.ts). Kept
+// (src/app/api/quotes/[documentId]/production-forms/route.ts). Kept
 // separate from the route so each step is independently testable, matching
 // the split src/lib/pdf.ts makes for the document PDF pipeline.
 import { readFileSync } from "node:fs";

@@ -12,8 +12,8 @@ import type { ActionResult } from "@/lib/actions/users";
  * first one). No confirmation field per the spec ("confirm-not-needed"): a
  * typo just means the admin resets it again, and demanding it be typed
  * twice adds friction for a low-stakes admin action. Uses the
- * transition+toast pattern from `ContentBlockForm`
- * (src/components/content/content-block-form.tsx) rather than
+ * transition+toast pattern from `QuoteDocumentForm`
+ * (src/components/quote-documents/quote-document-form.tsx) rather than
  * `useActionState`, since success here doesn't navigate away and needs an
  * explicit confirmation the way a silent revalidate wouldn't provide — the
  * field is also cleared on success so the just-set password doesn't linger

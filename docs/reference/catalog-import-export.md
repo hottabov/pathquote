@@ -39,9 +39,15 @@ tests; the actions are a thin shell around it.
 | Sheet | One row per | Columns |
 |---|---|---|
 | `README` | -- | The rules below plus the generation timestamp. Ignored on import. |
-| `Products` | product | `id`, `series`, `code`, `name`, `description`, `kind`, `form`, `specs`, `contentBlockKey`, `isCredit`, `noCommission`, `active`, `sortOrder`, `imageUrl` |
-| `Options` | option | `id`, `code`, `name`, `shortDescription`, `role`, `parentProduct`, `unitLengthM`, `compatSeries`, `compatProducts`, `contentBlockKey`, `noCommission`, `active`, `sortOrder`, `imageUrl`, `attributeSchema` |
+| `Products` | product | `id`, `series`, `code`, `name`, `description`, `kind`, `form`, `specs`, `isCredit`, `noCommission`, `active`, `sortOrder`, `imageUrl` |
+| `Options` | option | `id`, `code`, `name`, `shortDescription`, `role`, `parentProduct`, `unitLengthM`, `compatSeries`, `compatProducts`, `noCommission`, `active`, `sortOrder`, `imageUrl`, `attributeSchema` |
 | `Prices` | item x region | `itemType` (product\|option), `itemId`, `code`, `region`, `currency`, `amount`, `needsReview` |
+
+Both sheets carried a `contentBlockKey` column until migration
+z37_drop_content_block dropped it with the `ContentBlock` table. A workbook
+exported before then still imports: the header is skipped by name
+(`RETIRED_COLUMNS` in `src/lib/catalog-xlsx/columns.ts`) rather than rejected
+as unknown, and re-exporting drops it from that copy.
 
 Products are ordered by series `sortOrder`, then product `sortOrder`, then code; options by
 code; prices by item type, code, region. `series`, `parentProduct`, `compatSeries`,

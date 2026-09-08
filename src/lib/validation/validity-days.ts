@@ -23,14 +23,19 @@ export type ValidityDaysMessages = {
   tooLarge?: string;
 };
 
-/** A whole number of days from 1 to 365 inclusive, coerced from the string a
- * `FormData` field always yields. The upper bound is a year rather than the
- * 30-day norm because a customer's capex approval can genuinely take six
- * weeks; the UI warns above 30 rather than blocking. */
-export function validityDayCountSchema(messages: ValidityDaysMessages = {}) {
+/** A whole number of days from 1 to `max` inclusive (default 365), coerced
+ * from the string a `FormData` field always yields. The default upper bound
+ * is a year rather than the 30-day norm because a customer's capex approval
+ * can genuinely take six weeks; the UI warns above 30 rather than blocking.
+ * `max` exists so a caller whose question isn't "how long should this
+ * document stay valid" — see `signingLinkValidityDaysSchema`,
+ * src/lib/validation/settings.ts, which caps a signing link's *exposure
+ * window* at 90 rather than reusing this 365-day *validity* ceiling — can
+ * override it without forking the whole builder. */
+export function validityDayCountSchema(messages: ValidityDaysMessages = {}, max = 365) {
   return z.coerce
     .number({ error: messages.invalidType })
     .int(messages.notInteger)
     .min(1, messages.tooSmall)
-    .max(365, messages.tooLarge);
+    .max(max, messages.tooLarge);
 }

@@ -33,6 +33,10 @@ const ALLOWLIST = new Map<string, string>([
     "src/lib/queries/industries.ts",
     "countCompaniesUsingIndustry counts across every owner on purpose — it warns an admin how wide a shared-row rename reaches. Its caller shows the number to admins only; see the client card.",
   ],
+  [
+    "src/lib/actions/signing-client.ts",
+    "Unauthenticated client actions reached only via a signing token — there is no session to call documentWhereForUser with. Every db.document read/write here is instead re-scoped by loadLiveRequest, which re-resolves the token through getDocumentForSigning and resolveLinkState before any of it runs (see this file's own header comment). The token is the authorization boundary, not a User.",
+  ],
 ]);
 
 function walk(dir: string): string[] {

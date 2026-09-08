@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import path from "path";
 import {
   resolveUploadPath,
+  resolveSignedPdfPath,
   IMAGE_URL_PATTERN,
   uploadsDir,
   sniffImageType,
@@ -58,6 +59,27 @@ describe("resolveUploadPath", () => {
 
   it("rejects an empty string", () => {
     expect(resolveUploadPath("")).toBeNull();
+  });
+});
+
+describe("resolveSignedPdfPath", () => {
+  const VALID_PDF = "a1b2c3d4-e5f6-4789-a0b1-c2d3e4f56789.pdf";
+
+  it("resolves a valid uuid.pdf under uploadsDir()", () => {
+    expect(resolveSignedPdfPath(VALID_PDF)).toBe(path.resolve(uploadsDir(), VALID_PDF));
+  });
+
+  it("rejects a traversal attempt", () => {
+    expect(resolveSignedPdfPath("../../etc/passwd")).toBeNull();
+    expect(resolveSignedPdfPath("../a1b2c3d4-e5f6-4789-a0b1-c2d3e4f56789.pdf")).toBeNull();
+  });
+
+  it("rejects a non-pdf extension", () => {
+    expect(resolveSignedPdfPath("a1b2c3d4-e5f6-4789-a0b1-c2d3e4f56789.png")).toBeNull();
+  });
+
+  it("rejects a name that is not a uuid", () => {
+    expect(resolveSignedPdfPath("quote.pdf")).toBeNull();
   });
 });
 

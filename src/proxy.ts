@@ -6,7 +6,11 @@ import { auth } from "@/auth";
 // `runtime` config option was removed and throws if set), so it's safe to
 // import `auth` here directly — including its Prisma-backed adapter,
 // Credentials, and Nodemailer providers.
-const PUBLIC_PATHS = ["/login", "/api/auth", "/api/health"];
+// "/sign" is the client-facing signing route: an unauthenticated visitor
+// holding a token, by design. Nothing under it may call auth() or import
+// from the (app) route group -- it is a separate public entrance to the
+// application, and the token is its only credential.
+const PUBLIC_PATHS = ["/login", "/api/auth", "/api/health", "/sign"];
 
 function isPublicPath(pathname: string) {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));

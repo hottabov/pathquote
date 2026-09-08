@@ -13,7 +13,7 @@ import { setDocumentNotes } from "@/lib/actions/documents";
  * The builder's "Notes" section (owner: freeform remarks on a document,
  * carried through to both renderers — the quotation sheet and the plain
  * document sheet, both via `renderStoredRichText`) — a smaller sibling of
- * `ContentBlockForm`'s `RichTextEditor` (WYSIWYG, formatted text shows
+ * `QuoteDocumentForm`'s `RichTextEditor` (WYSIWYG, formatted text shows
  * immediately, no separate preview pane) but without a title field or a
  * placeholder sidebar: just the editor, autosaved via `useAutosave`
  * (no Save button — see src/lib/use-autosave.ts) which calls
@@ -28,7 +28,7 @@ import { setDocumentNotes } from "@/lib/actions/documents";
  * Read-only (a FINAL document, or the caller otherwise passing `readOnly`)
  * renders `notesHtml` — the same `renderStoredRichText(notes)` output as
  * before, only computed by the server page that renders this component (see
- * src/app/(app)/documents/[documentId]/page.tsx) rather than here. The
+ * src/app/(app)/quotes/[documentId]/page.tsx) rather than here. The
  * sanitizer is still mandatory: the markup goes straight into
  * `dangerouslySetInnerHTML` and `notes` is a raw column value that may
  * predate the write-boundary allowlist, so a legacy row's stored

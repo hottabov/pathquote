@@ -11,6 +11,10 @@ import { validateFinalizable, type FinalizableDocument } from "@/lib/validation/
 import { recalcDocument } from "@/lib/documents/recalc";
 import { allocateNumber, formatDocNumber } from "@/lib/numbering";
 import { getQuoteValidityDays } from "@/lib/queries/settings";
+import { getDocumentForBuilder } from "@/lib/queries/documents";
+import { getQuoteDocumentsForRegion } from "@/lib/queries/quote-documents";
+import { buildQuotationData, type DocumentsSnapshot } from "@/lib/quotation-data";
+import { canUnfinalize, signatureRolesClearedBy } from "@/lib/signing/state";
 import { NOT_FOUND_ERROR } from "./_shared";
 
 /** Thrown inside `finalizeDocument`'s `$transaction` to roll it back when
@@ -45,6 +49,12 @@ export { validateFinalizable, type FinalizableDocument };
  * rendering never has to query `Region` again (a later admin edit to the
  * region's bank details/logo/etc. must never retroactively change an
  * already-issued document).
+ *
+ * A `documentsSnapshot` is frozen in the same write, for the same reason one
+ * step further out: the legal text itself. Fixing a typo in General
+ * Conditions used to rewrite the PDF of every quote already signed. Both
+ * snapshots, the number and the three commission columns land in one
+ * `updateMany`, so a quote can never be FINAL without them.
  */
 export async function finalizeDocument(documentId: string): Promise<FinalizeResult> {
   const session = await requireSession();
@@ -200,6 +210,70 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
         resolvedNumber = formatDocNumber(document.region.code, year, counter);
       }
 
+      // The issue date is written below and also feeds `{{validityDate}}` in
+      // the documents frozen just after, so it is resolved once here rather
+      // than inline in the update — two `new Date()` calls would put a
+      // "valid until" in the frozen Terms that the document's own issue date
+      // disagrees with by a millisecond's worth of rounding.
+      const issuedAt = new Date();
+
+      // Every legal document and every item's category copy, substituted and
+      // rendered exactly as the preview renders them — because it IS the
+      // preview: `buildQuotationData` is the only thing in this app that
+      // knows how to turn a document plus its region's `QuoteDocument` rows
+      // into printed text, and a second implementation here would be two
+      // definitions of what this quote says the day it stops being editable.
+      //
+      // Both reads take `tx`, so they see the totals `recalcDocument` wrote
+      // moments ago inside this transaction — item prices feed `{{price}}` in
+      // a category's copy, and a snapshot built from the pre-recalc row would
+      // freeze a price the document no longer adds up to.
+      //
+      // Four fields are overridden on the way in, because the row this reads
+      // is still the DRAFT and the snapshot must describe the FINAL quote:
+      // the number and issue date the update below is about to write (both
+      // are document tokens), the resolved `validityDays` behind
+      // `{{validityDate}}`, and the `entitySnapshot` behind `{{bankDetails}}`.
+      // `documentsSnapshot` is forced to null so a re-finalize renders live
+      // text rather than replaying the snapshot the previous finalize left in
+      // the column — that is what makes an admin's unfinalize/edit/finalize
+      // cycle pick up the edit.
+      const forSnapshot = await getDocumentForBuilder(session.user, document.id, tx);
+      if (!forSnapshot) throw new NotFinalizableError(NOT_FOUND_ERROR);
+      const quoteDocuments = await getQuoteDocumentsForRegion(forSnapshot.regionId, tx);
+      const quotation = buildQuotationData(
+        {
+          ...forSnapshot,
+          status: "FINAL",
+          number: resolvedNumber,
+          issueDate: issuedAt,
+          validityDays,
+          entitySnapshot,
+          documentsSnapshot: null,
+        },
+        quoteDocuments
+      );
+
+      // Every item gets an entry, including one whose category has no copy or
+      // whose copy was stripped to nothing (`""` — which `buildQuotationData`
+      // reads back as "this item printed nothing"). Freezing only the items
+      // that printed something would leave the rest falling back to live copy,
+      // so writing a category's first-ever quote description would make it
+      // appear on a quote signed before it existed — the same leak the
+      // snapshot exists to close. A *missing* entry still falls back to live,
+      // deliberately, for a snapshot written by an older version of this code.
+      const documentsSnapshot: DocumentsSnapshot = {
+        version: 1,
+        documents: quotation.documents.map((doc) => ({
+          key: doc.key,
+          title: doc.title,
+          bodyHtml: doc.bodyHtml,
+        })),
+        itemCopyHtml: Object.fromEntries(
+          quotation.machineSections.map((section) => [section.itemId, section.titleBlockHtml ?? ""])
+        ),
+      };
+
       // Guard against a concurrent finalize (e.g. a double-click, or two
       // requests racing) with a status-scoped `updateMany` instead of an
       // unconditional `update`: if another request already flipped this
@@ -211,9 +285,10 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
         data: {
           status: "FINAL",
           number: resolvedNumber,
-          issueDate: new Date(),
+          issueDate: issuedAt,
           validityDays,
           entitySnapshot: entitySnapshot as Prisma.InputJsonValue,
+          documentsSnapshot: documentsSnapshot as Prisma.InputJsonValue,
           ...commissionFields,
         },
       });
@@ -250,7 +325,32 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
  * builder immediately falls back to computing commission live again,
  * regardless of what's still sitting in those columns — they're simply
  * overwritten with a fresh computation the next time `finalizeDocument`
- * runs (same as `entitySnapshot`), never read in between.
+ * runs (same as `entitySnapshot` and `documentsSnapshot`), never read in
+ * between.
+ *
+ * `documentsSnapshot` is the deliberate exception, and is CLEARED here. The
+ * asymmetry is the point: `number`, `entitySnapshot` and the `commission*`
+ * columns describe the IDENTITY of the issued quote and are reused when it is
+ * re-finalized, whereas the snapshot describes what it PRINTED — and printing
+ * is exactly what reopening a quote is meant to change. `buildQuotationData`
+ * prefers a parsed snapshot whatever the status, so leaving one behind made a
+ * reopened quote uneditable in every way that matters:
+ *
+ *  - an admin fixing a typo in General Conditions saw no change in the
+ *    preview or the draft PDF, because the frozen bodies still won;
+ *  - worse with money — a salesperson applying a discount got a page showing
+ *    the PRE-discount figure, because `titleBlockHtml` came from the frozen
+ *    `itemCopyHtml` with the old `{{price}}` baked in while `hasInlinePrice`
+ *    was computed from the live copy, which then suppressed the live
+ *    `sectionPrice` beside it;
+ *  - the D6 stripped-token banner went quiet, since nothing is reported for a
+ *    frozen item.
+ *
+ * Nothing is lost by clearing it: `finalizeDocument` rebuilds the snapshot
+ * from live text on every finalize, so the re-finalize that closes this cycle
+ * writes a fresh one. D7's guarantee ("legal text is frozen into the quote at
+ * FINAL") is untouched — the quote is DRAFT at this moment, and a DRAFT has
+ * never been the thing that must not change.
  */
 export async function unfinalizeDocument(documentId: string): Promise<UnfinalizeResult> {
   const session = await requireAdmin();
@@ -263,9 +363,58 @@ export async function unfinalizeDocument(documentId: string): Promise<Unfinalize
   });
   if (!document) return { error: NOT_FOUND_ERROR };
 
-  await db.document.update({
-    where: { id: document.id },
-    data: { status: "DRAFT" },
+  // The one new lock this feature adds: a SIGNED quote cannot be reopened.
+  // Every other immutability guarantee already comes from the `status:
+  // "DRAFT"` clause every editing action carries (see
+  // src/lib/actions/documents/_internal.ts), which is what makes FINAL
+  // immutable today.
+  const verdict = canUnfinalize(document.signingStatus);
+  if (!verdict.ok) return { error: verdict.reason };
+
+  // Reopening an issued quote is the most consequential thing an admin can
+  // do to one: it un-issues a numbered document, and the next finalize
+  // overwrites the entity snapshot, the documents snapshot and the
+  // commission columns with whatever is true then. Logged for the same
+  // reason — and in the same shape — as the two admin overrides
+  // `finalizeDocument` logs above: there is no admin-activity report to
+  // write it into yet (D12 in
+  // docs/superpowers/specs/2026-09-07-quote-documentation-design.md decides
+  // deliberately against an audit table for now), so a grep-able server-log
+  // line naming who did it is the record. Prefix: "[finalize] unfinalize".
+  console.warn("[finalize] unfinalize: FINAL document returned to DRAFT", {
+    documentId: document.id,
+    documentNumber: document.number,
+    adminUserId: session.user.id,
+  });
+
+  // The content is about to become editable again, so everything that
+  // referenced it stops being true: outstanding links point at a quote that
+  // is no longer the one that was sent, and the author signed text that is
+  // about to change.
+  await db.$transaction(async (tx) => {
+    await tx.signingRequest.updateMany({
+      where: { documentId: document.id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    // Both roles, not just the author: the text is about to change, so
+    // neither party signed what will exist afterwards. Which roles an event
+    // invalidates is decided by `signatureRolesClearedBy` (src/lib/signing/state.ts),
+    // beside the other transition rules, rather than being re-derived here
+    // and in `revokeSigningLink` (src/lib/actions/signing.ts).
+    await tx.signature.deleteMany({
+      where: { documentId: document.id, role: { in: signatureRolesClearedBy("unfinalize") } },
+    });
+    await tx.document.update({
+      where: { id: document.id },
+      // `documentsSnapshot` cleared — see the doc comment above: the frozen
+      // bodies would otherwise keep winning over the live text this quote was
+      // reopened to edit. `Prisma.DbNull` rather than `null`, which a
+      // `Json?` column does not accept: it must be a SQL NULL, the one thing
+      // `readDocumentsSnapshot` reads back as "no snapshot". Cleared in the
+      // same write that flips the status, so a quote is never DRAFT while
+      // still carrying what it printed.
+      data: { status: "DRAFT", signingStatus: "NOT_SENT", documentsSnapshot: Prisma.DbNull },
+    });
   });
 
   revalidateDocumentList();

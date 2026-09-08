@@ -26,7 +26,7 @@ export const SHEET_CSS = `
     background: #ffffff;
     color: #1a1a1a;
     font-family: Arial, Helvetica, sans-serif;
-    font-size: 11px;
+    font-size: 14px;
     line-height: 1.4;
     box-sizing: border-box;
   }
@@ -36,7 +36,10 @@ export const SHEET_CSS = `
   .pq-content {
     position: relative;
     z-index: 1;
-    padding: 15mm;
+    /* Kept equal to the @page{margin:...} rule in src/lib/pdf.ts -- see
+       that file's comment on renderQuotationHtml for why the printed page
+       and this in-app preview only match because the two move together. */
+    padding: 12mm;
   }
   .pq-watermark {
     position: absolute;
@@ -335,7 +338,7 @@ export const SHEET_CSS = `
   .pq-option-desc {
     margin-top: 2px;
     color: #666666;
-    font-size: 9.5px;
+    font-size: 11px;
   }
   .pq-option-desc.pq-block-body p {
     margin: 0 0 4px 0;
@@ -399,10 +402,6 @@ export const SHEET_CSS = `
     page-break-after: avoid;
     break-after: avoid;
   }
-  .pq-conditions-section .pq-block-body {
-    font-size: 10px;
-    color: #444444;
-  }
   .pq-block-body {
     color: #333333;
   }
@@ -411,6 +410,19 @@ export const SHEET_CSS = `
   }
   .pq-block-body p:last-child {
     margin-bottom: 0;
+  }
+  /* Legal/administrative prose (owner: Terms, General Conditions and RSP
+     should read smaller than product/equipment copy, which stays at the
+     14px .pq-sheet base). DocumentsSection (documents-section.tsx) is the
+     one component that renders every such document -- Terms, General
+     Conditions, RSP, and any admin-added one like a Data Processing
+     Agreement, all through the same "one body, one heading" markup -- so
+     this class is applied there, on the same element that already carries
+     .pq-block-body, rather than lowering .pq-block-body itself: that class
+     is shared with product/equipment/item descriptions (equipment-detail.tsx,
+     investment-summary.tsx), which must stay at 14px. */
+  .pq-legal-body {
+    font-size: 12px;
   }
   /* Top-level block heading (e.g. machine.m-series's "## Pathfinder {{model}}
      Cutting System", rsp.agreement's "## Pathfinder Remote Support Program")
@@ -446,11 +458,31 @@ export const SHEET_CSS = `
   .pq-block-body h3:first-child {
     margin-top: 0;
   }
-  .pq-block-body ul {
+  /* An ordered list shares every rule with a bullet one here. It needed none
+     before: the 14 General Conditions clauses were 14 separate blocks the
+     renderer numbered by array position, so a quote's only numbered list was
+     built out of headings. A document is one authored body now and its
+     clauses are an ordered list the author wrote in the editor, which without
+     this rule would print at the browser's default 40px indent — visibly out
+     of line with every bullet list beside it. */
+  .pq-block-body ul,
+  .pq-block-body ol {
     margin: 0 0 8px 0;
     padding-left: 18px;
   }
-  .pq-block-body ul:last-child {
+  .pq-block-body ul:last-child,
+  .pq-block-body ol:last-child {
+    margin-bottom: 0;
+  }
+  /* A legal clause runs to a paragraph or more, so its items need air
+     between them that a two-word bullet does not. Never breaking a clause
+     across a page keeps its number with its text. */
+  .pq-block-body ol > li {
+    margin-bottom: 6px;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .pq-block-body ol > li:last-child {
     margin-bottom: 0;
   }
   .pq-block-body strong {
@@ -546,7 +578,7 @@ export const SHEET_CSS = `
   }
   .pq-option-desc {
     color: #888888;
-    font-size: 9.5px;
+    font-size: 11px;
   }
   .pq-discount-row td {
     border-bottom: none;
@@ -601,28 +633,6 @@ export const SHEET_CSS = `
     font-weight: 700;
     color: #243478;
   }
-  .pq-rsp-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 14px;
-    page-break-inside: avoid;
-    break-inside: avoid;
-  }
-  .pq-rsp-table th {
-    text-align: left;
-    font-size: 9px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: #2b304f;
-    border-bottom: 2px solid #243478;
-    padding: 6px 4px;
-  }
-  .pq-rsp-table td {
-    padding: 6px 4px;
-    border-bottom: 1px solid #e4e4e4;
-    color: #333333;
-  }
   .pq-footer {
     margin-top: 28px;
     padding-top: 12px;
@@ -630,7 +640,7 @@ export const SHEET_CSS = `
     display: flex;
     justify-content: space-between;
     gap: 24px;
-    font-size: 10px;
+    font-size: 14px;
     color: #555555;
   }
   .pq-bank {
@@ -659,14 +669,48 @@ export const SHEET_CSS = `
   }
   .pq-sig-block {
     flex: 1;
+    /* A wide signature image could otherwise push this flex row past the
+       page -- flex's default min-width: auto lets a child's intrinsic size
+       win over "flex: 1", and .pq-sig-ink below is the same kind of flex
+       container, so it needs the same reset. */
+    min-width: 0;
+  }
+  .pq-sig-ink {
+    /* Fixed reservation, signed or not -- .pq-signatures carries
+       page-break-inside: avoid, so an unsigned quote must paginate exactly
+       the same whether or not this box ever gets a signature image. Raised
+       from 32px to 70px (owner: signed a real quote and found the
+       signature too small to read) -- .pq-sig-image's max-height matches,
+       so a signature image sits inside this reservation rather than
+       growing it. Every existing unsigned quote's footer is now ~38px
+       taller as a result, which can push .pq-signatures onto a new page
+       for a quote that only just fitted before. */
+    height: 70px;
+    display: flex;
+    align-items: flex-end;
+    min-width: 0;
+  }
+  .pq-sig-image {
+    max-height: 70px;
+    max-width: 100%;
+    object-fit: contain;
+    object-position: left bottom;
   }
   .pq-sig-line {
+    /* The 70px reservation itself lives on .pq-sig-ink above -- this rule
+       used to carry it directly (a bare "height: 32px") before a
+       signature image had anywhere to sit. */
     border-top: 1px solid #333333;
-    height: 32px;
   }
   .pq-sig-label {
     margin-top: 4px;
-    font-size: 10px;
+    font-size: 12px;
     color: #555555;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .pq-sig-meta {
+    color: #777777;
   }
 `;

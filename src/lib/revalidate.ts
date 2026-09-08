@@ -14,7 +14,7 @@
  * quietly force the minority — the loop in `setConflictGroupMembers`, the
  * detail-only write in `setCatalogVisibility` — to revalidate a page they
  * have no business touching. The pairs that *are* bundled below
- * (`revalidateCatalog`, `revalidateProduct`, `revalidateContentBlock`) are
+ * (`revalidateCatalog`, `revalidateProduct`, `revalidateQuoteDocument`) are
  * the ones where every existing call site wanted the whole set.
  */
 
@@ -25,14 +25,16 @@ export function revalidateHome(): void {
   revalidatePath("/");
 }
 
-// --- documents -------------------------------------------------------------
+// --- documents ---------------------------------------------------------
+// These name the **quotes** routes — `Document` is the quote model. The
+// legal documents on /documents have their own pair at the end of this file.
 
 export function revalidateDocumentList(): void {
-  revalidatePath("/documents");
+  revalidatePath("/quotes");
 }
 
 export function revalidateDocument(documentId: string): void {
-  revalidatePath(`/documents/${documentId}`);
+  revalidatePath(`/quotes/${documentId}`);
 }
 
 // --- clients ---------------------------------------------------------------
@@ -121,20 +123,30 @@ export function revalidateRegion(regionId: string): void {
   revalidatePath(`/settings/regions/${regionId}`);
 }
 
-/**
- * The content-block list and the editor for one block. The key is a
- * user-defined string that reaches the route as a path segment, so it is
- * encoded here — the one route in the app whose parameter is not an id.
- */
-export function revalidateContentBlock(key: string): void {
-  revalidatePath("/settings/content");
-  revalidatePath(`/settings/content/${encodeURIComponent(key)}`);
-}
-
 export function revalidateConflictGroupList(): void {
   revalidatePath("/settings/option-conflict-groups");
 }
 
 export function revalidateConflictGroup(groupId: string): void {
   revalidatePath(`/settings/option-conflict-groups/${groupId}`);
+}
+
+// --- quote documents ---------------------------------------------------
+// Terms, General Conditions, RSP, and whatever a region adds later — the
+// legal text a customer signs, edited as whole documents rather than the
+// ContentBlock fragments they used to be (see
+// docs/superpowers/plans/2026-09-07-quote-documents.md).
+
+export function revalidateQuoteDocumentList(): void {
+  revalidatePath("/documents");
+}
+
+/**
+ * The quote-document list and the editor for one document. The key is a
+ * user-defined string that reaches the route as a path segment, so it is
+ * encoded here — the one route in the app whose parameter is not an id.
+ */
+export function revalidateQuoteDocument(key: string): void {
+  revalidatePath("/documents");
+  revalidatePath(`/documents/${encodeURIComponent(key)}`);
 }

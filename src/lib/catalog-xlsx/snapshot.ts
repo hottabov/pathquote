@@ -26,7 +26,6 @@ export type ExportProduct = {
   kind: string;
   form: string | null;
   specs: unknown;
-  contentBlockKey: string | null;
   isCredit: boolean;
   noCommission: boolean;
   active: boolean;
@@ -47,7 +46,6 @@ export type ExportOption = {
   unitLengthM: string | number | null;
   compatSeries: string[];
   compatProducts: string[];
-  contentBlockKey: string | null;
   noCommission: boolean;
   active: boolean;
   sortOrder: number;

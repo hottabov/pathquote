@@ -42,6 +42,8 @@ export { createOption, updateOption, deleteOption } from "./catalog/options";
 
 export { updateProductImage, updateOptionImage, updateSeriesImage } from "./catalog/images";
 
+export { updateSeriesQuoteDescription } from "./catalog/series";
+
 export { upsertPrice } from "./catalog/prices";
 
 export { setOptionCompatibility } from "./catalog/compatibility";

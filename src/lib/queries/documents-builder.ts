@@ -1,5 +1,13 @@
 import { cache } from "react";
-import type { DocumentStatus, LineKind, OptionRole, ProductKind, ProductionForm } from "@prisma/client";
+import type {
+  DocumentStatus,
+  LineKind,
+  OptionRole,
+  Prisma,
+  ProductKind,
+  ProductionForm,
+  SigningStatus,
+} from "@prisma/client";
 import { db } from "@/lib/db";
 import { documentWhereForUser, type ScopeUser } from "@/lib/scope";
 import { computeTotals, type CommissionResult, type DocumentConcession, type EngineInput } from "@/lib/pricing";
@@ -81,12 +89,15 @@ export type BuilderLine = {
    * the manager's own picks. `null` for a line with no `refId`, an option
    * with no role, or any non-OPTION line. */
   role: OptionRole | null;
-  /** For an OPTION line: `Option.contentBlockKey`, resolved by `refId` the
-   * same live way `role` is -- the `option.*` content block that describes
-   * this option on the quotation (see `buildQuotationData`'s option rows).
-   * `null` for an option with no block, a line with no `refId`, or any
-   * non-OPTION line. */
-  contentBlockKey: string | null;
+  /** For an OPTION line: `Option.unitLengthM` — the metres one unit of this
+   * option adds (1.2 for an EasyLoader module, 1 for a metre of MTS travel),
+   * resolved by `refId` the same live way `role` above is. Converted from
+   * Prisma's `Decimal` here at the query boundary, same as every other
+   * decimal on this type. Feeds `QuotationLineInput.unitLengthM`, which the
+   * quotation's `{{tableLengthM}}` token sums over. `null` for an option sold
+   * by the piece (most of them), a line with no `refId`, or a non-OPTION
+   * line. */
+  unitLengthM: number | null;
   /** For an OPTION line: `Option.imageUrl`, resolved by `refId` against the
    * catalog (see `getDocumentForBuilder`'s `optionImageMap`) — not a
    * snapshot column on `DocumentLine` itself, so this always reflects the
@@ -161,11 +172,11 @@ export type BuilderItem = {
    * shape defensively at runtime. `null` for an item with no resolving
    * product or no specs recorded. */
   specs: unknown;
-  /** `Product.contentBlockKey`, read live off the joined product -- which
-   * `machine.*`/`equipment.*`/`software.*` content block describes this
-   * item on the quotation (see `buildQuotationData`). `null` for a product
-   * no block covers, or an item whose product no longer resolves. */
-  contentBlockKey: string | null;
+  /** `Series.quoteDescription` of the item's product's category, read live
+   * from the catalog (not snapshotted on the item) so fixing a typo in a
+   * category's copy shows on every DRAFT quote at once. A FINAL quote reads
+   * its frozen snapshot instead — see Plan 3. */
+  seriesQuoteDescription: string | null;
   /** `DocumentItem.serialNumber` — set post-installation, used as-is in the
    * quotation's RSP coverage table. Not editable anywhere in the builder for
    * an ordinary item; for a credit item (`isCredit`) it's opened up via
@@ -350,6 +361,46 @@ export type DocumentForBuilder = {
    * exactly like `logoUrl`/`author.avatar` above, so this stays an
    * unresolved `/api/files/<name>` URL (or `null`) here. */
   heroImageUrl: string | null;
+  /** `Document.signatures` — at most one row per `SignerRole` (see the
+   * `@@unique([documentId, role])` constraint on the `Signature` model),
+   * fed straight into `buildQuotationData`'s `QuotationDataDoc.signatures`
+   * (src/lib/quotation-data.ts), which resolves each side's image through
+   * the same `ImageResolver` as the logo/avatar. Empty for a quote nobody
+   * has signed yet — the common case. */
+  signatures: {
+    role: "AUTHOR" | "CLIENT";
+    imageUrl: string;
+    signerName: string;
+    signedAt: Date;
+  }[];
+  /** `Document.signingStatus` — feeds `canAuthorSign` (src/lib/signing/state.ts)
+   * so the builder page can gate `SignButton`'s visibility on the exact same
+   * rule `signQuoteAsAuthor` enforces server-side, rather than rendering the
+   * button for every FINAL document and relying on the action alone to
+   * refuse it. `NOT_SENT` for a document that predates the signing feature or
+   * has never been sent, same as the column's own default. */
+  signingStatus: SigningStatus;
+  /** The document's *region*'s four standard-terms figures — the fallback
+   * for the four per-quote overrides below (see `resolveQuoteTerms` in
+   * src/lib/quote-terms.ts). Read live off `Region`, like `entityName` and
+   * its siblings above, and for the same reason: a DRAFT shows what it would
+   * promise today. */
+  region: { deliveryWeeks: number; installationDays: number; trainingDays: number; warrantyMonths: number };
+  /** `Document`'s own overrides of the four figures — `null` means inherit
+   * the region's. Fed straight into `QuotationDataDoc`. */
+  deliveryWeeks: number | null;
+  installationDays: number | null;
+  trainingDays: number | null;
+  warrantyMonths: number | null;
+  /** The `quoteDocumentKey`s of this quote's `DocumentExclusion` rows — the
+   * legal documents its author unticked. Empty is the common case (absence
+   * means included). */
+  excludedDocumentKeys: string[];
+  /** `Document.documentsSnapshot` exactly as stored (an opaque `Json?`
+   * column, frozen by `finalizeDocument`) — `unknown` for the same reason
+   * `entitySnapshot` above is, and validated at runtime by its one consumer
+   * (`readDocumentsSnapshot` in src/lib/quotation-data.ts). */
+  documentsSnapshot: unknown;
   updatedAt: Date;
 };
 
@@ -358,12 +409,15 @@ type OptionRow = {
   imageUrl: string | null;
   noCommission: boolean;
   role: OptionRole | null;
-  contentBlockKey: string | null;
+  /** `Option.unitLengthM` already through `Number` — see `BuilderLine`'s own
+   * field. Converted where the row is read rather than where it is used, so
+   * no Prisma `Decimal` ever escapes this module. */
+  unitLengthM: number | null;
 };
 
 /**
- * `optionRowMap` (optionId -> the option's live `imageUrl`/`role`/
- * `contentBlockKey`, built once per `getDocumentForBuilder` call from every
+ * `optionRowMap` (optionId -> the option's live `imageUrl`/`role`, built
+ * once per `getDocumentForBuilder` call from every
  * OPTION line's `refId` — see below) resolves those for an OPTION line (an
  * OPTION with no `refId` or no matching catalog row gets `null` for all); a
  * CUSTOM line uses its own `imageUrl`/`showImage` columns instead (there's
@@ -405,7 +459,7 @@ function toBuilderLine(
         : null,
     sortOrder: line.sortOrder,
     role: optionRow?.role ?? null,
-    contentBlockKey: optionRow?.contentBlockKey ?? null,
+    unitLengthM: optionRow?.unitLengthM ?? null,
     imageUrl: line.kind === "OPTION" ? (optionRow?.imageUrl ?? null) : line.imageUrl,
     showImage: line.kind === "OPTION" ? false : line.showImage,
   };
@@ -446,12 +500,24 @@ function toBuilderContact(contact: {
  * load a document — the builder and the quotation preview — fetch it once in
  * `generateMetadata` and again in the page body, and this is by some margin
  * the heaviest read in the app.
+ *
+ * `tx` is for the one caller that needs this read to belong to a transaction
+ * rather than to the request: `finalizeDocument` (src/lib/actions/finalize.ts)
+ * builds the document snapshot it freezes by running `buildQuotationData`
+ * over exactly this shape, and it must see the totals `recalcDocument` wrote
+ * moments earlier *inside* that transaction — which the `db` singleton
+ * cannot, and which the memo would answer with the copy loaded before the
+ * transaction opened. Passing `tx` bypasses the memo for the same reason
+ * `getCommissionTiers(client)` does (see its doc comment in
+ * queries/settings.ts): a transaction's reads must stay that transaction's.
+ * Everything else omits it and keeps the memo.
  */
 export function getDocumentForBuilder(
   user: ScopeUser,
-  id: string
+  id: string,
+  tx?: Prisma.TransactionClient
 ): Promise<DocumentForBuilder | null> {
-  return getDocumentForBuilderInScope(user.id, user.role, id);
+  return tx ? loadDocumentForBuilder(user.id, user.role, id, tx) : getDocumentForBuilderInScope(user.id, user.role, id);
 }
 
 /** Memoization boundary for `getDocumentForBuilder` above, taking the scope
@@ -461,13 +527,27 @@ export function getDocumentForBuilder(
  * on every call and quietly memoize nothing. Both parts are part of the key
  * because both shape the query — `documentWhereForUser` reads the role to
  * decide whether the id restricts anything at all. */
-const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderInScope(
+const getDocumentForBuilderInScope = cache(function getDocumentForBuilderInScope(
   userId: string,
   role: string,
   id: string
 ): Promise<DocumentForBuilder | null> {
+  return loadDocumentForBuilder(userId, role, id);
+});
+
+/** The read itself, against `tx` when the caller has one and the `db`
+ * singleton otherwise. Everything below reaches the database through
+ * `client`, so a transactional caller sees its own uncommitted writes and a
+ * plain one behaves exactly as before. */
+async function loadDocumentForBuilder(
+  userId: string,
+  role: string,
+  id: string,
+  tx?: Prisma.TransactionClient
+): Promise<DocumentForBuilder | null> {
+  const client = tx ?? db;
   const user: ScopeUser = { id: userId, role };
-  const document = await db.document.findFirst({
+  const document = await client.document.findFirst({
     where: { id, ...documentWhereForUser(user) },
     include: {
       region: true,
@@ -491,6 +571,15 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
         where: { itemId: null },
         orderBy: { sortOrder: "asc" },
       },
+      // Feeds QuotationDataDoc.signatures (src/lib/quotation-data.ts) — at
+      // most one row per role (documentId, role) is unique on Signature.
+      signatures: {
+        select: { role: true, imageUrl: true, signerName: true, signedAt: true },
+      },
+      // Feeds QuotationDataDoc.excludedDocumentKeys — the legal documents
+      // this quote's author unticked. Absence means included, so the common
+      // quote selects nothing here.
+      exclusions: { select: { quoteDocumentKey: true } },
     },
   });
   if (!document) return null;
@@ -500,7 +589,17 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
   // fetched alongside it for the same reason — a read-time default, never
   // persisted onto the document itself (see `CommissionResult`'s doc
   // comment on `DocumentForBuilder` for the null-vs-configured distinction).
-  const [defaultValidityDays, commissionTiers] = await Promise.all([getQuoteValidityDays(), getCommissionTiers()]);
+  //
+  // `getCommissionTiers` takes `tx` so a transactional caller's settings read
+  // stays inside that transaction (its own doc comment explains the split);
+  // `getQuoteValidityDays` has no such parameter and needs none — it is a
+  // memoized read of an org-wide setting no transaction in this app writes,
+  // and finalize, the only transactional caller, has already resolved it
+  // before opening its transaction, so this call is answered from the memo.
+  const [defaultValidityDays, commissionTiers] = await Promise.all([
+    getQuoteValidityDays(),
+    getCommissionTiers(tx),
+  ]);
 
   // Every OPTION line's icon in the quotation's unified options table (see
   // src/lib/quotation-data.ts's QuotationOptionRow) comes from the option's
@@ -518,21 +617,30 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
     )
   );
   // `Option.noCommission` (see the commission section below), `Option.role`
-  // (see `BuilderLine.role`) and `Option.contentBlockKey` (see
-  // `BuilderLine.contentBlockKey`) are read the same way — live off the
-  // option, not a line snapshot — so this one query covers every need
-  // rather than adding a round trip per fact.
+  // (see `BuilderLine.role`) and `Option.unitLengthM` (see
+  // `BuilderLine.unitLengthM`) are read the same way — live off the option,
+  // not a line snapshot — so this one query covers every such need rather
+  // than adding a round trip per fact.
   const optionRows =
     optionRefIds.length > 0
-      ? await db.option.findMany({
+      ? await client.option.findMany({
           where: { id: { in: optionRefIds } },
-          select: { id: true, imageUrl: true, noCommission: true, role: true, contentBlockKey: true },
+          select: { id: true, imageUrl: true, noCommission: true, role: true, unitLengthM: true },
         })
       : [];
   const optionRowMap = new Map<string, OptionRow>(
     optionRows.map((o) => [
       o.id,
-      { imageUrl: o.imageUrl, noCommission: o.noCommission, role: o.role, contentBlockKey: o.contentBlockKey },
+      {
+        imageUrl: o.imageUrl,
+        noCommission: o.noCommission,
+        role: o.role,
+        // `Decimal?` -> `number | null` at the boundary, the same
+        // `x !== null ? Number(x) : null` every other decimal on this type
+        // gets (see `listPrice` below, and `listCompatibleOptions` in
+        // documents-pickers.ts, which converts this very column).
+        unitLengthM: o.unitLengthM !== null ? Number(o.unitLengthM) : null,
+      },
     ])
   );
   const optionNoCommissionMap = new Map(optionRows.map((o) => [o.id, o.noCommission]));
@@ -629,6 +737,18 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
     regionCode: document.region.code,
     regionName: document.region.name,
     entitySnapshot: document.entitySnapshot,
+    region: {
+      deliveryWeeks: document.region.deliveryWeeks,
+      installationDays: document.region.installationDays,
+      trainingDays: document.region.trainingDays,
+      warrantyMonths: document.region.warrantyMonths,
+    },
+    deliveryWeeks: document.deliveryWeeks,
+    installationDays: document.installationDays,
+    trainingDays: document.trainingDays,
+    warrantyMonths: document.warrantyMonths,
+    excludedDocumentKeys: document.exclusions.map((exclusion) => exclusion.quoteDocumentKey),
+    documentsSnapshot: document.documentsSnapshot,
     entityName: document.region.entityName,
     entityLegalId: document.region.entityLegalId,
     entityAddress: document.region.entityAddress,
@@ -685,7 +805,7 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
       kind: item.product?.kind ?? "ACCESSORY",
       form: item.product?.form ?? null,
       specs: item.product?.specs ?? null,
-      contentBlockKey: item.product?.contentBlockKey ?? null,
+      seriesQuoteDescription: item.product?.series?.quoteDescription ?? null,
       serialNumber: item.serialNumber,
       isCredit: item.product?.isCredit ?? false,
       noCommission: item.product?.noCommission ?? false,
@@ -709,6 +829,8 @@ const getDocumentForBuilderInScope = cache(async function getDocumentForBuilderI
     showItemPrices: document.showItemPrices,
     showOptionPrices: document.showOptionPrices,
     heroImageUrl: document.heroImageUrl,
+    signatures: document.signatures,
+    signingStatus: document.signingStatus,
     updatedAt: document.updatedAt,
   };
-});
+}

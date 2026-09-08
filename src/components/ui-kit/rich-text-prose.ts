@@ -3,8 +3,8 @@
  * surface in `RichTextEditor` and, via `renderStoredRichText`, every
  * read-only consumer (quotation sheet block bodies/notes, the builder's
  * read-only Notes view). Same hand-rolled ruleset the old markdown preview
- * panes used (previously duplicated in notes-section.tsx and
- * content-block-form.tsx), extended with `ol`/`a`/`blockquote` now that the
+ * panes used (previously duplicated in notes-section.tsx and the content-block
+ * form that preceded quote-document-form.tsx), extended with `ol`/`a`/`blockquote` now that the
  * editor can produce them. There's no @tailwindcss/typography plugin in this
  * project, hence the arbitrary-variant approach rather than a `prose` class.
  *

@@ -8,7 +8,7 @@ import type { ActionResult } from "@/lib/actions/documents";
 import type { DocumentStatus } from "@prisma/client";
 
 /**
- * Per-row "delete document" icon button on the /documents list (desktop
+ * Per-row "delete document" icon button on the /quotes list (desktop
  * table's Actions column and the mobile card). Visibility is decided by the
  * caller (`DocumentsPage`) — a MANAGER only ever sees their own documents
  * in this list already (`documentWhereForUser`), so "author or admin" for a

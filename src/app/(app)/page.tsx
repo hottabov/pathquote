@@ -22,7 +22,7 @@ const RECENT_LIMIT = 5;
 /** Nav-item hrefs that have a live count on the dashboard — catalog/settings
  * don't, so their cards render without a number. */
 const COUNT_BY_HREF: Record<string, keyof DashboardCounts> = {
-  "/documents": "documents",
+  "/quotes": "documents",
   "/clients": "clients",
 };
 
@@ -74,7 +74,10 @@ export default async function DashboardPage() {
         </form>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* One column per NAV_ITEMS entry at `lg` — five since Documents
+          joined them. Left at four, the fifth card sat alone on a row of its
+          own. */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {NAV_ITEMS.map((item) => (
           <NavCard
             key={item.href}
@@ -88,16 +91,16 @@ export default async function DashboardPage() {
       </div>
 
       <SectionCard
-        title="Recent documents"
+        title="Recent quotes"
         description="Your last 5 quotes"
         actions={
-          <Link href="/documents" className="focus-ring rounded-md text-sm font-medium text-brand hover:underline">
+          <Link href="/quotes" className="focus-ring rounded-md text-sm font-medium text-brand hover:underline">
             View all
           </Link>
         }
       >
         {recentDocuments.length === 0 ? (
-          <EmptyState icon={FileText} title="No documents yet" description="Create your first quote above." />
+          <EmptyState icon={FileText} title="No quotes yet" description="Create your first quote above." />
         ) : (
           <ul className="flex flex-col divide-y divide-slate-100">
             {recentDocuments.map((document) => (
@@ -148,7 +151,7 @@ function RecentDocumentRow({ document }: { document: DocumentListItem }) {
   return (
     <li>
       <Link
-        href={`/documents/${document.id}`}
+        href={`/quotes/${document.id}`}
         className="focus-ring flex min-h-14 items-center justify-between gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-slate-50"
       >
         <div className="flex min-w-0 items-center gap-3">

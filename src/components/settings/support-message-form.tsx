@@ -64,7 +64,7 @@ export function SupportMessageForm({
           maxLength={150}
           required
           disabled={fieldsDisabled}
-          placeholder="Short summary — e.g. “X-Calibre prices showing AUD for a US client”"
+          placeholder="Short summary — e.g. “Sending a quote to a client doesn't work”"
           className={fieldInputClass}
         />
       </FieldRow>

@@ -53,6 +53,39 @@ enum DeliveryTerms {
   EX_WORKS
 }
 
+// Whether a quote has been sent for signature and how far it got. A separate
+// column from DocumentStatus rather than new values on it: every
+// `status === "FINAL"` check across finalize, pricing and the PDF route stays
+// correct untouched, because signing is an orthogonal axis to draft/final.
+//
+// "Author signed but not yet sent" is deliberately NOT a value here -- it is
+// NOT_SENT plus a Signature(AUTHOR) row. The same asymmetry carries the
+// client's side: a drawn but unconfirmed client signature is VIEWED plus a
+// Signature(CLIENT) row. In both cases the signature exists before the act
+// that commits it, which is what gives each signer a window to change their
+// mind (see docs/superpowers/specs/2026-09-07-quote-signing-design.md, D7).
+//
+// EXPIRED and REVOKED are absent for the same reason: neither is a fact
+// about the document, only about the outstanding link, and both are already
+// fully derived from SigningRequest.expiresAt/revokedAt by resolveLinkState
+// (src/lib/signing/link.ts). Adding either here would be a second,
+// independently-driftable place to record something that one column (and,
+// for expiry, one comparison against the clock) already answers -- and
+// Postgres can add an enum value but can never drop one, so it would be
+// undroppable the moment it shipped.
+enum SigningStatus {
+  NOT_SENT
+  SENT
+  VIEWED
+  SIGNED
+  DECLINED
+}
+
+enum SignerRole {
+  AUTHOR
+  CLIENT
+}
+
 // What a catalogue product *is*, stated outright instead of being inferred
 // from its code. Until migration z31_catalog_identity every "is this a
 // machine?", "which order form?", "how wide?" question was answered by a
@@ -147,33 +180,42 @@ enum OptionRole {
 }
 
 model Region {
-  id                String              @id @default(cuid())
-  code              String              @unique // AU, US, UK
-  name              String
-  currency          String // AUD, USD, GBP
-  taxName           String // GST, Sales Tax, VAT
-  taxRate           Decimal             @db.Decimal(5, 2) // 10.00
-  entityName        String // Pathfinder Australia Pty Ltd
-  entityLegalId     String? // ABN 64 072 458 667
-  entityAddress     String?
-  bankDetails       Json?
-  logoUrl           String?
-  footerText        String?
-  maxDiscountPct    Decimal?            @db.Decimal(5, 2) // AU: 10, US: 15 -- discount cap enforced against a document's region (see setItemDiscount/setDocumentDiscount in src/lib/actions/documents.ts); not shown in the catalog UI.
+  id              String           @id @default(cuid())
+  code            String           @unique // AU, US, UK
+  name            String
+  currency        String // AUD, USD, GBP
+  taxName         String // GST, Sales Tax, VAT
+  taxRate         Decimal          @db.Decimal(5, 2) // 10.00
+  entityName      String // Pathfinder Australia Pty Ltd
+  entityLegalId   String? // ABN 64 072 458 667
+  entityAddress   String?
+  bankDetails     Json?
+  logoUrl         String?
+  footerText      String?
+  maxDiscountPct  Decimal?         @db.Decimal(5, 2) // AU: 10, US: 15 -- discount cap enforced against a document's region (see setItemDiscount/setDocumentDiscount in src/lib/actions/documents.ts); not shown in the catalog UI.
   // The mirror of maxDiscountPct: how far ABOVE list a distributor may price
   // (Ross: "he's got a minimum selling price. And a maximum selling price.
   // And those rules apply to the LLC as well."). Null means no ceiling, same
   // "unset changes nothing" contract maxDiscountPct already has. Enforced
   // via the same concession machinery as the discount cap -- a negative
   // concession is a markup -- see documentConcession/recalcAndEnforce.
-  maxMarkupPct      Decimal?            @db.Decimal(5, 2)
-  active            Boolean             @default(true)
-  users             User[]
-  companies         Company[]
-  prices            Price[]
-  documents         Document[]
-  contentBlocks     ContentBlock[]
-  supportMessages   SupportMessage[]
+  maxMarkupPct    Decimal?         @db.Decimal(5, 2)
+  active          Boolean          @default(true)
+  /// The standard-terms figures the legal documents quote back at the
+  /// customer. Region-level because a region is effectively its own
+  /// company, with its own lead times and warranty. Defaults are the
+  /// figures the original Word template carried and the code hardcoded
+  /// until now (src/lib/quotation-data.ts's globalVars).
+  deliveryWeeks    Int @default(14)
+  installationDays Int @default(2)
+  trainingDays     Int @default(3)
+  warrantyMonths   Int @default(12)
+  users           User[]
+  companies       Company[]
+  prices          Price[]
+  documents       Document[]
+  quoteDocuments  QuoteDocument[]
+  supportMessages SupportMessage[]
 }
 
 model User {
@@ -183,6 +225,9 @@ model User {
   name              String?
   phone             String?
   image             String?
+  // The manager's saved signature, drawn once in Account. Copied onto each
+  // quote at signing time -- see Signature.imageUrl.
+  signatureUrl      String?
   passwordHash      String?
   role              Role                @default(MANAGER)
   regionId          String?
@@ -238,6 +283,16 @@ model Series {
   maxDiscountPct    Decimal?              @db.Decimal(5, 2) // unused: discount caps moved to Region.maxDiscountPct; column kept, not read anywhere
   sortOrder         Int                   @default(0)
   imageUrl          String? // admin override for the /catalog series card image; null falls back to the first active product's imageUrl -- see listSeriesWithCounts in src/lib/queries/catalog.ts
+  /// The category's quote copy: the prose printed under a product's heading
+  /// in the Equipment Detail section, authored once per category and shared
+  /// by every product in it. HTML, and may contain `{{token}}` placeholders
+  /// resolved per product at render time — see src/lib/quote-variables.ts for
+  /// the token list and which of them a given category may use. Null or
+  /// empty prints nothing at all under the heading, which is the state every
+  /// category starts in. Replaces the old Product.contentBlockKey ->
+  /// ContentBlock lookup: one text per category rather than a key on all 57
+  /// products pointing into a separate table.
+  quoteDescription  String?
   products          Product[]
   compat            OptionCompatibility[]
   catalogVisibility CatalogVisibility[]
@@ -262,11 +317,6 @@ model Product {
   // quotation's spec sentence, the order forms' model/width boxes and the
   // EasyLoader form's printed-width box read, instead of parsing the code.
   specs             Json?
-  // Which quotation content block describes this product
-  // (ContentBlock.key, e.g. "machine.m-series", "software.pathworks-i").
-  // Null = resolved by series the way it always was. See
-  // src/lib/quotation-data.ts.
-  contentBlockKey   String?
   // Options that belong to this product rather than to a series -- the
   // EasyLoader's modules ("EL-2020-DM12" is a module *of* EL-2020). Replaces
   // the `${itemCode} ${suffix}` code template in table-sections.ts.
@@ -317,38 +367,35 @@ model Product {
 }
 
 model Option {
-  id               String                @id @default(cuid())
+  id                       String                      @id @default(cuid())
   // A label, same contract as Product.code: unique, renameable, never
   // branched on. See migration z31_catalog_identity.
-  code             String                @unique // MTS, HFV, VRB-180...
-  name             String
-  shortDescription String?
-  role             OptionRole?
+  code                     String                      @unique // MTS, HFV, VRB-180...
+  name                     String
+  shortDescription         String?
+  role                     OptionRole?
   // Set for options that are part of one product rather than fitted to a
   // series -- today the EasyLoader modules and fittings. Null for everything
   // fitted by series compatibility.
-  parentProductId  String?
-  parentProduct    Product?              @relation("OptionParentProduct", fields: [parentProductId], references: [id])
+  parentProductId          String?
+  parentProduct            Product?                    @relation("OptionParentProduct", fields: [parentProductId], references: [id])
   // Physical length one unit of this option adds, in metres (1.2 for an
   // EasyLoader module, 1 for a metre of MTS travel). What the options editor
   // shows beside the quantity stepper (src/lib/option-length.ts) -- it used
   // to parse "1.2M" out of the name.
-  unitLengthM      Decimal?              @db.Decimal(6, 2)
-  // ContentBlock.key of the quotation block for this option ("option.MTS").
-  // Null = no block. See src/lib/quotation-data.ts.
-  contentBlockKey  String?
-  attributeSchema  Json? // e.g. [{key:"metres",label:"Travel (m)",type:"number"}]
-  imageUrl         String?
-  active           Boolean               @default(true)
-  sortOrder        Int                   @default(0)
+  unitLengthM              Decimal?                    @db.Decimal(6, 2)
+  attributeSchema          Json? // e.g. [{key:"metres",label:"Travel (m)",type:"number"}]
+  imageUrl                 String?
+  active                   Boolean                     @default(true)
+  sortOrder                Int                         @default(0)
   // Same flag, same reasoning, as Product.noCommission above -- an option
   // line (e.g. Installation/Training on the North America price list) can
   // be excluded from commission independently of the item it's attached
   // to. Migration z25_no_commission adds this column with its default, so
   // every existing option is unaffected.
-  noCommission     Boolean               @default(false)
-  prices           Price[]
-  compat           OptionCompatibility[]
+  noCommission             Boolean                     @default(false)
+  prices                   Price[]
+  compat                   OptionCompatibility[]
   // Which OptionConflictGroup(s) this option belongs to -- see that model's
   // comment below for why group membership, not a pairwise row, is how two
   // options are said to conflict.
@@ -577,16 +624,17 @@ model Company {
 }
 
 model Contact {
-  id        String     @id @default(cuid())
-  companyId String
-  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  firstName String
-  lastName  String?
-  email     String?
-  phone     String?
-  position  String?
-  isPrimary Boolean    @default(false)
-  documents Document[]
+  id              String           @id @default(cuid())
+  companyId       String
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  firstName       String
+  lastName        String?
+  email           String?
+  phone           String?
+  position        String?
+  isPrimary       Boolean          @default(false)
+  documents       Document[]
+  signingRequests SigningRequest[]
 
   @@index([companyId])
 }
@@ -604,49 +652,49 @@ model Industry {
 }
 
 model Document {
-  id               String         @id @default(cuid())
-  status           DocumentStatus @default(DRAFT)
-  number           String?        @unique // Q-AU-2026-001, assigned on finalize
-  companyId        String? // set once the client step of the builder is completed
-  company          Company?       @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  contactId        String?
-  contact          Contact?       @relation(fields: [contactId], references: [id])
-  authorId         String
-  author           User           @relation(fields: [authorId], references: [id])
-  regionId         String
-  region           Region         @relation(fields: [regionId], references: [id])
-  issueDate        DateTime       @default(now())
-  validityDays     Int?
-  currency         String
-  taxName          String
-  taxRate          Decimal        @db.Decimal(5, 2)
+  id                String           @id @default(cuid())
+  status            DocumentStatus   @default(DRAFT)
+  number            String?          @unique // Q-AU-2026-001, assigned on finalize
+  companyId         String? // set once the client step of the builder is completed
+  company           Company?         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  contactId         String?
+  contact           Contact?         @relation(fields: [contactId], references: [id])
+  authorId          String
+  author            User             @relation(fields: [authorId], references: [id])
+  regionId          String
+  region            Region           @relation(fields: [regionId], references: [id])
+  issueDate         DateTime         @default(now())
+  validityDays      Int?
+  currency          String
+  taxName           String
+  taxRate           Decimal          @db.Decimal(5, 2)
   // DELIVERED (default) or EX_WORKS -- an Ex Works quote's tax is zeroed by
   // recalcDocument (src/lib/actions/documents.ts), the single caller that
   // resolves a document's effective tax rate; taxName/taxRate above are left
   // untouched (they're the region's nominal figures, unrelated to this
   // per-document override). finalizeDocument freezes nothing new for this --
   // the terms live on the document itself, not the entitySnapshot.
-  deliveryTerms    DeliveryTerms  @default(DELIVERED)
-  entitySnapshot   Json? // frozen on finalize
+  deliveryTerms     DeliveryTerms    @default(DELIVERED)
+  entitySnapshot    Json? // frozen on finalize
   // A discount is a mode + value (see the DiscountMode enum comment above) —
   // discountValue is a plain percentage (0..100) when discountMode is
   // PERCENT, or a cash amount in the document's own currency when AMOUNT;
   // null means no discount is set, regardless of mode. Enforced against
   // Region.maxDiscountPct — see setDocumentDiscount in
   // src/lib/actions/documents.ts.
-  discountMode     DiscountMode   @default(PERCENT)
-  discountValue    Decimal?       @db.Decimal(12, 2)
-  subtotal         Decimal        @default(0) @db.Decimal(12, 2)
-  taxAmount        Decimal        @default(0) @db.Decimal(12, 2)
-  total            Decimal        @default(0) @db.Decimal(12, 2)
-  notes            String?
+  discountMode      DiscountMode     @default(PERCENT)
+  discountValue     Decimal?         @db.Decimal(12, 2)
+  subtotal          Decimal          @default(0) @db.Decimal(12, 2)
+  taxAmount         Decimal          @default(0) @db.Decimal(12, 2)
+  total             Decimal          @default(0) @db.Decimal(12, 2)
+  notes             String?
   // Quotation-first pricing display (owner spec): a quote's total is always
   // shown up top regardless of these, but the per-item/per-option detail in
   // the investment summary only renders when the corresponding toggle is on
   // — see setPriceDisplay in src/lib/actions/documents.ts and
   // buildQuotationData in src/lib/quotation-data.ts.
-  showItemPrices   Boolean        @default(false)
-  showOptionPrices Boolean        @default(false)
+  showItemPrices    Boolean          @default(false)
+  showOptionPrices  Boolean          @default(false)
   // Salesperson commission, frozen on finalize -- see finalizeDocument
   // (src/lib/actions/finalize.ts), alongside entitySnapshot above. Before
   // FINAL, the builder always computes commission live (see
@@ -663,9 +711,20 @@ model Document {
   // misleading 0. Re-finalizing (after `unfinalizeDocument`) overwrites all
   // three with a fresh computation, exactly like entitySnapshot above --
   // there is no way to "keep the old commission" across a re-finalize.
-  commissionAmount  Decimal?       @db.Decimal(12, 2)
-  commissionRatePct Decimal?       @db.Decimal(5, 2)
-  commissionBase    Decimal?       @db.Decimal(12, 2)
+  commissionAmount  Decimal?         @db.Decimal(12, 2)
+  commissionRatePct Decimal?         @db.Decimal(5, 2)
+  commissionBase    Decimal?         @db.Decimal(12, 2)
+  signingStatus     SigningStatus    @default(NOT_SENT)
+  // The archived signed PDF: the exact bytes the client saw when they
+  // confirmed, plus their digest. Generated once at completion rather than
+  // re-rendered on demand, so a later template change cannot rewrite what a
+  // signed quote looks like. Cannot be orphaned: deletion is DRAFT-only,
+  // SIGNED implies FINAL, and unfinalize is blocked at SIGNED.
+  signedPdfName     String?
+  signedPdfSha256   String?
+  completedAt       DateTime?
+  signatures        Signature[]
+  signingRequests   SigningRequest[]
   // The setup image: one photo/render of the whole configuration (cutter +
   // table + spreader together), usually already produced in SketchUp and
   // shown to the customer before the quote is drawn up -- owner: "the most
@@ -678,10 +737,28 @@ model Document {
   // the printed quote -- no frame, no placeholder -- see the `heroImage`
   // block in quotation-sheet.tsx.
   heroImageUrl      String?
-  items            DocumentItem[]
-  lines            DocumentLine[]
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  // Per-quote overrides of the region's standard-terms figures — null
+  // means inherit. Delivery and warranty are negotiated per deal, and a
+  // signed quote promising 14 weeks when the salesperson agreed 10 is a
+  // commitment nobody made.
+  deliveryWeeks     Int?
+  installationDays  Int?
+  trainingDays      Int?
+  warrantyMonths    Int?
+  // Every rendered document body and every item's category copy, frozen
+  // when the quote went FINAL, with placeholders already substituted.
+  // Fixing a typo in General Conditions must not rewrite a quote signed
+  // three months ago. Written by finalizeDocument alongside
+  // entitySnapshot; overwritten wholesale on a re-finalize after
+  // unfinalizeDocument, exactly like entitySnapshot and the commission
+  // columns. Null on a DRAFT and on any quote finalised before this
+  // column existed — buildQuotationData falls back to live text then.
+  documentsSnapshot Json?
+  exclusions        DocumentExclusion[]
+  items             DocumentItem[]
+  lines             DocumentLine[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   @@index([companyId])
   @@index([authorId])
@@ -805,24 +882,56 @@ model DocumentLine {
   @@index([refId, kind])
 }
 
-model ContentBlock {
-  id        String  @id @default(cuid())
-  key       String // terms.delivery, rsp.agreement, option.MTS
-  regionId  String?
-  region    Region? @relation(fields: [regionId], references: [id])
-  title     String?
-  body      String // markdown
-  sortOrder Int     @default(0)
+// `model ContentBlock` stood here until migration z37_drop_content_block.
+// It held three unrelated kinds of text as key-prefixed fragments: category
+// copy (`machine.*`, `equipment.*`), per-option copy (`option.*`), and the
+// legal documents (`terms.*`, `conditions.*`, `rsp.*`). All three moved to
+// where they belong -- `Series.quoteDescription`, and `QuoteDocument` below
+// -- so nothing resolved a block key any more and the two
+// `Product`/`Option.contentBlockKey` columns went with it.
+
+/// One whole legal document printed on a quote — Terms, General Conditions
+/// of Sale, the RSP agreement, and whatever a region adds later. Replaces
+/// the ContentBlock rows that held the same text as 7 and 14 separate
+/// fragments: a lawyer hands over a document, not a list of clauses, and a
+/// region variant is a copy of the whole thing rather than an override per
+/// piece.
+///
+/// `regionId: null` is the global default; a non-null `regionId` is that
+/// region's own version, resolved by the same two-pass rule ContentBlock
+/// used (defaults first, then this region's rows, so an override wins
+/// regardless of array order). A row may exist for a region with NO global
+/// default — that is how a region-only document works, e.g. a Data
+/// Processing Agreement offered only by an EU entity.
+model QuoteDocument {
+  id                String   @id @default(cuid())
+  key               String // "terms" | "conditions" | "rsp" | future keys
+  regionId          String?
+  title             String // the printed heading
+  body              String // HTML, may contain document-scope {{tokens}}
+  sortOrder         Int      @default(0)
+  /// Whether a new quote includes this document unless its author unticks
+  /// it. Every document starts true; RSP is the one an author routinely
+  /// turns off, for a small order nothing in the programme covers.
+  includedByDefault Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  region            Region?  @relation(fields: [regionId], references: [id], onDelete: SetNull)
 
   @@unique([key, regionId])
-  // The unique above leads with `key`, which serves every by-key lookup but
-  // not the two places that select on region alone: listContentBlocks
-  // (src/lib/queries/content.ts) splits the table into defaults
-  // (`regionId: null`) and overrides (`regionId: { not: null }`), and
-  // getContentBlocksForRegion -- run once per rendered quotation -- pulls
-  // `OR: [{ regionId: null }, { regionId }]`. A btree index covers IS NULL as
-  // well as equality in Postgres, so one plain index answers both branches.
   @@index([regionId])
+}
+
+/// A document an individual quote leaves out. Stores the document's `key`,
+/// not its id, so the exclusion still means the same thing if the quote's
+/// region changes and a different QuoteDocument row becomes the resolved
+/// one. Absence means included — the common case writes no row at all.
+model DocumentExclusion {
+  documentId       String
+  quoteDocumentKey String
+  document         Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@id([documentId, quoteDocumentKey])
 }
 
 model NumberSequence {
@@ -853,16 +962,16 @@ model Setting {
 // notification actually went out so a developer reading this table directly
 // can tell "nobody's seen this yet" from "sent, and probably read".
 model SupportMessage {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   authorId   String
-  author     User     @relation(fields: [authorId], references: [id])
+  author     User      @relation(fields: [authorId], references: [id])
   authorRole Role // snapshot of the sender's role at submission time
   regionId   String?
-  region     Region?  @relation(fields: [regionId], references: [id], onDelete: SetNull)
+  region     Region?   @relation(fields: [regionId], references: [id], onDelete: SetNull)
   appVersion String?
   subject    String
   body       String
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
   // Null until a send attempt succeeds. Distinguishes "never sent" from
   // "sent" without needing a separate boolean that could drift from it.
   emailedAt  DateTime?
@@ -935,4 +1044,87 @@ model CatalogImport {
 
   // The history list reads newest-first with no other filter.
   @@index([createdAt])
+}
+
+// A frozen copy of one party's signature on one quote. `imageUrl` is a copy
+// of the bytes, never a pointer to User.signatureUrl: a manager redrawing
+// their signature next year must not silently rewrite it on every quote they
+// have ever signed.
+model Signature {
+  id          String     @id @default(cuid())
+  documentId  String
+  document    Document   @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  role        SignerRole
+  imageUrl    String
+  signerName  String
+  // Null for an AUTHOR whose User account has no email recorded (User.email
+  // is required today, but this predates that guarantee and is kept
+  // nullable rather than assumed). Always present for a CLIENT: the signing
+  // page has no path to a signature without SigningRequest.email behind it.
+  signerEmail String?
+  signedAt    DateTime   @default(now())
+  // ip and userAgent are null-by-design for an AUTHOR signature: the author
+  // signs inside an authenticated session that already identifies them
+  // (session -> User, logged wherever sessions are), so capturing a second,
+  // weaker identifier here would add nothing. For a CLIENT signature they
+  // are the audit trail -- the client signs on a public, unauthenticated
+  // page, so this is the only record of who was on the other end.
+  //
+  // A third CHECK constraint was proposed alongside the two added in
+  // migration z35 -- requiring `ip` to be set whenever role = CLIENT -- and
+  // rejected: a client behind a proxy that strips `x-forwarded-for` would
+  // then be unable to sign at all, turning a missing header into a blocked
+  // signature. The evidentiary value of an IP does not justify refusing a
+  // customer's signature, so both columns stay nullable for every role.
+  ip          String?
+  userAgent   String?
+
+  @@unique([documentId, role])
+}
+
+// One row per send. A resend inserts a new row and revokes the previous one,
+// so send history is preserved without a separate event table -- sentAt,
+// firstViewedAt, revokedAt, declinedAt and Signature.signedAt already carry
+// the whole audit trail between them.
+//
+// `expiresAt` is frozen at send time from the "signing.linkValidityDays"
+// Setting rather than computed live, for the same reason finalizeDocument
+// freezes Document.validityDays: an admin lowering the setting must not
+// retroactively kill every outstanding client link.
+model SigningRequest {
+  id               String    @id @default(cuid())
+  documentId       String
+  document         Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  // A convenience link to the contact record, not the audit trail -- `email`
+  // below already snapshots the exact address the invite went to, the way
+  // every other frozen-at-action-time field in this schema works (compare
+  // DocumentItem's code/name/unitPrice snapshots). Nullable and SET NULL
+  // instead of Prisma's default RESTRICT for a required relation: a contact
+  // who was sent a quote for signature -- sent, expired, revoked, completed,
+  // years ago, it makes no difference -- must still be deletable from
+  // deleteContact (src/lib/actions/clients.ts), which has no pre-check and
+  // no try/catch of its own. Keeping this required and RESTRICT would turn
+  // any such contact permanently undeletable, surfacing to a manager as a
+  // raw unhandled foreign-key exception rather than a message. Matches
+  // Document.contactId's shape above for exactly the same reason.
+  contactId        String?
+  contact          Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  email            String
+  // SHA-256 of the token. The token itself never reaches the database, so a
+  // dump grants access to no quote.
+  tokenHash        String    @unique
+  expiresAt        DateTime
+  sentAt           DateTime  @default(now())
+  firstViewedAt    DateTime?
+  revokedAt        DateTime?
+  declinedAt       DateTime?
+  declineReason    String?
+  declineIp        String?
+  // Symmetric with Signature.ip/userAgent above: declining, like signing, is
+  // a terminal act by an unauthenticated visitor, and the audit trail should
+  // not capture less about the one than the other. declineIp alone (without
+  // this column) was the gap.
+  declineUserAgent String?
+
+  @@index([documentId])
 }

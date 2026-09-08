@@ -15,7 +15,7 @@ const downloadAllClass =
 /**
  * Readiness list plus the download links for a finalized quote's production
  * forms. Returns `null` for anything that is not FINAL, mirroring
- * exactly the check `/api/documents/[documentId]/production-forms` makes —
+ * exactly the check `/api/quotes/[documentId]/production-forms` makes —
  * mounted unconditionally at the call site, no status check needed there.
  *
  * `missingRequirements` and the "extras" page count below reuse the same
@@ -86,7 +86,7 @@ function ProductionFormsBody({
               <span className="font-mono text-xs text-slate-500">{ctx.item.code}</span>
             </span>
             {missing.length === 0 ? (
-              <Link href={`/api/documents/${document.id}/production-forms?item=${ctx.item.id}`} className={pdfLinkClass}>
+              <Link href={`/api/quotes/${document.id}/production-forms?item=${ctx.item.id}`} className={pdfLinkClass}>
                 <FileText className="size-4" aria-hidden="true" />
                 PDF
               </Link>
@@ -110,7 +110,7 @@ function ProductionFormsBody({
           Download all forms
         </button>
       ) : (
-        <Link href={`/api/documents/${document.id}/production-forms`} className={downloadAllClass}>
+        <Link href={`/api/quotes/${document.id}/production-forms`} className={downloadAllClass}>
           <Download className="size-4" aria-hidden="true" />
           Download all forms ({rows.length + (extras > 0 ? 1 : 0)} pages)
         </Link>

@@ -101,8 +101,8 @@ describe("diffCatalog — buckets", () => {
   it("a blank id is a created row (product, option), with its prices created by code", () => {
     const snapshot = tinySnapshot();
     const sheets = sheetsOf(snapshot);
-    sheets.products.push([null, "X", "X-10390", "X-Calibre 10 x 390", null, "MACHINE", "M_SERIES", null, null, false, false, true, 0, null]);
-    sheets.options.push([null, "ABR-X", "Abrasive kit X", null, "ABR", null, null, "X", null, null, false, true, 0, null, null]);
+    sheets.products.push([null, "X", "X-10390", "X-Calibre 10 x 390", null, "MACHINE", "M_SERIES", null, false, false, true, 0, null]);
+    sheets.options.push([null, "ABR-X", "Abrasive kit X", null, "ABR", null, null, "X", null, false, true, 0, null, null]);
     sheets.prices.push(["product", null, "X-10390", "AU", "AUD", 250000, false]);
     sheets.prices.push(["option", "", "ABR-X", "US", "USD", 1500, true]);
     const diff = diffOf(sheets, snapshot);
@@ -222,7 +222,6 @@ describe("diffCatalog — buckets", () => {
           kind: "ACCESSORY",
           form: null,
           specs: null,
-          contentBlockKey: null,
           isCredit: false,
           noCommission: false,
           active: true,

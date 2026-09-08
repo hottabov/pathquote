@@ -44,6 +44,36 @@ three months ago.
 | D8 | Option-level copy is removed entirely. Options are already enumerated in the options table with name, attributes line, quantity and price. |
 | D9 | "Series" is relabelled "Category" in the UI only. The Prisma model, columns and routes keep the `Series` name. A full rename is a separate task. |
 | D10 | The RSP coverage table is removed now. RSP becomes a plain text document. The table returns with the real RSP pricing work. |
+| D11 | The quote routes move from `/documents` to `/quotes`, freeing `/documents` for this feature. The Prisma model stays `Document`, as with D9. |
+| D12 | Unfreezing reuses the existing admin-only `unfinalizeDocument`. It logs to the console in the shape `finalizeDocument` already uses; a real audit-log table is out of scope. |
+
+### Corrections made after reading the code
+
+Four findings from the implementation survey changed decisions above. They are
+recorded here rather than silently edited in, because the earlier reasoning is
+worth keeping.
+
+**`Option.shortDescription` stays.** It already does what D8 wants: adding an
+option to a quote snapshots `Option.shortDescription` into the line's
+`description` (`src/lib/actions/documents/options.ts:229-233`), so option text
+already comes from the option. It is also shown on the `/catalog/options` list
+and in the option edit form. Only `Option.contentBlockKey` and the `option.*`
+blocks are removed; option rows keep printing their description, now from the
+one source that owns it.
+
+**The nav label `Documents` was taken.** `/documents` is the quotes section
+(`src/lib/nav-items.ts:5`), hence D11.
+
+**No audit-log infrastructure exists.** No audit or activity model is in the
+schema; `finalizeDocument` writes `console.warn("[finalize] admin override: …")`
+with a comment saying there is nowhere better yet
+(`src/lib/actions/finalize.ts:158,168`). Hence D12.
+
+**There is no Series edit page.** `/catalog/[seriesId]` lists a series' products
+and carries one admin-only `SeriesImageCard`. The quote-description editor
+becomes a second such card. No `createSeries`/`updateSeries` action exists — the
+only Series write in the codebase is `updateSeriesImage`
+(`src/lib/actions/catalog/images.ts:62-77`), so a new action is required.
 
 ## Data model
 
@@ -133,10 +163,7 @@ documentsSnapshot Json?    // frozen at FINAL
 - Model `ContentBlock` and its migration, seed data and admin routes
 - `Product.contentBlockKey`
 - `Option.contentBlockKey`
-- `Option.shortDescription` — removed by default. Retained only if the
-  implementation plan finds it rendered somewhere other than the quote (for
-  example as an internal note to sales inside the builder), in which case it
-  stays as catalog-only data that never reaches the PDF.
+`Option.shortDescription` is **kept** — see the corrections note above.
 
 ## Variables
 
@@ -201,7 +228,13 @@ code, so their lines were always stripped. They return with the RSP work.
 
 ### Documents (new top-level menu item)
 
-`Settings → Content` is removed. **Documents** sits alongside Catalog.
+`Settings → Content` is removed, along with its tab in `CatalogueSubnav`
+(`src/components/settings/catalogue-subnav.tsx`), which keeps its other two.
+
+The quotes section moves from `/documents` to `/quotes` and is relabelled
+**Quotes** in `NAV_ITEMS` (D11). **Documents** then takes `/documents` and sits
+alongside Catalog. Only the route segments and hrefs move; the Prisma `Document`
+model and the `src/lib/**/documents*` module paths keep their names.
 
 List view: three rows — Terms, General Conditions of Sale, Remote Support
 Program — each showing print order and a badge naming the regions that have
@@ -237,8 +270,11 @@ cannot read what their own client is signing. Read access fixes that.
 
 ### Catalog — category page
 
-A **Quote description** block: rich text editor plus a variable palette
-filtered to that category's specs. Empty prints nothing.
+`/catalog/[seriesId]` gains a second admin-only card beside the existing
+`SeriesImageCard`: **Quote description**, a rich text editor plus a variable
+palette filtered to that category's product specs. Empty prints nothing. This
+needs a new `updateSeriesQuoteDescription` action — the only existing Series
+write is `updateSeriesImage`.
 
 ### Quote builder — Terms & Documents panel
 
@@ -263,8 +299,12 @@ Moving to FINAL writes `documentsSnapshot` — the resolved bodies of every
 included document and of each item's category copy, after variable
 substitution. The FINAL PDF renders from the snapshot.
 
-An admin may unfreeze: a confirmed action that returns the quote to DRAFT and
-writes an audit entry (who, when, why). Re-finalising picks up current text.
+An admin may unfreeze through the existing `unfinalizeDocument`
+(`src/lib/actions/finalize.ts:255-275`), which already returns the quote to
+DRAFT while keeping its number. Re-finalising overwrites the snapshot with
+current text, exactly as it already overwrites `entitySnapshot` and the frozen
+commission columns. Per D12 the action gains a `console.warn` line matching
+`finalizeDocument`'s existing override logging; no audit table is introduced.
 
 ## Render pipeline
 
@@ -292,10 +332,13 @@ Deleted:
 | `src/lib/queries/content.ts`, `src/lib/actions/content.ts` | replaced by document equivalents |
 | `src/components/sheet/sheet-css.ts:604-628` | RSP table styles |
 
-`equipment-detail.tsx` keeps `attributesLine` (the "× 3 tables, 12 m" line under
-an option name) and loses `descriptionHtml` on option rows
-(`equipment-detail.tsx:141-146`). Item copy comes from
-`Series.quoteDescription`, falling back to `specSentence` as today.
+`equipment-detail.tsx` keeps both `attributesLine` (the "× 3 tables, 12 m" line
+under an option name) and `descriptionHtml` on option rows
+(`equipment-detail.tsx:141-146`). What changes is where `descriptionHtml` comes
+from: the `Option.contentBlockKey` lookup is dropped, leaving the line's own
+snapshot description, which is copied from `Option.shortDescription` when the
+option is added. Item copy comes from `Series.quoteDescription`, falling back to
+`specSentence` as today.
 
 The hardcoded headings "Terms", "General Conditions of Sale" and "Remote Support
 Program" move into `QuoteDocument.title`.

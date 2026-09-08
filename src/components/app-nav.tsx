@@ -52,7 +52,12 @@ export function AppNav({ variant }: AppNavProps) {
   }
 
   return (
-    <nav aria-label="Main" className="grid grid-cols-4">
+    // One column per `NAV_ITEMS` entry — five since Documents joined them.
+    // A fixed `grid-cols-4` wrapped the fifth onto a second row, doubling the
+    // height of a bar the page's bottom padding is sized against; five is
+    // also the ceiling for a bottom bar, so a sixth entry needs a different
+    // shape here rather than another column.
+    <nav aria-label="Main" className="grid grid-cols-5">
       {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
         const active = isActive(pathname, href);
         return (

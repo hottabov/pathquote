@@ -1,5 +1,5 @@
 // Server-only: HTML rendering + Gotenberg conversion for the quotation PDF
-// pipeline (src/app/api/documents/[documentId]/quotation-pdf/route.ts).
+// pipeline (src/app/api/quotes/[documentId]/quotation-pdf/route.ts).
 // Kept separate from that route so `renderQuotationHtml`/`fileImageResolver`
 // stay reachable from tests without spinning up a route handler.
 //
@@ -18,14 +18,14 @@ import { QuotationSheet } from "@/components/sheet/quotation-sheet";
 import { resolveUploadPath } from "@/lib/uploads";
 import { ensureDerivative, type DerivativeWidth } from "@/lib/image-derivatives";
 import type { ImageResolver } from "@/lib/sheet-data";
-import type { QuotationData } from "@/lib/quotation-data";
+import { buildQuotationData, type QuotationData, type QuotationDataDoc, type QuoteDocumentRow } from "@/lib/quotation-data";
 
 // --- HTML rendering -----------------------------------------------------
 
 /**
  * Renders `QuotationSheet` to a full standalone HTML document — doctype,
  * charset, and an `@page` rule that fixes Gotenberg's headless Chromium to
- * A4 with 15mm margins (the same margins `QuotationSheet`'s own
+ * A4 with 12mm margins (the same margins `QuotationSheet`'s own
  * `.pq-content` padding assumes visually, so the printed page and the
  * in-app preview match).
  *
@@ -33,13 +33,38 @@ import type { QuotationData } from "@/lib/quotation-data";
  * Chromium can load with no further network/auth context — Gotenberg's
  * Chromium never has this app's session cookie. For the PDF pipeline that
  * means `fileImageResolver` (below) has marked each one, and the second pass
- * here replaces those marks with the actual bytes: see `inlineMarkedImages`
- * for why the file reading cannot happen in the resolver itself.
+ * inside `renderQuotationSheetHtml` replaces those marks with the actual
+ * bytes: see `inlineMarkedImages` for why the file reading cannot happen in
+ * the resolver itself.
  */
 export async function renderQuotationHtml(data: QuotationData): Promise<string> {
+  const body = await renderQuotationSheetHtml(data);
+  return `<!doctype html><html><head><meta charSet="utf-8"><style>@page{size:A4;margin:12mm} body{margin:0}</style></head><body>${body}</body></html>`;
+}
+
+/**
+ * `renderQuotationHtml`'s own body — `QuotationSheet` rendered to static
+ * markup with every marked image already inlined as a base64 `data:` URI —
+ * pulled out and exported for a second caller: the client signing page
+ * (src/app/(sign)/sign/[token]/page.tsx).
+ *
+ * That page cannot render `<QuotationSheet>` as a live Server Component the
+ * way the authenticated in-app preview does (src/app/(app)/quotes/
+ * [documentId]/quotation/page.tsx, `resolveImage: identityResolver`): an
+ * unauthenticated visitor's browser can no more fetch the stored
+ * `/api/files/...` URLs than Gotenberg's cookie-less Chromium can (see
+ * `fileImageResolver`'s own doc comment) — the same problem, so the same
+ * fix. `fileImageResolver` only *marks* an image; a mark left in a live
+ * React tree would render as a broken `<img src="pq-pdf-image:...">`, so the
+ * signing page embeds this fragment via `dangerouslySetInnerHTML` instead —
+ * the rendered-string, marks-already-inlined route this function exists to
+ * expose, rather than reaching into `inlineMarkedImages` directly (kept
+ * unexported, since the two-pass split it implements is this module's own
+ * implementation detail).
+ */
+export async function renderQuotationSheetHtml(data: QuotationData): Promise<string> {
   const { renderToStaticMarkup } = await import("react-dom/server");
-  const body = await inlineMarkedImages(renderToStaticMarkup(QuotationSheet({ data })));
-  return `<!doctype html><html><head><meta charSet="utf-8"><style>@page{size:A4;margin:15mm} body{margin:0}</style></head><body>${body}</body></html>`;
+  return inlineMarkedImages(renderToStaticMarkup(QuotationSheet({ data })));
 }
 
 // --- footer -----------------------------------------------------------
@@ -151,7 +176,7 @@ function releaseConversionSlot(): void {
 /**
  * Posts `html` to Gotenberg's Chromium-HTML endpoint and returns the
  * resulting PDF bytes. Margins are pinned to 0 here because `@page` inside
- * the HTML itself (see `renderQuotationHtml`) already reserves the 15mm
+ * the HTML itself (see `renderQuotationHtml`) already reserves the 12mm
  * margin as part of the page content — doubling it up via Gotenberg's own
  * margin options would push the sheet's own padding further in than
  * intended.
@@ -160,12 +185,12 @@ function releaseConversionSlot(): void {
  * pass one keep today's exact zero-margin behavior. When it IS passed,
  * Chromium's `header.html`/`footer.html` mechanism renders it INSIDE the
  * `marginBottom` band from `Page.printToPDF` — a completely separate
- * reservation from the `@page{margin:15mm}` CSS rule the sheet's own content
+ * reservation from the `@page{margin:12mm}` CSS rule the sheet's own content
  * relies on. With `marginBottom` left at 0, Gotenberg would have no room to
  * place the footer and it would be clipped, so a non-zero `marginBottom` is
  * set whenever a footer is supplied (~10mm — enough for the single-line
  * footer `buildFooterHtml` builds). That reservation stacks on top of, not
- * instead of, the sheet's own 15mm bottom padding, so page content simply
+ * instead of, the sheet's own 12mm bottom padding, so page content simply
  * ends a little higher up the page — never clipped.
  *
  * Conversions are gated: at most `MAX_CONCURRENT_CONVERSIONS` run at once and
@@ -443,6 +468,48 @@ async function readImageDataUri(
 
   const bytes = await readFile(originalPath).catch(() => null);
   return bytes ? `data:${mime};base64,${bytes.toString("base64")}` : undefined;
+}
+
+// --- whole-pipeline render --------------------------------------------------
+
+/**
+ * The full render sequence shared by every caller that turns a loaded QUOTE
+ * document into finished PDF bytes: `buildQuotationData` with
+ * `fileImageResolver`, `renderQuotationHtml`, then `htmlToPdf` with
+ * `buildFooterHtml`. Extracted from
+ * `src/app/api/quotes/[documentId]/quotation-pdf/route.ts` (the authenticated
+ * download) so that route, `completeSigning`
+ * (src/lib/actions/signing-client.ts, which archives the bytes a client just
+ * signed) and the client's own `/sign/[token]/pdf` route all produce PDF
+ * bytes from one code path rather than three copies that can drift.
+ *
+ * Deliberately takes the already-loaded `doc` and `quoteDocuments`, not a
+ * `documentId` — the plan for this task sketched
+ * `renderQuotationPdfForDocument(documentId)`, but there is no query this
+ * function could run that is safe for every caller: the authenticated route
+ * loads via `getDocumentForBuilder` (`src/lib/queries/documents-builder.ts`),
+ * which selects `commissionAmount`/`commissionRatePct`/`commissionBase`, and
+ * the unauthenticated `/sign/**` callers may only ever load through
+ * `getDocumentForSigning` (`src/lib/queries/signing.ts`), which deliberately
+ * omits them and is guarded by `assertNoCommissionLeak`. A helper that took an
+ * id and queried internally would have to pick one of those two, and picking
+ * the builder's would put commission fields one refactor away from a public
+ * route; picking the signing-safe one would quietly deny the authenticated
+ * route fields it's supposed to have. Accepting the caller's own already-typed
+ * `doc` sidesteps the choice entirely: both `DocumentForBuilder` and
+ * `DocumentForSigning["document"]` already satisfy `QuotationDataDoc` (each is
+ * exactly what `buildQuotationData` has always accepted), so this function
+ * never needs to know, or care, which query produced its input — a `doc`
+ * dangerous for an unauthenticated caller to hold is never in this function's
+ * hands to leak, because it's never in this function's hands to query.
+ */
+export async function renderQuotationPdfForDocument(
+  doc: QuotationDataDoc,
+  quoteDocuments: QuoteDocumentRow[]
+): Promise<Buffer> {
+  const data = buildQuotationData(doc, quoteDocuments, { resolveImage: fileImageResolver });
+  const html = await renderQuotationHtml(data);
+  return htmlToPdf(html, buildFooterHtml(doc.number));
 }
 
 // --- filename ---------------------------------------------------------------

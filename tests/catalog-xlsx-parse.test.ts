@@ -9,6 +9,7 @@ import {
   PRODUCT_COLUMNS,
   OPTION_COLUMNS,
   PRICE_COLUMNS,
+  RETIRED_COLUMNS,
   SHEET_NAMES,
 } from "../src/lib/catalog-xlsx/columns";
 import { buildCatalogWorkbook } from "../src/lib/catalog-xlsx/export";
@@ -107,7 +108,7 @@ describe("parseCatalogSheets — happy path", () => {
   it("accepts a blank id as a new row, lenient booleans, numeric strings and lowercase enums", () => {
     const snapshot = tinySnapshot();
     const sheets = sheetsOf(snapshot);
-    sheets.products.push([null, "M", "M-7180", "New machine", null, "machine", "m_series", null, null, "yes", 0, "FALSE", "3", null]);
+    sheets.products.push([null, "M", "M-7180", "New machine", null, "machine", "m_series", null, "yes", 0, "FALSE", "3", null]);
     const { parsed, errors } = parseCatalogSheets(sheets, snapshot);
     expect(errors).toEqual([]);
     const created = parsed.products.find((p) => p.code === "M-7180")!;
@@ -123,7 +124,7 @@ describe("parseCatalogSheets — happy path", () => {
   it("defaults blank kind to ACCESSORY, blank active to TRUE, blank sortOrder to 0", () => {
     const snapshot = tinySnapshot();
     const sheets = sheetsOf(snapshot);
-    sheets.products.push([null, "M", "HDRF", "Roll feeder", null, null, null, null, null, null, null, null, null, null]);
+    sheets.products.push([null, "M", "HDRF", "Roll feeder", null, null, null, null, null, null, null, null, null]);
     const { parsed, errors } = parseCatalogSheets(sheets, snapshot);
     expect(errors).toEqual([]);
     const created = parsed.products.find((p) => p.code === "HDRF")!;
@@ -135,8 +136,8 @@ describe("parseCatalogSheets — happy path", () => {
   it("ignores fully blank rows and accepts columns in any order", () => {
     const snapshot = tinySnapshot();
     const sheets = sheetsOf(snapshot);
-    sheets.products.push([null, null, null, null, null, null, null, null, null, null, null, null, null, null]);
-    sheets.products.push(["", "", "", "", "", "", "", "", "", "", "", "", "", ""]);
+    sheets.products.push([null, null, null, null, null, null, null, null, null, null, null, null, null]);
+    sheets.products.push(["", "", "", "", "", "", "", "", "", "", "", "", ""]);
     // Reverse the Options columns wholesale.
     sheets.options = sheets.options.map((row) => [...row].reverse());
     const { parsed, errors } = parseCatalogSheets(sheets, snapshot);
@@ -148,7 +149,7 @@ describe("parseCatalogSheets — happy path", () => {
   it("identifies a price for a new item by code, and by itemId for an existing one even when its code is stale", () => {
     const snapshot = tinySnapshot();
     const sheets = sheetsOf(snapshot);
-    sheets.products.push([null, "M", "M-7180", "New machine", null, "MACHINE", null, null, null, false, false, true, 0, null]);
+    sheets.products.push([null, "M", "M-7180", "New machine", null, "MACHINE", null, null, false, false, true, 0, null]);
     sheets.prices.push(["product", null, "M-7180", "AU", "AUD", 210000, false]);
     // Rename M-5180 in Products but leave the Prices sheet's code column as it was.
     setCell(sheets.products, "M-5180", "code", "M-5180-R");
@@ -183,6 +184,30 @@ describe("parseCatalogSheets — every error kind, as sheet/row/column", () => {
     // A broken header stops that sheet's rows from being parsed; the Prices
     // rows that point at its items then read as pointing at deleted rows.
     expect(errors.filter((e) => e.sheet === "Prices").length).toBeGreaterThan(0);
+  });
+
+  it("still imports a workbook exported before contentBlockKey was dropped", () => {
+    // The in-flight spreadsheet case: somebody exported the catalogue before
+    // z37_drop_content_block, has been editing it since, and uploads it now.
+    // Their file carries a column this contract no longer knows. Rejecting it
+    // as an unknown header would cost them the whole file for a column whose
+    // values nothing reads any more, so `RETIRED_COLUMNS` skips it by name.
+    const snapshot = tinySnapshot();
+    const sheets = sheetsOf(snapshot);
+    for (const sheet of [sheets.products, sheets.options]) {
+      sheet[0].push("contentBlockKey");
+      for (const row of sheet.slice(1)) row.push("machine.m-series");
+    }
+    const { parsed, errors } = parseCatalogSheets(sheets, snapshot);
+    expect(errors).toEqual([]);
+    expect(parsed.products.map((p) => p.code).sort()).toEqual(["EL-2020", "M-5180"]);
+    expect(parsed.options.map((o) => o.code).sort()).toEqual(["ABR-M", "EL-2020-DM12"]);
+    // Nothing is read off it, and nothing is written back: the stale column
+    // disappears from that copy the first time it is round-tripped.
+    expect(Object.keys(parsed.products[0])).not.toContain("contentBlockKey");
+    expect(RETIRED_COLUMNS).toContain("contentBlockKey");
+    expect(PRODUCT_COLUMNS).not.toContain("contentBlockKey");
+    expect(OPTION_COLUMNS).not.toContain("contentBlockKey");
   });
 
   it("unknown enum values (kind, form, role)", () => {

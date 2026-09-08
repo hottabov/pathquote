@@ -54,6 +54,12 @@ export type UserDetail = {
    * note. Feeds both the admin's user-edit avatar control and, for a
    * caller's own id, the account settings/dashboard avatar. */
   image: string | null;
+  /** `User.signatureUrl` — the manager's saved signature, drawn once in
+   * Account (see src/lib/actions/users.ts's `saveMySignature`). Unlike
+   * `image`, this is never shown to anyone but its owner: it feeds only the
+   * Account settings page, never the admin user-edit screen or the
+   * dashboard greeting. */
+  signatureUrl: string | null;
 };
 
 /** A single user by id, or `null` if it doesn't exist — feeds the
@@ -81,6 +87,7 @@ export const getUser = cache(async function getUser(userId: string): Promise<Use
     regionCode: user.region?.code ?? null,
     magicLinkOnly: !user.passwordHash,
     image: user.image,
+    signatureUrl: user.signatureUrl,
   };
 });
 

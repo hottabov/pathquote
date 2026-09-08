@@ -54,6 +54,11 @@ __pycache__/
 venv/
 
 # Local data
+# Pre-migration dumps written by scripts/migrate-content-blocks-to-series.ts
+# --apply: the full body of every ContentBlock row it deletes, including
+# legal-adjacent prose. A record for the machine that ran the migration, not
+# something to publish in the repo.
+migration-backup-*.json
 *.sqlite
 *.sqlite3
 tmp/

@@ -67,6 +67,8 @@ function baseQuotationData(overrides: Partial<QuotationData> = {}): QuotationDat
     preparedBy: { name: "Jane Author", email: "jane@example.com", phone: "0400 000 000", avatar: null },
     notesHtml: null,
     machineSections: [],
+    strippedTokens: [],
+    strippedDocumentTokens: [],
     items: [],
     extraLines: [],
     totals: {
@@ -81,12 +83,11 @@ function baseQuotationData(overrides: Partial<QuotationData> = {}): QuotationDat
       total: "1100.00",
       deliveryTerms: "DELIVERED",
     },
-    termsSections: [],
-    conditionsSections: [],
-    rsp: { agreementHtml: null, coverageRows: [] },
+    documents: [],
     showSignature: true,
     showItemPrices: true,
     showOptionPrices: true,
+    signatures: { author: null, client: null },
     ...overrides,
   };
 }
@@ -148,7 +149,7 @@ describe("renderQuotationHtml — page wrapping", () => {
 
     expect(html).toContain("<!doctype html>");
     expect(html).toContain('<meta charSet="utf-8">');
-    expect(html).toContain("@page{size:A4;margin:15mm}");
+    expect(html).toContain("@page{size:A4;margin:12mm}");
     expect(html).toContain("Pathfinder Cutting Systems");
     expect(html).toContain("Q-AU-2026-001");
   });
