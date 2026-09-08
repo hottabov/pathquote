@@ -7,14 +7,21 @@
  * Written from scratch rather than reusing the builder's own document read
  * (src/lib/queries/documents-builder.ts), and deliberately never importing
  * that module. That query selects `commissionAmount`, `commissionRatePct`
- * and `commissionBase` — a manager's payout — plus `notes`, an admin-authored
- * field this route withholds rather than resolving whether it counts as
- * customer-facing. Showing a client the manager's commission is an incident,
- * not a bug, and the way it would happen is not malice but reuse: someone
- * reaching for the builder's read because it already returns everything the
- * sheet needs. `tests/signing-exposure.test.ts` reads this file's source text
- * and fails the build if a commission field, `notes`, or an import of the
- * builder module ever appears here.
+ * and `commissionBase` — a manager's payout that must never reach a client.
+ * Showing a client the manager's commission is an incident, not a bug, and
+ * the way it would happen is not malice but reuse: someone reaching for the
+ * builder's read because it already returns everything the sheet needs.
+ * `tests/signing-exposure.test.ts` reads this file's source text and fails
+ * the build if a commission field or an import of the builder module ever
+ * appears here. That guard is textual, so it cannot see an `include` or a
+ * concatenated key that never spells the word out — `assertNoCommissionLeak`
+ * below is the same check at the one point where the shape is real.
+ *
+ * `notes` IS selected, deliberately: it is `Document.notes`, the same single
+ * column already rendered into the PDF the manager sends the client (see
+ * `NotesSection` / `QuotationSheet`, included unconditionally). Withholding
+ * it here would show the client a different document from the one they are
+ * signing.
  *
  * Lookup is by token hash, the unique column — the raw token never reaches
  * the database (see src/lib/signing/token.ts).
@@ -108,6 +115,43 @@ export type DocumentForSigning = {
   document: SigningDocument;
 };
 
+// The source-text guard in tests/signing-exposure.test.ts catches an author
+// who names a commission field. It cannot catch one who reuses the whole row
+// -- an `include` instead of a `select`, or a key built by concatenation --
+// because the forbidden word never appears. This is the same check at the
+// only point where the shape is real rather than textual.
+const FORBIDDEN_KEYS = ["commissionAmount", "commissionRatePct", "commissionBase"] as const;
+
+/**
+ * Throws if `document` -- the object about to be handed back from
+ * `getDocumentForSigning` to an unauthenticated signer -- carries any of
+ * `Document`'s three commission columns (see prisma/schema.prisma). Runs on
+ * every call, right before the function returns, against the one document
+ * object this route ever produces.
+ *
+ * Throws rather than stripping the keys: a silent filter would hide the
+ * mistake and let it reach the next person as a mystery. The message names
+ * both the offending key and this function so whoever trips it knows
+ * immediately what they did.
+ *
+ * Does not cover: commission data smuggled into one of the opaque JSON
+ * columns already selected above (`entitySnapshot`, `documentsSnapshot`,
+ * `attributes`) -- those are typed `unknown` and never inspected field by
+ * field; a differently-named alias for the same figures (e.g. `payoutAmount`
+ * copied from `commissionAmount`); or a leak introduced by some other query
+ * entirely. It only catches this exact row carrying one of these three exact
+ * keys, which is what an `include`-shaped rewrite of this function would do.
+ */
+function assertNoCommissionLeak(document: Record<string, unknown>): void {
+  for (const key of FORBIDDEN_KEYS) {
+    if (key in document) {
+      throw new Error(
+        `getDocumentForSigning: forbidden key "${key}" is present on the document about to be returned to an unauthenticated signer`
+      );
+    }
+  }
+}
+
 export async function getDocumentForSigning(tokenHash: string): Promise<DocumentForSigning | null> {
   const request = await db.signingRequest.findUnique({
     where: { tokenHash },
@@ -140,6 +184,7 @@ export async function getDocumentForSigning(tokenHash: string): Promise<Document
           showOptionPrices: true,
           heroImageUrl: true,
           regionId: true,
+          notes: true,
           signingStatus: true,
           signedPdfName: true,
           documentsSnapshot: true,
@@ -415,11 +460,12 @@ export async function getDocumentForSigning(tokenHash: string): Promise<Document
       phone: document.author.phone,
       avatar: document.author.image,
     },
-    // Deliberately never read from the column — see this file's header
-    // comment. `ToSheetDataDoc.notes` is required, so this satisfies the
-    // type rather than omitting the field, and the public sheet renders no
-    // Notes section for it, same as a document that never had one.
-    notes: null,
+    // The same field the client already receives in the PDF the manager
+    // sends — see this file's header comment. Passed through raw, exactly as
+    // `documents-builder.ts` does; `buildQuotationData` is what runs it
+    // through `renderStoredRichText` to sanitize it into HTML, and the sheet
+    // renders no Notes section when it's null, same as any other document.
+    notes: document.notes,
     showItemPrices: document.showItemPrices,
     showOptionPrices: document.showOptionPrices,
     heroImageUrl: document.heroImageUrl,
@@ -440,6 +486,8 @@ export async function getDocumentForSigning(tokenHash: string): Promise<Document
     documentsSnapshot: document.documentsSnapshot,
     signatures: document.signatures,
   };
+
+  assertNoCommissionLeak(signingDocument);
 
   return {
     id: request.id,

@@ -2538,8 +2538,12 @@ memory:
 
 1. Open `src/lib/queries/documents.ts` and copy the `select`/`include` block
    `getDocumentForBuilder` uses for the document itself.
-2. Paste it here, then **delete** `commissionAmount`, `commissionRatePct`,
-   `commissionBase`, and `notes` (internal, never customer-facing).
+2. Paste it here, then **delete** `commissionAmount`, `commissionRatePct`, and
+   `commissionBase`. Keep `notes`: it is `Document.notes`, the same single
+   column already rendered into the PDF the manager sends the client (see
+   `NotesSection` / `QuotationSheet`, included unconditionally) — there is no
+   separate internal-notes column, so deleting it here would sign the client
+   to a different document from the one they were shown.
 3. Add `regionId: true`, `author: { select: { name: true, email: true } }`, and
    `signatures: { select: { role: true, imageUrl: true, signerName: true, signedAt: true } }`.
 4. Run `npm run typecheck` — `buildQuotationData` will reject the object if any
