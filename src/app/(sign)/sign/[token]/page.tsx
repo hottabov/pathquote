@@ -1,9 +1,8 @@
-import { db } from "@/lib/db";
 import { getDocumentForSigning } from "@/lib/queries/signing";
 import { getQuoteDocumentsForRegion } from "@/lib/queries/quote-documents";
 import { hashSigningToken } from "@/lib/signing/token";
 import { resolveLinkState } from "@/lib/signing/link";
-import { statusAfterView } from "@/lib/signing/state";
+import { ViewBeacon } from "@/components/signing/view-beacon";
 import { buildQuotationData } from "@/lib/quotation-data";
 import { fileImageResolver, renderQuotationSheetHtml } from "@/lib/pdf";
 import { formatMoney } from "@/lib/format";
@@ -11,8 +10,9 @@ import { LinkProblem } from "@/components/signing/link-problem";
 import { ClientActionBar, DeclineLink } from "@/components/signing/client-action-bar";
 
 // renderQuotationSheetHtml reads uploaded files off disk (src/lib/pdf.ts) —
-// Node runtime only, not the edge runtime. force-dynamic because the view
-// (firstViewedAt / signingStatus) below writes on every uncached request.
+// Node runtime only, not the edge runtime. force-dynamic because the page is
+// per-token and its link state (expired, revoked, declined) is evaluated
+// against the clock on every request; it must never be served from a cache.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
@@ -60,25 +60,13 @@ export default async function SignPage({ params }: { params: Promise<{ token: st
     );
   }
 
-  // First open promotes SENT to VIEWED. Guarded on firstViewedAt being null
-  // so a reload is not a second event, and written with a status-guarded
-  // updateMany (matching sendQuoteForSignature's own claim idiom, src/lib/
-  // actions/signing.ts) so two simultaneous opens cannot both claim it.
-  if (request.firstViewedAt === null) {
-    const now = new Date();
-    await db.$transaction(async (tx) => {
-      const claimed = await tx.signingRequest.updateMany({
-        where: { id: request.id, firstViewedAt: null },
-        data: { firstViewedAt: now },
-      });
-      if (claimed.count === 0) return;
-      await tx.document.update({
-        where: { id: request.document.id },
-        data: { signingStatus: statusAfterView(request.document.signingStatus) },
-      });
-    });
-  }
-
+  // Rendering this page records nothing. Promoting SENT to VIEWED used to
+  // happen right here, which let a machine do it on the client's behalf —
+  // Microsoft 365 Defender renders every emailed URL in a headless browser, so
+  // a quote flipped to VIEWED seconds after it was sent and the manager was
+  // told the client had opened it. The write now lives behind evidence of a
+  // person: <ViewBeacon> posts to ./viewed on the first real interaction. See
+  // that route's doc comment for the trade being made.
   const quoteDocuments = await getQuoteDocumentsForRegion(request.document.regionId);
   const data = buildQuotationData(request.document, quoteDocuments, { resolveImage: fileImageResolver });
   const sheetHtml = await renderQuotationSheetHtml(data);
@@ -87,6 +75,7 @@ export default async function SignPage({ params }: { params: Promise<{ token: st
 
   return (
     <main className="mx-auto max-w-4xl pb-28">
+      {completed ? null : <ViewBeacon token={token} />}
       <div className="bg-white shadow-sm" dangerouslySetInnerHTML={{ __html: sheetHtml }} />
       {completed ? null : <DeclineLink token={token} />}
       <ClientActionBar
