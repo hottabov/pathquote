@@ -33,13 +33,38 @@ import type { QuotationData } from "@/lib/quotation-data";
  * Chromium can load with no further network/auth context — Gotenberg's
  * Chromium never has this app's session cookie. For the PDF pipeline that
  * means `fileImageResolver` (below) has marked each one, and the second pass
- * here replaces those marks with the actual bytes: see `inlineMarkedImages`
- * for why the file reading cannot happen in the resolver itself.
+ * inside `renderQuotationSheetHtml` replaces those marks with the actual
+ * bytes: see `inlineMarkedImages` for why the file reading cannot happen in
+ * the resolver itself.
  */
 export async function renderQuotationHtml(data: QuotationData): Promise<string> {
-  const { renderToStaticMarkup } = await import("react-dom/server");
-  const body = await inlineMarkedImages(renderToStaticMarkup(QuotationSheet({ data })));
+  const body = await renderQuotationSheetHtml(data);
   return `<!doctype html><html><head><meta charSet="utf-8"><style>@page{size:A4;margin:12mm} body{margin:0}</style></head><body>${body}</body></html>`;
+}
+
+/**
+ * `renderQuotationHtml`'s own body — `QuotationSheet` rendered to static
+ * markup with every marked image already inlined as a base64 `data:` URI —
+ * pulled out and exported for a second caller: the client signing page
+ * (src/app/(sign)/sign/[token]/page.tsx).
+ *
+ * That page cannot render `<QuotationSheet>` as a live Server Component the
+ * way the authenticated in-app preview does (src/app/(app)/quotes/
+ * [documentId]/quotation/page.tsx, `resolveImage: identityResolver`): an
+ * unauthenticated visitor's browser can no more fetch the stored
+ * `/api/files/...` URLs than Gotenberg's cookie-less Chromium can (see
+ * `fileImageResolver`'s own doc comment) — the same problem, so the same
+ * fix. `fileImageResolver` only *marks* an image; a mark left in a live
+ * React tree would render as a broken `<img src="pq-pdf-image:...">`, so the
+ * signing page embeds this fragment via `dangerouslySetInnerHTML` instead —
+ * the rendered-string, marks-already-inlined route this function exists to
+ * expose, rather than reaching into `inlineMarkedImages` directly (kept
+ * unexported, since the two-pass split it implements is this module's own
+ * implementation detail).
+ */
+export async function renderQuotationSheetHtml(data: QuotationData): Promise<string> {
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  return inlineMarkedImages(renderToStaticMarkup(QuotationSheet({ data })));
 }
 
 // --- footer -----------------------------------------------------------
