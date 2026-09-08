@@ -6,8 +6,9 @@ import { resolveLinkState } from "@/lib/signing/link";
 import { statusAfterView } from "@/lib/signing/state";
 import { buildQuotationData } from "@/lib/quotation-data";
 import { fileImageResolver, renderQuotationSheetHtml } from "@/lib/pdf";
+import { formatMoney } from "@/lib/format";
 import { LinkProblem } from "@/components/signing/link-problem";
-import { ClientActionBar } from "@/components/signing/client-action-bar";
+import { ClientActionBar, DeclineLink } from "@/components/signing/client-action-bar";
 
 // renderQuotationSheetHtml reads uploaded files off disk (src/lib/pdf.ts) —
 // Node runtime only, not the edge runtime. force-dynamic because the view
@@ -17,9 +18,9 @@ export const dynamic = "force-dynamic";
 
 /**
  * The quote as the client sees it: the same `QuotationSheet` the in-app
- * preview and the PDF pipeline render, with a signing bar under it (a
- * placeholder today — see `ClientActionBar`'s own doc comment; Task 14
- * replaces it).
+ * preview and the PDF pipeline render, with the real signing bar
+ * (`ClientActionBar`) under it and a restrained decline link
+ * (`DeclineLink`) below that — see both components' own doc comments.
  *
  * Reachable by anyone holding the token, with no session — see
  * src/proxy.ts's PUBLIC_PATHS and src/app/(sign)/layout.tsx's own doc
@@ -82,13 +83,21 @@ export default async function SignPage({ params }: { params: Promise<{ token: st
   const data = buildQuotationData(request.document, quoteDocuments, { resolveImage: fileImageResolver });
   const sheetHtml = await renderQuotationSheetHtml(data);
 
+  const completed = state.kind === "completed";
+
   return (
     <main className="mx-auto max-w-4xl pb-28">
       <div className="bg-white shadow-sm" dangerouslySetInnerHTML={{ __html: sheetHtml }} />
+      {completed ? null : <DeclineLink token={token} />}
       <ClientActionBar
         token={token}
-        completed={state.kind === "completed"}
+        completed={completed}
         hasClientSignature={data.signatures.client !== null}
+        quoteNumber={data.number ?? ""}
+        total={formatMoney(data.totals.total, data.totals.currency)}
+        authorName={data.preparedBy.name ?? data.preparedBy.email}
+        authorEmail={data.preparedBy.email}
+        signedOn={data.signatures.client?.signedAt ?? null}
       />
     </main>
   );
