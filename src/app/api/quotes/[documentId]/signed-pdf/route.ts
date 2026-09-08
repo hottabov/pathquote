@@ -42,17 +42,17 @@ export async function GET(_request: Request, { params }: { params: Promise<Param
   const { documentId } = await params;
   const document = await getDocumentForBuilder(session.user, documentId);
   if (!document || document.signingStatus !== "SIGNED" || !document.signedPdfName) {
-    return new Response("Not found", { status: 404 });
+    return Response.json({ error: "Not found" }, { status: 404 });
   }
 
   const diskPath = resolveSignedPdfPath(document.signedPdfName);
-  if (!diskPath) return new Response("Not found", { status: 404 });
+  if (!diskPath) return Response.json({ error: "Not found" }, { status: 404 });
 
   try {
     await stat(diskPath);
   } catch {
     console.error("[signing] archived PDF missing on disk", document.id);
-    return new Response("Not found", { status: 404 });
+    return Response.json({ error: "Not found" }, { status: 404 });
   }
 
   const filename = quotationPdfFilename(document.number);

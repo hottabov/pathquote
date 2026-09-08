@@ -403,7 +403,11 @@ export type DocumentForBuilder = {
    * (sent-to address, viewed/declined timestamps, decline reason) and the
    * array's own `length` for "sent N times" — never rendering the rest as a
    * list of revoked rows, which would bury the one row a manager actually
-   * needs behind history nobody asked for. */
+   * needs behind history nobody asked for. Ordered by `{ sentAt: "desc", id:
+   * "desc" }` (see the query below) rather than `sentAt` alone: nothing
+   * enforces `sentAt` uniqueness, so two rows with the same timestamp would
+   * otherwise have an undefined order in Postgres and this "index 0 is
+   * always current" guarantee would only be probable, not real. */
   signingRequests: {
     id: string;
     email: string;
@@ -616,9 +620,12 @@ async function loadDocumentForBuilder(
       // Feeds the document page's signing panel (see `signingRequests`'
       // own doc comment on `DocumentForBuilder` above) — newest first so
       // that array's index 0 is always "the current request" without the
-      // caller re-sorting.
+      // caller re-sorting. `id: "desc"` is a tie-break, not a meaningful
+      // ordering on its own: nothing enforces `sentAt` uniqueness, so two
+      // rows sent in the same instant (or via a bulk/replayed write) would
+      // otherwise sort in whatever order Postgres feels like today.
       signingRequests: {
-        orderBy: { sentAt: "desc" },
+        orderBy: [{ sentAt: "desc" }, { id: "desc" }],
         select: {
           id: true,
           email: true,

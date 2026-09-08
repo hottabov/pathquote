@@ -546,7 +546,14 @@ function SigningPanel({ document }: { document: DocumentForBuilder }) {
             href={`/api/quotes/${document.id}/signed-pdf`}
             className="focus-ring inline-flex w-fit items-center gap-1.5 rounded text-sm font-medium text-brand underline underline-offset-2"
           >
-            <Download className="size-4" aria-hidden="true" />
+            {/* Eye, not Download: the route serves `Content-Disposition:
+                inline` (src/app/api/quotes/[documentId]/signed-pdf/route.ts),
+                so the browser opens this rather than saving a file -- same
+                icon this page already uses for "Quotation preview" below,
+                which opens in-app rather than downloading for the same
+                reason. Download stays reserved for the one link that
+                actually triggers a save ("Quotation PDF", `attachment`). */}
+            <Eye className="size-4" aria-hidden="true" />
             View signed PDF
           </a>
         ) : null}
