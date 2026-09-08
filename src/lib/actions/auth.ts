@@ -1,7 +1,15 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { AuthError } from "next-auth";
-import { signIn, signOut } from "@/auth";
+import { MAGIC_LINK_MAX_AGE_SECONDS, signIn, signOut } from "@/auth";
+import { withPendingChallenge } from "@/lib/auth/adapter";
+import {
+  challengeCookieName,
+  challengeCookieOptions,
+  generateChallenge,
+  hashChallenge,
+} from "@/lib/auth/magic-challenge";
 
 type ActionResult = {
   error?: string;
@@ -142,8 +150,19 @@ export async function sendMagicLink(formData: FormData): Promise<ActionResult> {
   }
   recordAttempt(magicLinkSends, email, MAGIC_LINK_WINDOW_MS);
 
+  // Mint the challenge before asking @auth/core for a link. Only its hash
+  // reaches the database, attached to the token row by the adapter wrapper;
+  // the raw value goes to this browser as an httpOnly cookie below. A browser
+  // that presents it back at verify time is demonstrably the one that asked,
+  // and signs in with no click. Anything else — a link scanner in the
+  // recipient's mail pipeline, or the same person's phone — gets a button.
+  // See src/lib/auth/magic-challenge.ts.
+  const challenge = generateChallenge();
+
   try {
-    await signIn("nodemailer", { email, redirect: false });
+    await withPendingChallenge(hashChallenge(challenge), () =>
+      signIn("nodemailer", { email, redirect: false })
+    );
   } catch (error) {
     if (!(error instanceof AuthError)) throw error;
 
@@ -173,6 +192,16 @@ export async function sendMagicLink(formData: FormData): Promise<ActionResult> {
     console.error("[auth] magic link send failed", error);
     return { error: MAGIC_LINK_SEND_FAILED };
   }
+
+  // Set only once a link is genuinely on its way. The AccessDenied branch
+  // above returns before this point, so an unknown or inactive address leaves
+  // no cookie behind — which also keeps this endpoint from becoming a way to
+  // probe which addresses have accounts by watching for a Set-Cookie header.
+  (await cookies()).set(
+    challengeCookieName(),
+    challenge,
+    challengeCookieOptions(MAGIC_LINK_MAX_AGE_SECONDS)
+  );
 
   return { success: MAGIC_LINK_SENT, sentTo: email };
 }

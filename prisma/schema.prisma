@@ -272,6 +272,17 @@ model VerificationToken {
   identifier String
   token      String   @unique
   expires    DateTime
+  // SHA-256 of the challenge nonce handed to the browser that requested this
+  // link, as an httpOnly cookie. Present it back and sign-in needs no click;
+  // absent or wrong (a link scanner, or the same person's phone) and the
+  // confirm button is shown instead. See src/lib/auth/magic-challenge.ts.
+  //
+  // Nullable on purpose, and never backfilled: NULL means "issued before this
+  // column existed", and those rows consume on first verify exactly as they
+  // always did, so links in flight across the deploy keep working. @auth/core
+  // writes this row itself and knows nothing about this column, so it is
+  // filled by the adapter wrapper in src/lib/auth/adapter.ts.
+  challengeHash String?
 
   @@unique([identifier, token])
 }

@@ -1,0 +1,12 @@
+-- Device-binding challenge for magic-link sign-in.
+--
+-- Nullable and NOT backfilled, deliberately: NULL means "issued before this
+-- column existed". src/lib/auth/magic-challenge.ts reads a NULL as "no
+-- challenge bound to this row" and consumes on first verify exactly as
+-- before, so sign-in links already sitting in inboxes during the deploy keep
+-- working. Backfilling would bind those rows to a nonce no browser holds and
+-- silently downgrade every one of them to the confirm button.
+--
+-- IF NOT EXISTS so re-running the migration on a database that already has the
+-- column is a no-op rather than an error.
+ALTER TABLE "VerificationToken" ADD COLUMN IF NOT EXISTS "challengeHash" TEXT;

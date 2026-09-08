@@ -2,7 +2,7 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Nodemailer from "next-auth/providers/nodemailer";
 import { createTransport } from "nodemailer";
-import { PrismaAdapter } from "@auth/prisma-adapter";
+import { adapter } from "@/lib/auth/adapter";
 import { buildMagicLinkEmail } from "@/lib/email/magic-link";
 import { toConfirmUrl } from "@/lib/email/magic-link-url";
 import { resolveReplyTo } from "@/lib/email/reply-to";
@@ -21,7 +21,7 @@ import { db } from "@/lib/db";
 // Magic links are single-use and arrive by email; 15 minutes is long enough to
 // switch to a mail client and back, short enough that a link sitting in an
 // unattended inbox stops being a credential.
-const MAGIC_LINK_MAX_AGE_SECONDS = 900;
+export const MAGIC_LINK_MAX_AGE_SECONDS = 900;
 
 function isPrismaInfraError(e: unknown): e is Prisma.PrismaClientKnownRequestError {
   return (
@@ -45,7 +45,10 @@ const DUMMY_PASSWORD_HASH =
 const REVALIDATE_INTERVAL_MS = 5 * 60 * 1000;
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(db),
+  // Wrapped so a magic-link token row can carry the challenge nonce minted
+  // for the requesting browser — @auth/core writes that row itself and has no
+  // hook for extra columns. See src/lib/auth/adapter.ts.
+  adapter,
   session: {
     strategy: "jwt",
     maxAge: 7 * 24 * 60 * 60, // 7 days
