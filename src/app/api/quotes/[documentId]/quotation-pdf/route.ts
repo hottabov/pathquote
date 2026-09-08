@@ -1,8 +1,7 @@
 import { auth } from "@/auth";
 import { getDocumentForBuilder } from "@/lib/queries/documents";
 import { getQuoteDocumentsForRegion } from "@/lib/queries/quote-documents";
-import { buildQuotationData } from "@/lib/quotation-data";
-import { renderQuotationHtml, htmlToPdf, fileImageResolver, quotationPdfFilename, buildFooterHtml } from "@/lib/pdf";
+import { renderQuotationPdfForDocument, quotationPdfFilename } from "@/lib/pdf";
 
 // `react-dom/server` (used transitively via src/lib/pdf.ts) and Gotenberg's
 // HTTP call both need the Node runtime — not available on the edge runtime.
@@ -35,12 +34,14 @@ export async function GET(_request: Request, { params }: { params: Promise<Param
   // — both read this document's region's own QuoteDocument rows so the
   // preview and the PDF resolve Terms/Conditions/RSP identically.
   const documents = await getQuoteDocumentsForRegion(document.regionId);
-  const quotationData = buildQuotationData(document, documents, { resolveImage: fileImageResolver });
-  const html = await renderQuotationHtml(quotationData);
 
   let pdf: Buffer;
   try {
-    pdf = await htmlToPdf(html, buildFooterHtml(document.number));
+    // Shared with `completeSigning` (src/lib/actions/signing-client.ts) and
+    // the client's own `/sign/[token]/pdf` route — see
+    // `renderQuotationPdfForDocument`'s own doc comment in src/lib/pdf.ts for
+    // why it takes this already-loaded `document` rather than an id.
+    pdf = await renderQuotationPdfForDocument(document, documents);
   } catch (error) {
     console.error("Quotation PDF generation failed", error);
     return Response.json({ error: "PDF service unavailable" }, { status: 502 });

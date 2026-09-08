@@ -27,8 +27,7 @@ import { canComplete, canDecline, signatureRolesClearedBy, type SigningStatus } 
 import { sha256Hex, signedPdfFilename } from "@/lib/signing/archive";
 import { getDocumentForSigning, type DocumentForSigning } from "@/lib/queries/signing";
 import { getQuoteDocumentsForRegion } from "@/lib/queries/quote-documents";
-import { buildQuotationData } from "@/lib/quotation-data";
-import { renderQuotationHtml, htmlToPdf, fileImageResolver, buildFooterHtml } from "@/lib/pdf";
+import { renderQuotationPdfForDocument } from "@/lib/pdf";
 import { buildCompletionEmailForClient, buildCompletionEmailForAuthor } from "@/lib/email/signing";
 import { resolveReplyTo } from "@/lib/email/reply-to";
 import { createAppMailTransport, mailFromAddress } from "@/lib/email/transport";
@@ -291,15 +290,15 @@ export async function signAsClient(token: string, dataUrl: string): Promise<Acti
  * client was just looking at, signature included — not a second,
  * independently-assembled document that happens to show the same numbers.
  *
- * This is the same three-call pipeline
- * `/api/quotes/[documentId]/quotation-pdf/route.ts` uses for the
- * *authenticated* download (`buildQuotationData` with `fileImageResolver`,
- * `renderQuotationHtml`, `htmlToPdf` with `buildFooterHtml`) — reused rather
- * than re-implemented so a manager who later opens that route on this same
- * FINAL, SIGNED document gets back the identical bytes this function
- * archived. The one deliberate difference is the document read: that route
- * calls `getDocumentForBuilder` (session-scoped, commission fields
- * included), which this unauthenticated action must never touch (see
+ * This calls `renderQuotationPdfForDocument` (src/lib/pdf.ts) — the same
+ * render sequence `/api/quotes/[documentId]/quotation-pdf/route.ts` uses for
+ * the *authenticated* download, and the client's own `/sign/[token]/pdf`
+ * route uses for a pre-completion live render — reused rather than
+ * re-implemented so a manager who later opens that route on this same FINAL,
+ * SIGNED document gets back the identical bytes this function archived. The
+ * one deliberate difference is the document read: that route calls
+ * `getDocumentForBuilder` (session-scoped, commission fields included),
+ * which this unauthenticated action must never touch (see
  * `getDocumentForSigning`'s own header comment) — `renderSignedPdf` is
  * therefore handed the already-fetched, commission-free document that
  * `loadLiveRequest` read a moment earlier, rather than re-deriving a
@@ -307,13 +306,14 @@ export async function signAsClient(token: string, dataUrl: string): Promise<Acti
  * named (`renderSignedPdf(documentId)`). There is no unauthenticated-safe
  * query by documentId to call instead — `getDocumentForSigning` only takes a
  * token hash — so threading the already-verified document through is the
- * correct fix, not a shortcut.
+ * correct fix, not a shortcut. `renderQuotationPdfForDocument` itself takes
+ * this same already-loaded shape rather than an id for exactly the same
+ * reason; see its own doc comment for why a shared id-taking helper was
+ * rejected outright rather than merely deferred.
  */
 async function renderSignedPdf(document: DocumentForSigning["document"]): Promise<Buffer> {
   const quoteDocuments = await getQuoteDocumentsForRegion(document.regionId);
-  const data = buildQuotationData(document, quoteDocuments, { resolveImage: fileImageResolver });
-  const html = await renderQuotationHtml(data);
-  return htmlToPdf(html, buildFooterHtml(document.number));
+  return renderQuotationPdfForDocument(document, quoteDocuments);
 }
 
 /**

@@ -205,3 +205,28 @@ export function resolveUploadPath(name: string): string | null {
   if (!UPLOAD_FILENAME_PATTERN.test(name)) return null;
   return path.resolve(uploadsDir(), name);
 }
+
+/** The archived signed quotes `completeSigning` writes
+ * (src/lib/actions/signing-client.ts) and the client's own PDF route
+ * (src/app/(sign)/sign/[token]/pdf/route.ts) streams back byte-for-byte. A
+ * separate pattern from `UPLOAD_FILENAME_PATTERN`/`IMAGE_URL_PATTERN` rather
+ * than a widened one: every other caller of `resolveUploadPath` serves its
+ * result as an image, and a `.pdf` slipping through there would be served
+ * with the wrong `Content-Type` at best. Same uuid shape as those. */
+export const SIGNED_PDF_NAME_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.pdf$/;
+
+/**
+ * `resolveUploadPath`'s counterpart for the archived signed-quote PDFs (see
+ * `SIGNED_PDF_NAME_PATTERN`). Same shape as `resolveUploadPath` on purpose —
+ * one `.test()` against an anchored pattern that forbids `/` and `..`,
+ * followed by `path.resolve` — rather than adding a `startsWith` containment
+ * check on top: `resolveUploadPath` itself has never needed one, because an
+ * anchored pattern with no separator characters in its alphabet cannot
+ * produce a traversal no matter what `path.resolve` does with it. Adding a
+ * second idiom here would suggest the regex alone isn't trusted, when it is
+ * the only guard its sibling relies on.
+ */
+export function resolveSignedPdfPath(name: string): string | null {
+  if (!SIGNED_PDF_NAME_PATTERN.test(name)) return null;
+  return path.resolve(uploadsDir(), name);
+}

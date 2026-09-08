@@ -18,7 +18,7 @@ import { QuotationSheet } from "@/components/sheet/quotation-sheet";
 import { resolveUploadPath } from "@/lib/uploads";
 import { ensureDerivative, type DerivativeWidth } from "@/lib/image-derivatives";
 import type { ImageResolver } from "@/lib/sheet-data";
-import type { QuotationData } from "@/lib/quotation-data";
+import { buildQuotationData, type QuotationData, type QuotationDataDoc, type QuoteDocumentRow } from "@/lib/quotation-data";
 
 // --- HTML rendering -----------------------------------------------------
 
@@ -468,6 +468,48 @@ async function readImageDataUri(
 
   const bytes = await readFile(originalPath).catch(() => null);
   return bytes ? `data:${mime};base64,${bytes.toString("base64")}` : undefined;
+}
+
+// --- whole-pipeline render --------------------------------------------------
+
+/**
+ * The full render sequence shared by every caller that turns a loaded QUOTE
+ * document into finished PDF bytes: `buildQuotationData` with
+ * `fileImageResolver`, `renderQuotationHtml`, then `htmlToPdf` with
+ * `buildFooterHtml`. Extracted from
+ * `src/app/api/quotes/[documentId]/quotation-pdf/route.ts` (the authenticated
+ * download) so that route, `completeSigning`
+ * (src/lib/actions/signing-client.ts, which archives the bytes a client just
+ * signed) and the client's own `/sign/[token]/pdf` route all produce PDF
+ * bytes from one code path rather than three copies that can drift.
+ *
+ * Deliberately takes the already-loaded `doc` and `quoteDocuments`, not a
+ * `documentId` — the plan for this task sketched
+ * `renderQuotationPdfForDocument(documentId)`, but there is no query this
+ * function could run that is safe for every caller: the authenticated route
+ * loads via `getDocumentForBuilder` (`src/lib/queries/documents-builder.ts`),
+ * which selects `commissionAmount`/`commissionRatePct`/`commissionBase`, and
+ * the unauthenticated `/sign/**` callers may only ever load through
+ * `getDocumentForSigning` (`src/lib/queries/signing.ts`), which deliberately
+ * omits them and is guarded by `assertNoCommissionLeak`. A helper that took an
+ * id and queried internally would have to pick one of those two, and picking
+ * the builder's would put commission fields one refactor away from a public
+ * route; picking the signing-safe one would quietly deny the authenticated
+ * route fields it's supposed to have. Accepting the caller's own already-typed
+ * `doc` sidesteps the choice entirely: both `DocumentForBuilder` and
+ * `DocumentForSigning["document"]` already satisfy `QuotationDataDoc` (each is
+ * exactly what `buildQuotationData` has always accepted), so this function
+ * never needs to know, or care, which query produced its input — a `doc`
+ * dangerous for an unauthenticated caller to hold is never in this function's
+ * hands to leak, because it's never in this function's hands to query.
+ */
+export async function renderQuotationPdfForDocument(
+  doc: QuotationDataDoc,
+  quoteDocuments: QuoteDocumentRow[]
+): Promise<Buffer> {
+  const data = buildQuotationData(doc, quoteDocuments, { resolveImage: fileImageResolver });
+  const html = await renderQuotationHtml(data);
+  return htmlToPdf(html, buildFooterHtml(doc.number));
 }
 
 // --- filename ---------------------------------------------------------------
