@@ -24,6 +24,23 @@ const nextConfig: NextConfig = {
   env: {
     APP_VERSION: process.env.APP_VERSION || process.env.npm_package_version,
   },
+  async headers() {
+    return [
+      {
+        // The signing token lives in this path (src/app/(sign)/sign/[token]).
+        // `no-referrer` stops it travelling in a Referer header to anything
+        // the page loads or links to; `no-store` keeps it out of shared
+        // caches; `X-Robots-Tag` backs up the route's own `robots` metadata
+        // (src/app/(sign)/layout.tsx) for crawlers that ignore that tag.
+        source: "/sign/:path*",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+          { key: "Cache-Control", value: "no-store, max-age=0" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
