@@ -18,14 +18,20 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 # Explicit copies, not `COPY . .`. Every path listed here is a real input to
 # `next build`; anything else that changes must not invalidate this layer.
-# The two prisma files are not an oversight — src/lib/content-placeholders.ts
-# imports prisma/seed-data/content-blocks.json for its value and
-# prisma/seed-lib for the ContentBlocksJson type. The type import is erased,
-# but copying it anyway keeps a build that runs with SKIP_TYPECHECK unset (a
-# local `docker build`, say) from failing on a missing file.
+#
+# prisma/seed-lib.ts is copied even though nothing under src/ imports it,
+# because tsconfig's include is `**/*.ts` — a build running with SKIP_TYPECHECK
+# unset (a local `docker build`, say) compiles whatever .ts files are present,
+# and this one is cheap to satisfy. It has no further dependencies of its own.
+#
+# There used to be a third copy here, prisma/seed-data/content-blocks.json,
+# for src/lib/content-placeholders.ts. Both were removed by 271c6f1 ("refactor:
+# retire ContentBlock"), which left this line behind pointing at a file no
+# longer in the repository — so every image build failed at `COPY` until it was
+# taken out. An explicit copy list is only safer than `COPY . .` while it is
+# kept in step with what actually exists.
 COPY package.json next.config.ts tsconfig.json postcss.config.mjs ./
 COPY prisma/seed-lib.ts ./prisma/seed-lib.ts
-COPY prisma/seed-data/content-blocks.json ./prisma/seed-data/content-blocks.json
 COPY public ./public
 COPY src ./src
 # APP_VERSION lets the deploy stamp a git SHA onto the build; when it is empty
