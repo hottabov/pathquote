@@ -369,8 +369,69 @@ stop and copy only what is needed instead — `npm run db:seed` on the VPS
 already brings the catalogue across from the repository without touching a
 single user.
 
+### The command
+
+`scripts/replace-prod-with-local.sh` is every step below in one run. From the
+repository root, with the local Postgres container up:
+
+```bash
+docker compose up -d postgres
+VPS=root@74.208.106.34 SSH_PORT=3498 SSH_KEY=~/.ssh/pathfinder-key ./scripts/replace-prod-with-local.sh
+```
+
+One line, no backslash — a `\` only continues a line when the newline follows
+it immediately, and pasting the wrapped form into one line turns it into an
+escaped space that gets prepended to the script's path.
+
+**Deploy first.** The dump carries the local schema, so the VPS must already be
+running this commit; the script stops when the two `HEAD`s differ rather than
+restoring a schema the running image was never built against. Push, let the
+deploy workflow go green, then run this.
+
+It asks for `REPLACE` before touching anything, refuses to run quietly when
+the VPS is on a different commit than the local HEAD (see the last paragraph
+of this section for why), takes a backup of production first, and finishes on
+`/api/health`. `SSH_KEY` is only needed because the VPS is key-only and that
+key is not the one ssh picks by default; drop `SSH_PORT`/`SSH_KEY` entirely if
+`~/.ssh/config` already carries them for this host. `VPS_DIR` (default
+`/opt/pathquote`) and `UPLOADS_VOLUME` (default `pathquote_uploads`) are the
+other two knobs.
+
+Check the key reaches the box before a run that is going to drop a database:
+
+```bash
+ssh -p 3498 -i ~/.ssh/pathfinder-key -o IdentitiesOnly=yes root@74.208.106.34 "cd /opt/pathquote && git rev-parse --short HEAD"
+```
+
+### Clearing demo quotes first
+
+Copying local over production copies the demo quotes too, and a deleted quote
+is not the same thing as an unreachable one: a signing link keeps working for
+as long as its `SigningRequest` row exists, and that row is invisible in the
+Quotes list to everyone but the quote's own author (`documentWhereForUser`,
+src/lib/scope.ts — ADMIN sees all, MANAGER sees own). A demo quote written by
+another account is therefore both gone from your list and live on the web.
+
+So purge locally, then copy:
+
+```bash
+npm run quotes:purge            # dry run — lists what would go
+npm run quotes:purge -- --yes   # delete
+```
+
+That removes every `Document` (cascading to items, lines, exclusions, signing
+requests and signatures), resets the per-region numbering, and deletes the
+files those rows owned — archived signed PDFs and frozen signature images.
+The catalogue, users, regions, settings, companies and contacts are untouched.
+
+Then run the copy below, which makes production an exact copy of that state.
+Do it in this order: purging production directly would need the script inside
+the deployed `tools` image, and would leave the two machines diverged anyway.
+
+### By hand
+
 Two things live in different places on the two machines, which is why this is
-not a single command:
+not one command underneath:
 
 - **Postgres** is a container on both, so it dumps and restores the same way.
 - **Uploaded files** are a Docker volume on the VPS (`pathquote_uploads`,

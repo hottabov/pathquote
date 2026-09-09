@@ -17,6 +17,7 @@
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:verify-seed": "tsx scripts/verify-seed.ts",
+    "quotes:purge": "tsx scripts/purge-quotes.ts",
     "user:create": "tsx scripts/create-user.ts",
     "images:import": "tsx scripts/import-product-images.ts",
     "import:industries": "tsx scripts/import-industries.ts",
