@@ -6,6 +6,7 @@ import {
   toEditorHtml,
   sanitizeIfHtml,
   toPlainTextPreview,
+  isBlankRichText,
 } from "../src/lib/rich-text";
 
 // Pure module — no @/lib/db import, so this never needs DATABASE_URL set
@@ -182,5 +183,39 @@ describe("toPlainTextPreview", () => {
     const out = toPlainTextPreview("<h2>Spec</h2><ul><li>one</li><li>two</li></ul>");
     expect(out).not.toMatch(/[<>]/);
     expect(out).toBe("Spec one two");
+  });
+});
+
+// `isBlankRichText` is what keeps an untouched Notes field from printing an
+// empty "Notes" section on a customer-facing quote — the editor saves markup
+// for a field nobody typed into, and that markup is truthy.
+describe("isBlankRichText", () => {
+  it("treats null/empty/whitespace as blank", () => {
+    expect(isBlankRichText(null)).toBe(true);
+    expect(isBlankRichText("")).toBe(true);
+    expect(isBlankRichText("   \n  ")).toBe(true);
+  });
+
+  it("treats the editor's empty-document markup as blank", () => {
+    expect(isBlankRichText("<p></p>")).toBe(true);
+    expect(isBlankRichText("<p><br></p>")).toBe(true);
+    expect(isBlankRichText("<p>   </p>")).toBe(true);
+  });
+
+  it("treats nested/repeated empty blocks as blank", () => {
+    expect(isBlankRichText("<p></p><p></p>")).toBe(true);
+    expect(isBlankRichText("<ul><li></li></ul>")).toBe(true);
+    expect(isBlankRichText("<blockquote><p><br></p></blockquote>")).toBe(true);
+  });
+
+  it("is not blank as soon as there is any visible text", () => {
+    expect(isBlankRichText("<p>Deposit due on order.</p>")).toBe(false);
+    expect(isBlankRichText("<p><strong>x</strong></p>")).toBe(false);
+    expect(isBlankRichText("Legacy markdown note")).toBe(false);
+  });
+
+  it("is not blank for text that only appears inside a stripped tag", () => {
+    // DOMPurify drops the tag but keeps its words — those words are content.
+    expect(isBlankRichText("<div>kept text</div>")).toBe(false);
   });
 });

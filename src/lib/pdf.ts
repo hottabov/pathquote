@@ -25,9 +25,15 @@ import { buildQuotationData, type QuotationData, type QuotationDataDoc, type Quo
 /**
  * Renders `QuotationSheet` to a full standalone HTML document — doctype,
  * charset, and an `@page` rule that fixes Gotenberg's headless Chromium to
- * A4 with 12mm margins (the same margins `QuotationSheet`'s own
- * `.pq-content` padding assumes visually, so the printed page and the
- * in-app preview match).
+ * A4 with the document's margins: 15mm top/right/bottom and 25mm left, the
+ * wider left edge being the binding margin.
+ *
+ * `@page` is the SOLE source of the printed margin. `QuotationSheet`'s own
+ * `.pq-content` padding mirrors these four numbers for the on-screen
+ * preview and zeroes itself under `@media print` (see the print block in
+ * src/components/sheet/sheet-css.ts, which explains what the previous
+ * arrangement cost) — so the printed page and the in-app preview match, and
+ * they only keep matching if these two move together.
  *
  * Every image in `data` must already have been resolved to something
  * Chromium can load with no further network/auth context — Gotenberg's
@@ -39,7 +45,7 @@ import { buildQuotationData, type QuotationData, type QuotationDataDoc, type Quo
  */
 export async function renderQuotationHtml(data: QuotationData): Promise<string> {
   const body = await renderQuotationSheetHtml(data);
-  return `<!doctype html><html><head><meta charSet="utf-8"><style>@page{size:A4;margin:12mm} body{margin:0}</style></head><body>${body}</body></html>`;
+  return `<!doctype html><html><head><meta charSet="utf-8"><style>@page{size:A4;margin:15mm 15mm 15mm 25mm} body{margin:0}</style></head><body>${body}</body></html>`;
 }
 
 /**
@@ -90,7 +96,10 @@ function escapeHtmlAttr(input: string): string {
  * because the footer is rendered in its own document with no stylesheet. */
 export function buildFooterHtml(documentNumber: string | null): string {
   const left = escapeHtmlAttr(documentNumber ?? "Draft");
-  return `<div style="width:100%;font-size:8px;font-family:sans-serif;color:#666;padding:0 12mm;display:flex;justify-content:space-between;">
+  // Left/right padding matches the sheet's own left/right page margins (see
+  // `renderQuotationHtml`'s @page rule) so the footer's two ends line up with
+  // the text column above them rather than floating in from the paper edge.
+  return `<div style="width:100%;font-size:8px;font-family:sans-serif;color:#666;padding:0 15mm 0 25mm;display:flex;justify-content:space-between;">
   <span>${left}</span>
   <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
 </div>`;
@@ -176,22 +185,19 @@ function releaseConversionSlot(): void {
 /**
  * Posts `html` to Gotenberg's Chromium-HTML endpoint and returns the
  * resulting PDF bytes. Margins are pinned to 0 here because `@page` inside
- * the HTML itself (see `renderQuotationHtml`) already reserves the 12mm
- * margin as part of the page content — doubling it up via Gotenberg's own
- * margin options would push the sheet's own padding further in than
- * intended.
+ * the HTML itself (see `renderQuotationHtml`) already reserves the page
+ * margin — Chromium honours that CSS rule over these options, and setting
+ * both would only make the effective margin ambiguous to the next reader.
  *
  * `footerHtml` (see `buildFooterHtml`) is optional so callers that don't
  * pass one keep today's exact zero-margin behavior. When it IS passed,
  * Chromium's `header.html`/`footer.html` mechanism renders it INSIDE the
- * `marginBottom` band from `Page.printToPDF` — a completely separate
- * reservation from the `@page{margin:12mm}` CSS rule the sheet's own content
- * relies on. With `marginBottom` left at 0, Gotenberg would have no room to
- * place the footer and it would be clipped, so a non-zero `marginBottom` is
- * set whenever a footer is supplied (~10mm — enough for the single-line
- * footer `buildFooterHtml` builds). That reservation stacks on top of, not
- * instead of, the sheet's own 12mm bottom padding, so page content simply
- * ends a little higher up the page — never clipped.
+ * bottom margin band — a separate reservation from the page content itself,
+ * so the footer never collides with the sheet. A non-zero `marginBottom`
+ * (~10mm) is still set whenever a footer is supplied: the `@page` bottom
+ * margin already leaves room for the single line `buildFooterHtml` builds,
+ * but keeping the explicit reservation means a footer that later grows a
+ * second line still has somewhere to go rather than being clipped.
  *
  * Conversions are gated: at most `MAX_CONCURRENT_CONVERSIONS` run at once and
  * the rest queue, up to `MAX_QUEUED_CONVERSIONS`, past which this throws

@@ -90,6 +90,39 @@ describe("substitutePlaceholders", () => {
     expect(result).toBe("Before\nBank: ANZ Westfield\nBSB: 013 442\nAfter");
   });
 
+  // The HTML counterpart of the markdown case above. A bare "\n" inside a
+  // <p> is whitespace and collapses to a space when laid out, which is what
+  // printed EFT bank details as one run-on line in Documents -> Terms.
+  it("converts a multi-line resolved value's newlines to <br> when the body is HTML", () => {
+    const result = substitutePlaceholders("<p>EFT payments:</p><p>{{bankDetails}}</p>", {
+      bankDetails: "Bank: ANZ Westfield\nBSB: 013 442\nAccount: 1234 5678",
+    });
+    // The "\n"s between blocks are htmlBlockLines' own splitter output, not
+    // part of the value — whitespace between tags, which the sanitizer and
+    // the browser both ignore.
+    expect(result).toBe(
+      "<p>EFT payments:</p>\n<p>Bank: ANZ Westfield<br>BSB: 013 442<br>Account: 1234 5678</p>\n"
+    );
+  });
+
+  it("keeps a multi-line value inside its own block, so an unresolved token still costs exactly one block", () => {
+    // <br> is not a block element, so htmlBlockLines must not treat the
+    // inserted breaks as block boundaries — otherwise the strip below would
+    // cut a multi-line value into pieces.
+    const result = substitutePlaceholders("<p>{{bankDetails}}</p><p>Ref {{missing}}</p>", {
+      bankDetails: "Bank: ANZ\nBSB: 013 442",
+    });
+    expect(result).toBe("<p>Bank: ANZ<br>BSB: 013 442</p>\n");
+  });
+
+  it("leaves newlines alone in a markdown body, where renderMarkdown adds the <br> itself", () => {
+    const result = substitutePlaceholders("EFT payments:\n{{bankDetails}}", {
+      bankDetails: "Bank: ANZ\nBSB: 013 442",
+    });
+    expect(result).toBe("EFT payments:\nBank: ANZ\nBSB: 013 442");
+    expect(result).not.toContain("<br>");
+  });
+
   it("strips a line only when it still contains an unresolved token after substituting the rest of it", () => {
     // A line can carry both a resolved and an unresolved token — any single
     // unresolved token strips the whole line, not just its own token.
@@ -1663,6 +1696,18 @@ describe("buildQuotationData — preparedBy / notesHtml", () => {
     const data = buildQuotationData(doc, []);
     expect(data.notesHtml).toBeNull();
   });
+
+  // The WYSIWYG editor saves `<p></p>` for a Notes field an author opened and
+  // left empty. That value is truthy, so before `isBlankRichText` it printed a
+  // "Notes" heading with nothing under it on a customer-facing quote.
+  it.each(["<p></p>", "<p><br></p>", "<p>   </p>", "   "])(
+    "is null for editor markup with no text (%j)",
+    (notes) => {
+      const doc = quotationDoc({ notes });
+      const data = buildQuotationData(doc, []);
+      expect(data.notesHtml).toBeNull();
+    }
+  );
 });
 
 // A product's own `description` is snapshotted onto `DocumentItem.description`

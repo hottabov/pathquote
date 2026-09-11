@@ -31,7 +31,7 @@ export default async function IndustriesPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Industries"
-        description="The shared list every client card picks from. Renaming one changes it on every company that uses it, and on the production forms that print it."
+        description="The shared list every client card picks from. Renaming one changes it on every company that uses it, and on the production forms that print it. Aliases record the other spellings — ACT!'s wording, or a typo — that should find the same row."
       />
 
       {/* The empty state sits ABOVE the editor rather than replacing it, unlike

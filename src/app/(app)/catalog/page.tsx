@@ -6,6 +6,13 @@ import { listSeriesWithCounts, countOptions, type SeriesWithCounts } from "@/lib
 import { catalogVisibilityUserId, filterHiddenSeries } from "@/lib/catalog-visibility";
 import { getHiddenCatalogIds } from "@/lib/queries/catalog-visibility";
 import { PageHeader } from "@/components/ui-kit";
+import { pickDerivativeWidth } from "@/lib/image-derivative-width";
+
+/** CSS width of a series card's image box — `size-28` (112px) below the
+ * `sm` breakpoint, `size-32` (128px) at and above it. The larger of the two
+ * is what the `?w=` derivative is sized against, so the small-screen case is
+ * covered by the same file rather than a second request. */
+const CARD_IMAGE_BOX_PX = 128;
 
 export const metadata: Metadata = { title: "Catalog" };
 export const dynamic = "force-dynamic";
@@ -68,8 +75,7 @@ function SeriesCard({ series: s }: { series: SeriesWithCounts }) {
     >
       <span className="flex size-28 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50 sm:size-32">
         {s.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={s.imageUrl} alt="" className="size-full object-contain p-2" />
+          <SeriesCardImage src={s.imageUrl} />
         ) : (
           <Package className="size-8 text-slate-300" aria-hidden="true" />
         )}
@@ -83,5 +89,41 @@ function SeriesCard({ series: s }: { series: SeriesWithCounts }) {
       </span>
       <ChevronRight className="size-5 shrink-0 text-slate-300" aria-hidden="true" />
     </Link>
+  );
+}
+
+/**
+ * The photo on a series card, drawn in a 112/128 CSS px box.
+ *
+ * Same reasoning as `CatalogThumb` (src/components/catalog/catalog-thumb.tsx)
+ * and `Avatar`: the stored `imageUrl` is the *print-resolution* original the
+ * quotation sheet/PDF renders — a ~1-2MB 1280px PNG — and this page shows one
+ * per series, so linking the originals means megabytes over a phone
+ * connection for images displayed 10× smaller. `/api/files`'s `?w=` parameter
+ * (src/lib/image-derivatives.ts) serves a WebP derivative of a few KB instead,
+ * and, unlike the original, it is cached `immutable` for a year.
+ *
+ * SVG has no derivative — already vector and a few KB — so it is linked
+ * as-is. Plain `<img>` rather than `next/image` because these URLs sit behind
+ * session auth and Next's optimiser fetches them cookie-less (401).
+ */
+function SeriesCardImage({ src }: { src: string }) {
+  if (src.endsWith(".svg")) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={src} alt="" loading="lazy" decoding="async" className="size-full object-contain p-2" />;
+  }
+
+  const width1x = pickDerivativeWidth(CARD_IMAGE_BOX_PX);
+  const width2x = pickDerivativeWidth(CARD_IMAGE_BOX_PX * 2);
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={`${src}?w=${width2x}`}
+      srcSet={`${src}?w=${width1x} 1x, ${src}?w=${width2x} 2x`}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      className="size-full object-contain p-2"
+    />
   );
 }

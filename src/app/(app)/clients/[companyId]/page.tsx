@@ -111,7 +111,13 @@ export default async function CompanyEditorPage({ params }: { params: Promise<Pa
           submitLabel="Save changes"
           industryPicker={{
             companyId: company.id,
-            industries: industries.map((i) => ({ id: i.id, name: i.name })),
+            industries: industries.map((i) => ({
+              id: i.id,
+              name: i.name,
+              // Names only — an alias is a search key, never displayed as its
+              // own option (see `IndustryOption`).
+              aliases: i.aliases.map((alias) => ({ name: alias.name })),
+            })),
             selectedId: company.industryId,
             usageCount: industryUsageCount,
             canRename: canRenameIndustry,

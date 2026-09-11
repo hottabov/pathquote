@@ -46,6 +46,7 @@
 import "dotenv/config";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { industryNameSchema, normalizeIndustryName } from "../src/lib/validation/industries";
 
 export type ActIndustries = {
@@ -175,9 +176,16 @@ async function main() {
   );
 }
 
-main()
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
-  })
-  .finally(() => process.exit(0));
+// Only when this file is what was run. `loadActIndustries` and
+// `resolveActIndustry` above are exported to be imported -- by
+// scripts/seed-industry-aliases.ts today and by the ACT contact import later --
+// and an unguarded `main()` would mean importing either one silently seeds the
+// Industry table and then calls process.exit(0) out from under the caller.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main()
+    .catch((error) => {
+      console.error(error);
+      process.exit(1);
+    })
+    .finally(() => process.exit(0));
+}

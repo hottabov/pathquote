@@ -47,7 +47,12 @@ export function PreparedBlock({
           </div>
         ) : null}
         <div className="pq-client pq-prepared-by-client">
-          <div>
+          {/* Its own class, not a bare div: as a flex item it needs
+              `min-width: 0` to be allowed to shrink below the intrinsic width
+              of the longest thing in it. Without that a long unbreakable
+              email pushed this column wider than its share and shoved the
+              photo out past the box's right edge. */}
+          <div className="pq-prepared-by-text">
             <div className="pq-client-label">Prepared by</div>
             <div className="pq-client-name">{preparedBy.name ?? preparedBy.email}</div>
             {preparedBy.phone ? <div className="pq-client-line">{preparedBy.phone}</div> : null}

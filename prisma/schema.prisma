@@ -672,9 +672,40 @@ model Contact {
 // in industry-picker.tsx a real fix rather than a per-company patch.
 // Global, not per-region: an industry means the same thing in AU and US.
 model Industry {
-  id        String    @id @default(cuid())
-  name      String    @unique // Case-insensitive uniqueness is enforced by a separate functional index (Industry_name_lower_key) in the 10_industry_and_production_spec migration -- Prisma cannot declare that, so @unique alone is not the whole story.
+  id        String          @id @default(cuid())
+  name      String          @unique // Case-insensitive uniqueness is enforced by a separate functional index (Industry_name_lower_key) in the 10_industry_and_production_spec migration -- Prisma cannot declare that, so @unique alone is not the whole story.
   companies Company[]
+  aliases   IndustryAlias[]
+}
+
+// The other spellings of an industry that must resolve to the same row.
+//
+// ACT! is the reason this exists. Its own industry list is typed by hand and
+// will keep producing "Retail trade" for our "Retail", "Automotve" for
+// "Automotive", and a brand-new category the week after we finish mapping the
+// last one. Merging fixes the rows already imported, but nothing stops the
+// next import re-creating the duplicate; an alias is the durable answer --
+// the wrong spelling stays recorded, pointed at the row it should have been.
+//
+// Aliases are not shown on any document. They exist only for matching: the
+// picker on a client card searches them (see industry-picker.tsx) and the
+// eventual ACT! importer will look up an incoming category here before
+// falling back to creating a row.
+//
+// Uniqueness is global and case-insensitive (IndustryAlias_name_lower_key, in
+// the z40_industry_aliases migration -- Prisma cannot declare a functional
+// index, hence @unique alone here). An alias pointing at two industries would
+// make an import ambiguous, which defeats the whole point of the table. The
+// one rule the database cannot express is that an alias must not equal an
+// *industry's* name either; addIndustryAlias and renameIndustry check both
+// tables for that (src/lib/actions/industries.ts).
+model IndustryAlias {
+  id         String   @id @default(cuid())
+  name       String   @unique
+  industryId String
+  industry   Industry @relation(fields: [industryId], references: [id], onDelete: Cascade)
+
+  @@index([industryId])
 }
 
 model Document {

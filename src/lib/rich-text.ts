@@ -123,6 +123,25 @@ const PLAIN_TEXT_ENTITIES: Record<string, string> = {
  * string short itself. `null`/empty collapses to `null` so a caller's
  * `description ? <Cell/> : null` check stays a clean on/off switch.
  */
+/**
+ * True when `stored` carries no visible content — `null`/empty, whitespace
+ * only, or markup whose tags enclose nothing (`<p></p>`, `<p><br></p>`,
+ * nested empty blocks), which is exactly what the WYSIWYG editor saves for a
+ * field the author opened, typed nothing into, and left. That value is
+ * *truthy*, so a plain `notes ? … : null` check renders an empty section
+ * with a heading and no body — see `NotesSection`, the caller this exists
+ * for.
+ *
+ * Text-emptiness is a complete test here because `ALLOWED_TAGS`
+ * (src/lib/rich-text-core.ts) has no self-contained media — no `<img>`,
+ * `<hr>` or `<table>` — so nothing in a sanitized body can be visible
+ * without contributing text. If a media tag is ever added to that allowlist,
+ * this function has to start looking for it too.
+ */
+export function isBlankRichText(stored: string | null): boolean {
+  return toPlainTextPreview(stored) === null;
+}
+
 export function toPlainTextPreview(stored: string | null): string | null {
   if (!stored) return null;
   const html = renderStoredRichText(stored);

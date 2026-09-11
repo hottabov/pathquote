@@ -5,9 +5,19 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { fieldInputClass } from "@/components/ui-kit";
 import { createIndustry, renameIndustry, setCompanyIndustry } from "@/lib/actions/industries";
-import { normalizeIndustryName } from "@/lib/validation/industries";
+import {
+  industryEqualsQuery,
+  industryMatchesQuery,
+  matchingIndustryAlias,
+} from "@/lib/validation/industries";
 
-export type IndustryOption = { id: string; name: string };
+/**
+ * `aliases` are the other spellings that should also find this row — ACT!'s
+ * wording for it, or a typo someone recorded on /settings/industries. They are
+ * searched but never shown as options of their own: an alias is not a
+ * separate industry, it is a second way to reach one.
+ */
+export type IndustryOption = { id: string; name: string; aliases: { name: string }[] };
 
 type Props = {
   /** Matches the `htmlFor` of the `<FieldRow>` this is mounted in. */
@@ -80,13 +90,15 @@ export function IndustryPicker({ id = "company-industry", companyId, industries,
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [open]);
 
-  const matches = useMemo(() => {
-    const key = normalizeIndustryName(query);
-    if (!key) return industries;
-    return industries.filter((i) => normalizeIndustryName(i.name).includes(key));
-  }, [industries, query]);
+  const matches = useMemo(
+    () => industries.filter((i) => industryMatchesQuery(i, query)),
+    [industries, query]
+  );
 
-  const exactMatch = matches.some((i) => normalizeIndustryName(i.name) === normalizeIndustryName(query));
+  // An alias counts as an exact match, so typing ACT!'s "Retail trade" against
+  // an alias of "Retail" offers the row rather than "Create 'Retail trade'" —
+  // the duplicate the alias was recorded to prevent.
+  const exactMatch = matches.some((i) => industryEqualsQuery(i, query));
   const canCreate = query.trim().length > 0 && !exactMatch;
 
   async function choose(industryId: string | null) {
@@ -195,20 +207,30 @@ export function IndustryPicker({ id = "company-industry", companyId, industries,
               </button>
             </li>
           )}
-          {matches.map((industry) => (
-            <li key={industry.id} role="presentation">
-              <button
-                type="button"
-                role="option"
-                aria-selected={industry.id === selectedId}
-                onClick={() => choose(industry.id)}
-                disabled={pending}
-                className="focus-ring flex min-h-11 w-full items-center px-3 text-left text-sm text-brand-dark hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {industry.name}
-              </button>
-            </li>
-          ))}
+          {matches.map((industry) => {
+            // Why this row is in the list when the query does not appear in
+            // its name. Without it, typing "Retail trade" and being shown
+            // "Retail" reads as the wrong result, and the next move is to
+            // create the duplicate.
+            const via = matchingIndustryAlias(industry, query);
+            return (
+              <li key={industry.id} role="presentation">
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={industry.id === selectedId}
+                  onClick={() => choose(industry.id)}
+                  disabled={pending}
+                  className="focus-ring flex min-h-11 w-full items-center gap-2 px-3 text-left text-sm text-brand-dark hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="truncate">{industry.name}</span>
+                  {via ? (
+                    <span className="truncate text-xs text-slate-500">also &ldquo;{via}&rdquo;</span>
+                  ) : null}
+                </button>
+              </li>
+            );
+          })}
           {canCreate && (
             <li role="presentation">
               <button

@@ -150,7 +150,10 @@ describe("renderQuotationHtml — page wrapping", () => {
 
     expect(html).toContain("<!doctype html>");
     expect(html).toContain('<meta charSet="utf-8">');
-    expect(html).toContain("@page{size:A4;margin:12mm}");
+    // 15mm top/right/bottom, 25mm left (the binding margin). `@page` is the
+    // only source of the printed margin — .pq-content's matching padding is
+    // a screen affordance that zeroes itself under @media print.
+    expect(html).toContain("@page{size:A4;margin:15mm 15mm 15mm 25mm}");
     expect(html).toContain("Pathfinder Cutting Systems");
     expect(html).toContain("Q-AU-2026-001");
   });

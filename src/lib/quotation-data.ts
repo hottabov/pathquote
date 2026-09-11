@@ -20,7 +20,7 @@ import { machineSpecSentence, extraSpecVars } from "./machine-specs";
 // it exists for exactly this, and the options editor already prints the same
 // running total beside a module's quantity stepper. Pure, no imports at all.
 import { formatMetres } from "./option-length";
-import { renderStoredRichText } from "./rich-text";
+import { isBlankRichText, renderStoredRichText } from "./rich-text";
 // The client-safe half of the rich-text seam (no `isomorphic-dompurify`, no
 // `next/*`, no `@/lib/db`) — this module already reaches it transitively
 // through `./rich-text`, so importing it directly adds no dependency and
@@ -371,9 +371,18 @@ function emptyToBlank(html: string): string {
  *    the whole description rather than the sentence that needed the figure.
  *
  * A resolved multi-line value (e.g. `{{bankDetails}}` — see
- * `formatBankDetails`) substitutes in as-is, embedded `\n`s and all, so each
- * of its own lines becomes its own output line exactly as if they'd been
- * written directly into the block body.
+ * `formatBankDetails`) keeps its line structure in the rendered output, but
+ * how that happens differs by body shape, and getting it wrong is what used
+ * to print bank details as one run-on line:
+ *
+ *  - markdown: the `\n`s substitute in as-is and `renderMarkdown` joins a
+ *    paragraph's lines with `<br>` itself, so nothing extra is needed;
+ *  - HTML: a bare `\n` inside a `<p>` is just whitespace and collapses to a
+ *    space when the browser lays it out. The `\n`s are converted to `<br>`
+ *    on substitution instead. `<br>` is on `sanitizeRichText`'s allowlist and
+ *    is not a block element, so `htmlBlockLines` still treats the value as
+ *    part of the one block it was written into — a token that goes
+ *    unresolved still costs exactly that block, not a fragment of it.
  */
 export type SubstitutionReport = {
   /** The body after substitution and line-stripping. */
@@ -389,6 +398,12 @@ export type SubstitutionReport = {
 export function substituteWithReport(body: string, vars: PlaceholderVars): SubstitutionReport {
   const stripped: string[] = [];
 
+  // Which shape the AUTHORED body is, not the substituted one: a resolved
+  // value could contain a tag of its own and must not change how the body it
+  // sits in is divided into lines. Computed before the substitution because
+  // the replacement below needs it too.
+  const isHtml = isHtmlContent(body);
+
   const substituted = body.replace(PLACEHOLDER_PATTERN, (_match, token: string) => {
     const value = vars[token];
     if (value === OMIT) return UNRESOLVED_MARKER;
@@ -396,13 +411,9 @@ export function substituteWithReport(body: string, vars: PlaceholderVars): Subst
       if (!stripped.includes(token)) stripped.push(token);
       return UNRESOLVED_MARKER;
     }
-    return value;
+    return isHtml ? value.replace(/\n/g, "<br>") : value;
   });
 
-  // Which shape the AUTHORED body is, not the substituted one: a resolved
-  // value could contain a tag of its own and must not change how the body it
-  // sits in is divided into lines.
-  const isHtml = isHtmlContent(body);
   const kept = (isHtml ? htmlBlockLines(substituted) : substituted.split("\n")).filter(
     (line) => !line.includes(UNRESOLVED_MARKER)
   );
@@ -668,9 +679,11 @@ export type QuotationData = {
    * `DocSheetPreparedBy`. Relabels the existing `client` block "Prepared
    * for" alongside it (see quotation-sheet.tsx). */
   preparedBy: DocSheetPreparedBy;
-  /** `Document.notes`, rendered to HTML via `renderStoredRichText` — `null` when
-   * there's nothing to show, in which case the sheet renders no Notes
-   * section at all. */
+  /** `Document.notes`, rendered to HTML via `renderStoredRichText` — `null`
+   * when there's nothing to show, in which case the sheet renders no Notes
+   * section at all. "Nothing to show" is `isBlankRichText`, so markup the
+   * editor saved for an untouched field (`<p></p>`, `<p><br></p>`) counts as
+   * absent, not as an empty section. */
   notesHtml: string | null;
   machineSections: QuotationMachineSection[];
   /** Category-copy tokens that had no value on this quote, so their line was
@@ -1173,7 +1186,14 @@ export function buildQuotationData(
       }))
     : liveDocuments;
 
-  const notesHtml = doc.notes ? renderStoredRichText(doc.notes) : null;
+  // `isBlankRichText`, not a plain truthiness check: the WYSIWYG editor
+  // saves `<p></p>` for a Notes field that was opened and left empty, which
+  // is truthy and used to render a "Notes" heading with nothing under it on
+  // a customer-facing quote. Resolved to `null` here rather than in
+  // `NotesSection` so every consumer of `notesHtml` — the in-app preview,
+  // the PDF, and the client signing page — agrees the section isn't there.
+  const notesHtml =
+    doc.notes && !isBlankRichText(doc.notes) ? renderStoredRichText(doc.notes) : null;
 
   // One rule is `AUTHOR` (Pathfinder), the other `CLIENT` (Purchaser) — see
   // `Signatures` in src/components/sheet/sections/signatures.tsx, which

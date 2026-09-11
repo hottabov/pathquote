@@ -36,10 +36,37 @@ export const SHEET_CSS = `
   .pq-content {
     position: relative;
     z-index: 1;
-    /* Kept equal to the @page{margin:...} rule in src/lib/pdf.ts -- see
-       that file's comment on renderQuotationHtml for why the printed page
-       and this in-app preview only match because the two move together. */
-    padding: 12mm;
+    /* SCREEN ONLY -- the print override below zeroes this. Kept equal to the
+       @page{margin:...} rule in src/lib/pdf.ts (top/right/bottom/left =
+       15/15/15/25mm; the wider left edge is the binding margin) so the
+       in-app preview and the printed page frame the content identically.
+       The two only match because they move together: change one, change the
+       other. */
+    padding: 15mm 15mm 15mm 25mm;
+  }
+  /* Print is a genuinely different box model from the on-screen preview, and
+     conflating the two is what made the PDF wrong before this rule existed:
+     .pq-sheet's fixed 210mm width and .pq-content's padding are both *screen*
+     affordances -- they draw an A4-shaped card inside a scrolling page. On
+     paper the page already IS A4 and @page already reserves the margin, so
+     leaving them on cost twice:
+       - the padding stacked on top of the @page margin, so the real printed
+         margin was ~24mm, not the 12mm the CSS appeared to say;
+       - a 210mm-wide box cannot fit the page's ~186mm content area, so
+         Chromium shrank the ENTIRE sheet to ~89% to make it fit, silently
+         rendering every font a ninth smaller than its declared size.
+     Zeroing both here makes @page the single source of the printed margin,
+     restores 1:1 scale, and is why a px size in this file now means the same
+     thing in the preview and in the PDF. */
+  @media print {
+    .pq-sheet {
+      width: auto;
+      min-height: 0;
+      margin: 0;
+    }
+    .pq-content {
+      padding: 0;
+    }
   }
   .pq-watermark {
     position: absolute;
@@ -149,6 +176,18 @@ export const SHEET_CSS = `
     justify-content: space-between;
     gap: 10px;
   }
+  /* The name/phone/email column beside the photo. min-width: 0 overrides a
+     flex item's default min-width: auto, which refuses to shrink below the
+     widest unbreakable run inside it — an address like
+     marketingmanager@pathfindercut.com is ~240px against a ~180px share, so
+     without this the column won the argument and pushed
+     .pq-prepared-by-avatar (flex-shrink: 0) out past the box. "anywhere"
+     rather than "break-word" because it also lowers the element's min-content
+     width, which is what the flex layout actually measures. */
+  .pq-prepared-by-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
   .pq-prepared-by-avatar {
     width: 100px;
     height: 100px;
@@ -211,7 +250,7 @@ export const SHEET_CSS = `
     margin-top: 28px;
   }
   .pq-section-title {
-    font-size: 15px;
+    font-size: 28px;
     font-weight: 700;
     letter-spacing: 0.5px;
     color: #243478;
@@ -277,9 +316,19 @@ export const SHEET_CSS = `
     width: 50px;
     text-align: center;
   }
+  /* Wide enough for the largest amount this column realistically carries.
+     The table is table-layout: fixed, so a value wider than the column does
+     not widen it — it overflows, and since this is the LAST column its
+     overflow lands past the page margin and is cut off by the paper. At 70px
+     that started at "A$195,000" (68.5px of text against a 62px content box
+     once the 4px cell padding is taken off), which is an ordinary machine
+     price, not an edge case. 100px fits "A$12,345,678" (88px) with room to
+     spare. nowrap keeps an amount on one line so every row's figure sits on
+     the same baseline grid and the column reads as one right-aligned run. */
   .pq-opt-col-price {
-    width: 70px;
+    width: 100px;
     text-align: right;
+    white-space: nowrap;
   }
   .pq-options-table thead th {
     text-align: left;
@@ -362,11 +411,14 @@ export const SHEET_CSS = `
      consistent prominent heading"), rendered explicitly outside the
      admin-authored block body rather than relying on that body carrying its
      own markdown heading (fragile — most content blocks never did; see
-     src/lib/quotation-data.ts's sectionTitle computation). Same size/weight/color tier
-     as .pq-block-body h1/h2 and .pq-section-title, so a product/section name
-     is unmistakable at a glance. */
+     src/lib/quotation-data.ts's sectionTitle computation). Second tier in the
+     sheet's heading scale -- .pq-section-title (28px) names the section, this
+     (22px) names a product inside it, .pq-block-body h1/h2 (15px) is a
+     heading inside one product's write-up. Same weight and colour throughout;
+     only the size separates the three, so a product/section name is
+     unmistakable at a glance. */
   .pq-product-title {
-    font-size: 15px;
+    font-size: 22px;
     font-weight: 700;
     letter-spacing: 0.3px;
     color: #243478;
@@ -426,10 +478,12 @@ export const SHEET_CSS = `
   }
   /* Top-level block heading (e.g. machine.m-series's "## Pathfinder {{model}}
      Cutting System", rsp.agreement's "## Pathfinder Remote Support Program")
-     — same size/weight/color tier as .pq-section-title and
-     .pq-auto-summary-name so a product/section name is unmistakable at a
-     glance rather than blending into the body text underneath it, and never
-     orphaned from the content it introduces across a page break. */
+     — the innermost of the three heading tiers (see .pq-product-title for the
+     scale), matching .pq-auto-summary-name, so a heading inside a write-up
+     still reads as a heading rather than blending into the body text
+     underneath it, without competing with the section and product names
+     above it. Never orphaned from the content it introduces across a page
+     break. */
   .pq-block-body h1,
   .pq-block-body h2 {
     font-size: 15px;
@@ -552,7 +606,7 @@ export const SHEET_CSS = `
     font-family: "Courier New", Courier, monospace;
     font-weight: 400;
     color: #888888;
-    font-size: 10px;
+    font-size: 12px;
   }
   .pq-item-desc {
     color: #666666;

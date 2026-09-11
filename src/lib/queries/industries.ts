@@ -1,12 +1,21 @@
 import { db } from "@/lib/db";
 
 /**
- * Every industry, alphabetically. The picker filters client-side: the list
- * is expected to hold hundreds of imported rows, which is small enough to
- * ship whole and makes typeahead instant with no round trip per keystroke.
+ * Every industry, alphabetically, each with the alternative spellings that
+ * should also find it. The picker filters client-side: the list is expected
+ * to hold hundreds of imported rows, which is small enough to ship whole and
+ * makes typeahead instant with no round trip per keystroke.
+ *
+ * The aliases ride along for the same reason. They are a handful of short
+ * strings per row and the picker has to search them (see
+ * `industryMatchesQuery`), so fetching them here costs one join and saves the
+ * per-keystroke round trip the whole shape of this query exists to avoid.
  */
 export async function listIndustries() {
-  return db.industry.findMany({ orderBy: { name: "asc" } });
+  return db.industry.findMany({
+    orderBy: { name: "asc" },
+    include: { aliases: { orderBy: { name: "asc" }, select: { id: true, name: true } } },
+  });
 }
 
 /**
@@ -24,11 +33,16 @@ export async function countCompaniesUsingIndustry(industryId: string): Promise<n
   return db.company.count({ where: { industryId } });
 }
 
+export type IndustryAliasItem = { id: string; name: string };
+
 export type IndustryAdminListItem = {
   id: string;
   name: string;
   /** Companies pointing at this row, across every owner. */
   companyCount: number;
+  /** Other spellings that resolve to this row, alphabetically. Never printed
+   * on a document -- see the `IndustryAlias` model. */
+  aliases: IndustryAliasItem[];
 };
 
 /**
@@ -48,7 +62,10 @@ export type IndustryAdminListItem = {
  */
 export async function listIndustriesWithCounts(): Promise<IndustryAdminListItem[]> {
   const [industries, grouped] = await Promise.all([
-    db.industry.findMany({ orderBy: { name: "asc" } }),
+    db.industry.findMany({
+      orderBy: { name: "asc" },
+      include: { aliases: { orderBy: { name: "asc" }, select: { id: true, name: true } } },
+    }),
     db.company.groupBy({
       by: ["industryId"],
       where: { industryId: { not: null } },
@@ -61,5 +78,6 @@ export async function listIndustriesWithCounts(): Promise<IndustryAdminListItem[
     id: industry.id,
     name: industry.name,
     companyCount: counts.get(industry.id) ?? 0,
+    aliases: industry.aliases,
   }));
 }
