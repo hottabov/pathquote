@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
   buildSeedDataFromDump,
@@ -12,22 +12,29 @@ import type { Catalog, UsPricesJson } from "../prisma/seed-lib";
 const root = path.resolve(__dirname, "..");
 const read = <T,>(...parts: string[]) => JSON.parse(readFileSync(path.join(root, ...parts), "utf8")) as T;
 
-const dump = read<CatalogDump>("RAW", "catalog-dump.json");
-const catalog = read<Catalog>("prisma", "seed-data", "catalog.json");
-const usPrices = read<UsPricesJson>("prisma", "seed-data", "prices-us.json");
+// RAW/ is gitignored -- the dump is a snapshot of the live database, taken on
+// a developer machine, and never lands in the repo or on a CI runner. The
+// drift check below only means anything where that snapshot exists, so it is
+// skipped rather than failing the whole file on import when it doesn't.
+const dumpPath = path.join(root, "RAW", "catalog-dump.json");
+const hasDump = existsSync(dumpPath);
 
-describe("buildSeedDataFromDump", () => {
-  const headers = catalog.series.map(({ seriesCode, seriesName, maxDiscountPct }) => ({
-    seriesCode,
-    seriesName,
-    maxDiscountPct,
-  }));
-
+describe.skipIf(!hasDump)("buildSeedDataFromDump", () => {
   it("reproduces the committed catalog.json and prices-us.json", () => {
     // The committed seed files are exactly what this builder writes from the
     // committed dump. Without this, the two drift the moment someone edits a
     // seed file by hand and the next `npm run catalog:seed-from-dump`
     // silently reverts them.
+    const dump = read<CatalogDump>("RAW", "catalog-dump.json");
+    const catalog = read<Catalog>("prisma", "seed-data", "catalog.json");
+    const usPrices = read<UsPricesJson>("prisma", "seed-data", "prices-us.json");
+
+    const headers = catalog.series.map(({ seriesCode, seriesName, maxDiscountPct }) => ({
+      seriesCode,
+      seriesName,
+      maxDiscountPct,
+    }));
+
     const built = buildSeedDataFromDump(dump, headers);
 
     expect(built.catalog).toEqual(catalog);
