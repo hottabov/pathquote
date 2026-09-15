@@ -20,9 +20,16 @@ import type {
   ToSheetItemInput,
 } from "../../src/lib/sheet-data";
 import type { QuotationDataDoc, QuotationItemInput } from "../../src/lib/quotation-data";
-import type { OptionRole } from "@prisma/client";
-import type { FormContext, FormItem, FormItemOption } from "../../src/lib/production-forms/types";
+import type { OptionRole, ProductionForm } from "@prisma/client";
+import type {
+  FormContext,
+  FormItem,
+  FormItemOption,
+  XlsxFormSpec,
+} from "../../src/lib/production-forms/types";
+import { isXlsxForm } from "../../src/lib/production-forms/types";
 import { legacyOptionViews } from "../../src/lib/production-forms/context";
+import { resolveForm } from "../../src/lib/production-forms/resolve";
 
 /** A client company with no delivery address of its own — the plain case;
  * tests that care about delivery pass `hasDeliveryAddress: true` plus the
@@ -231,7 +238,32 @@ export function formContext(overrides: Partial<FormContext> = {}): FormContext {
     deliveryAddressLines: ["12 Industrial Dr"],
     software,
     softwareCodes: software.map((s) => s.code),
+    rails: null,
+    // The meta strip every sheet prints. Fixed rather than `new Date()` so a
+    // snapshot of a rendered form never changes under a test.
+    documentNumber: "Q-AU-2026-001",
+    itemIndex: 1,
+    itemCount: 1,
+    generatedAt: new Date("2026-09-11T00:00:00Z"),
+    logo: null,
+    screenSideImages: {},
     item: formItem(),
     ...overrides,
   };
+}
+
+/**
+ * The spec a form prints from, narrowed to the workbook-patching kind.
+ *
+ * `resolveForm` returns the union: a form is drawn either by patching a
+ * template (`XlsxFormSpec`) or by rendering a component (`HtmlFormSpec`), and
+ * only the first kind has cells to assert on. Tests that call `buildPatches`
+ * go through this so the narrowing happens once, loudly, instead of each test
+ * asserting it with a `!` that the compiler is right to reject.
+ */
+export function xlsxForm(form: ProductionForm): XlsxFormSpec {
+  const spec = resolveForm(form);
+  if (!spec) throw new Error(`no form spec for ${form}`);
+  if (!isXlsxForm(spec)) throw new Error(`${form} is drawn as a component, not a workbook`);
+  return spec;
 }

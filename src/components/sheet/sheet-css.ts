@@ -539,6 +539,44 @@ export const SHEET_CSS = `
   .pq-block-body ol > li:last-child {
     margin-bottom: 0;
   }
+  /* A legal document whose entire body is one numbered list — General
+     Conditions of Sale, whose 14 clauses ARE the document's top-level <li>
+     — has to start at the same left edge as Terms and the Remote Support
+     Program, whose bodies are plain headings and paragraphs. The 18px indent
+     above is right for a list sitting *inside* a document's prose, but as a
+     document's own outer structure it printed the whole of General Conditions
+     shifted right of every other document in the same quote. So the outermost
+     list of a legal body drops the indent and carries its marker inside the
+     clause's first line instead: "1. Sales Price" reads as the clause
+     heading, and every paragraph under it sits flush against the same margin
+     as the rest of the document. Only that outer list is special — a list
+     nested anywhere inside a clause still gets the normal indent, which is
+     what tells it apart from the clause text around it. */
+  .pq-legal-body > ol,
+  .pq-legal-body > ul {
+    padding-left: 0;
+    list-style-position: inside;
+  }
+  /* The marker is part of the line box, so the clause's first paragraph has
+     to share that line rather than start a block under the number. Its own
+     bottom margin stops applying once it's inline, hence the top margin on
+     whatever follows it — otherwise the clause body would butt straight up
+     against its heading line. */
+  .pq-legal-body > ol > li > p:first-child,
+  .pq-legal-body > ul > li > p:first-child {
+    display: inline;
+  }
+  .pq-legal-body > ol > li > p:first-child + *,
+  .pq-legal-body > ul > li > p:first-child + * {
+    margin-top: 6px;
+  }
+  /* The clause number is half of that first line's heading ("1. Sales
+     Price"), so it carries the same weight and colour as the <strong> title
+     it sits in front of rather than reading as body text that wandered in. */
+  .pq-legal-body > ol > li::marker {
+    font-weight: 700;
+    color: #2b304f;
+  }
   .pq-block-body strong {
     color: #2b304f;
   }

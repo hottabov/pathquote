@@ -12,7 +12,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['tests/**/*.test.ts'],
+    include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
     // Almost all of the run is module loading, not assertions: a full run
     // spends ~15s of cumulative import time against ~1.3s actually executing
     // tests. Isolation is what forces that cost, because each test file

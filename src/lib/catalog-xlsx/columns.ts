@@ -125,7 +125,18 @@ export const PRODUCT_KINDS = [
   "ACCESSORY",
 ] as const;
 
-export const PRODUCTION_FORMS = ["M_SERIES", "EASYLOADER", "FABRICPRO"] as const;
+export const PRODUCTION_FORMS = [
+  "M_SERIES",
+  "EASYLOADER",
+  "FABRICPRO",
+  "EASYFEED",
+  "HDRF",
+  "PUNCHLINE",
+  "FP_TROLLEY",
+  "LNS",
+  "X_CALIBRE",
+  "L_SERIES",
+] as const;
 
 export const OPTION_ROLES = [
   "ABR",

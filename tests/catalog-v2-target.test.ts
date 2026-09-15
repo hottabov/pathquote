@@ -4,13 +4,11 @@ import path from "node:path";
 import { type CatalogTarget, validateTarget } from "../scripts/lib/catalog-v2-plan";
 import { buildSeedDataFromTarget } from "../scripts/lib/catalog-v2-seed-data";
 import catalogData from "../prisma/seed-data/catalog.json";
-import usPricesData from "../prisma/seed-data/prices-us.json";
-import type { Catalog, UsPricesJson } from "../prisma/seed-lib";
+import type { Catalog } from "../prisma/seed-lib";
 
 const ROOT = path.resolve(__dirname, "..");
 const target = JSON.parse(readFileSync(path.join(ROOT, "docs/reference/catalog-v2-target.json"), "utf8")) as CatalogTarget;
 const catalog = catalogData as Catalog;
-const usPrices = usPricesData as UsPricesJson;
 
 const products = target.products.filter((p) => p.action !== "delete");
 const options = target.options.filter((o) => o.action !== "delete");
@@ -115,9 +113,19 @@ describe("buildSeedDataFromTarget", () => {
   const headers = catalog.series.map(({ seriesCode, seriesName, maxDiscountPct }) => ({ seriesCode, seriesName, maxDiscountPct }));
   const built = buildSeedDataFromTarget(target, headers, "2026-09-05T00:00:00.000Z");
 
-  it("reproduces the committed catalog.json and prices-us.json (apart from the timestamp)", () => {
-    expect({ ...built.catalog, extractedAt: catalog.extractedAt }).toEqual(catalog);
-    expect({ ...built.usPrices, extractedAt: usPrices.extractedAt }).toEqual(usPrices);
+  // This used to assert that the builder reproduces the committed
+  // catalog.json and prices-us.json. It no longer can, and should not: the
+  // seed files are now regenerated from RAW/catalog-dump.json -- a snapshot
+  // of the live catalogue -- by scripts/build-seed-data-from-dump.ts, and
+  // the target file is a record of a one-off cleanup that people have been
+  // editing past ever since. That invariant moved to
+  // tests/catalog-seed-from-dump.test.ts, against the builder that now
+  // writes those files. What is left here still tests this builder's own
+  // mapping rules, which the target file is still the input to.
+  it("still maps its own target file into a well-formed catalog", () => {
+    expect(built.catalog.series.length).toBeGreaterThan(0);
+    expect(built.catalog.options.length).toBeGreaterThan(0);
+    expect(built.usPrices.prices.length).toBeGreaterThan(0);
   });
 
   it("writes only non-deleted rows under their new codes", () => {

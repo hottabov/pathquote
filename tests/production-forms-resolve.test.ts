@@ -7,7 +7,7 @@ import {
   unmatchedOptions,
 } from "../src/lib/production-forms/resolve";
 import type { FormContext, FormItem, FormSpec } from "../src/lib/production-forms/types";
-import { formContext, formItem, formOption } from "./helpers/fixtures";
+import { formContext, formItem, formOption, xlsxForm } from "./helpers/fixtures";
 
 /** The codes of the options a form has no box for -- what the Additional
  * items sheet prints. The route matches the lines by id; the tests read the
@@ -53,7 +53,7 @@ describe("specSchemaForForm", () => {
   // storable; the download button stays disabled on `missingRequirements`
   // until the rest of the form is answered.
   it("stores the first field chosen on an M-Series item with no spec yet", () => {
-    const form = resolveForm("M_SERIES")!;
+    const form = xlsxForm("M_SERIES");
     const result = specSchemaForForm("M_SERIES")!.safeParse({ knifeSize: "1.5x5.0" });
     expect(result.success).toBe(true);
     expect(missingRequirements(form, result.success && result.data)).toEqual(["drills"]);
@@ -62,7 +62,7 @@ describe("specSchemaForForm", () => {
 
 describe("buildPatches", () => {
   it("ticks the model and width boxes from the product's specs", () => {
-    const patches = buildPatches(resolveForm("M_SERIES")!, formContext());
+    const patches = buildPatches(xlsxForm("M_SERIES"), formContext());
     const cells = patches.map((p) => p.cell);
     expect(cells).toContain("J25");
     expect(cells).toContain("J29");
@@ -72,7 +72,7 @@ describe("buildPatches", () => {
   it("ticks every model and width the form prints", () => {
     const expectModel = (modelTier: string, widthCode: number, model: string, width: string) => {
       const item = formItem({ specs: { modelTier, widthCode } });
-      const cells = buildPatches(resolveForm("M_SERIES")!, formContext({ item })).map((p) => p.cell);
+      const cells = buildPatches(xlsxForm("M_SERIES"), formContext({ item })).map((p) => p.cell);
       expect(cells, `${modelTier} ${widthCode}`).toContain(model);
       expect(cells, `${modelTier} ${widthCode}`).toContain(width);
     };
@@ -83,7 +83,7 @@ describe("buildPatches", () => {
   });
 
   it("ticks no model or width box for a product with no specs", () => {
-    const cells = buildPatches(resolveForm("M_SERIES")!, formContext({ item: formItem({ specs: {} }) })).map(
+    const cells = buildPatches(xlsxForm("M_SERIES"), formContext({ item: formItem({ specs: {} }) })).map(
       (p) => p.cell,
     );
     for (const cell of ["H25", "J25", "L25", "O25", "H29", "J29", "L29", "O29"]) {
@@ -92,14 +92,14 @@ describe("buildPatches", () => {
   });
 
   it("writes X into every tick cell", () => {
-    const patches = buildPatches(resolveForm("M_SERIES")!, formContext());
+    const patches = buildPatches(xlsxForm("M_SERIES"), formContext());
     expect(patches.find((p) => p.cell === "J25")?.value).toBe("X");
   });
 
   it("ticks an option against its role's box, whatever its catalogue code", () => {
     // ABR-M and ABR-X both carry role ABR; the code is not consulted.
     const patches = buildPatches(
-      resolveForm("M_SERIES")!,
+      xlsxForm("M_SERIES"),
       formContext({ item: formItem({ options: [formOption("ABR-M", "ABR"), formOption("HDC-X", "HDC")] }) }),
     );
     const cells = patches.map((p) => p.cell);
@@ -109,7 +109,7 @@ describe("buildPatches", () => {
 
   it("ticks nothing for an option with no role", () => {
     const patches = buildPatches(
-      resolveForm("M_SERIES")!,
+      xlsxForm("M_SERIES"),
       formContext({ item: formItem({ options: [formOption("ABR-M", null)] }) }),
     );
     expect(patches.map((p) => p.cell)).not.toContain("J52");
@@ -117,18 +117,18 @@ describe("buildPatches", () => {
 
   it("ticks PathWorks modules only alongside the integrated PathWorks", () => {
     const withIntegrated = buildPatches(
-      resolveForm("M_SERIES")!,
+      xlsxForm("M_SERIES"),
       formContext({ software: [PTW_I, ANT_V6] }),
     ).map((p) => p.cell);
     expect(withIntegrated).toContain("J64");
 
     const withStandalone = buildPatches(
-      resolveForm("M_SERIES")!,
+      xlsxForm("M_SERIES"),
       formContext({ software: [PTW_S, ANT_V6] }),
     ).map((p) => p.cell);
     expect(withStandalone).not.toContain("J64");
 
-    const moduleAlone = buildPatches(resolveForm("M_SERIES")!, formContext({ software: [ANT_V6] })).map(
+    const moduleAlone = buildPatches(xlsxForm("M_SERIES"), formContext({ software: [ANT_V6] })).map(
       (p) => p.cell,
     );
     expect(moduleAlone).not.toContain("J64");
@@ -136,7 +136,7 @@ describe("buildPatches", () => {
 
   it("omits value cells whose source is empty", () => {
     const patches = buildPatches(
-      resolveForm("M_SERIES")!,
+      xlsxForm("M_SERIES"),
       formContext({ company: { name: "Relaxvanguard", addressLines: [], industry: null } }),
     );
     const cells = patches.map((p) => p.cell);
@@ -146,7 +146,7 @@ describe("buildPatches", () => {
 
   it("writes the MTS metres attribute as a string", () => {
     const patches = buildPatches(
-      resolveForm("M_SERIES")!,
+      xlsxForm("M_SERIES"),
       formContext({ item: formItem({ options: [formOption("MTS", "MTS", { attributes: { metres: 14 } })] }) }),
     );
     expect(patches.find((p) => p.cell === "M73")?.value).toBe("14");
@@ -157,7 +157,7 @@ describe("buildPatches", () => {
 describe("unmatchedOptions", () => {
   it("returns the option lines themselves, so the route can match by id", () => {
     const context = formContext({ item: formItem({ options: [formOption("EDS-500", "EDS", { qty: 3 })] }) });
-    expect(unmatchedOptions(resolveForm("M_SERIES")!, context)).toEqual([
+    expect(unmatchedOptions(xlsxForm("M_SERIES"), context)).toEqual([
       { id: "opt-EDS-500", code: "EDS-500", role: "EDS", qty: 3, attributes: null },
     ]);
   });
@@ -166,41 +166,41 @@ describe("unmatchedOptions", () => {
     const context = formContext({
       item: formItem({ options: [formOption("ABR-M", "ABR"), formOption("HDC-M", "HDC"), formOption("MTS", "MTS")] }),
     });
-    expect(unmatchedOptionCodes(resolveForm("M_SERIES")!, context)).toEqual([]);
+    expect(unmatchedOptionCodes(xlsxForm("M_SERIES"), context)).toEqual([]);
   });
 
   it("reports an option whose role has no box on this form", () => {
     const context = formContext({ item: formItem({ options: [formOption("ABR-M", "ABR"), formOption("EDS-500", "EDS")] }) });
-    expect(unmatchedOptionCodes(resolveForm("M_SERIES")!, context)).toEqual(["EDS-500"]);
+    expect(unmatchedOptionCodes(xlsxForm("M_SERIES"), context)).toEqual(["EDS-500"]);
   });
 
   it("reports an option with no role at all", () => {
     const context = formContext({ item: formItem({ options: [formOption("1.0mm dia punch", null)] }) });
-    expect(unmatchedOptionCodes(resolveForm("M_SERIES")!, context)).toEqual(["1.0mm dia punch"]);
+    expect(unmatchedOptionCodes(xlsxForm("M_SERIES"), context)).toEqual(["1.0mm dia punch"]);
   });
 
   it("does not treat a tick driven by the production spec as covering an option", () => {
     // The L_TOOL role exists in the catalogue, but the M-Series form has no
     // box for it -- only its knife size row, which comes from the spec.
     const context = formContext({ item: formItem({ options: [formOption("1.0mm dia punch", "L_TOOL")] }) });
-    expect(unmatchedOptionCodes(resolveForm("M_SERIES")!, context)).toEqual(["1.0mm dia punch"]);
+    expect(unmatchedOptionCodes(xlsxForm("M_SERIES"), context)).toEqual(["1.0mm dia punch"]);
   });
 });
 
 describe("missingRequirements", () => {
   it("reports nothing for a complete spec", () => {
-    expect(missingRequirements(resolveForm("M_SERIES")!, formItem().spec)).toEqual([]);
+    expect(missingRequirements(xlsxForm("M_SERIES"), formItem().spec)).toEqual([]);
   });
 
   it("reports every requirement when the spec is empty", () => {
     // "ui" is not among them: screenSideSchema defaults to -Y, so it can
     // never be missing.
-    expect(missingRequirements(resolveForm("M_SERIES")!, {})).toEqual(["knifeSize", "drills"]);
+    expect(missingRequirements(xlsxForm("M_SERIES"), {})).toEqual(["knifeSize", "drills"]);
   });
 
   it("reports drills when they are required with no detail", () => {
     const spec = { ui: "+Y", knifeSize: "1.5x5.0", drills: { required: true, detail: "" } };
-    expect(missingRequirements(resolveForm("M_SERIES")!, spec)).toEqual(["drills"]);
+    expect(missingRequirements(xlsxForm("M_SERIES"), spec)).toEqual(["drills"]);
   });
 });
 
@@ -216,7 +216,7 @@ describe("EasyLoader form", () => {
       spec: { ui: "-Y", usage: "onload", sections: [{ lengthM: 2.4, surface: "static" }] },
       ...overrides,
     });
-  const form = resolveForm("EASYLOADER")!;
+  const form = xlsxForm("EASYLOADER");
 
   it("ticks the printed width box for a standard model", () => {
     const cells = buildPatches(form, formContext({ item: elItem() })).map((p) => p.cell);
@@ -318,12 +318,12 @@ describe("FabricPro form", () => {
       kind: "SPREADER",
       form: "FABRICPRO",
       specs: { cutWidthCm: 220, widthCode: 220 },
-      spec: { ui: "+Y", travelPlatform: true, railLengthM: 6 },
+      spec: { ui: "+Y", railLengthM: 6 },
       ...overrides,
     });
-  const form = resolveForm("FABRICPRO")!;
+  const form = xlsxForm("FABRICPRO");
 
-  it("ticks the model, screen side and travel platform", () => {
+  it("ticks the model, screen side and the travel platform every machine has", () => {
     const cells = buildPatches(form, formContext({ item: fpItem() })).map((p) => p.cell);
     expect(cells).toEqual(expect.arrayContaining(["J27", "O41", "J44", "J46"]));
   });
@@ -374,7 +374,7 @@ describe("coversOptions", () => {
         ...extra,
       ],
     });
-  const form = resolveForm("EASYLOADER")!;
+  const form = xlsxForm("EASYLOADER");
 
   it("does not report the table module options as unmatched", () => {
     // They have no tick of their own -- the section rows and the printed

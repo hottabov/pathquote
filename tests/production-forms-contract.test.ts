@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import * as XLSX from "xlsx";
 import { FORM_SPECS } from "../src/lib/production-forms/specs";
+import { isXlsxForm } from "../src/lib/production-forms/types";
 
 const TEMPLATE_DIR = path.resolve(__dirname, "../src/lib/production-forms/templates");
 
@@ -17,7 +18,11 @@ function loadSheet(template: string) {
  * beside it. Border checking is not possible with SheetJS -- box coordinates
  * are confirmed visually when each spec is first written (see spec 11).
  */
-describe.each(FORM_SPECS.map((spec) => [spec.id, spec] as const))("%s form spec", (_id, spec) => {
+// Only the workbook-backed forms have cells to check. A component-rendered
+// form is covered by its own snapshot instead -- see the render spec §11.
+describe.each(FORM_SPECS.filter(isXlsxForm).map((spec) => [spec.id, spec] as const))(
+  "%s form spec",
+  (_id, spec) => {
   it("has its template committed", () => {
     expect(existsSync(path.join(TEMPLATE_DIR, spec.template))).toBe(true);
   });
@@ -53,4 +58,5 @@ describe.each(FORM_SPECS.map((spec) => [spec.id, spec] as const))("%s form spec"
     const cells = [...spec.values, ...spec.ticks, ...spec.replaces].map((entry) => entry.cell);
     expect(new Set(cells).size, `${spec.id} declares a cell more than once`).toBe(cells.length);
   });
-});
+  }
+);

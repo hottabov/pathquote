@@ -3,6 +3,7 @@ import catalogData from "../prisma/seed-data/catalog.json";
 import usPricesData from "../prisma/seed-data/prices-us.json";
 import type { Catalog, CatalogItem, CatalogOption, UsPricesJson } from "../prisma/seed-lib";
 import { resolveOptionIdentity, resolveProductIdentity } from "../prisma/seed-lib";
+import { FORM_BY_SERIES } from "../scripts/backfill-product-forms";
 import { deriveEasyLoaderOptions, EL_MODULE_ROLE_LIST } from "../src/lib/production-forms/table-sections";
 import { readProductSpecs } from "../src/lib/validation/product-specs";
 
@@ -75,21 +76,28 @@ describe("catalog.json: products", () => {
     }
   });
 
-  it("every product with a production form is a kind that prints on one", () => {
-    const formByKind: Record<string, string> = { MACHINE: "M_SERIES", TABLE: "EASYLOADER", SPREADER: "FABRICPRO" };
+  // Which form a product prints follows from its *series*, not from its kind:
+  // M, X and L are all MACHINE and print three different sheets. This used to
+  // assert one form per kind, which was true only while the M-Series was the
+  // only cutter with a form -- see FORM_BY_SERIES and
+  // tests/product-forms-backfill.test.ts, which guard the mapping itself.
+  it("every product's form is the one its series prints, and no other", () => {
     for (const p of products) {
-      if (p.form) expect(formByKind[p.kind ?? ""], p.code).toBe(p.form);
+      expect(p.form ?? null, p.code).toBe(FORM_BY_SERIES[p.seriesCode] ?? null);
     }
   });
 
-  it("exactly two X-Calibre products remain, both 10cm machines with a US price and no AU price", () => {
+  // Priced in both regions since 2026-09; the X-Calibre used to be US-only
+  // and the owner has since trimmed the series to the two machines actually
+  // sold (X3/X5/X7 and the 390 widths are gone).
+  it("exactly two X-Calibre products remain, both 10cm machines priced in both regions", () => {
     const x = products.filter((p) => p.seriesCode === "X");
     expect(x.map((p) => p.code).sort()).toEqual(["X-10180", "X-10220"]);
     for (const p of x) {
       expect(p.kind).toBe("MACHINE");
       expect(readProductSpecs(p.specs).cutHeightCm).toBe(10);
-      expect(p.price).toBeNull();
-      expect(p.needsReview).toBe(true);
+      expect(p.price, p.code).toBeGreaterThan(0);
+      expect(p.needsReview, p.code).toBe(false);
       expect(usByCode.get(p.code)).toBeGreaterThan(0);
     }
   });
@@ -223,10 +231,28 @@ describe("catalog.json: options", () => {
     for (const o of crates) expect(o.noCommission, o.code).toBe(true);
   });
 
-  it("X-Calibre only takes the options the US X sheet lists", () => {
+  // Every X-Calibre option is also an M-Series one -- the X is the M's
+  // bigger sibling and shares its accessories. `DMT` and `TR480` joined the
+  // list after the US X sheet was first transcribed (DMT on 2026-09-11, at
+  // A$18,240 / US$12,768).
+  it("X-Calibre takes only options the M-Series also takes", () => {
     const x = options.filter((o) => o.compatibleSeries.includes("X")).map((o) => o.code);
     expect(new Set(x)).toEqual(
-      new Set(["MTS", "MTS-M", "PRM-M", "OFD-M", "OFP-M", "OFJ", "HDC-M", "BCR-M", "TR220", "Crate-M-180", "Crate-M-220"])
+      new Set([
+        "MTS",
+        "MTS-M",
+        "PRM-M",
+        "OFD-M",
+        "OFP-M",
+        "OFJ",
+        "HDC-M",
+        "BCR-M",
+        "DMT",
+        "TR220",
+        "TR480",
+        "Crate-M-180",
+        "Crate-M-220",
+      ])
     );
     for (const code of x) expect(options.find((o) => o.code === code)?.compatibleSeries, code).toContain("M");
   });

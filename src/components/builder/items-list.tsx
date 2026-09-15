@@ -13,7 +13,9 @@ import { ProductionSpecEditor } from "@/components/builder/production-spec-edito
 import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 import { resolveForm } from "@/lib/production-forms/resolve";
+import { assignRails, type RailSource } from "@/lib/production-forms/rails";
 import { EL_MODULE_ROLES } from "@/lib/production-forms/table-sections";
+import type { OptionRole } from "@prisma/client";
 import { readProductSpecs } from "@/lib/validation/product-specs";
 import { removeItem, reorderItems, setItemSerialNumber } from "@/lib/actions/documents";
 import { pickDerivativeWidth } from "@/lib/image-derivative-width";
@@ -24,6 +26,20 @@ import type { BuilderItem, CompatibleOption } from "@/lib/queries/documents";
 // to be shrunk by CSS, so it asks for the `?w=` thumbnail derivative instead
 // (src/lib/image-derivatives.ts), same as CatalogThumb.
 const ITEM_THUMB_BOX_PX = 48;
+
+/**
+ * Option roles no manager picks by hand, on any item: the per-metre MTS
+ * travel rail, whose quantity comes from the length typed against the MTS
+ * itself (see `mtsTravelMetres`). Shown with its quantity, and inert -- a
+ * number typed here would be recomputed by the server on the next save.
+ */
+const DERIVED_ROLES: ReadonlySet<OptionRole> = new Set<OptionRole>(["MTS_TRAVEL"]);
+
+/** The same, plus the EasyLoader's table modules, which its builder owns. */
+const EASYLOADER_LOCKED_ROLES: ReadonlySet<OptionRole> = new Set<OptionRole>([
+  ...EL_MODULE_ROLES,
+  ...DERIVED_ROLES,
+]);
 
 function arrayMove<T>(list: T[], from: number, to: number): T[] {
   const copy = list.slice();
@@ -152,6 +168,27 @@ export function ItemsList({
   // single-machine one, so it only appears once the document holds two or
   // more items a production form recognizes.
   const machineCount = optimisticItems.filter((item) => resolveForm(item.form) !== null).length;
+
+  // Rail length for the FabricPro cards, read off the EasyLoader cards in the
+  // same quote -- the rails bolt to the table, not to the FabricPro, so the
+  // number is already known the moment a table is drawn "FabricPro
+  // compatible" (see src/lib/production-forms/rails.ts). One machine runs
+  // over one table, so this is a pairing in card order rather than a total:
+  // two tables and two FabricPros are two lengths, not one doubled one. The
+  // same function decides what the printed forms say, so the card and the
+  // sheet can never disagree. Computed from `optimisticItems` so ticking
+  // "FabricPro compatible" updates the FabricPro card in the same render
+  // rather than after a round trip.
+  const railsByItemId = assignRails(
+    optimisticItems
+      .filter((item) => item.form === "EASYLOADER")
+      .map((item) => ({
+        id: item.id,
+        code: item.code,
+        ...((item.productionSpec ?? {}) as RailSource),
+      })),
+    optimisticItems.filter((item) => item.form === "FABRICPRO").map((item) => item.id)
+  );
 
   /** The id of the item card under a viewport point, or `null` when the
    * point is outside every card. Hit-testing the DOM is what stands in for
@@ -477,6 +514,10 @@ export function ItemsList({
                   productSpecs={readProductSpecs(item.specs)}
                   spec={(item.productionSpec ?? {}) as Record<string, unknown>}
                   hasOtherMachines={machineCount > 1}
+                  derivedRailLengthM={railsByItemId.get(item.id)?.lengthM ?? null}
+                  rollFeedQty={item.lines
+                    .filter((line) => line.kind === "OPTION" && line.role === "EL_ROLL_FEED")
+                    .reduce((sum, line) => sum + line.qty, 0)}
                   screenSideImages={screenSideImages}
                   readOnly={readOnly}
                   defaultOpen={isEasyLoader && !readOnly}
@@ -498,7 +539,7 @@ export function ItemsList({
                   currencySymbol={currencySymbol}
                   showOptionIcons={showOptionIcons}
                   readOnly={readOnly}
-                  lockedRoles={isEasyLoader ? EL_MODULE_ROLES : undefined}
+                  lockedRoles={isEasyLoader ? EASYLOADER_LOCKED_ROLES : DERIVED_ROLES}
                   startClosed={isEasyLoader}
                 />
 

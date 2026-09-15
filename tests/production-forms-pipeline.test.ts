@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { unzipSync, strFromU8 } from "fflate";
-import { buildPatches, resolveForm } from "../src/lib/production-forms/resolve";
+import { buildPatches } from "../src/lib/production-forms/resolve";
 import { patchWorkbook } from "../src/lib/production-forms/xlsx-patch";
 import { readTemplate } from "../src/lib/production-forms/render";
 import type { FormContext } from "../src/lib/production-forms/types";
-import { formContext, formItem, formOption } from "./helpers/fixtures";
+import { formContext, formItem, formOption, xlsxForm } from "./helpers/fixtures";
 
 // A fully-loaded order: two software products, two options (one of them
 // carrying an attribute), and drilling requested — every value below is
@@ -30,7 +30,7 @@ const ctx: FormContext = formContext({
 
 describe("production form pipeline", () => {
   it("produces a workbook carrying every expected value and tick", () => {
-    const spec = resolveForm("M_SERIES")!;
+    const spec = xlsxForm("M_SERIES");
     const patched = patchWorkbook(readTemplate(spec.template), spec.sheetPath, buildPatches(spec, ctx));
     const xml = strFromU8(unzipSync(patched)[spec.sheetPath]);
 
@@ -48,7 +48,7 @@ describe("production form pipeline", () => {
   });
 
   it("leaves untouched every box the quote did not ask for", () => {
-    const spec = resolveForm("M_SERIES")!;
+    const spec = xlsxForm("M_SERIES");
     const patched = patchWorkbook(readTemplate(spec.template), spec.sheetPath, buildPatches(spec, ctx));
     const xml = strFromU8(unzipSync(patched)[spec.sheetPath]);
 

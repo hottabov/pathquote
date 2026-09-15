@@ -9,9 +9,24 @@ const modelCell = (widthCode: number | undefined) =>
   widthCode === undefined ? undefined : ({ 180: "H27", 220: "J27", 300: "M27" } as Record<number, string>)[widthCode];
 const spec = (key: string, want: string) => (ctx: FormContext) => ctx.item.spec[key] === want;
 
+/**
+ * Rail length in metres: what someone typed on this item, else the length of
+ * the one EasyLoader table this machine was paired with (`ctx.rails`).
+ *
+ * The typed value wins so the case the derivation cannot see -- a customer
+ * whose existing table is being extended, or one re-using rails they already
+ * own -- stays expressible. The two rails are always the same length (Jeff,
+ * 2026-09-11: "Electrical power rail counts the same, right? -- Yep. Always
+ * the same number"), so they share one derivation and differ only in which
+ * manual override they read.
+ */
+const railLength = (key: "railLengthM" | "powerRailLengthM") => (ctx: FormContext) =>
+  (ctx.item.spec[key] as number | undefined) ?? ctx.rails?.lengthM ?? undefined;
+
 export const fabricProSpec: FormSpec = {
   id: "fabricpro",
   title: "Fabric Pro Order Form",
+  renderer: "xlsx",
   template: "fabric-pro-order-form-08.xlsx",
   sheetPath: "xl/worksheets/sheet1.xml",
   form: "FABRICPRO",
@@ -39,8 +54,8 @@ export const fabricProSpec: FormSpec = {
     { cell: "O15", from: (c) => c.deliveryAddressLines[0] },
     { cell: "O16", from: (c) => c.deliveryAddressLines[1] },
     { cell: "O17", from: (c) => c.deliveryAddressLines[2] },
-    { cell: "N46", from: (c) => c.item.spec.railLengthM as number | undefined },
-    { cell: "N48", from: (c) => c.item.spec.powerRailLengthM as number | undefined },
+    { cell: "N46", from: railLength("railLengthM") },
+    { cell: "N48", from: railLength("powerRailLengthM") },
   ],
 
   replaces: [],
@@ -56,11 +71,20 @@ export const fabricProSpec: FormSpec = {
     { cell: "J41", when: spec("ui", "-Y") },
     { cell: "O41", when: spec("ui", "+Y") },
 
-    { cell: "J44", when: (c) => c.item.spec.travelPlatform === true },
-    { cell: "J46", when: (c) => Boolean(c.item.spec.railLengthM) },
-    { cell: "J48", when: (c) => Boolean(c.item.spec.powerRailLengthM) },
+    // Fitted to every machine, so ticked unconditionally rather than asked.
+    { cell: "J44", when: () => true },
+    { cell: "J46", when: (c) => Boolean(railLength("railLengthM")(c)) },
+    { cell: "J48", when: (c) => Boolean(railLength("powerRailLengthM")(c)) },
 
-    { cell: "D58", when: (c) => c.item.spec.exWorks === true },
-    { cell: "D68", when: (c) => c.item.spec.crate === true },
+    // D58 (Ex-Works) is deliberately not ticked: the delivery term belongs to
+    // the quote, not to the build sheet (Vadym, 2026-09-11).
+    // From the option line, and declared as covered: a `Crate-FP` read out of
+    // the production spec instead would tick nothing and be reported as an
+    // option this form has no box for.
+    {
+      cell: "D68",
+      when: (c) => c.item.options.some((option) => option.role === "CRATE"),
+      covers: "CRATE" as const,
+    },
   ],
 };

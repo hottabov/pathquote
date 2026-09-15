@@ -14,6 +14,9 @@
     "catalog:export": "tsx scripts/export-catalog.ts",
     "catalog:migrate-v2": "tsx scripts/migrate-catalog-v2.ts",
     "catalog:build-seed-data": "tsx scripts/build-seed-data-from-target.ts",
+    "catalog:seed-from-dump": "tsx scripts/build-seed-data-from-dump.ts",
+    "catalog:add-dmt": "tsx scripts/add-dmt-option.ts",
+    "catalog:backfill-forms": "tsx scripts/backfill-product-forms.ts",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:verify-seed": "tsx scripts/verify-seed.ts",
@@ -21,7 +24,9 @@
     "user:create": "tsx scripts/create-user.ts",
     "images:import": "tsx scripts/import-product-images.ts",
     "import:industries": "tsx scripts/import-industries.ts",
-    "import:act-industries": "tsx scripts/import-act-industries.ts"
+    "import:act-industries": "tsx scripts/import-act-industries.ts",
+    "forms:preview": "tsx scripts/preview-production-forms.ts",
+    "catalog:check-form-enum": "tsx scripts/check-production-form-enum.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",

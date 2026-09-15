@@ -36,6 +36,23 @@ function writeSection(sections: Section[], index: number, modules: number, surfa
   return copy;
 }
 
+/** The printed form has four roll-feed distance rows, and no fifth to spill into. */
+const MAX_ROLL_FEEDS = 4;
+
+/**
+ * Writes one roll-feed distance, keeping the array dense up to the last
+ * answered row. A cleared field in the middle stays as a 0 rather than
+ * collapsing the ones after it -- the numbers are positional (#1, #2, #3) and
+ * renumbering them would move an attachment nobody touched.
+ */
+function writeDistance(distances: number[], index: number, value: number | undefined): number[] {
+  const copy = [...distances];
+  while (copy.length <= index) copy.push(0);
+  copy[index] = value ?? 0;
+  while (copy.length > 0 && copy[copy.length - 1] === 0) copy.pop();
+  return copy;
+}
+
 const KNIFE_SIZES = ["1.5x5.0", "1.5x7.0", "2.0x7.0"] as const;
 const VOLTAGES = ["220V", "400V", "415V", "480V"] as const;
 
@@ -101,6 +118,121 @@ function Stepper({
   );
 }
 
+/**
+ * One rail-length field. Empty means "use the length the EasyLoader tables in
+ * this quote add up to", which is the normal case, so the derived figure is
+ * shown as the placeholder and spelled out underneath rather than written
+ * into the input — a pre-filled box reads as a value someone chose, and the
+ * next person to redraw the table would have no way to tell it apart from
+ * one that was typed.
+ */
+function RailField({
+  id,
+  label,
+  value,
+  derived,
+  onCommit,
+}: {
+  id: string;
+  label: string;
+  value: number | undefined;
+  derived: number | null;
+  onCommit: (value: number | undefined) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <CompactField label={label} htmlFor={id}>
+        <input
+          id={id}
+          type="number"
+          step="0.1"
+          min={0}
+          inputMode="decimal"
+          placeholder={derived !== null ? String(derived) : "—"}
+          defaultValue={value ?? ""}
+          onBlur={(e) => onCommit(e.target.value === "" ? undefined : Number(e.target.value))}
+          className={cn(fieldInputClass, compactControlClass, "w-28")}
+        />
+        {derived !== null && value === undefined ? (
+          <span className="text-xs text-slate-500">from the EasyLoader table ({derived} m)</span>
+        ) : null}
+        {derived !== null && value !== undefined && value !== derived ? (
+          <span className="text-xs text-amber-700">
+            overrides the EasyLoader table ({derived} m)
+          </span>
+        ) : null}
+      </CompactField>
+    </div>
+  );
+}
+
+type Drills = { required?: boolean; detail?: string } | undefined;
+
+/**
+ * The drills question, shared by the M-Series and the X-Calibre forms --
+ * both print it, and both print the same warning that `"TBC" is not
+ * acceptable`.
+ *
+ * The 22-character cap is an Excel artefact: rows 81-82 of the M-Series
+ * workbook are tall hand-writing rows in a large font with no empty cell to
+ * overflow into, so anything longer is clipped rather than wrapped. It goes
+ * when these forms are redrawn as components.
+ */
+function DrillsField({
+  itemId,
+  drills,
+  draft,
+  save,
+  setDraft,
+}: {
+  itemId: string;
+  drills: Drills;
+  draft: Record<string, unknown>;
+  save: (next: Record<string, unknown>, kind: "spec" | "layout") => void;
+  setDraft: (next: Record<string, unknown>) => void;
+}) {
+  return (
+        <fieldset className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3">
+          <legend className="px-1 text-xs font-medium text-slate-500">Drills</legend>
+          <label className="flex min-h-11 items-center gap-2.5 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={drills?.required ?? false}
+              // Ticking the box is the only control here that does not
+              // write immediately. The printed form says "TBC" is not
+              // acceptable, so `drillsSchema` refuses "drills required,
+              // detail blank" -- which is precisely the half-answer a
+              // tick on its own is. Hold it in the draft, let it reveal
+              // the detail field, and write both halves together on
+              // that field's blur. Unticking is a complete answer ("no
+              // drills") and saves like everything else.
+              onChange={(e) =>
+                e.target.checked
+                  ? setDraft({ ...draft, drills: { required: true, detail: "" } })
+                  : save({ ...draft, drills: { required: false, detail: "" } }, "spec")
+              }
+              className={checkboxClass}
+            />
+            Drills required
+          </label>
+          {drills?.required ? (
+            <CompactField label="Qty, type and size" htmlFor={`${itemId}-drills-detail`}>
+              <input
+                id={`${itemId}-drills-detail`}
+                type="text"
+                maxLength={22}
+                defaultValue={drills?.detail ?? ""}
+                onBlur={(e) =>
+                  save({ ...draft, drills: { required: true, detail: e.target.value } }, "spec")
+                }
+                className={cn(fieldInputClass, compactControlClass, "flex-1 min-w-[10rem]")}
+              />
+            </CompactField>
+          ) : null}
+        </fieldset>
+  );
+}
+
 type Props = {
   itemId: string;
   /** `Product.form` -- which order form this item prints on, or null for none. */
@@ -119,6 +251,22 @@ type Props = {
    * renders `SpecDiagram`'s placeholder box instead of a broken image —
    * expected until the owner uploads the real artwork. */
   screenSideImages: Record<string, string>;
+  /**
+   * Metres of rail the FabricPro-compatible EasyLoader tables in this quote
+   * add up to, or null when there are none. Shown on a FabricPro card as the
+   * value the form will print unless someone types over it -- the rails bolt
+   * to the table, so re-typing a number the table already states is how the
+   * two end up disagreeing. See `src/lib/production-forms/rails.ts`.
+   */
+  derivedRailLengthM: number | null;
+  /**
+   * How many single roll feed attachments this item sells (role
+   * `EL_ROLL_FEED`, `EL-2020-RF` / `EL-2420-RF`), or 0 for none. The
+   * attachment is an option, so it is picked in the options editor; what
+   * belongs here is only where each one sits along the table, and asking for
+   * a distance nobody ordered an attachment for is asking for nothing.
+   */
+  rollFeedQty: number;
   /** A finalized quote. The screen side and usage stay editable (they carry
    * no money — see `setProductionSpec`); the table layout does not, because
    * the modules it is built from are what the customer is charged. */
@@ -156,6 +304,8 @@ export function ProductionSpecEditor({
   productSpecs,
   spec,
   hasOtherMachines,
+  derivedRailLengthM,
+  rollFeedQty,
   screenSideImages,
   readOnly = false,
   defaultOpen = false,
@@ -250,7 +400,12 @@ export function ProductionSpecEditor({
   const missing = form.requires.filter((key) => draft[key] === undefined);
   const drills = draft.drills as { required?: boolean; detail?: string } | undefined;
   const sections = (draft.sections as Section[] | undefined) ?? [];
+  const rollFeedDistances = (draft.rollFeedDistancesMm as number[] | undefined) ?? [];
   const fabricProCompatible = (draft.fabricProCompatible as boolean | undefined) ?? false;
+  // Absent means yes — `syncWithCutter` defaults to true, and a spec saved
+  // before this field existed must read as the standard build, not as a
+  // table somebody deliberately left unsynchronised.
+  const syncWithCutter = (draft.syncWithCutter as boolean | undefined) ?? true;
   const totals = layoutTotals(sections);
   // "Operator screen side" everywhere except the EasyLoader, whose printed
   // form calls the same +Y/-Y choice "Control Box Side".
@@ -399,6 +554,21 @@ export function ProductionSpecEditor({
                   adds a busbar and a support rail per module
                 </span>
               </label>
+
+              {/* Ticked by default — it is how an EasyLoader is normally
+                  built, so the rare table that does not sync with a cutter is
+                  the one that costs somebody a click. Nothing is charged for
+                  it, so it is a build answer rather than an option line. */}
+              <label className="flex min-h-11 items-center gap-2.5 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={syncWithCutter}
+                  disabled={readOnly}
+                  onChange={(e) => save({ ...draft, syncWithCutter: e.target.checked }, "spec")}
+                  className={checkboxClass}
+                />
+                Synchronisation with the cutter
+              </label>
             </div>
           ) : null}
 
@@ -458,6 +628,106 @@ export function ProductionSpecEditor({
             </div>
           ) : null}
 
+          {form.form === "X_CALIBRE" ? (
+            <>
+              {/* No knife size: the X-Calibre form prints one, 2.4 x 8.5. */}
+              <CompactField label="Voltage (optional)" htmlFor={`${itemId}-voltage`}>
+                <select
+                  id={`${itemId}-voltage`}
+                  value={(draft.voltage as string) ?? ""}
+                  onChange={(e) =>
+                    save({ ...draft, voltage: e.target.value === "" ? undefined : e.target.value }, "spec")
+                  }
+                  className={cn(fieldInputClass, compactControlClass, "w-28")}
+                >
+                  <option value="">—</option>
+                  {VOLTAGES.map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </CompactField>
+
+              <DrillsField itemId={itemId} drills={drills} draft={draft} save={save} setDraft={setDraft} />
+
+              <CompactField label="Special notes (optional)" htmlFor={`${itemId}-special-notes`}>
+                <input
+                  id={`${itemId}-special-notes`}
+                  type="text"
+                  defaultValue={(draft.specialNotes as string) ?? ""}
+                  onBlur={(e) => save({ ...draft, specialNotes: e.target.value }, "spec")}
+                  className={cn(fieldInputClass, compactControlClass, "flex-1 min-w-[10rem]")}
+                />
+              </CompactField>
+            </>
+          ) : null}
+
+          {form.form === "L_SERIES" ? (
+            <>
+              {/* Model, cutting length and cutting surface are not asked:
+                  they are `Product.specs.widthCode` / `.extended` / `.belt`,
+                  so L-320EF already says "extended, felt, 320". Asking again
+                  would only create two answers that can disagree. The tools
+                  row is not here either -- every tool on it is a priced
+                  `L_TOOL` option, and the form's "replace X with Qty" is the
+                  option line's own quantity. */}
+              <CompactField label="Voltage" htmlFor={`${itemId}-l-voltage`}>
+                <select
+                  id={`${itemId}-l-voltage`}
+                  value={(draft.voltage as string) ?? ""}
+                  onChange={(e) =>
+                    save({ ...draft, voltage: e.target.value === "" ? undefined : e.target.value }, "spec")
+                  }
+                  className={cn(fieldInputClass, compactControlClass, "w-32")}
+                >
+                  <option value="">—</option>
+                  <option value="220/230">220/230</option>
+                  <option value="other">Other</option>
+                </select>
+              </CompactField>
+
+              {draft.voltage === "other" ? (
+                <CompactField label="Voltage (VAC)" htmlFor={`${itemId}-l-voltage-other`}>
+                  <input
+                    id={`${itemId}-l-voltage-other`}
+                    type="text"
+                    maxLength={20}
+                    defaultValue={(draft.voltageOtherVac as string) ?? ""}
+                    onBlur={(e) => save({ ...draft, voltageOtherVac: e.target.value }, "spec")}
+                    className={cn(fieldInputClass, compactControlClass, "w-32")}
+                  />
+                </CompactField>
+              ) : null}
+
+              <CompactField label="Shipping" htmlFor={`${itemId}-l-shipping`}>
+                <select
+                  id={`${itemId}-l-shipping`}
+                  value={(draft.shipping as string) ?? ""}
+                  onChange={(e) =>
+                    save({ ...draft, shipping: e.target.value === "" ? undefined : e.target.value }, "spec")
+                  }
+                  className={cn(fieldInputClass, compactControlClass, "w-56")}
+                >
+                  <option value="">—</option>
+                  <option value="complete">Complete (whole)</option>
+                  <option value="crate-disassembled">Wood crate (disassembled)</option>
+                  <option value="crate-whole">Wood crate (whole)</option>
+                </select>
+              </CompactField>
+
+              <CompactField label="Special notes (optional)" htmlFor={`${itemId}-l-notes`}>
+                <input
+                  id={`${itemId}-l-notes`}
+                  type="text"
+                  defaultValue={(draft.specialNotes as string) ?? ""}
+                  onBlur={(e) => save({ ...draft, specialNotes: e.target.value }, "spec")}
+                  className={cn(fieldInputClass, compactControlClass, "flex-1 min-w-[10rem]")}
+                />
+              </CompactField>
+            </>
+          ) : null}
+
           {form.form === "M_SERIES" ? (
             <>
               <CompactField label="Knife size" htmlFor={`${itemId}-knife-size`}>
@@ -494,44 +764,7 @@ export function ProductionSpecEditor({
                 </select>
               </CompactField>
 
-              <fieldset className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3">
-                <legend className="px-1 text-xs font-medium text-slate-500">Drills</legend>
-                <label className="flex min-h-11 items-center gap-2.5 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={drills?.required ?? false}
-                    // Ticking the box is the only control here that does not
-                    // write immediately. The printed form says "TBC" is not
-                    // acceptable, so `drillsSchema` refuses "drills required,
-                    // detail blank" -- which is precisely the half-answer a
-                    // tick on its own is. Hold it in the draft, let it reveal
-                    // the detail field, and write both halves together on
-                    // that field's blur. Unticking is a complete answer ("no
-                    // drills") and saves like everything else.
-                    onChange={(e) =>
-                      e.target.checked
-                        ? setDraft({ ...draft, drills: { required: true, detail: "" } })
-                        : save({ ...draft, drills: { required: false, detail: "" } }, "spec")
-                    }
-                    className={checkboxClass}
-                  />
-                  Drills required
-                </label>
-                {drills?.required ? (
-                  <CompactField label="Qty, type and size" htmlFor={`${itemId}-drills-detail`}>
-                    <input
-                      id={`${itemId}-drills-detail`}
-                      type="text"
-                      maxLength={22}
-                      defaultValue={drills?.detail ?? ""}
-                      onBlur={(e) =>
-                        save({ ...draft, drills: { required: true, detail: e.target.value } }, "spec")
-                      }
-                      className={cn(fieldInputClass, compactControlClass, "flex-1 min-w-[10rem]")}
-                    />
-                  </CompactField>
-                ) : null}
-              </fieldset>
+              <DrillsField itemId={itemId} drills={drills} draft={draft} save={save} setDraft={setDraft} />
 
               <CompactField label="Special notes (optional)" htmlFor={`${itemId}-special-notes`}>
                 <input
@@ -587,82 +820,82 @@ export function ProductionSpecEditor({
                   />
                 </CompactField>
               ) : null}
+
+              {/* One row per attachment sold. The printed form has four, and
+                  so does the option's quantity cap; a fifth would have
+                  nowhere to print. Jeff does not fit these -- the parts ship
+                  and the service crew installs them on site -- so this is
+                  written for whoever is holding the sheet at the customer's
+                  factory, not for the workshop. */}
+              {rollFeedQty > 0 ? (
+                <fieldset className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3">
+                  <legend className="px-1 text-xs font-medium text-slate-500">
+                    Roll feed — distance from X = 0
+                  </legend>
+                  {Array.from({ length: Math.min(rollFeedQty, MAX_ROLL_FEEDS) }, (_, index) => (
+                    <CompactField
+                      key={index}
+                      label={`#${index + 1} distance (mm)`}
+                      htmlFor={`${itemId}-roll-feed-${index}`}
+                    >
+                      <input
+                        id={`${itemId}-roll-feed-${index}`}
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        max={99999}
+                        disabled={readOnly}
+                        defaultValue={rollFeedDistances[index] ?? ""}
+                        onBlur={(e) =>
+                          save(
+                            {
+                              ...draft,
+                              rollFeedDistancesMm: writeDistance(
+                                rollFeedDistances,
+                                index,
+                                e.target.value === "" ? undefined : Number(e.target.value)
+                              ),
+                            },
+                            "spec"
+                          )
+                        }
+                        className={cn(fieldInputClass, compactControlClass, "w-28")}
+                      />
+                    </CompactField>
+                  ))}
+                </fieldset>
+              ) : null}
             </>
           ) : null}
 
           {form.form === "FABRICPRO" ? (
             <>
-              <label className="flex min-h-11 items-center gap-2.5 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={(draft.travelPlatform as boolean) ?? false}
-                  onChange={(e) => save({ ...draft, travelPlatform: e.target.checked }, "spec")}
-                  className={checkboxClass}
-                />
-                Travel platform
-              </label>
+              {/* Both rails are the same length, and that length is a fact
+                  about the EasyLoader table this FabricPro runs over — so
+                  when a table in this quote is marked FabricPro compatible,
+                  the number arrives on its own and the field is left empty
+                  rather than pre-filled. Typing one overrides it, for the
+                  case the quote cannot see: a customer extending a table
+                  they already own. */}
+              <RailField
+                id={`${itemId}-rail-length`}
+                label="Travel platform rail length (m)"
+                value={draft.railLengthM as number | undefined}
+                derived={derivedRailLengthM}
+                onCommit={(value) => save({ ...draft, railLengthM: value }, "spec")}
+              />
 
-              <CompactField label="Travel platform rail length (m, optional)" htmlFor={`${itemId}-rail-length`}>
-                <input
-                  id={`${itemId}-rail-length`}
-                  type="number"
-                  step="0.1"
-                  min={0}
-                  inputMode="decimal"
-                  defaultValue={(draft.railLengthM as number) ?? ""}
-                  onBlur={(e) =>
-                    save(
-                      { ...draft, railLengthM: e.target.value === "" ? undefined : Number(e.target.value) },
-                      "spec"
-                    )
-                  }
-                  className={cn(fieldInputClass, compactControlClass, "w-28")}
-                />
-              </CompactField>
+              <RailField
+                id={`${itemId}-power-rail-length`}
+                label="Electrical power rail length (m)"
+                value={draft.powerRailLengthM as number | undefined}
+                derived={derivedRailLengthM}
+                onCommit={(value) => save({ ...draft, powerRailLengthM: value }, "spec")}
+              />
 
-              <CompactField
-                label="Electrical power rail length (m, optional)"
-                htmlFor={`${itemId}-power-rail-length`}
-              >
-                <input
-                  id={`${itemId}-power-rail-length`}
-                  type="number"
-                  step="0.1"
-                  min={0}
-                  inputMode="decimal"
-                  defaultValue={(draft.powerRailLengthM as number) ?? ""}
-                  onBlur={(e) =>
-                    save(
-                      {
-                        ...draft,
-                        powerRailLengthM: e.target.value === "" ? undefined : Number(e.target.value),
-                      },
-                      "spec"
-                    )
-                  }
-                  className={cn(fieldInputClass, compactControlClass, "w-28")}
-                />
-              </CompactField>
-
-              <label className="flex min-h-11 items-center gap-2.5 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={(draft.exWorks as boolean) ?? false}
-                  onChange={(e) => save({ ...draft, exWorks: e.target.checked }, "spec")}
-                  className={checkboxClass}
-                />
-                Ex-Works
-              </label>
-
-              <label className="flex min-h-11 items-center gap-2.5 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={(draft.crate as boolean) ?? false}
-                  onChange={(e) => save({ ...draft, crate: e.target.checked }, "spec")}
-                  className={checkboxClass}
-                />
-                Crate required
-              </label>
+              {/* Ex-Works was here. It is a delivery term the quote states,
+                  and a second copy on the build sheet reads as something the
+                  workshop sets (Vadym, 2026-09-11). */}
             </>
           ) : null}
 

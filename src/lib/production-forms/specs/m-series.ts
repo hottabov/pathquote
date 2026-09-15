@@ -34,6 +34,7 @@ const integrated = (module: NonNullable<ProductSpecs["pathworksModule"]>) => (ct
 export const mSeriesSpec: FormSpec = {
   id: "m-series",
   title: "M-Series Order Form",
+  renderer: "xlsx",
   template: "m-series-order-12.xlsx",
   sheetPath: "xl/worksheets/sheet1.xml",
   form: "M_SERIES",
@@ -94,7 +95,14 @@ export const mSeriesSpec: FormSpec = {
     { cell: "J33", when: spec("ui", "+Y") },
     { cell: "J35", when: spec("ui", "-Y") },
 
-    optionTick("F42", "VRB"),
+    // VRB is fitted to every machine and is not sold, so it is never on the
+    // quote and there is no option to read. It prints as a fact: the box is
+    // ticked because the machine has one (owner, 2026-09-11 -- "друкуємо вже
+    // обраною опцією… це стандартна вшита опція"). Deliberately carries no
+    // `covers`: if a VRB line ever does appear on a quote, something has
+    // changed and it belongs on the Additional items sheet where somebody
+    // will see it, not silently absorbed by this tick.
+    { cell: "F42", when: () => true },
     optionTick("J42", "OFJ"),
     optionTick("O42", "HFV"),
     optionTick("F44", "PM"),

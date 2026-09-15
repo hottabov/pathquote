@@ -72,3 +72,9 @@ docker-compose.override.yml
 # AI 
 .claude/
 skills/
+Claude outputs/
+
+
+# Rendered form previews (scripts/preview-form-html.ts, scripts/preview-production-forms.ts)
+.preview-forms/
+.preview-stage/

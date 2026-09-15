@@ -207,7 +207,11 @@ function releaseConversionSlot(): void {
  * `GOTENBERG_URL` check stays outside the gate: a misconfigured deployment
  * should fail instantly rather than take a slot to do it.
  */
-export async function htmlToPdf(html: string, footerHtml?: string): Promise<Buffer> {
+export async function htmlToPdf(
+  html: string,
+  footerHtml?: string,
+  options?: { printBackground?: boolean }
+): Promise<Buffer> {
   const baseUrl = process.env.GOTENBERG_URL;
   if (!baseUrl) {
     throw new Error("GOTENBERG_URL is not configured");
@@ -215,7 +219,7 @@ export async function htmlToPdf(html: string, footerHtml?: string): Promise<Buff
 
   await acquireConversionSlot();
   try {
-    return await convertHtml(baseUrl, html, footerHtml);
+    return await convertHtml(baseUrl, html, footerHtml, options);
   } finally {
     // In a `finally` so a Gotenberg timeout, a non-2xx response or an aborted
     // request all give the slot back — a leaked slot here would permanently
@@ -227,7 +231,12 @@ export async function htmlToPdf(html: string, footerHtml?: string): Promise<Buff
 /** The conversion itself, minus the gating — split out only so the slot is
  * released by one `finally` around the whole request rather than threaded
  * through every early return. */
-async function convertHtml(baseUrl: string, html: string, footerHtml?: string): Promise<Buffer> {
+async function convertHtml(
+  baseUrl: string,
+  html: string,
+  footerHtml?: string,
+  options?: { printBackground?: boolean }
+): Promise<Buffer> {
   const form = new FormData();
   form.set("files", new Blob([html], { type: "text/html" }), "index.html");
   form.set("paperWidth", "8.27");
@@ -236,6 +245,12 @@ async function convertHtml(baseUrl: string, html: string, footerHtml?: string): 
   form.set("marginBottom", footerHtml ? "0.4" : "0");
   form.set("marginLeft", "0");
   form.set("marginRight", "0");
+  // Off by default: the quotation sheet prints no fills, and turning it on
+  // there would only change a page nobody asked to change. The production
+  // forms need it -- their ticked boxes and section headers ARE fills, and
+  // Chromium drops every one of them without this.
+  if (options?.printBackground) form.set("printBackground", "true");
+
   if (footerHtml) {
     // `printBackground` isn't needed here — `buildFooterHtml`'s markup has
     // no background of its own — so it's left at Gotenberg's default rather
@@ -421,6 +436,19 @@ async function inlineMarkedImages(html: string): Promise<string> {
     // read as a `String.replace` substitution pattern.
     return tag.replace(MARKED_SRC_PATTERN, () => `src="${dataUri}"`);
   });
+}
+
+/**
+ * The same second pass for a caller that renders its own markup: the
+ * production forms (src/app/api/quotes/[documentId]/production-forms/route.ts)
+ * put spec diagrams on the page through `fileImageResolver`, and the marks
+ * have to become bytes before the html reaches Gotenberg, whose Chromium
+ * cannot fetch an auth-gated `/api/files/...` URL. Exported as a named
+ * operation rather than exporting `inlineMarkedImages` itself so the two-pass
+ * split stays this module's business.
+ */
+export async function inlineSheetImages(html: string): Promise<string> {
+  return inlineMarkedImages(html);
 }
 
 /** Parses one `<img>` tag into the file it was marked with and the width to

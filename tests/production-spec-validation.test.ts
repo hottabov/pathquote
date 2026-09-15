@@ -119,7 +119,7 @@ describe("easyLoaderSpecSchema", () => {
         ui: "-Y",
         usage: "offload",
         sections: [{ lengthM: 1.2, surface: "static" }],
-        rollFeed: { qty: 5, distancesMm: [1, 2, 3, 4, 5] },
+        rollFeedDistancesMm: [1, 2, 3, 4, 5],
       },
     ],
   ]);
@@ -132,6 +132,11 @@ describe("easyLoaderSpecSchema", () => {
       usage: "onload",
       sections: [],
       fabricProCompatible: false,
+      // Absent means yes: an EasyLoader normally runs in sync with the cutter
+      // beside it, so a spec nobody has opened must read as the standard
+      // build rather than as one deliberately left unsynchronised.
+      syncWithCutter: true,
+      rollFeedDistancesMm: [],
     });
   });
 
@@ -153,10 +158,10 @@ describe("easyLoaderSpecSchema", () => {
 });
 
 describe("fabricProSpecSchema", () => {
-  accepts(fabricProSpecSchema, [["a minimal spec", { ui: "+Y", travelPlatform: true }]]);
+  accepts(fabricProSpecSchema, [["a minimal spec", { ui: "+Y" }]]);
 
   it("defaults the screen side to -Y when omitted", () => {
-    const result = fabricProSpecSchema.safeParse({ travelPlatform: true });
+    const result = fabricProSpecSchema.safeParse({});
     expect(result.success).toBe(true);
     expect(result.success && result.data.ui).toBe("-Y");
   });

@@ -118,6 +118,13 @@ enum ProductionForm {
   M_SERIES
   EASYLOADER
   FABRICPRO
+  EASYFEED
+  HDRF
+  PUNCHLINE
+  FP_TROLLEY
+  LNS
+  X_CALIBRE
+  L_SERIES
 }
 
 // What an option *is*, for the parts of the app that need to know: the

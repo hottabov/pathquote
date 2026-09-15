@@ -1,5 +1,5 @@
 {
-  "extractedAt": "2026-09-07T05:53:41.688Z",
+  "extractedAt": "2026-09-11T13:31:32.760Z",
   "prices": [
     {
       "code": "180-E",
@@ -50,16 +50,8 @@
       "amountUsd": 1125
     },
     {
-      "code": "Crate-FP-180",
+      "code": "Crate-FP",
       "amountUsd": 1254
-    },
-    {
-      "code": "Crate-FP-220",
-      "amountUsd": 1400
-    },
-    {
-      "code": "Crate-FP-300",
-      "amountUsd": 1600
     },
     {
       "code": "Crate-HDRF-180",
@@ -102,6 +94,10 @@
       "amountUsd": 587
     },
     {
+      "code": "DMT",
+      "amountUsd": 12768
+    },
+    {
       "code": "DR2",
       "amountUsd": 5850
     },
@@ -138,6 +134,10 @@
       "amountUsd": 29250
     },
     {
+      "code": "EL-2020",
+      "amountUsd": 0
+    },
+    {
       "code": "EL-2020-BB12",
       "amountUsd": 209
     },
@@ -160,6 +160,10 @@
     {
       "code": "EL-2020-ST12",
       "amountUsd": 557
+    },
+    {
+      "code": "EL-2420",
+      "amountUsd": 0
     },
     {
       "code": "EL-2420-BB12",
@@ -186,6 +190,10 @@
       "amountUsd": 585
     },
     {
+      "code": "EL-3220",
+      "amountUsd": 0
+    },
+    {
       "code": "EL-3220-BB12",
       "amountUsd": 209
     },
@@ -204,6 +212,10 @@
     {
       "code": "EL-3220-ST12",
       "amountUsd": 1003
+    },
+    {
+      "code": "EL-4030",
+      "amountUsd": 0
     },
     {
       "code": "EL-4030-BB12",

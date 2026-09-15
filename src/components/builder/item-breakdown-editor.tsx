@@ -79,7 +79,14 @@ export function ItemBreakdownEditor({
   const breakdown = buildItemBreakdown(item, true);
 
   return (
-    <div className="flex flex-col gap-1 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+    // One grid for the whole block, not a stack of independent flex rows:
+    // every row below renders as `display: contents` so their cells land in
+    // these three shared columns (label / qty / price). Separate per-row
+    // flexboxes each sized themselves, so the qty and price columns drifted
+    // from line to line and the figures never lined up vertically. `auto` on
+    // the two right columns means they're as wide as their widest row and no
+    // wider, so the labels still get everything that's left.
+    <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
       {/* Dropped for a product assembled from its own options (see
           `ItemBreakdown.assembledFromOptions`) — an EasyLoader, today. The
           row would read "$0" against a machine, and there is nothing here to
@@ -156,15 +163,22 @@ function StaticRow({
   strong?: boolean;
 }) {
   return (
+    // `contents` so the two cells sit in the parent's shared columns (see the
+    // grid's own comment). The wrapper generates no box, but colour/weight/
+    // style are inherited properties, so the modifiers below still reach the
+    // cells. The label takes the label *and* qty columns — these rows have no
+    // qty of their own — and the amount carries the same `pr-3` the editable
+    // rows reserve for their pencil, so every figure in the block ends on one
+    // line rather than the subtotal hanging 12px further right.
     <div
       className={cn(
-        "flex items-center justify-between gap-2",
+        "contents",
         muted && "italic text-amber-700",
         strong && "font-semibold text-slate-700"
       )}
     >
-      <span className="truncate">{label}</span>
-      <span className="tabular-nums">{amount}</span>
+      <span className="col-span-2 truncate">{label}</span>
+      <span className="pr-3 text-right tabular-nums">{amount}</span>
     </div>
   );
 }
@@ -201,10 +215,15 @@ function BreakdownRow({
   resetAction: (id: string) => Promise<ActionResult>;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2">
+    // `contents` — the three cells belong to the block-level grid above, not
+    // to a flexbox of this row's own; that's what keeps the qty and price
+    // columns in line down the list. Both are right-aligned so the digits
+    // stack (`tabular-nums` keeps them the same width while a price is being
+    // edited elsewhere).
+    <div className="contents">
       <span className="truncate">{label}</span>
-      <span className="flex shrink-0 items-center gap-2 tabular-nums">
-        <span className="text-slate-400">{qty}</span>
+      <span className="text-right tabular-nums text-slate-400">{qty}</span>
+      <span className="flex items-center justify-end tabular-nums">
         <EditablePrice
           label={label}
           id={id}

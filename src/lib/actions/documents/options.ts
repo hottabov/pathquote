@@ -25,6 +25,7 @@ import {
   EL_MODULE_ROLE_LIST,
   isEasyLoaderModuleRole,
 } from "@/lib/production-forms/table-sections";
+import { normaliseMtsSelections } from "@/lib/production-forms/mts";
 import { idSchema, optionSelectionSchema, type OptionSelectionInput } from "@/lib/validation/documents";
 import { NOT_FOUND_ERROR, flattenZodError } from "../_shared";
 import {
@@ -70,7 +71,131 @@ export async function setItemOptions(
   selections: OptionSelectionInput[]
 ): Promise<ActionResult> {
   const session = await requireSession();
-  return writeItemOptions(session.user, itemId, selections);
+  const normalised = await withDerivedMtsTravel(selections);
+  if ("error" in normalised) return normalised;
+  const withModules = await withDerivedEasyLoaderModules(session.user, itemId, normalised.selections);
+  return writeItemOptions(session.user, itemId, withModules);
+}
+
+/**
+ * Replaces whatever table modules the caller sent with the ones this
+ * EasyLoader's stored layout adds up to.
+ *
+ * The layout is the input and the option lines are its consequence (see
+ * `setEasyLoaderLayout`), which makes any module quantity arriving through
+ * this path -- the hand-picked options panel -- a second opinion about a
+ * question already answered. It used to be trusted, and that is how a quote
+ * could end up charging for a table nobody drew: the options panel reads the
+ * item's lines when it opens, so a layout redrawn while it sat open left it
+ * holding the old modules, and a save from that state wrote them back over
+ * the derived ones. The panel no longer holds them (see
+ * `withDerivedSelections` in item-options-editor.tsx), but a stale tab, a
+ * half-landed revalidate or any other caller could still send them, so the
+ * rule belongs here as well: the modules come from the spec, whatever the
+ * submission says.
+ *
+ * A spec that does not parse is left alone rather than derived from: an
+ * EasyLoader whose layout is unreadable has no trustworthy answer to
+ * substitute, and silently dropping its modules would take the machine off
+ * the quote.
+ */
+async function withDerivedEasyLoaderModules(
+  user: ScopeUser,
+  itemId: string,
+  selections: OptionSelectionInput[]
+): Promise<OptionSelectionInput[]> {
+  const parsedItemId = idSchema.safeParse(itemId);
+  if (!parsedItemId.success) return selections;
+
+  const item = await db.documentItem.findFirst({
+    where: {
+      id: parsedItemId.data,
+      document: { status: "DRAFT", ...documentWhereForUser(user) },
+    },
+    select: { productId: true, productionSpec: true, product: { select: { form: true } } },
+  });
+  if (!item || item.productId === null || item.product?.form !== "EASYLOADER") return selections;
+
+  const parsed = easyLoaderSpecSchema.safeParse(item.productionSpec ?? {});
+  if (!parsed.success) return selections;
+
+  const derived = deriveEasyLoaderOptions(parsed.data.sections, parsed.data.fabricProCompatible);
+
+  const submittedIds = selections
+    .map((selection) => selection?.optionId)
+    .filter((id): id is string => typeof id === "string");
+  const [moduleOptions, submittedOptions] = await Promise.all([
+    db.option.findMany({
+      where: { parentProductId: item.productId, role: { in: [...EL_MODULE_ROLE_LIST] } },
+      select: { id: true, role: true },
+    }),
+    submittedIds.length > 0
+      ? db.option.findMany({ where: { id: { in: submittedIds } }, select: { id: true, role: true } })
+      : Promise.resolve([]),
+  ]);
+
+  const moduleByRole = new Map(moduleOptions.map((option) => [option.role, option]));
+  // A role the catalogue has no row for is a catalogue fault, and this call
+  // is not the one to raise it -- `setEasyLoaderLayout` names it plainly the
+  // moment the table is drawn. Here the submission is simply left as it came.
+  if (derived.some(({ role }) => !moduleByRole.has(role))) return selections;
+
+  const roleById = new Map(submittedOptions.map((option) => [option.id, option.role]));
+  const kept = selections.filter(
+    (selection) => !isEasyLoaderModuleRole(roleById.get(selection?.optionId))
+  );
+
+  return [
+    ...kept,
+    ...derived.map(({ role, qty }) => ({ optionId: moduleByRole.get(role)!.id, qty })),
+  ];
+}
+
+/**
+ * Replaces whatever `MTS-M` the caller sent with the quantity the MTS run's
+ * own length calls for.
+ *
+ * Two rules, and they are the same rule from either end: per-metre rail is
+ * never picked by hand, and an MTS longer than the nine metres its price
+ * covers always bills for the rest. So every `MTS_TRAVEL` selection is
+ * dropped on the way in, and one is added back -- with `MTS`'s
+ * `attributes.metres` deciding the quantity -- only when there is an `MTS`
+ * to attach it to. A quote that has lost its MTS loses the rail with it.
+ *
+ * Done here rather than inside `writeItemOptions` so the derived line goes
+ * through every check a hand-picked one does: compatibility with the series,
+ * a usable price in the document's region, the conflict groups. A derived
+ * selection that skipped those would be the one row on the quote nobody had
+ * validated.
+ *
+ * Runs on the submission alone -- no item read -- because both halves of the
+ * decision are in it: the roles of the options being saved, and the length
+ * typed against the MTS. `setEasyLoaderLayout` reaches past its own
+ * submission and therefore has to load the item; this does not.
+ */
+async function withDerivedMtsTravel(
+  selections: OptionSelectionInput[]
+): Promise<{ selections: OptionSelectionInput[] } | { error: string }> {
+  if (!Array.isArray(selections) || selections.length === 0) return { selections };
+
+  const ids = selections.map((selection) => selection?.optionId).filter((id): id is string => typeof id === "string");
+  if (ids.length === 0) return { selections };
+
+  const roles = await db.option.findMany({ where: { id: { in: ids } }, select: { id: true, role: true } });
+  const roleById = new Map(roles.map((option) => [option.id, option.role]));
+
+  const { selections: kept, travelMetres } = normaliseMtsSelections(selections, (id) => roleById.get(id));
+  if (travelMetres === 0) return { selections: kept };
+
+  // One row in the catalogue, sold per metre to every cutter. Picked by role
+  // rather than by code so renaming `MTS-M` cannot quietly stop the rail
+  // being charged for -- the same reason every form spec ticks by role.
+  const travel = await db.option.findFirst({ where: { role: "MTS_TRAVEL" }, select: { id: true } });
+  if (!travel) {
+    return { error: "The catalogue has no per-metre MTS travel option, so the extra metres cannot be priced" };
+  }
+
+  return { selections: [...kept, { optionId: travel.id, qty: travelMetres }] };
 }
 
 /**

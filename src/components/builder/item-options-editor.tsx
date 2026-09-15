@@ -7,7 +7,14 @@ import { Button } from "@/components/ui/button";
 import { fieldInputClass } from "@/components/ui-kit";
 import { formatMoney } from "@/lib/format";
 import { formatMetres } from "@/lib/option-length";
+import { MTS_INCLUDED_M, MTS_METRES_FIELD, MTS_METRES_KEY, mtsTravelMetres } from "@/lib/production-forms/mts";
 import { isOptionDisabled } from "@/lib/catalog-compat";
+import {
+  selectionsFromLines,
+  withDerivedSelections,
+  type SelectionLine,
+  type SelectionState,
+} from "@/lib/option-selections";
 import { cn } from "@/lib/utils";
 import { setItemOptions } from "@/lib/actions/documents";
 import { pickDerivativeWidth } from "@/lib/image-derivative-width";
@@ -45,34 +52,23 @@ function parseAttributeFields(schema: unknown): AttributeField[] {
   return fields;
 }
 
-type CurrentLine = {
-  /** The option's id (`DocumentLine.refId`) -- what the selection is keyed
-   * by and what goes back to `setItemOptions`. `code` is the snapshot label
-   * shown on the chip, nothing more. */
-  refId: string | null;
-  code: string | null;
-  qty: number;
-  attributes: Record<string, string | number> | null;
-  /** `Option.role`, resolved live (see `BuilderLine.role`). */
-  role: OptionRole | null;
-};
-
-type SelectionState = { qty: number; attributes: Record<string, string> };
-
-/** Selection keyed by option id. A line with no `refId` has no catalogue
- * row to resubmit, so it is left out -- `save` could not send it anyway. */
-function selectionsFromLines(lines: CurrentLine[]): Map<string, SelectionState> {
-  const map = new Map<string, SelectionState>();
-  for (const line of lines) {
-    if (!line.refId) continue;
-    const attributes: Record<string, string> = {};
-    for (const [key, value] of Object.entries(line.attributes ?? {})) {
-      attributes[key] = String(value);
-    }
-    map.set(line.refId, { qty: line.qty, attributes });
-  }
-  return map;
+/**
+ * The inputs an option row shows: whatever its catalogue schema declares,
+ * plus the MTS travel length, which is a property of an MTS rather than an
+ * admin's configuration of one (see `MTS_METRES_FIELD`). Appended rather
+ * than substituted, and skipped when the schema already declares the same
+ * key, so an admin who adds it by hand does not get the field twice.
+ */
+function attributeFieldsFor(schema: unknown, role: OptionRole | null): AttributeField[] {
+  const fields = parseAttributeFields(schema);
+  if (role !== "MTS" || fields.some((field) => field.key === MTS_METRES_KEY)) return fields;
+  return [...fields, { ...MTS_METRES_FIELD }];
 }
+
+type CurrentLine = SelectionLine & {
+  /** The snapshot label shown on the chip, nothing more. */
+  code: string | null;
+};
 
 /**
  * Per-item options editor: a row of "code ×qty" chips summarizing the
@@ -105,6 +101,51 @@ function selectionsFromLines(lines: CurrentLine[]): Map<string, SelectionState> 
  * series has many options — including on a phone, the primary device this
  * builder targets.
  */
+/**
+ * The MTS row's one control: how far the system has to travel.
+ *
+ * An MTS is a single rail of whatever length, so there is no quantity to
+ * pick -- the length is the whole specification, and the price follows from
+ * it. The line under the field says what that comes to, because the
+ * per-metre rail is added by the server on save (`withDerivedMtsTravel`) and
+ * without it the total would move for a reason nothing on screen explains.
+ */
+function MtsLengthField({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const metres = value === "" ? undefined : Number(value);
+  const extra = mtsTravelMetres(metres);
+
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={id} className="flex items-center gap-2 text-xs text-slate-500">
+        {MTS_METRES_FIELD.label}
+        <input
+          id={id}
+          type="number"
+          inputMode="decimal"
+          min={0}
+          step="0.1"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={cn(fieldInputClass, "h-11 w-24 sm:h-9")}
+        />
+      </label>
+      <p className="text-xs text-slate-500">
+        {extra === 0
+          ? `Up to ${MTS_INCLUDED_M} m is included in the MTS price.`
+          : `${MTS_INCLUDED_M} m included — ${extra} m of MTS-M added automatically.`}
+      </p>
+    </div>
+  );
+}
+
 export function ItemOptionsEditor({
   itemId,
   currentLines,
@@ -170,6 +211,11 @@ export function ItemOptionsEditor({
     return role !== null && role !== undefined && (lockedRoles?.has(role) ?? false);
   };
 
+  // What the rows read from, instead of `selected` directly: the manager's
+  // picks as this panel has them, with the derived rows taken from the item's
+  // lines as the server last confirmed them. See `withDerivedSelections`.
+  const effective = withDerivedSelections(selected, currentLines, isLocked);
+
   // Re-sync from the server-confirmed lines only at the moment the panel
   // opens — while it's open, the user's own edits are the source of truth
   // and shouldn't be clobbered by a stale prop from an unrelated re-render.
@@ -212,14 +258,10 @@ export function ItemOptionsEditor({
   }
 
   function clearAll() {
-    setSelected((prev) => {
-      const next = new Map<string, SelectionState>();
-      // "Clear" means the manager's own picks, not the ones the builder
-      // computed -- those come back on the next save anyway, so removing
-      // them here would only flash them out and back.
-      for (const [id, state] of prev) if (isLocked(id)) next.set(id, state);
-      return next;
-    });
+    // "Clear" only ever emptied the manager's own picks: the derived rows are
+    // read from the item's lines rather than held here, so there is nothing
+    // of the builder's in this map to spare.
+    setSelected(new Map());
   }
 
   function toggle(id: string) {
@@ -256,10 +298,10 @@ export function ItemOptionsEditor({
   function save() {
     setError(null);
     const selections: OptionSelectionInput[] = compatibleOptions
-      .filter((option) => selected.has(option.id))
+      .filter((option) => effective.has(option.id))
       .map((option) => {
-        const state = selected.get(option.id)!;
-        const fields = parseAttributeFields(option.attributeSchema);
+        const state = effective.get(option.id)!;
+        const fields = attributeFieldsFor(option.attributeSchema, option.role);
         const attributes: Record<string, string | number> = {};
         for (const field of fields) {
           const raw = state.attributes[field.key];
@@ -273,7 +315,11 @@ export function ItemOptionsEditor({
         }
         return {
           optionId: option.id,
-          qty: state.qty,
+          // One MTS, whatever its length -- the length is the attribute, and
+          // the extra metres are their own line. The server forces this too;
+          // it is here so the number sent matches the row on screen, which
+          // no longer offers a quantity at all.
+          qty: option.role === "MTS" ? 1 : state.qty,
           attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
         };
       });
@@ -356,7 +402,7 @@ export function ItemOptionsEditor({
                 Clear
               </Button>
               <span className="text-xs text-slate-500">
-                {selected.size} of {compatibleOptions.length} selected
+                {effective.size} of {compatibleOptions.length} selected
               </span>
             </div>
 
@@ -365,7 +411,7 @@ export function ItemOptionsEditor({
                 ) : (
                   <div className="mt-2 flex flex-col gap-2">
                     {displayOptions.map((option) => {
-                      const state = selected.get(option.id);
+                      const state = effective.get(option.id);
                       const checked = Boolean(state);
                       // Never treat an already-checked option as conflicting
                       // with itself: the options that get disabled are the
@@ -376,11 +422,16 @@ export function ItemOptionsEditor({
                       // sides of the pair locking each other out.
                       const conflictingWith = checked
                         ? null
-                        : (option.conflictsWith.find((c) => selected.has(c.id)) ?? null);
+                        : (option.conflictsWith.find((c) => effective.has(c.id)) ?? null);
                       const locked = isLocked(option.id);
                       const disabledReason = isOptionDisabled(option.price, conflictingWith);
                       const priced = disabledReason === null || disabledReason.type !== "unpriced";
-                      const attributeFields = parseAttributeFields(option.attributeSchema);
+                      const isMts = option.role === "MTS";
+                      // The MTS length has its own control above; leaving it in
+                      // the generic attribute list too would draw it twice.
+                      const attributeFields = attributeFieldsFor(option.attributeSchema, option.role).filter(
+                        (field) => !(isMts && field.key === MTS_METRES_KEY)
+                      );
                       const unitLength = option.unitLengthM;
 
                       return (
@@ -436,7 +487,23 @@ export function ItemOptionsEditor({
                             </div>
                           ) : null}
 
-                          {checked && !locked ? (
+                          {/* An MTS is one system of whatever length, so it has
+                              no quantity worth showing: what the salesperson
+                              sets is how far it travels, and the price follows
+                              from that (MTS up to 9 m, MTS-M per metre after).
+                              A "Qty" stepper beside a "Travel (m)" box invited
+                              exactly the wrong number to be typed. */}
+                          {checked && !locked && isMts ? (
+                            <div className="mt-2 flex flex-wrap items-center gap-3 pl-[1.875rem]">
+                              <MtsLengthField
+                                id={`${option.id}-mts-metres`}
+                                value={state!.attributes[MTS_METRES_KEY] ?? ""}
+                                onChange={(value) => setAttribute(option.id, MTS_METRES_KEY, value)}
+                              />
+                            </div>
+                          ) : null}
+
+                          {checked && !locked && !isMts ? (
                             <div className="mt-2 flex flex-wrap items-center gap-3 pl-[1.875rem]">
                               <div className="flex items-center gap-1.5">
                                 <span className="text-xs text-slate-500">Qty</span>
@@ -515,6 +582,7 @@ export function ItemOptionsEditor({
                                   />
                                 </label>
                               ))}
+
                             </div>
                           ) : null}
                         </div>

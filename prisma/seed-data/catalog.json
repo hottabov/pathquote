@@ -1,5 +1,5 @@
 {
-  "extractedAt": "2026-09-07T05:53:41.688Z",
+  "extractedAt": "2026-09-11T13:31:32.760Z",
   "series": [
     {
       "seriesCode": "X",
@@ -10,30 +10,30 @@
           "code": "X-10180",
           "name": "X-Calibre Cutting Machine 10cm × 180cm",
           "description": "Computer controlled cutting machine - 10cm compressed lay height, 180cm cutting width",
-          "price": null,
-          "needsReview": true,
+          "price": 354300,
+          "needsReview": false,
           "kind": "MACHINE",
-          "form": null,
+          "form": "X_CALIBRE",
           "specs": {
-            "cutHeightCm": 10,
-            "cutWidthCm": 180,
             "modelTier": "X10",
-            "widthCode": 180
+            "widthCode": 180,
+            "cutWidthCm": 180,
+            "cutHeightCm": 10
           }
         },
         {
           "code": "X-10220",
           "name": "X-Calibre Cutting Machine 10cm × 227cm",
           "description": "Computer controlled cutting machine - 10cm compressed lay height, 227cm cutting width",
-          "price": null,
-          "needsReview": true,
+          "price": 374300,
+          "needsReview": false,
           "kind": "MACHINE",
-          "form": null,
+          "form": "X_CALIBRE",
           "specs": {
-            "cutHeightCm": 10,
-            "cutWidthCm": 227,
             "modelTier": "X10",
-            "widthCode": 220
+            "widthCode": 220,
+            "cutWidthCm": 227,
+            "cutHeightCm": 10
           }
         }
       ]
@@ -52,10 +52,10 @@
           "kind": "MACHINE",
           "form": "M_SERIES",
           "specs": {
-            "cutHeightCm": 3,
-            "cutWidthCm": 180,
             "modelTier": "M3",
-            "widthCode": 180
+            "widthCode": 180,
+            "cutWidthCm": 180,
+            "cutHeightCm": 3
           }
         },
         {
@@ -67,40 +67,40 @@
           "kind": "MACHINE",
           "form": "M_SERIES",
           "specs": {
-            "cutHeightCm": 3,
-            "cutWidthCm": 227,
             "modelTier": "M3",
-            "widthCode": 220
+            "widthCode": 220,
+            "cutWidthCm": 227,
+            "cutHeightCm": 3
           }
         },
         {
           "code": "M-3300",
           "name": "M-Series Cutting Machine 3cm × 300cm",
           "description": "Computer controlled cutting machine - 3cm compressed lay height, 300cm cutting width",
-          "price": null,
-          "needsReview": true,
+          "price": 337100,
+          "needsReview": false,
           "kind": "MACHINE",
           "form": "M_SERIES",
           "specs": {
-            "cutHeightCm": 3,
-            "cutWidthCm": 300,
             "modelTier": "M3",
-            "widthCode": 300
+            "widthCode": 300,
+            "cutWidthCm": 300,
+            "cutHeightCm": 3
           }
         },
         {
           "code": "M-3390",
           "name": "M-Series Cutting Machine 3cm × 390cm",
           "description": "Computer controlled cutting machine - 3cm compressed lay height, 390cm cutting width",
-          "price": null,
-          "needsReview": true,
+          "price": 353600,
+          "needsReview": false,
           "kind": "MACHINE",
           "form": "M_SERIES",
           "specs": {
-            "cutHeightCm": 3,
-            "cutWidthCm": 390,
             "modelTier": "M3",
-            "widthCode": 390
+            "widthCode": 390,
+            "cutWidthCm": 390,
+            "cutHeightCm": 3
           }
         },
         {
@@ -112,10 +112,10 @@
           "kind": "MACHINE",
           "form": "M_SERIES",
           "specs": {
-            "cutHeightCm": 5,
-            "cutWidthCm": 180,
             "modelTier": "M5",
-            "widthCode": 180
+            "widthCode": 180,
+            "cutWidthCm": 180,
+            "cutHeightCm": 5
           }
         },
         {
@@ -127,25 +127,25 @@
           "kind": "MACHINE",
           "form": "M_SERIES",
           "specs": {
-            "cutHeightCm": 5,
-            "cutWidthCm": 227,
             "modelTier": "M5",
-            "widthCode": 220
+            "widthCode": 220,
+            "cutWidthCm": 227,
+            "cutHeightCm": 5
           }
         },
         {
           "code": "M-5300",
           "name": "M-Series Cutting Machine 5cm × 300cm",
           "description": "Computer controlled cutting machine - 5cm compressed lay height, 300cm cutting width",
-          "price": null,
-          "needsReview": true,
+          "price": 352500,
+          "needsReview": false,
           "kind": "MACHINE",
           "form": "M_SERIES",
           "specs": {
-            "cutHeightCm": 5,
-            "cutWidthCm": 300,
             "modelTier": "M5",
-            "widthCode": 300
+            "widthCode": 300,
+            "cutWidthCm": 300,
+            "cutHeightCm": 5
           }
         },
         {
@@ -157,10 +157,10 @@
           "kind": "MACHINE",
           "form": "M_SERIES",
           "specs": {
-            "cutHeightCm": 5,
-            "cutWidthCm": 390,
             "modelTier": "M5",
-            "widthCode": 390
+            "widthCode": 390,
+            "cutWidthCm": 390,
+            "cutHeightCm": 5
           }
         },
         {
@@ -172,10 +172,10 @@
           "kind": "MACHINE",
           "form": "M_SERIES",
           "specs": {
-            "cutHeightCm": 7,
-            "cutWidthCm": 180,
             "modelTier": "M7",
-            "widthCode": 180
+            "widthCode": 180,
+            "cutWidthCm": 180,
+            "cutHeightCm": 7
           }
         },
         {
@@ -187,25 +187,25 @@
           "kind": "MACHINE",
           "form": "M_SERIES",
           "specs": {
-            "cutHeightCm": 7,
-            "cutWidthCm": 227,
             "modelTier": "M7",
-            "widthCode": 220
+            "widthCode": 220,
+            "cutWidthCm": 227,
+            "cutHeightCm": 7
           }
         },
         {
           "code": "M-7300",
           "name": "M-Series Cutting Machine 7cm × 300cm",
           "description": "Computer controlled cutting machine - 7cm compressed lay height, 300cm cutting width",
-          "price": null,
-          "needsReview": true,
+          "price": 366710,
+          "needsReview": false,
           "kind": "MACHINE",
           "form": "M_SERIES",
           "specs": {
-            "cutHeightCm": 7,
-            "cutWidthCm": 300,
             "modelTier": "M7",
-            "widthCode": 300
+            "widthCode": 300,
+            "cutWidthCm": 300,
+            "cutHeightCm": 7
           }
         },
         {
@@ -217,10 +217,10 @@
           "kind": "MACHINE",
           "form": "M_SERIES",
           "specs": {
-            "cutHeightCm": 7,
-            "cutWidthCm": 390,
             "modelTier": "M7",
-            "widthCode": 390
+            "widthCode": 390,
+            "cutWidthCm": 390,
+            "cutHeightCm": 7
           }
         },
         {
@@ -232,10 +232,10 @@
           "kind": "MACHINE",
           "form": "M_SERIES",
           "specs": {
-            "cutHeightCm": 10,
-            "cutWidthCm": 180,
             "modelTier": "M10",
-            "widthCode": 180
+            "widthCode": 180,
+            "cutWidthCm": 180,
+            "cutHeightCm": 10
           }
         },
         {
@@ -247,25 +247,25 @@
           "kind": "MACHINE",
           "form": "M_SERIES",
           "specs": {
-            "cutHeightCm": 10,
-            "cutWidthCm": 227,
             "modelTier": "M10",
-            "widthCode": 220
+            "widthCode": 220,
+            "cutWidthCm": 227,
+            "cutHeightCm": 10
           }
         },
         {
           "code": "M-10300",
           "name": "M-Series Cutting Machine 10cm × 300cm",
           "description": "Computer controlled cutting machine - 10cm compressed lay height, 300cm cutting width",
-          "price": null,
-          "needsReview": true,
+          "price": 380900,
+          "needsReview": false,
           "kind": "MACHINE",
           "form": "M_SERIES",
           "specs": {
-            "cutHeightCm": 10,
-            "cutWidthCm": 300,
             "modelTier": "M10",
-            "widthCode": 300
+            "widthCode": 300,
+            "cutWidthCm": 300,
+            "cutHeightCm": 10
           }
         },
         {
@@ -277,10 +277,10 @@
           "kind": "MACHINE",
           "form": "M_SERIES",
           "specs": {
-            "cutHeightCm": 10,
-            "cutWidthCm": 390,
             "modelTier": "M10",
-            "widthCode": 390
+            "widthCode": 390,
+            "cutWidthCm": 390,
+            "cutHeightCm": 10
           }
         }
       ]
@@ -297,12 +297,12 @@
           "price": 135000,
           "needsReview": false,
           "kind": "MACHINE",
-          "form": null,
+          "form": "L_SERIES",
           "specs": {
-            "cutWidthCm": 180,
-            "widthCode": 180,
+            "belt": "urethane",
             "extended": false,
-            "belt": "urethane"
+            "widthCode": 180,
+            "cutWidthCm": 180
           }
         },
         {
@@ -312,12 +312,12 @@
           "price": 130000,
           "needsReview": false,
           "kind": "MACHINE",
-          "form": null,
+          "form": "L_SERIES",
           "specs": {
-            "cutWidthCm": 180,
-            "widthCode": 180,
+            "belt": "felt",
             "extended": false,
-            "belt": "felt"
+            "widthCode": 180,
+            "cutWidthCm": 180
           }
         },
         {
@@ -327,12 +327,12 @@
           "price": 150000,
           "needsReview": false,
           "kind": "MACHINE",
-          "form": null,
+          "form": "L_SERIES",
           "specs": {
-            "cutWidthCm": 226,
-            "widthCode": 220,
+            "belt": "urethane",
             "extended": false,
-            "belt": "urethane"
+            "widthCode": 220,
+            "cutWidthCm": 226
           }
         },
         {
@@ -342,12 +342,12 @@
           "price": 145000,
           "needsReview": false,
           "kind": "MACHINE",
-          "form": null,
+          "form": "L_SERIES",
           "specs": {
-            "cutWidthCm": 226,
-            "widthCode": 220,
+            "belt": "felt",
             "extended": false,
-            "belt": "felt"
+            "widthCode": 220,
+            "cutWidthCm": 226
           }
         },
         {
@@ -357,27 +357,27 @@
           "price": 170000,
           "needsReview": false,
           "kind": "MACHINE",
-          "form": null,
+          "form": "L_SERIES",
           "specs": {
-            "cutWidthCm": 320,
-            "widthCode": 320,
+            "belt": "urethane",
             "extended": false,
-            "belt": "urethane"
+            "widthCode": 320,
+            "cutWidthCm": 320
           }
         },
         {
           "code": "L-320E",
           "name": "L-Series Cutting Machine 320cm, Extended",
           "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 320cm. Cutting belt perforated flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included. Extended length.",
-          "price": null,
-          "needsReview": true,
+          "price": 227500,
+          "needsReview": false,
           "kind": "MACHINE",
-          "form": null,
+          "form": "L_SERIES",
           "specs": {
-            "cutWidthCm": 320,
-            "widthCode": 320,
+            "belt": "urethane",
             "extended": true,
-            "belt": "urethane"
+            "widthCode": 320,
+            "cutWidthCm": 320
           }
         },
         {
@@ -387,27 +387,27 @@
           "price": 165000,
           "needsReview": false,
           "kind": "MACHINE",
-          "form": null,
+          "form": "L_SERIES",
           "specs": {
-            "cutWidthCm": 320,
-            "widthCode": 320,
+            "belt": "felt",
             "extended": false,
-            "belt": "felt"
+            "widthCode": 320,
+            "cutWidthCm": 320
           }
         },
         {
           "code": "L-320EF",
           "name": "L-Series Cutting Machine 320cm, Extended, Felt",
           "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 320cm. Cutting belt Porous felt flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included. Extended length.",
-          "price": null,
-          "needsReview": true,
+          "price": 220950,
+          "needsReview": false,
           "kind": "MACHINE",
-          "form": null,
+          "form": "L_SERIES",
           "specs": {
-            "cutWidthCm": 320,
-            "widthCode": 320,
+            "belt": "felt",
             "extended": true,
-            "belt": "felt"
+            "widthCode": 320,
+            "cutWidthCm": 320
           }
         }
       ]
@@ -535,7 +535,7 @@
           "price": 36712,
           "needsReview": false,
           "kind": "SYSTEM",
-          "form": null,
+          "form": "LNS",
           "specs": null
         },
         {
@@ -545,7 +545,7 @@
           "price": 38547.6,
           "needsReview": false,
           "kind": "SYSTEM",
-          "form": null,
+          "form": "LNS",
           "specs": null
         },
         {
@@ -555,7 +555,7 @@
           "price": 40474.98,
           "needsReview": false,
           "kind": "SYSTEM",
-          "form": null,
+          "form": "LNS",
           "specs": null
         }
       ]
@@ -627,7 +627,7 @@
           "price": 10400,
           "needsReview": false,
           "kind": "FEEDER",
-          "form": null,
+          "form": "EASYFEED",
           "specs": {
             "tableWidthMm": 2020
           }
@@ -639,7 +639,7 @@
           "price": 10860,
           "needsReview": false,
           "kind": "FEEDER",
-          "form": null,
+          "form": "EASYFEED",
           "specs": {
             "tableWidthMm": 2420
           }
@@ -648,10 +648,10 @@
           "code": "EF-3220",
           "name": "EasyFeeder 3220",
           "description": "1200mm length, functionality for synchronisation with the M and L series. Electronic Edge Control including Edge control sensors. Includes roll keeper and plastic roll holder.",
-          "price": null,
-          "needsReview": true,
+          "price": 38800,
+          "needsReview": false,
           "kind": "FEEDER",
-          "form": null,
+          "form": "EASYFEED",
           "specs": {
             "tableWidthMm": 3220
           }
@@ -663,7 +663,7 @@
           "price": 17540,
           "needsReview": false,
           "kind": "FEEDER",
-          "form": null,
+          "form": "EASYFEED",
           "specs": {
             "tableWidthMm": 4030
           }
@@ -682,8 +682,10 @@
           "price": 17500,
           "needsReview": false,
           "kind": "ACCESSORY",
-          "form": null,
-          "specs": null
+          "form": "HDRF",
+          "specs": {
+            "widthCode": 180
+          }
         },
         {
           "code": "HDRF-220",
@@ -692,8 +694,10 @@
           "price": 19500,
           "needsReview": false,
           "kind": "ACCESSORY",
-          "form": null,
-          "specs": null
+          "form": "HDRF",
+          "specs": {
+            "widthCode": 220
+          }
         },
         {
           "code": "HDRF-320",
@@ -702,8 +706,10 @@
           "price": 21400,
           "needsReview": false,
           "kind": "ACCESSORY",
-          "form": null,
-          "specs": null
+          "form": "HDRF",
+          "specs": {
+            "widthCode": 320
+          }
         }
       ]
     },
@@ -721,8 +727,8 @@
           "kind": "SPREADER",
           "form": "FABRICPRO",
           "specs": {
-            "cutWidthCm": 180,
-            "widthCode": 180
+            "widthCode": 180,
+            "cutWidthCm": 180
           }
         },
         {
@@ -734,21 +740,21 @@
           "kind": "SPREADER",
           "form": "FABRICPRO",
           "specs": {
-            "cutWidthCm": 220,
-            "widthCode": 220
+            "widthCode": 220,
+            "cutWidthCm": 220
           }
         },
         {
           "code": "FP-300",
           "name": "FabricPro Spreader 300cm",
           "description": "FabricPro Automatic Spreading Machine (maximum fabric width=300 cm)",
-          "price": null,
-          "needsReview": true,
+          "price": 97150,
+          "needsReview": false,
           "kind": "SPREADER",
           "form": "FABRICPRO",
           "specs": {
-            "cutWidthCm": 300,
-            "widthCode": 300
+            "widthCode": 300,
+            "cutWidthCm": 300
           }
         }
       ]
@@ -762,10 +768,10 @@
           "code": "FP-TROLLEY",
           "name": "Fabric Roll Trolley",
           "description": "Ergonomic fabric roll trolley designed for seamless use with the FabricPro spreading system. Direct roll transfer from storage to FabricPro with no intermediate handling or bulky roll-lifting devices. Carries up to 2 fabric rolls; 2 lockable castor wheels; welded steel construction; compatible with EasyLoader tables (880-940mm height); compact flat-packed design.",
-          "price": null,
+          "price": 0,
           "needsReview": true,
           "kind": "ACCESSORY",
-          "form": null,
+          "form": "FP_TROLLEY",
           "specs": null
         }
       ]
@@ -817,13 +823,52 @@
           "kind": "CREDIT",
           "form": null,
           "specs": null,
-          "isCredit": true,
-          "noCommission": true
+          "noCommission": true,
+          "isCredit": true
         }
       ]
     }
   ],
   "options": [
+    {
+      "code": "180-E",
+      "name": "Extended Length, L-180",
+      "description": "Extended length for L-180",
+      "price": 6000,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "L_EXTENDED",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "220-E",
+      "name": "Extended Length, L-220",
+      "description": "Extended length for L-220",
+      "price": 8000,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "L_EXTENDED",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "ABR-L",
+      "name": "Air Brush",
+      "description": "Air Brush - air brush including ink/paint reservoir.",
+      "price": 2100,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "ABR",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
     {
       "code": "ABR-M",
       "name": "Air Brush",
@@ -851,6 +896,19 @@
       "unitLengthM": null
     },
     {
+      "code": "APM-L",
+      "name": "Adaptive Pattern Matching",
+      "description": "Adaptive Pattern Matching (Bow & Skew - HDC option required)",
+      "price": 8000,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "APM",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
       "code": "APM-M",
       "name": "Adaptive Pattern Matching",
       "description": "Adaptive Pattern Matching - various modes including bow & skew matching software, (HDC is required with this option)",
@@ -860,6 +918,19 @@
         "M"
       ],
       "role": "APM",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "BCR-L",
+      "name": "Barcode Scanner",
+      "description": "Barcode Scanner - input of marker name via barcode",
+      "price": 1050,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "BCR",
       "parentProductCode": null,
       "unitLengthM": null
     },
@@ -874,6 +945,194 @@
         "X"
       ],
       "role": "BCR",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "Crate-EL",
+      "name": "Wooden Crate for EasyLoader",
+      "description": "Wooden crate for transport.",
+      "price": 1400,
+      "needsReview": false,
+      "compatibleSeries": [
+        "EL"
+      ],
+      "role": "CRATE",
+      "parentProductCode": null,
+      "unitLengthM": null,
+      "noCommission": true
+    },
+    {
+      "code": "Crate-FP",
+      "name": "Wooden Crate for FabricPro",
+      "description": "Wooden crate for transport.",
+      "price": 1200,
+      "needsReview": false,
+      "compatibleSeries": [
+        "FP"
+      ],
+      "role": "CRATE",
+      "parentProductCode": null,
+      "unitLengthM": null,
+      "compatibleProducts": [
+        "FP-180"
+      ],
+      "noCommission": true
+    },
+    {
+      "code": "Crate-HDRF-180",
+      "name": "Wooden Crate, HDRF-180",
+      "description": "Wooden crate for transport.",
+      "price": 1800,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "CRATE",
+      "parentProductCode": null,
+      "unitLengthM": null,
+      "compatibleProducts": [
+        "HDRF-180"
+      ],
+      "noCommission": true
+    },
+    {
+      "code": "Crate-HDRF-220",
+      "name": "Wooden Crate, HDRF-220",
+      "description": "Wooden crate for transport.",
+      "price": 2000,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "CRATE",
+      "parentProductCode": null,
+      "unitLengthM": null,
+      "compatibleProducts": [
+        "HDRF-220"
+      ],
+      "noCommission": true
+    },
+    {
+      "code": "Crate-HDRF-320",
+      "name": "Wooden Crate, HDRF-320",
+      "description": "Wooden crate for transport.",
+      "price": 2300,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "CRATE",
+      "parentProductCode": null,
+      "unitLengthM": null,
+      "compatibleProducts": [
+        "HDRF-320"
+      ],
+      "noCommission": true
+    },
+    {
+      "code": "Crate-L-180",
+      "name": "Wooden Crate, L-180",
+      "description": "Wooden crate for transport.",
+      "price": 1200,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "CRATE",
+      "parentProductCode": null,
+      "unitLengthM": null,
+      "noCommission": true
+    },
+    {
+      "code": "Crate-L-220",
+      "name": "Wooden Crate, L-220",
+      "description": "Wooden crate for transport.",
+      "price": 1500,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "CRATE",
+      "parentProductCode": null,
+      "unitLengthM": null,
+      "noCommission": true
+    },
+    {
+      "code": "Crate-L-320",
+      "name": "Wooden Crate, L-320",
+      "description": "Wooden crate for transport.",
+      "price": 1800,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "CRATE",
+      "parentProductCode": null,
+      "unitLengthM": null,
+      "noCommission": true
+    },
+    {
+      "code": "Crate-M-180",
+      "name": "Wooden Crate, Mx180",
+      "description": "Wooden crate for an Mx180 (required when standard shipping container not used).",
+      "price": 3000,
+      "needsReview": false,
+      "compatibleSeries": [
+        "M",
+        "X"
+      ],
+      "role": "CRATE",
+      "parentProductCode": null,
+      "unitLengthM": null,
+      "noCommission": true
+    },
+    {
+      "code": "Crate-M-220",
+      "name": "Wooden Crate, Mx220",
+      "description": "Wooden crate for an Mx220 (required when standard shipping container not used).",
+      "price": 3000,
+      "needsReview": false,
+      "compatibleSeries": [
+        "M",
+        "X"
+      ],
+      "role": "CRATE",
+      "parentProductCode": null,
+      "unitLengthM": null,
+      "noCommission": true
+    },
+    {
+      "code": "DKT-30",
+      "name": "Drag Knife Tool 30°, Quick Release",
+      "description": "Drag Knife Tool - Quick Release (to suit carbide knife 1.0mm x 7mm purchased separately) 30 deg",
+      "price": 730,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "L_TOOL",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "DKT-45",
+      "name": "Drag Knife Tool 45°, Quick Release",
+      "description": "Drag Knife Tool - Quick Release (to suit carbide knife 1.0mm x 7mm purchased separately) 45 deg",
+      "price": 730,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "L_TOOL",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "DMT",
+      "name": "DuctMasTer",
+      "description": "DuctMasTer",
+      "price": 18240,
+      "needsReview": false,
+      "compatibleSeries": [
+        "M",
+        "X"
+      ],
+      "role": "DMT",
       "parentProductCode": null,
       "unitLengthM": null
     },
@@ -930,6 +1189,340 @@
       "unitLengthM": null
     },
     {
+      "code": "DRV-28",
+      "name": "Driven Knife 28mm",
+      "description": "Driven - Electrically driven. Suit 28mm Carbide Octagonal blade. Only used with machine optioned with Felt cutting belt.",
+      "price": 6400,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "L_TOOL",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "EL-2020-BB12",
+      "name": "Electrical Busbar 1.2m",
+      "description": "Electrical busbar per 1.2m. Required for use with FabricPro automatic spreader.",
+      "price": 120,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_BUSBAR",
+      "parentProductCode": "EL-2020",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-2020"
+      ]
+    },
+    {
+      "code": "EL-2020-DM1",
+      "name": "Drive Module, first 1.2m",
+      "description": "Drive Module (first 1.2M)",
+      "price": 4050,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_DRIVE",
+      "parentProductCode": "EL-2020",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-2020"
+      ]
+    },
+    {
+      "code": "EL-2020-DM12",
+      "name": "Conveyor Module 1.2m",
+      "description": "Additional 1.2M lengths",
+      "price": 1200,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_CONVEYOR",
+      "parentProductCode": "EL-2020",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-2020"
+      ]
+    },
+    {
+      "code": "EL-2020-RF",
+      "name": "Single Roll Feed Attachment",
+      "description": "Single Roll feed attachment (L & R clip attachment with cross bar & pair of keeper)",
+      "price": 735,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_ROLL_FEED",
+      "parentProductCode": "EL-2020",
+      "unitLengthM": null,
+      "compatibleProducts": [
+        "EL-2020"
+      ]
+    },
+    {
+      "code": "EL-2020-RL12",
+      "name": "Platform Support Rail 1.2m",
+      "description": "Travel platform support rail per 1.2m, including mounting brackets. Required for use with FabricPro.",
+      "price": 230,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_RAIL",
+      "parentProductCode": "EL-2020",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-2020"
+      ]
+    },
+    {
+      "code": "EL-2020-ST12",
+      "name": "Static Table 1.2m",
+      "description": "Static table 1.2M lengths",
+      "price": 743,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_STATIC",
+      "parentProductCode": "EL-2020",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-2020"
+      ]
+    },
+    {
+      "code": "EL-2420-BB12",
+      "name": "Electrical Busbar 1.2m",
+      "description": "Electrical busbar per 1.2m. Required for use with FabricPro automatic spreader.",
+      "price": 120,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_BUSBAR",
+      "parentProductCode": "EL-2420",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-2420"
+      ]
+    },
+    {
+      "code": "EL-2420-DM1",
+      "name": "Drive Module, first 1.2m",
+      "description": "Drive Module (first 1.2M)",
+      "price": 4455,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_DRIVE",
+      "parentProductCode": "EL-2420",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-2420"
+      ]
+    },
+    {
+      "code": "EL-2420-DM12",
+      "name": "Conveyor Module 1.2m",
+      "description": "Additional 1.2M lengths",
+      "price": 1320,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_CONVEYOR",
+      "parentProductCode": "EL-2420",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-2420"
+      ]
+    },
+    {
+      "code": "EL-2420-RF",
+      "name": "Single Roll Feed Attachment",
+      "description": "Single Roll feed attachment (L & R clip attachment with cross bar & pair of keeper)",
+      "price": 780,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_ROLL_FEED",
+      "parentProductCode": "EL-2420",
+      "unitLengthM": null,
+      "compatibleProducts": [
+        "EL-2420"
+      ]
+    },
+    {
+      "code": "EL-2420-RL12",
+      "name": "Platform Support Rail 1.2m",
+      "description": "Travel platform support rail per 1.2m, including mounting brackets. Required for use with FabricPro.",
+      "price": 230,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_RAIL",
+      "parentProductCode": "EL-2420",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-2420"
+      ]
+    },
+    {
+      "code": "EL-2420-ST12",
+      "name": "Static Table 1.2m",
+      "description": "Static table 1.2M lengths",
+      "price": 780,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_STATIC",
+      "parentProductCode": "EL-2420",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-2420"
+      ]
+    },
+    {
+      "code": "EL-3220-BB12",
+      "name": "Electrical Busbar 1.2m",
+      "description": "Electrical busbar per 1.2m. Required for use with FabricPro automatic spreader.",
+      "price": 300,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_BUSBAR",
+      "parentProductCode": "EL-3220",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-3220"
+      ]
+    },
+    {
+      "code": "EL-3220-DM1",
+      "name": "Drive Module, first 1.2m",
+      "description": "Drive Module (first 1.2M)",
+      "price": 17830,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_DRIVE",
+      "parentProductCode": "EL-3220",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-3220"
+      ]
+    },
+    {
+      "code": "EL-3220-DM12",
+      "name": "Conveyor Module 1.2m",
+      "description": "Additional 1.2M lengths",
+      "price": 3440,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_CONVEYOR",
+      "parentProductCode": "EL-3220",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-3220"
+      ]
+    },
+    {
+      "code": "EL-3220-RL12",
+      "name": "Platform Support Rail 1.2m",
+      "description": "Travel platform support rail per 1.2m, including mounting brackets. Required for use with FabricPro.",
+      "price": 230,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_RAIL",
+      "parentProductCode": "EL-3220",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-3220"
+      ]
+    },
+    {
+      "code": "EL-3220-ST12",
+      "name": "Static Table 1.2m",
+      "description": "Static table 1.2M lengths",
+      "price": 1435,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_STATIC",
+      "parentProductCode": "EL-3220",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-3220"
+      ]
+    },
+    {
+      "code": "EL-4030-BB12",
+      "name": "Electrical Busbar 1.2m",
+      "description": "Electrical busbar per 1.2m. Required for use with FabricPro automatic spreader.",
+      "price": 300,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_BUSBAR",
+      "parentProductCode": "EL-4030",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-4030"
+      ]
+    },
+    {
+      "code": "EL-4030-DM1",
+      "name": "Drive Module, first 1.2m",
+      "description": "Drive Module (first 1.2M)",
+      "price": 17830,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_DRIVE",
+      "parentProductCode": "EL-4030",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-4030"
+      ]
+    },
+    {
+      "code": "EL-4030-DM12",
+      "name": "Conveyor Module 1.2m",
+      "description": "Additional 1.2M lengths",
+      "price": 3440,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_CONVEYOR",
+      "parentProductCode": "EL-4030",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-4030"
+      ]
+    },
+    {
+      "code": "EL-4030-RL12",
+      "name": "Platform Support Rail 1.2m",
+      "description": "Travel platform support rail per 1.2m, including mounting brackets. Required for use with FabricPro.",
+      "price": 230,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_RAIL",
+      "parentProductCode": "EL-4030",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-4030"
+      ]
+    },
+    {
+      "code": "EL-4030-ST12",
+      "name": "Static Table 1.2m",
+      "description": "Static table 1.2M lengths",
+      "price": 1435,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "EL_STATIC",
+      "parentProductCode": "EL-4030",
+      "unitLengthM": 1.2,
+      "compatibleProducts": [
+        "EL-4030"
+      ]
+    },
+    {
+      "code": "HDC-L",
+      "name": "HeadCam",
+      "description": "HeadCam:Camera in cutting head - Dynamic interaction with PathCut",
+      "price": 2000,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "HDC",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
       "code": "HDC-M",
       "name": "HeadCam",
       "description": "HeadCam:Camera in cutting head - Dynamic interaction with PathCut",
@@ -940,6 +1533,19 @@
         "X"
       ],
       "role": "HDC",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "HFV-L",
+      "name": "High Flow Vacuum 15kW",
+      "description": "High Flow Vacuum system - THIS REQUIRES 3PHASE POWER - Recommended for ALL Extended and standard 220 & 320 models. Specific application to be discussed with Pathfinder.(Replacement for standard Vac unit)",
+      "price": 16000,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "HFV",
       "parentProductCode": null,
       "unitLengthM": null
     },
@@ -983,12 +1589,26 @@
       "unitLengthM": null
     },
     {
+      "code": "JTP",
+      "name": "JetPen Marking Tool",
+      "description": "JetPen marking tool - non-contact high speed ink marking. Replaces the standard marking tool.",
+      "price": 7500,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "JTP",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
       "code": "MRK",
       "name": "Marking Tool",
       "description": "Marking tool includes standard Bic biro pen holder (After sales: Head cover replacement is at extra cost)",
       "price": 1950,
       "needsReview": false,
       "compatibleSeries": [
+        "L",
         "M"
       ],
       "role": "MRK",
@@ -1006,6 +1626,46 @@
         "X"
       ],
       "role": "MTS",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "MTS-M",
+      "name": "MTS Additional Travel, per metre",
+      "description": "Additional travel p/metre",
+      "price": 585,
+      "needsReview": false,
+      "compatibleSeries": [
+        "M",
+        "X"
+      ],
+      "role": "MTS_TRAVEL",
+      "parentProductCode": null,
+      "unitLengthM": 1
+    },
+    {
+      "code": "NTT",
+      "name": "Notch Tool, Quick Release",
+      "description": "Notch Tool - Quick Release (to suit carbide knife 1.0mm x 7mm)",
+      "price": 950,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "L_TOOL",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "OFD-L",
+      "name": "Offload Display",
+      "description": "Offload Display",
+      "price": 1400,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "OFD",
       "parentProductCode": null,
       "unitLengthM": null
     },
@@ -1038,6 +1698,19 @@
       "unitLengthM": null
     },
     {
+      "code": "OFP-L",
+      "name": "Offload Printer",
+      "description": "Offload Printer - synchronised with PathCut & OFD",
+      "price": 2250,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "OFP",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
       "code": "OFP-M",
       "name": "Offload Printer",
       "description": "Offload Printer - synchronised with PathCut & OFD",
@@ -1050,104 +1723,6 @@
       "role": "OFP",
       "parentProductCode": null,
       "unitLengthM": null
-    },
-    {
-      "code": "PM-M",
-      "name": "Pattern Match",
-      "description": "Pattern Match - spot light pattern match software",
-      "price": 2786,
-      "needsReview": false,
-      "compatibleSeries": [
-        "M"
-      ],
-      "role": "PM",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "PRM-M",
-      "name": "Production Manager",
-      "description": "Production Manager software",
-      "price": 5000,
-      "needsReview": false,
-      "compatibleSeries": [
-        "M",
-        "X"
-      ],
-      "role": "PRM",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "MTS-M",
-      "name": "MTS Additional Travel, per metre",
-      "description": "Additional travel p/metre",
-      "price": 585,
-      "needsReview": false,
-      "compatibleSeries": [
-        "M",
-        "X"
-      ],
-      "role": "MTS_TRAVEL",
-      "parentProductCode": null,
-      "unitLengthM": 1
-    },
-    {
-      "code": "TR480",
-      "name": "Transformer 480V→380V, Integrated",
-      "description": "Transformer 30kVA, 60Hz, autotransformer, three phase. 480V (input) to 380V (output). Integrated and wired.",
-      "price": null,
-      "needsReview": true,
-      "compatibleSeries": [
-        "M"
-      ],
-      "role": "TRANSFORMER",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "TR220",
-      "name": "Transformer 220V→380/415V, Standalone",
-      "description": "Transformer 30kVA, 60Hz, autotransformer, three phase. 220V (input) to 380V/415V (output). Standalone unit.",
-      "price": null,
-      "needsReview": true,
-      "compatibleSeries": [
-        "M",
-        "X"
-      ],
-      "role": "TRANSFORMER",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "Crate-M-180",
-      "name": "Wooden Crate, Mx180",
-      "description": "Wooden crate for an Mx180 (required when standard shipping container not used).",
-      "price": 3000,
-      "needsReview": false,
-      "compatibleSeries": [
-        "M",
-        "X"
-      ],
-      "role": "CRATE",
-      "parentProductCode": null,
-      "unitLengthM": null,
-      "noCommission": true
-    },
-    {
-      "code": "Crate-M-220",
-      "name": "Wooden Crate, Mx220",
-      "description": "Wooden crate for an Mx220 (required when standard shipping container not used).",
-      "price": 3000,
-      "needsReview": false,
-      "compatibleSeries": [
-        "M",
-        "X"
-      ],
-      "role": "CRATE",
-      "parentProductCode": null,
-      "unitLengthM": null,
-      "noCommission": true
     },
     {
       "code": "PCH-1.0",
@@ -1233,6 +1808,59 @@
       "unitLengthM": null
     },
     {
+      "code": "PM-L",
+      "name": "Pattern Match",
+      "description": "Pattern Match - spot light pattern match software",
+      "price": 1500,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "PM",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "PM-M",
+      "name": "Pattern Match",
+      "description": "Pattern Match - spot light pattern match software",
+      "price": 2786,
+      "needsReview": false,
+      "compatibleSeries": [
+        "M"
+      ],
+      "role": "PM",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "PRM-L",
+      "name": "Production Manager",
+      "description": "Production Manager software",
+      "price": 2620,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "PRM",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "PRM-M",
+      "name": "Production Manager",
+      "description": "Production Manager software",
+      "price": 5000,
+      "needsReview": false,
+      "compatibleSeries": [
+        "M",
+        "X"
+      ],
+      "role": "PRM",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
       "code": "RKT-28",
       "name": "Round Knife Tool 28mm",
       "description": "28 Dia. Round Knife Tool - Patented Quick release mechanism (Not used on Felt bed) 2x10 sided blades included std",
@@ -1257,564 +1885,6 @@
       "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null
-    },
-    {
-      "code": "DKT-30",
-      "name": "Drag Knife Tool 30°, Quick Release",
-      "description": "Drag Knife Tool - Quick Release (to suit carbide knife 1.0mm x 7mm purchased separately) 30 deg",
-      "price": 730,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "L_TOOL",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "DKT-45",
-      "name": "Drag Knife Tool 45°, Quick Release",
-      "description": "Drag Knife Tool - Quick Release (to suit carbide knife 1.0mm x 7mm purchased separately) 45 deg",
-      "price": 730,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "L_TOOL",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "DRV-28",
-      "name": "Driven Knife 28mm",
-      "description": "Driven - Electrically driven. Suit 28mm Carbide Octagonal blade. Only used with machine optioned with Felt cutting belt.",
-      "price": 6400,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "L_TOOL",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "NTT",
-      "name": "Notch Tool, Quick Release",
-      "description": "Notch Tool - Quick Release (to suit carbide knife 1.0mm x 7mm)",
-      "price": 950,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "L_TOOL",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "180-E",
-      "name": "Extended Length, L-180",
-      "description": "Extended length for L-180",
-      "price": 6000,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "L_EXTENDED",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "220-E",
-      "name": "Extended Length, L-220",
-      "description": "Extended length for L-220",
-      "price": 8000,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "L_EXTENDED",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "Crate-L-180",
-      "name": "Wooden Crate, L-180",
-      "description": "Wooden crate for transport.",
-      "price": 1200,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "CRATE",
-      "parentProductCode": null,
-      "unitLengthM": null,
-      "noCommission": true
-    },
-    {
-      "code": "Crate-L-220",
-      "name": "Wooden Crate, L-220",
-      "description": "Wooden crate for transport.",
-      "price": 1500,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "CRATE",
-      "parentProductCode": null,
-      "unitLengthM": null,
-      "noCommission": true
-    },
-    {
-      "code": "Crate-L-320",
-      "name": "Wooden Crate, L-320",
-      "description": "Wooden crate for transport.",
-      "price": 1800,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "CRATE",
-      "parentProductCode": null,
-      "unitLengthM": null,
-      "noCommission": true
-    },
-    {
-      "code": "ABR-L",
-      "name": "Air Brush",
-      "description": "Air Brush - air brush including ink/paint reservoir.",
-      "price": 2100,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "ABR",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "APM-L",
-      "name": "Adaptive Pattern Matching",
-      "description": "Adaptive Pattern Matching (Bow & Skew - HDC option required)",
-      "price": 8000,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "APM",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "BCR-L",
-      "name": "Barcode Scanner",
-      "description": "Barcode Scanner - input of marker name via barcode",
-      "price": 1050,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "BCR",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "HDC-L",
-      "name": "HeadCam",
-      "description": "HeadCam:Camera in cutting head - Dynamic interaction with PathCut",
-      "price": 2000,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "HDC",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "HFV-L",
-      "name": "High Flow Vacuum 15kW",
-      "description": "High Flow Vacuum system - THIS REQUIRES 3PHASE POWER - Recommended for ALL Extended and standard 220 & 320 models. Specific application to be discussed with Pathfinder.(Replacement for standard Vac unit)",
-      "price": 16000,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "HFV",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "OFD-L",
-      "name": "Offload Display",
-      "description": "Offload Display",
-      "price": 1400,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "OFD",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "OFP-L",
-      "name": "Offload Printer",
-      "description": "Offload Printer - synchronised with PathCut & OFD",
-      "price": 2250,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "OFP",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "PM-L",
-      "name": "Pattern Match",
-      "description": "Pattern Match - spot light pattern match software",
-      "price": 1500,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "PM",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "PRM-L",
-      "name": "Production Manager",
-      "description": "Production Manager software",
-      "price": 2620,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "PRM",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "JTP",
-      "name": "JetPen Marking Tool",
-      "description": "JetPen marking tool - non-contact high speed ink marking. Replaces the standard marking tool.",
-      "price": 7500,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "JTP",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "EL-2020-DM1",
-      "name": "Drive Module, first 1.2m",
-      "description": "Drive Module (first 1.2M)",
-      "price": 4050,
-      "needsReview": false,
-      "compatibleSeries": [],
-      "role": "EL_DRIVE",
-      "parentProductCode": "EL-2020",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-2020"
-      ]
-    },
-    {
-      "code": "EL-2020-DM12",
-      "name": "Conveyor Module 1.2m",
-      "description": "Additional 1.2M lengths",
-      "price": 1200,
-      "needsReview": false,
-      "compatibleSeries": [],
-      "role": "EL_CONVEYOR",
-      "parentProductCode": "EL-2020",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-2020"
-      ]
-    },
-    {
-      "code": "EL-2020-ST12",
-      "name": "Static Table 1.2m",
-      "description": "Static table 1.2M lengths",
-      "price": 743,
-      "needsReview": false,
-      "compatibleSeries": [],
-      "role": "EL_STATIC",
-      "parentProductCode": "EL-2020",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-2020"
-      ]
-    },
-    {
-      "code": "EL-2020-BB12",
-      "name": "Electrical Busbar 1.2m",
-      "description": "Electrical busbar per 1.2m. Required for use with FabricPro automatic spreader.",
-      "price": 120,
-      "needsReview": false,
-      "compatibleSeries": [],
-      "role": "EL_BUSBAR",
-      "parentProductCode": "EL-2020",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-2020"
-      ]
-    },
-    {
-      "code": "EL-2020-RL12",
-      "name": "Platform Support Rail 1.2m",
-      "description": "Travel platform support rail per 1.2m, including mounting brackets. Required for use with FabricPro.",
-      "price": 45,
-      "needsReview": false,
-      "compatibleSeries": [],
-      "role": "EL_RAIL",
-      "parentProductCode": "EL-2020",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-2020"
-      ]
-    },
-    {
-      "code": "EL-2020-RF",
-      "name": "Single Roll Feed Attachment",
-      "description": "Single Roll feed attachment (L & R clip attachment with cross bar & pair of keeper)",
-      "price": 735,
-      "needsReview": false,
-      "compatibleSeries": [],
-      "role": "EL_ROLL_FEED",
-      "parentProductCode": "EL-2020",
-      "unitLengthM": null,
-      "compatibleProducts": [
-        "EL-2020"
-      ]
-    },
-    {
-      "code": "EL-2420-DM1",
-      "name": "Drive Module, first 1.2m",
-      "description": "Drive Module (first 1.2M)",
-      "price": 4455,
-      "needsReview": false,
-      "compatibleSeries": [],
-      "role": "EL_DRIVE",
-      "parentProductCode": "EL-2420",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-2420"
-      ]
-    },
-    {
-      "code": "EL-2420-DM12",
-      "name": "Conveyor Module 1.2m",
-      "description": "Additional 1.2M lengths",
-      "price": 1320,
-      "needsReview": false,
-      "compatibleSeries": [],
-      "role": "EL_CONVEYOR",
-      "parentProductCode": "EL-2420",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-2420"
-      ]
-    },
-    {
-      "code": "EL-2420-ST12",
-      "name": "Static Table 1.2m",
-      "description": "Static table 1.2M lengths",
-      "price": 780,
-      "needsReview": false,
-      "compatibleSeries": [],
-      "role": "EL_STATIC",
-      "parentProductCode": "EL-2420",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-2420"
-      ]
-    },
-    {
-      "code": "EL-2420-BB12",
-      "name": "Electrical Busbar 1.2m",
-      "description": "Electrical busbar per 1.2m. Required for use with FabricPro automatic spreader.",
-      "price": 120,
-      "needsReview": false,
-      "compatibleSeries": [],
-      "role": "EL_BUSBAR",
-      "parentProductCode": "EL-2420",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-2420"
-      ]
-    },
-    {
-      "code": "EL-2420-RL12",
-      "name": "Platform Support Rail 1.2m",
-      "description": "Travel platform support rail per 1.2m, including mounting brackets. Required for use with FabricPro.",
-      "price": 45,
-      "needsReview": false,
-      "compatibleSeries": [],
-      "role": "EL_RAIL",
-      "parentProductCode": "EL-2420",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-2420"
-      ]
-    },
-    {
-      "code": "EL-2420-RF",
-      "name": "Single Roll Feed Attachment",
-      "description": "Single Roll feed attachment (L & R clip attachment with cross bar & pair of keeper)",
-      "price": 780,
-      "needsReview": false,
-      "compatibleSeries": [],
-      "role": "EL_ROLL_FEED",
-      "parentProductCode": "EL-2420",
-      "unitLengthM": null,
-      "compatibleProducts": [
-        "EL-2420"
-      ]
-    },
-    {
-      "code": "EL-3220-DM1",
-      "name": "Drive Module, first 1.2m",
-      "description": "Drive Module (first 1.2M)",
-      "price": null,
-      "needsReview": true,
-      "compatibleSeries": [],
-      "role": "EL_DRIVE",
-      "parentProductCode": "EL-3220",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-3220"
-      ]
-    },
-    {
-      "code": "EL-3220-DM12",
-      "name": "Conveyor Module 1.2m",
-      "description": "Additional 1.2M lengths",
-      "price": null,
-      "needsReview": true,
-      "compatibleSeries": [],
-      "role": "EL_CONVEYOR",
-      "parentProductCode": "EL-3220",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-3220"
-      ]
-    },
-    {
-      "code": "EL-3220-ST12",
-      "name": "Static Table 1.2m",
-      "description": "Static table 1.2M lengths",
-      "price": null,
-      "needsReview": true,
-      "compatibleSeries": [],
-      "role": "EL_STATIC",
-      "parentProductCode": "EL-3220",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-3220"
-      ]
-    },
-    {
-      "code": "EL-3220-BB12",
-      "name": "Electrical Busbar 1.2m",
-      "description": "Electrical busbar per 1.2m. Required for use with FabricPro automatic spreader.",
-      "price": null,
-      "needsReview": true,
-      "compatibleSeries": [],
-      "role": "EL_BUSBAR",
-      "parentProductCode": "EL-3220",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-3220"
-      ]
-    },
-    {
-      "code": "EL-3220-RL12",
-      "name": "Platform Support Rail 1.2m",
-      "description": "Travel platform support rail per 1.2m, including mounting brackets. Required for use with FabricPro.",
-      "price": null,
-      "needsReview": true,
-      "compatibleSeries": [],
-      "role": "EL_RAIL",
-      "parentProductCode": "EL-3220",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-3220"
-      ]
-    },
-    {
-      "code": "EL-4030-DM1",
-      "name": "Drive Module, first 1.2m",
-      "description": "Drive Module (first 1.2M)",
-      "price": null,
-      "needsReview": true,
-      "compatibleSeries": [],
-      "role": "EL_DRIVE",
-      "parentProductCode": "EL-4030",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-4030"
-      ]
-    },
-    {
-      "code": "EL-4030-DM12",
-      "name": "Conveyor Module 1.2m",
-      "description": "Additional 1.2M lengths",
-      "price": null,
-      "needsReview": true,
-      "compatibleSeries": [],
-      "role": "EL_CONVEYOR",
-      "parentProductCode": "EL-4030",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-4030"
-      ]
-    },
-    {
-      "code": "EL-4030-ST12",
-      "name": "Static Table 1.2m",
-      "description": "Static table 1.2M lengths",
-      "price": null,
-      "needsReview": true,
-      "compatibleSeries": [],
-      "role": "EL_STATIC",
-      "parentProductCode": "EL-4030",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-4030"
-      ]
-    },
-    {
-      "code": "EL-4030-BB12",
-      "name": "Electrical Busbar 1.2m",
-      "description": "Electrical busbar per 1.2m. Required for use with FabricPro automatic spreader.",
-      "price": null,
-      "needsReview": true,
-      "compatibleSeries": [],
-      "role": "EL_BUSBAR",
-      "parentProductCode": "EL-4030",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-4030"
-      ]
-    },
-    {
-      "code": "EL-4030-RL12",
-      "name": "Platform Support Rail 1.2m",
-      "description": "Travel platform support rail per 1.2m, including mounting brackets. Required for use with FabricPro.",
-      "price": null,
-      "needsReview": true,
-      "compatibleSeries": [],
-      "role": "EL_RAIL",
-      "parentProductCode": "EL-4030",
-      "unitLengthM": 1.2,
-      "compatibleProducts": [
-        "EL-4030"
-      ]
     },
     {
       "code": "ST620-2020",
@@ -1845,127 +1915,10 @@
       ]
     },
     {
-      "code": "Crate-EL",
-      "name": "Wooden Crate",
-      "description": "Wooden crate for transport.",
-      "price": 1400,
-      "needsReview": false,
-      "compatibleSeries": [
-        "EL"
-      ],
-      "role": "CRATE",
-      "parentProductCode": null,
-      "unitLengthM": null,
-      "noCommission": true
-    },
-    {
-      "code": "Crate-FP-180",
-      "name": "Wooden Crate, FP-180",
-      "description": "Wooden crate for transport.",
-      "price": 1200,
-      "needsReview": false,
-      "compatibleSeries": [],
-      "role": "CRATE",
-      "parentProductCode": null,
-      "unitLengthM": null,
-      "compatibleProducts": [
-        "FP-180"
-      ],
-      "noCommission": true
-    },
-    {
-      "code": "Crate-FP-220",
-      "name": "Wooden Crate, FP-220",
-      "description": "Wooden crate for transport.",
-      "price": 1200,
-      "needsReview": false,
-      "compatibleSeries": [],
-      "role": "CRATE",
-      "parentProductCode": null,
-      "unitLengthM": null,
-      "compatibleProducts": [
-        "FP-220"
-      ],
-      "noCommission": true
-    },
-    {
-      "code": "Crate-FP-300",
-      "name": "Wooden Crate, FP-300",
-      "description": "Wooden crate for transport.",
-      "price": 1200,
-      "needsReview": false,
-      "compatibleSeries": [],
-      "role": "CRATE",
-      "parentProductCode": null,
-      "unitLengthM": null,
-      "compatibleProducts": [
-        "FP-300"
-      ],
-      "noCommission": true
-    },
-    {
-      "code": "Crate-HDRF-180",
-      "name": "Wooden Crate, HDRF-180",
-      "description": "Wooden crate for transport.",
-      "price": 1800,
-      "needsReview": false,
-      "compatibleSeries": [],
-      "role": "CRATE",
-      "parentProductCode": null,
-      "unitLengthM": null,
-      "compatibleProducts": [
-        "HDRF-180"
-      ],
-      "noCommission": true
-    },
-    {
-      "code": "Crate-HDRF-220",
-      "name": "Wooden Crate, HDRF-220",
-      "description": "Wooden crate for transport.",
-      "price": 2000,
-      "needsReview": false,
-      "compatibleSeries": [],
-      "role": "CRATE",
-      "parentProductCode": null,
-      "unitLengthM": null,
-      "compatibleProducts": [
-        "HDRF-220"
-      ],
-      "noCommission": true
-    },
-    {
-      "code": "Crate-HDRF-320",
-      "name": "Wooden Crate, HDRF-320",
-      "description": "Wooden crate for transport.",
-      "price": 2300,
-      "needsReview": false,
-      "compatibleSeries": [],
-      "role": "CRATE",
-      "parentProductCode": null,
-      "unitLengthM": null,
-      "compatibleProducts": [
-        "HDRF-320"
-      ],
-      "noCommission": true
-    },
-    {
-      "code": "TPL",
-      "name": "Travelling Operator Platform",
-      "description": "Travelling operator Platform (Standard Equipment)",
-      "price": null,
-      "needsReview": true,
-      "compatibleSeries": [
-        "FP"
-      ],
-      "role": "TPL",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "SVC-L-INSTALL-S",
-      "name": "L-Series Installation & Training (L-180, L-180E, L-220)",
-      "description": "1 day installation, 3 days training. L-180, L-180E, L-220.",
-      "price": null,
+      "code": "SVC-EF-INSTALL",
+      "name": "EasyFeeder Installation (3 hrs)",
+      "description": "EasyFeeder installation, 3 hours, with cutter installation.",
+      "price": 0,
       "needsReview": true,
       "compatibleSeries": [],
       "role": "INSTALL",
@@ -1973,27 +1926,14 @@
       "unitLengthM": null,
       "compatibleProducts": [
         "SERVICE"
-      ]
-    },
-    {
-      "code": "SVC-L-INSTALL-L",
-      "name": "L-Series Installation & Training (L-220E, L-320E)",
-      "description": "2 day installation, 3 days training. L-220E, L-320E, L-320EF.",
-      "price": null,
-      "needsReview": true,
-      "compatibleSeries": [],
-      "role": "INSTALL",
-      "parentProductCode": null,
-      "unitLengthM": null,
-      "compatibleProducts": [
-        "SERVICE"
-      ]
+      ],
+      "noCommission": true
     },
     {
       "code": "SVC-EL-INSTALL",
       "name": "EasyLoader Installation",
       "description": "EasyLoader installation (Drive Module + Additional Modules) with Cutter installation.",
-      "price": null,
+      "price": 0,
       "needsReview": true,
       "compatibleSeries": [],
       "role": "INSTALL",
@@ -2007,7 +1947,7 @@
       "code": "SVC-FP-INSTALL",
       "name": "FabricPro Installation & Training (1 day)",
       "description": "FabricPro Installation & Training, 1 day (with Cutter installation).",
-      "price": null,
+      "price": 0,
       "needsReview": true,
       "compatibleSeries": [],
       "role": "INSTALL",
@@ -2032,10 +1972,38 @@
       ]
     },
     {
+      "code": "SVC-L-INSTALL-L",
+      "name": "L-Series Installation & Training (L-220E, L-320E)",
+      "description": "2 day installation, 3 days training. L-220E, L-320E, L-320EF.",
+      "price": 0,
+      "needsReview": true,
+      "compatibleSeries": [],
+      "role": "INSTALL",
+      "parentProductCode": null,
+      "unitLengthM": null,
+      "compatibleProducts": [
+        "SERVICE"
+      ]
+    },
+    {
+      "code": "SVC-L-INSTALL-S",
+      "name": "L-Series Installation & Training (L-180, L-180E, L-220)",
+      "description": "1 day installation, 3 days training. L-180, L-180E, L-220.",
+      "price": 0,
+      "needsReview": true,
+      "compatibleSeries": [],
+      "role": "INSTALL",
+      "parentProductCode": null,
+      "unitLengthM": null,
+      "compatibleProducts": [
+        "SERVICE"
+      ]
+    },
+    {
       "code": "SVC-LNS-INSTALL",
       "name": "Installation/Training — Leather Nesting System (with cutter)",
       "description": "Installation/Training — Leather Nesting System (with cutter installation), 2 days.",
-      "price": null,
+      "price": 0,
       "needsReview": true,
       "compatibleSeries": [],
       "role": "INSTALL",
@@ -2049,7 +2017,7 @@
       "code": "SVC-M-INSTALL",
       "name": "M-Series Installation & Training (Static, no MTS)",
       "description": "1 day installation, 3 days training (Static -- no MTS).",
-      "price": null,
+      "price": 0,
       "needsReview": true,
       "compatibleSeries": [],
       "role": "INSTALL",
@@ -2063,7 +2031,7 @@
       "code": "SVC-M-INSTALL-MTS",
       "name": "M-Series Installation & Training (with MTS, up to 6m travel)",
       "description": "2 day installation, 3 days training, with MTS up to 6m travel.",
-      "price": null,
+      "price": 0,
       "needsReview": true,
       "compatibleSeries": [],
       "role": "INSTALL",
@@ -2077,7 +2045,7 @@
       "code": "SVC-SW-TRAINING",
       "name": "Software Remote Training Support",
       "description": "Remote training support for PathWorks/PathCut software modules.",
-      "price": null,
+      "price": 0,
       "needsReview": true,
       "compatibleSeries": [],
       "role": "TRAINING",
@@ -2088,19 +2056,32 @@
       ]
     },
     {
-      "code": "SVC-EF-INSTALL",
-      "name": "EasyFeeder Installation (3 hrs)",
-      "description": "EasyFeeder installation, 3 hours, with cutter installation.",
-      "price": null,
-      "needsReview": true,
-      "compatibleSeries": [],
-      "role": "INSTALL",
-      "parentProductCode": null,
-      "unitLengthM": null,
-      "compatibleProducts": [
-        "SERVICE"
+      "code": "TR220",
+      "name": "Transformer 220V→380/415V, Standalone",
+      "description": "Transformer 30kVA, 60Hz, autotransformer, three phase. 220V (input) to 380V/415V (output). Standalone unit.",
+      "price": 7195,
+      "needsReview": false,
+      "compatibleSeries": [
+        "M",
+        "X"
       ],
-      "noCommission": true
+      "role": "TRANSFORMER",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "TR480",
+      "name": "Transformer 480V→380V, Integrated",
+      "description": "Transformer 30kVA, 60Hz, autotransformer, three phase. 480V (input) to 380V (output). Integrated and wired.",
+      "price": 3880,
+      "needsReview": false,
+      "compatibleSeries": [
+        "X",
+        "M"
+      ],
+      "role": "TRANSFORMER",
+      "parentProductCode": null,
+      "unitLengthM": null
     }
   ]
 }

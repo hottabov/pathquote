@@ -1,7 +1,9 @@
 import { displayCountry } from "@/lib/countries";
 import type { DocumentForForms } from "@/lib/queries/documents";
 import { readProductSpecs } from "@/lib/validation/product-specs";
+import { assignRails } from "./rails";
 import { resolveForm } from "./resolve";
+import type { Section } from "./table-sections";
 import type { FormContext, FormItem, FormItemOption } from "./types";
 
 type AddressLike = {
@@ -53,7 +55,11 @@ export function legacyOptionViews(
  * A custom item with no product resolves to kind ACCESSORY and no form: it
  * has no catalogue facts to read, and no form has a box for it.
  */
-export function buildFormContexts(document: DocumentForForms): FormContext[] {
+export function buildFormContexts(
+  document: DocumentForForms,
+  // Not `options`: the per-item option lines below already own that name.
+  settings: { logo?: string | null; now?: Date; screenSideImages?: Record<string, string> } = {}
+): FormContext[] {
   const snapshot = document.entitySnapshot as { entityName?: string } | null;
   const distributorName = snapshot?.entityName ?? document.region.entityName;
 
@@ -71,14 +77,35 @@ export function buildFormContexts(document: DocumentForForms): FormContext[] {
         })
       : addressLines;
 
+  // Which table each form prints rail lengths off, decided once for the whole
+  // document: a FabricPro runs over one table, so the pairing is per machine
+  // and never a sum (rails.ts). Both lists are in document order, which is
+  // the whole of the pairing rule -- the manager types nothing.
+  const rails = assignRails(
+    document.items
+      .filter((item) => item.product?.form === "EASYLOADER")
+      .map((item) => {
+        const spec = (item.productionSpec ?? {}) as Record<string, unknown>;
+        return {
+          id: item.id,
+          code: item.code,
+          fabricProCompatible: spec.fabricProCompatible === true,
+          sections: (spec.sections ?? []) as Section[],
+        };
+      }),
+    document.items.filter((item) => item.product?.form === "FABRICPRO").map((item) => item.id)
+  );
+
   const software = document.items
     .filter((item) => item.product?.kind === "SOFTWARE")
     .map((item) => ({ code: item.code, specs: readProductSpecs(item.product?.specs) }));
   const softwareCodes = software.map((s) => s.code);
 
-  return document.items
-    .filter((item) => resolveForm(item.product?.form) !== null)
-    .map((item) => {
+  const formItems = document.items.filter((item) => resolveForm(item.product?.form) !== null);
+  const generatedAt = settings.now ?? new Date();
+
+  return formItems
+    .map((item, index) => {
       const options: FormItemOption[] = item.lines
         .filter((line) => line.kind === "OPTION" && line.code !== null)
         .map((line) => {
@@ -124,6 +151,13 @@ export function buildFormContexts(document: DocumentForForms): FormContext[] {
         deliveryAddressLines,
         software,
         softwareCodes,
+        rails: rails.get(item.id) ?? null,
+        documentNumber: document.number ?? "",
+        itemIndex: index + 1,
+        itemCount: formItems.length,
+        generatedAt,
+        logo: settings.logo ?? null,
+        screenSideImages: settings.screenSideImages ?? {},
         item: formItem,
       };
     });

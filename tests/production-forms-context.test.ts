@@ -181,3 +181,87 @@ describe("buildFormContexts", () => {
     expect(ctx.deliveryAddressLines).toEqual(ctx.company.addressLines);
   });
 });
+
+/**
+ * A FabricPro runs over one table, so each FabricPro form has to print that
+ * table's rail lengths rather than every compatible table added together.
+ * The manager types nothing: the pairing follows document order.
+ */
+describe("buildFormContexts: rails", () => {
+  const el = (id: string, code: string, lengthM: number, fabricProCompatible = true) => ({
+    id,
+    code,
+    name: "EasyLoader",
+    lineGroup: 1,
+    productionSpec: { fabricProCompatible, sections: [{ lengthM, surface: "conveyor" }] },
+    product: { kind: "TABLE", form: "EASYLOADER", specs: {} },
+    lines: [],
+  });
+
+  const fp = (id: string, code: string) => ({
+    id,
+    code,
+    name: "FabricPro",
+    lineGroup: 1,
+    productionSpec: {},
+    product: { kind: "SPREADER", form: "FABRICPRO", specs: { widthCode: 220 } },
+    lines: [],
+  });
+
+  const railsByItem = (items: unknown[]) => {
+    const contexts = buildFormContexts({ ...baseDocument, items } as never);
+    return new Map(contexts.map((ctx) => [ctx.item.id, ctx.rails]));
+  };
+
+  it("gives each FabricPro the table it runs over, not the sum of both", () => {
+    const rails = railsByItem([el("el1", "EL-2420", 7.2), el("el2", "EL-2020", 4.8), fp("fp1", "FP-220"), fp("fp2", "FP-180")]);
+
+    expect(rails.get("fp1")).toEqual({ tableId: "el1", tableCode: "EL-2420", lengthM: 7.2 });
+    expect(rails.get("fp2")).toEqual({ tableId: "el2", tableCode: "EL-2020", lengthM: 4.8 });
+  });
+
+  it("leaves a claimed table's own form without rails -- the FabricPro form prints them", () => {
+    const rails = railsByItem([el("el1", "EL-2420", 7.2), fp("fp1", "FP-220")]);
+
+    expect(rails.get("el1")).toBeNull();
+    expect(rails.get("fp1")?.lengthM).toBe(7.2);
+  });
+
+  it("prints a third table's rails on its own form when only two FabricPros were sold", () => {
+    const rails = railsByItem([
+      el("el1", "EL-2420", 7.2),
+      el("el2", "EL-2020", 4.8),
+      el("el3", "EL-3220", 3.6),
+      fp("fp1", "FP-220"),
+      fp("fp2", "FP-180"),
+    ]);
+
+    expect(rails.get("el3")).toEqual({ tableId: "el3", tableCode: "EL-3220", lengthM: 3.6 });
+    expect(rails.get("el1")).toBeNull();
+  });
+
+  it("skips an incompatible table: the FabricPro pairs with the next compatible one", () => {
+    const rails = railsByItem([el("el1", "EL-2420", 7.2, false), el("el2", "EL-2020", 4.8), fp("fp1", "FP-220")]);
+
+    expect(rails.get("fp1")).toEqual({ tableId: "el2", tableCode: "EL-2020", lengthM: 4.8 });
+    expect(rails.get("el1")).toBeNull();
+  });
+
+  it("leaves a FabricPro with no table to run over unassigned", () => {
+    const rails = railsByItem([fp("fp1", "FP-220")]);
+    expect(rails.get("fp1")).toBeNull();
+  });
+});
+
+describe("buildFormContexts: spec diagrams", () => {
+  it("hands every context the operator-side diagrams, so each form prints the one that was chosen", () => {
+    const images = { "+Y": "pq-pdf-image:plus.png", "-Y": "pq-pdf-image:minus.png" };
+    const contexts = buildFormContexts(baseDocument as never, { screenSideImages: images });
+
+    expect(contexts[0].screenSideImages).toEqual(images);
+  });
+
+  it("passes an empty map when nothing has been uploaded, rather than leaving the field undefined", () => {
+    expect(buildFormContexts(baseDocument as never)[0].screenSideImages).toEqual({});
+  });
+});

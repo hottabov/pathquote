@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { getDocumentForForms } from "@/lib/queries/documents";
-import { htmlToPdf } from "@/lib/pdf";
+import { getSpecImages } from "@/lib/queries/spec-images";
+import { fileImageResolver, htmlToPdf, inlineSheetImages } from "@/lib/pdf";
 import { buildFormContexts } from "@/lib/production-forms/context";
 import {
   buildPatches,
@@ -9,8 +10,11 @@ import {
   unmatchedOptions,
 } from "@/lib/production-forms/resolve";
 import { patchWorkbook } from "@/lib/production-forms/xlsx-patch";
+import { isXlsxForm } from "@/lib/production-forms/types";
 import { mergePdfs, readTemplate, xlsxToPdf } from "@/lib/production-forms/render";
 import { AdditionalItemsSheet, type AdditionalItem } from "@/components/sheet/additional-items-sheet";
+import { FormDocument } from "@/components/forms/form-sheet";
+import { formComponent, isRenderable } from "@/components/forms/registry";
 
 // `react-dom/server` (imported dynamically below, see the comment at the top
 // of src/lib/pdf.ts for why) and Gotenberg's HTTP calls both need the Node
@@ -42,7 +46,21 @@ export async function GET(request: Request, { params }: { params: Promise<Params
   }
 
   const onlyItemId = new URL(request.url).searchParams.get("item");
-  const contexts = buildFormContexts(document).filter(
+
+  // The operator/control-box side diagrams, the same admin-uploaded pair the
+  // builder shows beside the dropdown. Marked rather than linked: Gotenberg's
+  // Chromium has no session, so an `/api/files/...` URL would print as a
+  // broken image -- `inlineSheetImages` swaps each mark for the bytes after
+  // the sheet is rendered. A value with no upload yet simply never reaches
+  // the page (see `ScreenSideBlock`).
+  const screenSideImages = Object.fromEntries(
+    Object.entries(await getSpecImages("screenSide")).flatMap(([value, url]) => {
+      const mark = fileImageResolver(url);
+      return mark ? [[value, mark]] : [];
+    }),
+  );
+
+  const contexts = buildFormContexts(document, { screenSideImages }).filter(
     (ctx) => !onlyItemId || ctx.item.id === onlyItemId,
   );
 
@@ -52,6 +70,14 @@ export async function GET(request: Request, { params }: { params: Promise<Params
 
   const blockers = contexts.flatMap((ctx) => {
     const spec = resolveForm(ctx.item.form)!;
+
+    // A form nothing can draw. Blocked loudly rather than skipped: a PDF
+    // quietly missing one machine's page is how a machine gets built from
+    // nothing.
+    if (!isRenderable(ctx.item.form!) && !isXlsxForm(spec)) {
+      return [{ itemId: ctx.item.id, code: ctx.item.code, missing: [`${spec.title} is not built yet`] }];
+    }
+
     const missing = missingRequirements(spec, ctx.item.spec);
 
     // The EasyLoader's table used to be checked against the options sold
@@ -68,8 +94,48 @@ export async function GET(request: Request, { params }: { params: Promise<Params
   const pdfs: Buffer[] = [];
 
   try {
+    // One pass over the items, in `sortOrder` -- the order the quote lists
+    // them and the order the workshop expects the printed stack in.
+    //
+    // Component forms were briefly batched into one html document (one
+    // Gotenberg call, no merge) but that put every component page ahead of
+    // every workbook page, so a quote whose EasyLoader still renders from
+    // xlsx came out shuffled. While the two paths coexist, order wins over
+    // the round trip; once the last workbook is gone this collapses back to
+    // a single call with `break-before: page` between sheets, which is what
+    // `FormDocument` and the `.pf-sheet + .pf-sheet` rule are already for.
+    //
+    // A form with a component is drawn by it even while its workbook is
+    // still committed: that is the migration order the render spec sets out
+    // (§10) -- build the components behind this route, compare a printed
+    // pair by eye with production, then delete the xlsx path. The component
+    // registry is the single answer to "what draws this form"; there is no
+    // flag to get out of step with.
+    const { renderToStaticMarkup } = contexts.some((ctx) => isRenderable(ctx.item.form!))
+      ? // Dynamic import for the reason given at the top of src/lib/pdf.ts.
+        await import("react-dom/server")
+      : { renderToStaticMarkup: null as never };
+
     for (const ctx of contexts) {
       const spec = resolveForm(ctx.item.form)!;
+      const Component = formComponent(ctx.item.form!);
+
+      if (Component) {
+        const sheet = await inlineSheetImages(
+          renderToStaticMarkup(FormDocument({ children: Component({ ctx }) })),
+        );
+        pdfs.push(
+          await htmlToPdf(
+            `<!doctype html><html><head><meta charSet="utf-8"></head><body>${sheet}</body></html>`,
+            undefined,
+            { printBackground: true },
+          ),
+        );
+        continue;
+      }
+
+      // Blocked above; narrowing only.
+      if (!isXlsxForm(spec)) continue;
       const patched = patchWorkbook(
         readTemplate(spec.template),
         spec.sheetPath,
@@ -116,8 +182,8 @@ export async function GET(request: Request, { params }: { params: Promise<Params
       // src/lib/pdf.ts -- Next's bundler statically forbids importing
       // react-dom/server from anything reachable through the RSC graph, even
       // a route handler pinned to the Node runtime.
-      const { renderToStaticMarkup } = await import("react-dom/server");
-      const body = renderToStaticMarkup(
+      const { renderToStaticMarkup: renderExtras } = await import("react-dom/server");
+      const body = renderExtras(
         AdditionalItemsSheet({
           documentNumber: document.number ?? "",
           companyName: document.company?.name ?? "",

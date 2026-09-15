@@ -3,7 +3,8 @@ import type { z } from "zod";
 import { missingKeys } from "@/lib/validation/production-spec";
 import { FORM_SPECS } from "./specs";
 import type { CellPatch } from "./xlsx-patch";
-import type { FormContext, FormItemOption, FormSpec } from "./types";
+import { isXlsxForm } from "./types";
+import type { FormContext, FormItemOption, FormSpec, XlsxFormSpec } from "./types";
 
 /**
  * Which form a quote item prints on. Keyed on `Product.form`, the column
@@ -32,7 +33,7 @@ export function missingRequirements(spec: FormSpec, productionSpec: unknown): st
  * template. Empty values are skipped so a missing optional never blanks a
  * cell that was meant to stay untouched.
  */
-export function buildPatches(spec: FormSpec, ctx: FormContext): CellPatch[] {
+export function buildPatches(spec: XlsxFormSpec, ctx: FormContext): CellPatch[] {
   const patches: CellPatch[] = [];
 
   for (const { cell, from } of spec.values) {
@@ -76,10 +77,20 @@ export function buildPatches(spec: FormSpec, ctx: FormContext): CellPatch[] {
  * form has a box for it, by definition.
  */
 export function unmatchedOptions(spec: FormSpec, ctx: FormContext): FormItemOption[] {
-  const covered = new Set<OptionRole>([
-    ...spec.ticks.map((tick) => tick.covers).filter((role): role is OptionRole => role !== undefined),
-    ...(spec.coversOptions ?? []),
-  ]);
-
+  const covered = coveredRoles(spec);
   return ctx.item.options.filter((option) => option.role === null || !covered.has(option.role));
+}
+
+/**
+ * Every option role this form accounts for. An xlsx form assembles it from
+ * the `covers` on each tick; an html form declares it outright, because its
+ * layout is JSX and its boxes are not enumerable. Both add `coversOptions`,
+ * for what a form states without a box of its own.
+ */
+export function coveredRoles(spec: FormSpec): Set<OptionRole> {
+  const fromTicks = isXlsxForm(spec)
+    ? spec.ticks.map((tick) => tick.covers).filter((role): role is OptionRole => role !== undefined)
+    : spec.covers;
+
+  return new Set<OptionRole>([...fromTicks, ...(spec.coversOptions ?? [])]);
 }

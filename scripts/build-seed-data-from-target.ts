@@ -5,6 +5,12 @@ import { buildSeedDataFromTarget } from "./lib/catalog-v2-seed-data";
 import type { Catalog } from "../prisma/seed-lib";
 
 /**
+ * SUPERSEDED by scripts/build-seed-data-from-dump.ts, which regenerates the
+ * same two files from RAW/catalog-dump.json -- a snapshot of the live
+ * catalogue. Running this one now would revert the seed to a one-off cleanup
+ * plan that people have been editing past in the app ever since. Kept because
+ * the target file is still the record of what that cleanup did.
+ *
  * Regenerates prisma/seed-data/catalog.json and prisma/seed-data/prices-us.json
  * from docs/reference/catalog-v2-target.json, so `npm run db:seed` on a
  * fresh database produces the cleaned catalogue (only non-deleted rows, new

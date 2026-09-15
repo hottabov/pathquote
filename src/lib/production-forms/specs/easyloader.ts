@@ -24,6 +24,17 @@ export function easyLoaderPrintedWidthCell(specs: ProductSpecs): "I31" | "I33" |
 type Section = { lengthM: number; surface: "static" | "conveyor" };
 
 const sections = (ctx: FormContext) => (ctx.item.spec.sections ?? []) as Section[];
+
+/**
+ * How many single roll feed attachments were sold on this item. The option is
+ * per width (`EL-2020-RF` / `EL-2420-RF`) and carries role `EL_ROLL_FEED`, so
+ * this is the same lookup every other option tick makes -- it just needs the
+ * quantity rather than the presence.
+ */
+const rollFeedQty = (ctx: FormContext) =>
+  ctx.item.options
+    .filter((option) => option.role === "EL_ROLL_FEED")
+    .reduce((sum, option) => sum + option.qty, 0);
 const spec = (key: string, want: string) => (ctx: FormContext) => ctx.item.spec[key] === want;
 
 /**
@@ -48,6 +59,7 @@ const SECTION_CELLS = [
 export const easyLoaderSpec: FormSpec = {
   id: "easyloader",
   title: "EasyLoader Order Form",
+  renderer: "xlsx",
   template: "easy-loader-13.xlsx",
   sheetPath: "xl/worksheets/sheet1.xml",
   form: "EASYLOADER",
@@ -91,11 +103,14 @@ export const easyLoaderSpec: FormSpec = {
       cell: cells.length,
       from: (c: FormContext) => sections(c)[index]?.lengthM,
     })),
-    { cell: "F61", from: (c) => (c.item.spec.rollFeed as { qty?: number })?.qty },
+    // The "Qty." box beside the roll feed row. Read off the option line the
+    // customer is charged for, not off the production spec -- one attachment
+    // ordered is one attachment built, and two numbers for one fact is how
+    // they come to disagree.
+    { cell: "F61", from: (c) => rollFeedQty(c) || null },
     ...["K61", "K63", "K65", "K67"].map((cell, index) => ({
       cell,
-      from: (c: FormContext) =>
-        (c.item.spec.rollFeed as { distancesMm?: number[] })?.distancesMm?.[index],
+      from: (c: FormContext) => (c.item.spec.rollFeedDistancesMm as number[] | undefined)?.[index],
     })),
     // M54 is blank in the template, in the same notes column as the three
     // "(Multiple of 1.2m...)" annotations, one row below section 3. The
@@ -109,6 +124,24 @@ export const easyLoaderSpec: FormSpec = {
       from: (c) => {
         const totalM = layoutTotals(sections(c)).totalM;
         return totalM > 0 ? `Total Table is ${totalM} m` : null;
+      },
+    },
+    // E73 is the blank row between "Crate Required" and "Office Use Only",
+    // in the same column as every other option label on this form.
+    //
+    // The rails belong to the FabricPro that runs over this table, so when one
+    // claimed it they print there and this stays empty -- two printed lengths
+    // would have stores pick two sets. `ctx.rails` is set on a table's own
+    // context only while no FabricPro claimed it (the customer already owns
+    // theirs, or three tables were sold with two machines), and then there is
+    // no other sheet: a length nobody prints is a length nobody orders.
+    {
+      cell: "E73",
+      from: (c) => {
+        const railM = c.rails?.lengthM;
+        return railM
+          ? `FabricPro rails: travel platform rail ${railM} m + electrical power rail ${railM} m`
+          : null;
       },
     },
   ],
@@ -141,8 +174,11 @@ export const easyLoaderSpec: FormSpec = {
       { cell: cells.conveyor, when: (c: FormContext) => sections(c)[index]?.surface === "conveyor" },
     ]),
 
-    optionTick("D56", "EL_SYNC"),
-    { cell: "D59", when: (c) => Boolean(c.item.spec.rollFeed) },
+    // Synchronisation with the cutter: a build answer, defaulting to yes, so
+    // an absent spec still prints the tick (see `syncWithCutter`). There is
+    // no EL_SYNC option in the catalogue to read -- nobody is charged for it.
+    { cell: "D56", when: (c) => c.item.spec.syncWithCutter !== false },
+    optionTick("D59", "EL_ROLL_FEED"),
     optionTick("D69", "EL_ROLL_HOLDER"),
     optionTick("D71", "CRATE"),
   ],

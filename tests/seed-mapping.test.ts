@@ -556,8 +556,17 @@ describe("Spot Price Validation (USD)", () => {
     expect(byCode.has("L-320F")).toBe(false);
   });
 
-  it("no US price is 0 -- a missing US price is simply absent from the file", () => {
-    for (const p of usPrices.prices) expect(p.amountUsd, p.code).toBeGreaterThan(0);
+  // A row nobody has priced for the US is absent from the file, not present
+  // at 0 -- `mapUsPrices` seeds every entry here as authoritative, so a
+  // placeholder would publish a machine at nothing (the dump builder drops
+  // any US price still flagged `needsReview`). Zero itself is a legitimate
+  // answer for exactly one family: the EasyLoader table costs nothing,
+  // because every part of it is a separately priced module.
+  it("a US price is never negative, and is only 0 where the catalogue genuinely charges nothing", () => {
+    for (const p of usPrices.prices) {
+      expect(p.amountUsd, p.code).toBeGreaterThanOrEqual(0);
+      if (p.amountUsd === 0) expect(p.code, "unexpected zero US price").toMatch(/^EL-/);
+    }
   });
 
   it("LNS-2020 = 27534", () => {
