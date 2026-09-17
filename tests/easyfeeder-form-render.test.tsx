@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { EasyFeedForm } from "../src/components/forms/easyfeed-form";
+import { EasyFeederForm } from "../src/components/forms/easyfeeder-form";
 import { formComponent } from "../src/components/forms/registry";
 import { formHasScreenSide, resolveForm, unmatchedOptions } from "../src/lib/production-forms/resolve";
 import { formContext, formItem } from "./helpers/fixtures";
@@ -12,10 +12,10 @@ const ctx = (code: string, specs: Record<string, unknown>, options: never[] = []
     itemCount: 1,
     generatedAt: new Date("2026-09-17T00:00:00Z"),
     logo: null,
-    item: formItem({ code, form: "EASYFEED", kind: "ACCESSORY", specs, spec: {}, options }),
+    item: formItem({ code, form: "EASYFEEDER", kind: "ACCESSORY", specs, spec: {}, options }),
   });
 
-const render = (c: ReturnType<typeof ctx>) => renderToStaticMarkup(<EasyFeedForm ctx={c} />);
+const render = (c: ReturnType<typeof ctx>) => renderToStaticMarkup(<EasyFeederForm ctx={c} />);
 
 const ticked = (html: string) =>
   [...html.matchAll(/class="pf-tick[^"]*pf-on[^"]*"[^>]*>(.*?)<\/label>/g)].map((m) =>
@@ -24,8 +24,8 @@ const ticked = (html: string) =>
 
 describe("EasyFeeder form", () => {
   it("is drawn by a component, not a workbook", () => {
-    expect(resolveForm("EASYFEED")?.renderer).toBe("html");
-    expect(formComponent("EASYFEED")).toBe(EasyFeedForm);
+    expect(resolveForm("EASYFEEDER")?.renderer).toBe("html");
+    expect(formComponent("EASYFEEDER")).toBe(EasyFeederForm);
   });
 
   it.each([2020, 2420, 3220, 4030])("ticks the EF-%i box and nothing else", (width) => {
@@ -41,7 +41,7 @@ describe("EasyFeeder form", () => {
     for (const text of ["Voltage", "Hz", "Control box", "side", "Freight", "Ex-Works", "Crate", "Other"]) {
       expect(html).not.toContain(text);
     }
-    expect(formHasScreenSide("EASYFEED")).toBe(false);
+    expect(formHasScreenSide("EASYFEEDER")).toBe(false);
   });
 
   it("keeps the header and the office block", () => {
@@ -53,6 +53,6 @@ describe("EasyFeeder form", () => {
 
   it("sends any option to the Additional items sheet -- the form has no box for one", () => {
     const crate = { id: "c", code: "Crate-X", role: "CRATE", qty: 1, attributes: null } as never;
-    expect(unmatchedOptions(resolveForm("EASYFEED")!, ctx("EF-2420", { tableWidthMm: 2420 }, [crate]))).toHaveLength(1);
+    expect(unmatchedOptions(resolveForm("EASYFEEDER")!, ctx("EF-2420", { tableWidthMm: 2420 }, [crate]))).toHaveLength(1);
   });
 });

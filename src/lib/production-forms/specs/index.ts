@@ -2,7 +2,7 @@ import type { FormSpec } from "../types";
 import { mSeriesSpec } from "./m-series";
 import { easyLoaderSpec } from "./easyloader";
 import { fabricProSpec } from "./fabricpro";
-import { easyFeedSpec } from "./easyfeed";
+import { easyFeederSpec } from "./easyfeeder";
 import { hdrfSpec } from "./hdrf";
 import { punchlineSpec } from "./punchline";
 import { fabricTrolleySpec } from "./fabric-trolley";
@@ -15,7 +15,7 @@ export const FORM_SPECS: FormSpec[] = [
   mSeriesSpec,
   easyLoaderSpec,
   fabricProSpec,
-  easyFeedSpec,
+  easyFeederSpec,
   hdrfSpec,
   punchlineSpec,
   fabricTrolleySpec,

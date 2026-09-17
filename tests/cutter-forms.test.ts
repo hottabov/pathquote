@@ -47,7 +47,7 @@ describe("the form registry", () => {
     // Forms that print no option box by design: the EasyFeeder asks for the
     // model only (Vadym, 2026-09-17), so any option on it belongs on the
     // Additional items sheet. Anything else here is a mistake.
-    const NO_OPTIONS = new Set(["easyfeed"]);
+    const NO_OPTIONS = new Set(["easyfeeder"]);
     for (const spec of FORM_SPECS.filter((s) => !isXlsxForm(s))) {
       // A JSX layout is not enumerable, so coverage cannot be assembled from
       // the ticks. An empty list would silently send every option to the

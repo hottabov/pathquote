@@ -42,7 +42,7 @@ const ITEM: Record<ProductionForm, Record<string, unknown>> = {
   },
   EASYLOADER: { code: "EL-2420", specs: { tableWidthMm: 2420 }, spec: { usage: "onload", sections: SECTIONS } },
   FABRICPRO: { code: "FP-220", specs: { widthCode: 220, cutWidthCm: 220 }, spec: {} },
-  EASYFEED: {},
+  EASYFEEDER: {},
   HDRF: {},
   PUNCHLINE: {},
   FP_TROLLEY: {},

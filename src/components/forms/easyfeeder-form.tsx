@@ -4,7 +4,7 @@ import { Footnote, OfficeUse, Section, Tick, TickGrid } from "./primitives";
 
 /**
  * The EasyFeeder order form: the header every machine form carries, the
- * model, and the office block. See `easyFeedSpec` for why nothing else is
+ * model, and the office block. See `easyFeederSpec` for why nothing else is
  * asked -- no voltage, no control box side, no freight.
  *
  * The model is the table width the feeder is built for, the same four as
@@ -21,7 +21,7 @@ function widthOf(ctx: FormContext): number | null {
   return match ? Number(match[1]) : null;
 }
 
-export function EasyFeedForm({ ctx }: { ctx: FormContext }) {
+export function EasyFeederForm({ ctx }: { ctx: FormContext }) {
   const width = widthOf(ctx);
 
   return (

@@ -33,7 +33,7 @@ export const FORM_BY_SERIES: Record<string, ProductionForm> = {
   X: "X_CALIBRE",
   L: "L_SERIES",
   EL: "EASYLOADER",
-  EF: "EASYFEED",
+  EF: "EASYFEEDER",
   HDRF: "HDRF",
   FP: "FABRICPRO",
   FPT: "FP_TROLLEY",

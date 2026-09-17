@@ -31,7 +31,7 @@ Excel-бланках, ці пункти неможливо надрукуват�
 
 | Продукти | Треба проставити |
 |---|---|
-| `EF-2020` `EF-2420` `EF-3220` `EF-4030` | `form = EASYFEED` |
+| `EF-2020` `EF-2420` `EF-3220` `EF-4030` | `form = EASYFEEDER` |
 | `HDRF-180` `HDRF-220` `HDRF-320` | `form = HDRF`, **плюс `specs.widthCode` 180 / 220 / 320** — `specs` порожній, тому жодна коробка моделі не тікнеться |
 | `FP-TROLLEY` | `form = FP_TROLLEY` (серія `FPT` уже існує) |
 | `LNS-2020` `LNS-2420` `LNS-3220` | `form = LNS` |
@@ -354,8 +354,8 @@ HDRF crate не додається (на відміну від FabricPro) — я
 
 ## K. EasyFeeder — HTML, без xlsx (17.09)
 
-`easyFeedSpec` тепер `renderer: "html"`, форму малює `EasyFeedForm`
-(src/components/forms/easyfeed-form.tsx), шаблон
+`easyFeederSpec` тепер `renderer: "html"`, форму малює `EasyFeederForm`
+(src/components/forms/easyfeeder-form.tsx), шаблон
 `easy-feed-order-form-05.xlsx` видалено. На формі лише модель —
 EF-2020 / 2420 / 3220 / 4030 (як у EasyLoader), з `specs.tableWidthMm`.
 Рядок «Other?___mm» зник: EF-4030 має власний бокс. Прибрано за рішенням

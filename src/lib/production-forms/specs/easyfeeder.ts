@@ -2,8 +2,8 @@ import { z } from "zod";
 import type { HtmlFormSpec } from "../types";
 
 /**
- * The EasyFeeder. Drawn by `EasyFeedForm`
- * (src/components/forms/easyfeed-form.tsx); the workbook
+ * The EasyFeeder. Drawn by `EasyFeederForm`
+ * (src/components/forms/easyfeeder-form.tsx); the workbook
  * `easy-feed-order-form-05.xlsx` and its cell map are gone (2026-09-17).
  *
  * The only choice on the sheet is the model, and the model is the product:
@@ -18,14 +18,14 @@ import type { HtmlFormSpec } from "../types";
  * anything added anyway goes to the Additional items sheet rather than
  * vanishing.
  */
-export const easyFeedSpecSchema = z.object({});
+export const easyFeederSpecSchema = z.object({});
 
-export const easyFeedSpec: HtmlFormSpec = {
-  id: "easyfeed",
+export const easyFeederSpec: HtmlFormSpec = {
+  id: "easyfeeder",
   title: "EasyFeeder Order Form",
-  form: "EASYFEED",
+  form: "EASYFEEDER",
   renderer: "html",
-  specSchema: easyFeedSpecSchema,
+  specSchema: easyFeederSpecSchema,
   requires: [],
 
   covers: [],

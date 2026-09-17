@@ -216,7 +216,7 @@ const CASES: Array<{ form: ProductionForm; ctx: FormContext }> = [
     } as unknown as FormContext,
   },
   {
-    form: "EASYFEED",
+    form: "EASYFEEDER",
     ctx: {
       ...base,
       software: [],
@@ -227,7 +227,7 @@ const CASES: Array<{ form: ProductionForm; ctx: FormContext }> = [
         code: "EF-2420",
         name: "EasyFeeder 2420",
         kind: "ACCESSORY",
-        form: "EASYFEED",
+        form: "EASYFEEDER",
         specs: { tableWidthMm: 2420 },
         spec: {},
         options: [],

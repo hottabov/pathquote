@@ -627,7 +627,7 @@
           "price": 10400,
           "needsReview": false,
           "kind": "FEEDER",
-          "form": "EASYFEED",
+          "form": "EASYFEEDER",
           "specs": {
             "tableWidthMm": 2020
           }
@@ -639,7 +639,7 @@
           "price": 10860,
           "needsReview": false,
           "kind": "FEEDER",
-          "form": "EASYFEED",
+          "form": "EASYFEEDER",
           "specs": {
             "tableWidthMm": 2420
           }
@@ -651,7 +651,7 @@
           "price": 38800,
           "needsReview": false,
           "kind": "FEEDER",
-          "form": "EASYFEED",
+          "form": "EASYFEEDER",
           "specs": {
             "tableWidthMm": 3220
           }
@@ -663,7 +663,7 @@
           "price": 17540,
           "needsReview": false,
           "kind": "FEEDER",
-          "form": "EASYFEED",
+          "form": "EASYFEEDER",
           "specs": {
             "tableWidthMm": 4030
           }

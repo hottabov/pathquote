@@ -23,7 +23,7 @@ export function resolveForm(form: ProductionForm | null | undefined): FormSpec |
  * builder does not ask and "apply this side to the quote" skips them. The
  * EasyFeeder's form asks for the model only (Vadym, 2026-09-17).
  */
-const NO_SCREEN_SIDE: ReadonlySet<ProductionForm> = new Set(["HDRF", "LNS", "EASYFEED"]);
+const NO_SCREEN_SIDE: ReadonlySet<ProductionForm> = new Set(["HDRF", "LNS", "EASYFEEDER"]);
 
 export function formHasScreenSide(form: ProductionForm | null | undefined): boolean {
   return resolveForm(form) !== null && !NO_SCREEN_SIDE.has(form!);

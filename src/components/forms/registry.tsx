@@ -7,7 +7,7 @@ import { EasyLoaderForm } from "./easyloader-form";
 import { FabricProForm } from "./fabricpro-form";
 import { LSeriesForm } from "./l-series-form";
 import { HdrfForm } from "./hdrf-form";
-import { EasyFeedForm } from "./easyfeed-form";
+import { EasyFeederForm } from "./easyfeeder-form";
 
 /**
  * Which component draws which form.
@@ -29,7 +29,7 @@ const COMPONENTS: Partial<Record<ProductionForm, (props: { ctx: FormContext }) =
   FABRICPRO: FabricProForm,
   L_SERIES: LSeriesForm,
   HDRF: HdrfForm,
-  EASYFEED: EasyFeedForm,
+  EASYFEEDER: EasyFeederForm,
 };
 
 /** The component for a form, or null when it has not been built yet. */

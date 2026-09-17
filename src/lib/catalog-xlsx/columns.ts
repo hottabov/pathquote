@@ -129,7 +129,7 @@ export const PRODUCTION_FORMS = [
   "M_SERIES",
   "EASYLOADER",
   "FABRICPRO",
-  "EASYFEED",
+  "EASYFEEDER",
   "HDRF",
   "PUNCHLINE",
   "FP_TROLLEY",
