@@ -6,7 +6,7 @@ import { requireSession } from "@/lib/authz";
 import { documentWhereForUser } from "@/lib/scope";
 import { idSchema } from "@/lib/validation/documents";
 import { screenSideSchema } from "@/lib/validation/production-spec";
-import { resolveForm, specSchemaForForm } from "@/lib/production-forms/resolve";
+import { formHasScreenSide, specSchemaForForm } from "@/lib/production-forms/resolve";
 import { NOT_FOUND_ERROR, flattenZodError, type ActionResult } from "./_shared";
 
 export type { ActionResult };
@@ -106,7 +106,7 @@ export async function applyScreenSideToQuote(
     });
 
     for (const other of others) {
-      if (!resolveForm(other.product?.form)) continue;
+      if (!formHasScreenSide(other.product?.form)) continue;
       const current = (other.productionSpec ?? {}) as Record<string, unknown>;
       if (current.ui === parsedSide.data) continue;
       await tx.documentItem.update({

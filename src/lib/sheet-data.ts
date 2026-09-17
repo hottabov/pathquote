@@ -542,7 +542,7 @@ function humanizeBankKey(key: string): string {
 /** Flattens the opaque `bankDetails` Json into an ordered list of display
  * rows, skipping any non-string value defensively (the column has no
  * compile-time shape guarantee) rather than rendering `"[object Object]"`. */
-function toBankRows(bankDetails: unknown): BankDetailRow[] {
+export function toBankRows(bankDetails: unknown): BankDetailRow[] {
   if (!bankDetails || typeof bankDetails !== "object" || Array.isArray(bankDetails)) return [];
   return Object.entries(bankDetails as Record<string, unknown>)
     .filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim() !== "")

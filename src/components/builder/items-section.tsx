@@ -1,7 +1,7 @@
 import { SectionCard, EmptyState } from "@/components/ui-kit";
 import { AddItemPicker } from "@/components/builder/add-item-picker";
 import { ItemsList } from "@/components/builder/items-list";
-import { PackageSearch } from "lucide-react";
+import { Package, PackageSearch } from "lucide-react";
 import type { BuilderItem, CompatibleOption, ItemPickerSeries } from "@/lib/queries/documents";
 
 /**
@@ -39,7 +39,7 @@ export function ItemsSection({
   readOnly?: boolean;
 }) {
   return (
-    <SectionCard title="Items">
+    <SectionCard title="Items" icon={<Package className="size-5" />}>
       {items.length === 0 ? (
         <EmptyState icon={PackageSearch} title="No items yet" description="Add one below to get started." />
       ) : (

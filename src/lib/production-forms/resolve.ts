@@ -17,6 +17,15 @@ export function resolveForm(form: ProductionForm | null | undefined): FormSpec |
   return FORM_SPECS.find((spec) => spec.form === form) ?? null;
 }
 
+/**
+ * Whether a form asks for the +Y/-Y operator side. The Heavy Duty Roll Feeder
+ * and the Leather Nesting System have no screen and no control box, so the
+ * builder does not ask and "apply this side to the quote" skips them.
+ */
+export function formHasScreenSide(form: ProductionForm | null | undefined): boolean {
+  return resolveForm(form) !== null && form !== "HDRF" && form !== "LNS";
+}
+
 /** The productionSpec schema for an item, or null when it prints no form. */
 export function specSchemaForForm(form: ProductionForm | null | undefined): z.ZodTypeAny | null {
   return resolveForm(form)?.specSchema ?? null;

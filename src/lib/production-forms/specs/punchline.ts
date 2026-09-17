@@ -37,7 +37,8 @@ export const punchlineSpec: FormSpec = {
     })),
     // Voltage (H36) is pre-ticked on the template at 220/240V, the only one
     // offered. Ex-Works and the crate are Ricky's rows, not Jeff's.
-    { cell: "D46", when: (c) => c.item.spec.exWorks === true },
+    // D46 (Ex-Works) is left blank: delivery terms belong to logistics,
+    // not to a workshop sheet (Vadym, 2026-09-16).
     crateTick("D58"),
   ],
 };

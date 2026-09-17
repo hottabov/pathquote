@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ContactFields, type ContactFieldValues } from "@/components/clients/contact-fields";
 import type { ActionResult } from "@/lib/actions/clients";
@@ -61,8 +61,17 @@ export function ContactForm({
     wasPending.current = pending;
   }, [pending, state, onDone]);
 
+  // `onSubmit`, not `<form action>` — the latter makes React reset the form
+  // after every submit, which snaps the phone field's native country
+  // `<select>` back to its first option. See company-form.tsx.
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    startTransition(() => formAction(formData));
+  }
+
   return (
-    <form action={formAction} className="flex flex-col gap-3">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-3">
       <ContactFields
         values={values}
         // Its own setter rather than `set` above: `ContactFields` only knows

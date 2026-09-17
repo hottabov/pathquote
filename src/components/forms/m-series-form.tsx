@@ -1,6 +1,6 @@
 import type { OptionRole } from "@prisma/client";
 import type { FormContext } from "@/lib/production-forms/types";
-import type { ProductSpecs } from "@/lib/validation/product-specs";
+import { PATHWORKS_BOXES, pathWorksTicked } from "@/lib/production-forms/pathworks";
 import { EndUserSection, FormSheet, provenance } from "./form-sheet";
 import { Footnote, InlineValue, Label, OfficeUse, Section, SectionRow, Tick, TickGrid, WriteIn } from "./primitives";
 
@@ -15,69 +15,86 @@ import { Footnote, InlineValue, Label, OfficeUse, Section, SectionRow, Tick, Tic
  * in the wrong box.
  */
 
-/** One option box: its code, its plain name, and whether it was sold. */
-type OptionBox = { role: OptionRole; code: string; desc?: string };
+/** One option box: its code, its plain name, and whether it is standard fitment. */
+type OptionBox = { role: OptionRole; code: string; desc?: string; std?: true };
 
 /**
- * The options grid, in the order the printed form prints it: down the three
- * columns, not across. Codes are the form's own labels, which are base codes
- * (`ABR`, not `ABR-M`) -- the catalogue's suffixes are a pricing detail the
- * workshop has no use for, which is why a box matches on `Option.role`.
+ * The options grid, three across, read left to right. Codes are the form's
+ * own labels, which are base codes (`ABR`, not `ABR-M`) -- the catalogue's
+ * suffixes are a pricing detail the workshop has no use for, which is why a
+ * box matches on `Option.role`.
+ *
+ * Every M-compatible option in the catalogue has a box here (checked against
+ * the 2026-09-16 dump); the transformers sit in the power row below. `VRB`
+ * is the one box with no option behind it: fitted to every machine, never
+ * quoted, so it prints as standard.
  */
-const OPTION_BOXES: OptionBox[][] = [
-  [
-    { role: "VRB", code: "VRB", desc: "Vac Resealing Blind" },
-    { role: "OFJ", code: "OFJ", desc: "Offload Projector" },
-    { role: "HFV", code: "HFV", desc: "Vac High Flow 22kw" },
-  ],
-  [
-    { role: "PM", code: "PM", desc: "Pattern Match" },
-    { role: "OFD", code: "OFD", desc: "Offload Display" },
-    { role: "PRM", code: "PRM", desc: "Production Manager" },
-  ],
-  [
-    { role: "APM", code: "APM", desc: "Adaptive Pattern Matching" },
-    { role: "OFP", code: "OFP", desc: "Offload Printer" },
-    { role: "DMT", code: "DMT", desc: "DuctMasTer" },
-  ],
-  [
-    { role: "DRG_3", code: "DRG-3", desc: "Drag Knife, carbide" },
-    { role: "MRK", code: "MRK", desc: "Marking tool" },
-    { role: "CRATE", code: "CRATE" },
-  ],
-  [
-    { role: "DRG_1", code: "DRG-1", desc: "Drag Knife, snap off" },
-    { role: "IJP", code: "IJP", desc: "Ink Jet Printer" },
-  ],
-  [
-    { role: "HDC", code: "HDC", desc: "Head Cam" },
-    { role: "ABR", code: "ABR", desc: "Air Brush" },
-  ],
-  [
-    { role: "BCR", code: "BCR", desc: "Barcode Reader" },
-    { role: "DR2", code: "DR2", desc: "Secondary Drill, AUX" },
-  ],
-  [
-    { role: "IKA", code: "IKA", desc: "Ice Knife Air" },
-    { role: "AFP", code: "AFP", desc: "Auto foot pressure" },
-  ],
+const OPTION_BOXES: OptionBox[] = [
+  { role: "VRB", code: "VRB", desc: "Vac Resealing Blind", std: true },
+  { role: "OFJ", code: "OFJ", desc: "Offload Projector" },
+  { role: "HFV", code: "HFV", desc: "Vac High Flow 22kW" },
+
+  { role: "PM", code: "PM", desc: "Pattern Match" },
+  { role: "OFD", code: "OFD", desc: "Offload Display" },
+  { role: "PRM", code: "PRM", desc: "Production Manager" },
+
+  { role: "APM", code: "APM", desc: "Adaptive Pattern Matching" },
+  { role: "OFP", code: "OFP", desc: "Offload Printer" },
+  { role: "DMT", code: "DMT", desc: "DuctMasTer" },
+
+  { role: "DRG_1", code: "DRG-1", desc: "Drag Knife, Olfa 45°" },
+  { role: "IJP", code: "IJP", desc: "Ink Jet Printer" },
+  { role: "IKA", code: "IKA", desc: "IceKnife Air" },
+
+  { role: "DRG_2", code: "DRG-2", desc: "Drag Knife, Excellite 21°" },
+  { role: "ABR", code: "ABR", desc: "Air Brush" },
+  { role: "AFP", code: "AFP", desc: "Auto Foot Pressure" },
+
+  { role: "DRG_3", code: "DRG-3", desc: "Drag Knife, Carbide 45°" },
+  { role: "MRK", code: "MRK", desc: "Marking Tool" },
+  { role: "DR2", code: "DR2", desc: "Secondary Drill, AUX" },
+
+  { role: "HDC", code: "HDC", desc: "HeadCam" },
+  { role: "BCR", code: "BCR", desc: "Barcode Reader" },
+  { role: "CRATE", code: "CRATE", desc: "Wooden crate" },
 ];
 
-/** The voltage column, which is a production-spec answer rather than an option. */
-const VOLTAGES = [
-  { value: "220V", desc: "TR220 ext. xfmr" },
-  { value: "400V", desc: undefined },
-  { value: "415V", desc: undefined },
-  { value: "480V", desc: "TR480 int. xfmr" },
+/** The supply voltage, which is a production-spec answer rather than an option. */
+export const VOLTAGES = ["220V", "400V", "415V", "480V"] as const;
+
+/** The two transformers the catalogue sells, both role TRANSFORMER, told apart by code. */
+export const TRANSFORMERS = [
+  { code: "TR220", desc: "ext. xfmr" },
+  { code: "TR480", desc: "int. xfmr" },
 ] as const;
 
-const PATHWORKS = [
-  { module: "PDG", code: "PDG", desc: "PhotoDigitizer" },
-  { module: "WPN", code: "WPN", desc: "Wizard Panel" },
-  { module: "WPL", code: "WPL", desc: "Wizard Pool" },
-  { module: "ANT_V5", code: "ANT T5.5", desc: "AutoNester" },
-  { module: "ANT_V6", code: "ANT T6.0", desc: "AutoNester" },
-] as const;
+/**
+ * The power row: the supply voltage (a production-spec answer), then the
+ * transformers sold as options. Any transformer the catalogue gains later
+ * prints after the two known ones under its own code, rather than vanishing
+ * into a box that does not name it.
+ */
+export function PowerTicks({ ctx, voltage }: { ctx: FormContext; voltage?: string }) {
+  const transformers = ctx.item.options.filter((option) => option.role === "TRANSFORMER");
+  const known = (code: string) => transformers.some((option) => option.code.startsWith(code));
+  const others = transformers.filter((option) => !TRANSFORMERS.some((t) => option.code.startsWith(t.code)));
+
+  return (
+    <>
+      {VOLTAGES.map((value) => (
+        <Tick key={value} on={voltage === value}>
+          <span className="pf-code pf-num">{value}</span>
+        </Tick>
+      ))}
+      {TRANSFORMERS.map((t) => (
+        <Tick key={t.code} on={known(t.code)} code={t.code} desc={t.desc} />
+      ))}
+      {others.map((option) => (
+        <Tick key={option.id ?? option.code} on code={option.code} />
+      ))}
+    </>
+  );
+}
 
 const KNIFE_SIZES = ["1.5x5.0", "1.5x7.0", "2.0x7.0"] as const;
 const MODELS = ["M3", "M5", "M7", "M10"] as const;
@@ -89,31 +106,17 @@ export function hasRole(ctx: FormContext, role: OptionRole): boolean {
 }
 
 /**
- * PathWorks modules tick only when the quote carries the INTEGRATED
- * PathWorks. With the standalone licence they belong on the Software Order
- * Form instead -- two different orders, not a duplication.
- */
-function hasIntegratedModule(ctx: FormContext, module: NonNullable<ProductSpecs["pathworksModule"]>): boolean {
-  return (
-    ctx.software.some((s) => s.specs.softwareMode === "integrated") &&
-    ctx.software.some((s) => s.specs.pathworksModule === module)
-  );
-}
-
-/**
- * The PathWorks row, identical on the M-Series and the X-Calibre: the five
- * modules the printed forms carry, ticked only when the quote holds the
- * INTEGRATED licence.
+ * The PathWorks section, identical on every cutter form: the integrated
+ * licence and the programs that run in it, ticked from the option lines on
+ * this machine or from software products on the quote (see
+ * src/lib/production-forms/pathworks.ts for which counts when).
  */
 export function PathWorksSection({ ctx }: { ctx: FormContext }) {
   return (
     <Section title="PathWorks" hint="integrated licence only">
-      <TickGrid variant="five" stacked>
-        {PATHWORKS.map((module) => (
-          <Tick key={module.module} on={hasIntegratedModule(ctx, module.module)}>
-            <span className="pf-code pf-num">{module.code}</span>
-            <span className="pf-desc">{module.desc}</span>
-          </Tick>
+      <TickGrid variant="four">
+        {PATHWORKS_BOXES.map((box) => (
+          <Tick key={box.role} on={pathWorksTicked(ctx, box)} code={box.code} desc={box.desc} />
         ))}
       </TickGrid>
     </Section>
@@ -161,7 +164,8 @@ export function DrillsAndNotesSection({ ctx, warn }: { ctx: FormContext; warn: s
         <WriteIn label="Drills required" warn={warn}>
           <div className="pf-yesno">
             <Tick on={spec.drills?.required === true}>Yes</Tick>
-            <Tick on={spec.drills?.required === false}>No</Tick>
+            {/* Unticked in the builder means no drills. */}
+            <Tick on={spec.drills?.required !== true}>No</Tick>
           </div>
           <div className="pf-body">{spec.drills?.detail}</div>
         </WriteIn>
@@ -199,10 +203,12 @@ export function ScreenSideBlock({
 }) {
   const diagram = ctx.screenSideImages[side];
 
+  // The diagram sits level with the label, directly to the right of it, so
+  // the block is no taller than the picture and the label line costs nothing.
   return (
-    <div>
-      {label ? <Label>{label}</Label> : null}
-      <div className="pf-sideblock">
+    <div className="pf-sideblock">
+      <div>
+        {label ? <Label>{label}</Label> : null}
         <TickGrid variant="col">
           <Tick lead on={side === "+Y"}>
             +Y
@@ -214,21 +220,24 @@ export function ScreenSideBlock({
             </span>
           </Tick>
         </TickGrid>
-        {diagram ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img className="pf-sidefig" src={diagram} alt={`Interface side ${side}`} />
-        ) : null}
       </div>
+      {diagram ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img className="pf-sidefig" src={diagram} alt={`Interface side ${side}`} />
+      ) : null}
     </div>
   );
 }
 
-/** The six dates and the signature every machine form ends with. */
+/**
+ * The dates and the signature every machine form ends with. No dispatch
+ * date: dispatch is logistics' business and is not printed on a workshop
+ * sheet (Vadym, 2026-09-16).
+ */
 export const MACHINE_OFFICE_FIELDS = [
   "Machine serial no.",
   "Distribution date",
   "Person",
-  "Dispatch date",
   "Client expected install",
   "Actual install date",
 ];
@@ -275,34 +284,20 @@ export function MSeriesForm({ ctx }: { ctx: FormContext }) {
 
       <Section title="Options">
         <TickGrid>
-          {/* Eight rows of three, read left to right -- the same order the
-              printed form uses. The third cell of the last four rows is a
-              voltage, which is a production-spec answer rather than an
-              option, so those rows carry two boxes and a voltage. */}
-          {OPTION_BOXES.flatMap((row, index) => {
-            const cells = row.map((box) => (
-              <Tick
-                key={box.code}
-                // VRB is fitted to every machine and never quoted, so it
-                // prints as a fact rather than from an option line.
-                on={box.role === "VRB" ? true : hasRole(ctx, box.role)}
-                code={box.code}
-                desc={box.desc}
-              />
-            ));
-
-            const voltage = VOLTAGES[index - (OPTION_BOXES.length - VOLTAGES.length)];
-            if (row.length < 3 && voltage) {
-              cells.push(
-                <Tick key={voltage.value} on={spec.voltage === voltage.value}>
-                  <span className="pf-code pf-num">{voltage.value}</span>
-                  {voltage.desc ? <span className="pf-desc"> {voltage.desc}</span> : null}
-                </Tick>
-              );
-            }
-            return cells;
-          })}
+          {OPTION_BOXES.map((box) =>
+            box.std ? (
+              <Tick key={box.code} std code={box.code} desc={box.desc} />
+            ) : (
+              <Tick key={box.code} on={hasRole(ctx, box.role)} code={box.code} desc={box.desc} />
+            )
+          )}
         </TickGrid>
+        <div className="pf-subrow">
+          <Label>Power</Label>
+          <TickGrid variant="row">
+            <PowerTicks ctx={ctx} voltage={spec.voltage} />
+          </TickGrid>
+        </div>
       </Section>
 
       <PathWorksSection ctx={ctx} />

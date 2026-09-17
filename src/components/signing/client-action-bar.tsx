@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertDialog } from "@base-ui/react/alert-dialog";
-import { PenLine, Printer, Send } from "lucide-react";
+import { Download, PenLine, Printer, Send } from "lucide-react";
 import { SignatureDialog } from "./signature-dialog";
 import { signAsClient, completeSigning, declineSigning } from "@/lib/actions/signing-client";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -60,20 +60,31 @@ export function ClientActionBar({
 
   if (completed) {
     return (
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur">
-        <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-3">
-          <span className="text-sm font-medium text-neutral-700">
-            Signed{signedOn ? ` ${signedOn}` : ""}
-          </span>
-          <span className="text-sm text-neutral-500">
-            Questions? {authorName}, {authorEmail}
-          </span>
+      <div
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200 bg-white/95 px-4 py-4 backdrop-blur"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
+      >
+        <div className="mx-auto flex max-w-4xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-base font-semibold text-emerald-700">
+              Signed{signedOn ? ` ${signedOn}` : ""}
+            </p>
+            <p className="truncate text-sm text-neutral-500">
+              Questions? {authorName}, {authorEmail}
+            </p>
+          </div>
+          {/* Big, filled, full-width on a phone: the one thing to do here is
+              download the signed copy, and it has to be an easy target. */}
           <a
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            className={cn(
+              buttonVariants({ variant: "success" }),
+              "h-12 w-full gap-2 px-6 text-base sm:w-auto",
+            )}
             href={`/sign/${token}/pdf`}
             target="_blank"
             rel="noopener noreferrer"
           >
+            <Download className="size-5" aria-hidden="true" />
             Download PDF
           </a>
         </div>
@@ -83,9 +94,21 @@ export function ClientActionBar({
 
   return (
     <>
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur">
+      <div
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200 bg-white/95 px-4 py-3 backdrop-blur"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
+      >
         <div className="mx-auto flex max-w-4xl items-center justify-center gap-2">
-          <Button type="button" disabled={pending} onClick={() => setDrawing(true)} className="h-11">
+          {/* The green (primary) action moves as the client progresses: Sign is
+              green until they've drawn a signature, then it steps back to a
+              plain outline "Redraw" and Send becomes the green one to press. */}
+          <Button
+            type="button"
+            variant={hasClientSignature ? "outline" : "success"}
+            disabled={pending}
+            onClick={() => setDrawing(true)}
+            className="h-11"
+          >
             <PenLine className="mr-2 size-4" aria-hidden="true" />
             {hasClientSignature ? "Redraw" : "Sign"}
           </Button>
@@ -100,8 +123,11 @@ export function ClientActionBar({
             Print
           </a>
 
+          {/* Green once a signature exists; disabled (and dimmed) until then, so
+              it reads as "not yet" rather than an alternative to Sign. */}
           <Button
             type="button"
+            variant="success"
             disabled={!hasClientSignature || pending}
             onClick={() => setConfirming(true)}
             className="h-11"

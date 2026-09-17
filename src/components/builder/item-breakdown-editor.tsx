@@ -86,7 +86,7 @@ export function ItemBreakdownEditor({
     // from line to line and the figures never lined up vertically. `auto` on
     // the two right columns means they're as wide as their widest row and no
     // wider, so the labels still get everything that's left.
-    <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 mt-2 text-xs text-slate-600">
       {/* Dropped for a product assembled from its own options (see
           `ItemBreakdown.assembledFromOptions`) — an EasyLoader, today. The
           row would read "$0" against a machine, and there is nothing here to

@@ -25,7 +25,8 @@ const options: CatalogOption[] = catalog.options;
 const allItems: CatalogItem[] = [...products, ...options];
 const productCodes = new Set(products.map((p) => p.code));
 const seriesCodes = new Set(catalog.series.map((s) => s.seriesCode));
-const usByCode = new Map(usPrices.prices.map((p) => [p.code, p.amountUsd]));
+// Products only: a software code is priced once as a product and once as an option.
+const usByCode = new Map(usPrices.prices.filter((p) => p.kind !== "option").map((p) => [p.code, p.amountUsd]));
 const EL_WIDTHS = ["EL-2020", "EL-2420", "EL-3220", "EL-4030"];
 
 /** The character rule from docs/reference/catalog-v2-decisions.md. The
@@ -35,9 +36,20 @@ const EL_WIDTHS = ["EL-2020", "EL-2420", "EL-3220", "EL-4030"];
 const CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-.+]*$/;
 
 describe("catalog.json: codes", () => {
-  it("every product and option code is unique across the whole catalogue", () => {
-    const codes = allItems.map((i) => i.code);
-    expect(codes.filter((c, i) => codes.indexOf(c) !== i)).toEqual([]);
+  it("every code is unique within products and within options", () => {
+    for (const list of [products, options]) {
+      const codes = list.map((i) => i.code);
+      expect(codes.filter((c, i) => codes.indexOf(c) !== i)).toEqual([]);
+    }
+  });
+
+  it("a code is shared by a product and an option only for software sold both ways", () => {
+    // Vadym, 2026-09-16: software exists as SOFTWARE products (laptop-only
+    // installs) and as machine options, under the same code.
+    const optionCodes = new Set(options.map((o) => o.code));
+    for (const p of products.filter((p) => optionCodes.has(p.code))) {
+      expect(p.kind, p.code).toBe("SOFTWARE");
+    }
   });
 
   it("every code follows the v2 character rule: no spaces, parentheses or #", () => {
@@ -252,6 +264,15 @@ describe("catalog.json: options", () => {
         "TR480",
         "Crate-M-180",
         "Crate-M-220",
+        // Software sold as a machine option, on every cutter.
+        "PTW-I",
+        "PDG",
+        "WPN",
+        "WPL",
+        "ANT-V5",
+        "ANT-V6",
+        "LSC",
+        "PRA",
       ])
     );
     for (const code of x) expect(options.find((o) => o.code === code)?.compatibleSeries, code).toContain("M");

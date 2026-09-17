@@ -109,7 +109,9 @@ export function FabricProForm({ ctx }: { ctx: FormContext }) {
         </div>
 
         <div className="pf-opts pf-one" style={{ marginTop: "0.6mm" }}>
-          <Tick on={hasRole(ctx, "CRATE")}>Crate required</Tick>
+          <Tick on={hasRole(ctx, "CRATE")}>
+            Wooden crate <span className="pf-desc">— built and packed by production</span>
+          </Tick>
         </div>
       </Section>
 
@@ -122,7 +124,6 @@ export function FabricProForm({ ctx }: { ctx: FormContext }) {
           "Date",
           "Checked by",
           "Date",
-          "Expected dispatch date",
           "Client expected install",
           "Actual install date",
         ]}

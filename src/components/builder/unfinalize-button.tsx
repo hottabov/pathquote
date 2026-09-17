@@ -8,17 +8,27 @@ import { useConfirm, useToast } from "@/components/ui-kit/client";
 import { unfinalizeDocument } from "@/lib/actions/finalize";
 
 /**
- * ADMIN-only escape hatch for a FINAL document issued in error (see
- * `unfinalizeDocument`'s doc comment for why the number survives the round
- * trip). The builder page only ever renders this for `session.user.role ===
- * "ADMIN"` — this component doesn't re-check that itself, matching every
- * other admin-only control in this codebase (the server action is the real
- * enforcement boundary via `requireAdmin`; a manager who somehow triggered
- * this would get `requireAdmin`'s thrown "Forbidden: admin only" rejected
- * back at the call below, which is why that call is wrapped in try/catch
- * rather than assumed to only ever resolve to an `UnfinalizeResult`).
+ * Reopens a FINAL quote for editing (spec §4). Available to the OWNER (a
+ * manager on their own quote) as well as an ADMIN, and only before the client
+ * has signed — the page hides it once `signingStatus` is SIGNED, where an
+ * admin gets Void signature instead. This component doesn't re-check the role
+ * itself, matching every other lifecycle control here: the server action
+ * (`unfinalizeDocument` → `requireSession` + scope) is the real enforcement
+ * boundary, which is why the call is wrapped in try/catch rather than assumed
+ * to only ever resolve to an `UnfinalizeResult`.
+ *
+ * When the quote was already SENT, the confirm dialog says so plainly — the
+ * client is holding a version that will stop matching, and a resend is needed.
  */
-export function UnfinalizeButton({ documentId }: { documentId: string }) {
+export function UnfinalizeButton({
+  documentId,
+  wasSent = false,
+  sentLabel,
+}: {
+  documentId: string;
+  wasSent?: boolean;
+  sentLabel?: string | null;
+}) {
   const router = useRouter();
   const confirm = useConfirm();
   const toast = useToast();
@@ -28,8 +38,9 @@ export function UnfinalizeButton({ documentId }: { documentId: string }) {
   async function handleClick() {
     const confirmed = await confirm({
       title: "Unfinalize this document?",
-      description:
-        "It goes back to DRAFT and becomes editable again — its number is kept and will be reused if it's finalized again.",
+      description: wasSent
+        ? `The client has already received version ${sentLabel ?? "of this quote"}. After changes you'll need to send the quote again. It goes back to DRAFT and becomes editable — its number is kept and reused when finalized again.`
+        : "It goes back to DRAFT and becomes editable again — its number is kept and will be reused if it's finalized again.",
       confirmLabel: "Unfinalize",
       tone: "danger",
     });

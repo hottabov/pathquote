@@ -4,6 +4,7 @@ import {
   easyLoaderSpecSchema,
   fabricProSpecSchema,
   missingKeys,
+  xCalibreSpecSchema,
 } from "../src/lib/validation/production-spec";
 import { accepts, expectInvalid, expectValid, rejects } from "./helpers/schema";
 
@@ -17,11 +18,11 @@ describe("mSeriesSpecSchema", () => {
   accepts(mSeriesSpecSchema, [
     ["a complete spec", validMSeries],
     ["drills declared as not required with no detail", { ...validMSeries, drills: { required: false, detail: "" } }],
-    ["special notes at the width measured in the spike", { ...validMSeries, specialNotes: "x".repeat(28) }],
-    [
-      "drill detail at the width measured in the spike",
-      { ...validMSeries, drills: { required: true, detail: "x".repeat(22) } },
-    ],
+    ["special notes longer than the old Excel cap", { ...validMSeries, specialNotes: "x".repeat(120) }],
+    ["drill detail longer than the old Excel cap", { ...validMSeries, drills: { required: true, detail: "x".repeat(60) } }],
+    // Stored the moment the box is ticked; `missingKeys` blocks printing
+    // until the detail is written (see the missingKeys tests below).
+    ["drills ticked before the detail is written", { ...validMSeries, drills: { required: true, detail: "" } }],
   ]);
 
   it("defaults the screen side to -Y when omitted, so an untouched panel still prints the standard", () => {
@@ -34,12 +35,8 @@ describe("mSeriesSpecSchema", () => {
   rejects(mSeriesSpecSchema, [
     ["an unknown screen side", { ...validMSeries, ui: "+X" }],
     ["an unknown knife size", { ...validMSeries, knifeSize: "9x9" }],
-    ["drills required with an empty detail", { ...validMSeries, drills: { required: true, detail: "   " } }],
-    ["special notes beyond the width measured in the spike", { ...validMSeries, specialNotes: "x".repeat(29) }],
-    [
-      "drill detail beyond the width measured in the spike",
-      { ...validMSeries, drills: { required: true, detail: "x".repeat(23) } },
-    ],
+    ["special notes beyond 500 characters", { ...validMSeries, specialNotes: "x".repeat(501) }],
+    ["drill detail beyond 200 characters", { ...validMSeries, drills: { required: true, detail: "x".repeat(201) } }],
   ]);
 });
 
@@ -79,7 +76,8 @@ describe("the one-field-at-a-time writes ProductionSpecEditor sends", () => {
     // to the customer that never was.
     const parsed = expectValid(mSeriesSpecSchema, { knifeSize: "1.5x5.0" });
     expect(parsed).not.toHaveProperty("drills");
-    expect(missingKeys(parsed, ["knifeSize", "drills"])).toEqual(["drills"]);
+    // An unticked "Drills required" means no drills, so absent is not missing.
+    expect(missingKeys(parsed, ["knifeSize", "drills"])).toEqual([]);
   });
 });
 
@@ -192,5 +190,15 @@ describe("missingKeys", () => {
 
   it("treats an empty sections array as missing", () => {
     expect(missingKeys({ sections: [] }, ["sections"])).toEqual(["sections"]);
+  });
+});
+
+describe("X-Calibre drills ticked in the builder (2026-09-17 regression)", () => {
+  it("stores the tick at once, and blocks the form until the detail is written", () => {
+    const parsed = xCalibreSpecSchema.parse({ drills: { required: true, detail: "" } });
+    expect(parsed.drills).toEqual({ required: true, detail: "" });
+    expect(missingKeys(parsed, ["drills"])).toEqual(["drills"]);
+    const answered = xCalibreSpecSchema.parse({ drills: { required: true, detail: "2 x 5mm carbide" } });
+    expect(missingKeys(answered, ["drills"])).toEqual([]);
   });
 });

@@ -6,10 +6,15 @@ import { readTemplate } from "../src/lib/production-forms/render";
 import type { FormContext } from "../src/lib/production-forms/types";
 import { formContext, formItem, formOption, xlsxForm } from "./helpers/fixtures";
 
-// A fully-loaded order: two software products, two options (one of them
-// carrying an attribute), and drilling requested — every value below is
-// asserted on somewhere in this file, which is why it overrides so much of
-// the shared fixture.
+// A fully-loaded order: an EasyFeeder at a printed width, sold with a crate
+// -- every value below is asserted on somewhere in this file, which is why
+// it overrides so much of the shared fixture.
+//
+// The M-Series and EasyLoader both moved off the workbook (2026-09-16), so
+// the end-to-end workbook-patching pipeline is exercised here against the
+// EasyFeed form instead -- it is still an `XlsxFormSpec`, and its header
+// values, a rewritten label and a role-driven tick carry the same shape the
+// earlier versions of this test used to cover.
 const ctx: FormContext = formContext({
   company: {
     name: "Relaxvanguard",
@@ -17,30 +22,30 @@ const ctx: FormContext = formContext({
     industry: "Automotive",
   },
   contact: { fullName: "John Smith", position: "Manager", phone: "+61 3 9999 0000", email: "j@e.com" },
-  deliveryAddressLines: ["12 Industrial Drive"],
-  software: [
-    { code: "PTW(I)", specs: { softwareMode: "integrated" } },
-    { code: "ANT-V6", specs: { pathworksModule: "ANT_V6" } },
-  ],
   item: formItem({
-    spec: { ui: "+Y", knifeSize: "1.5x5.0", drills: { required: true, detail: "2 x 6mm" } },
-    options: [formOption("MTS", "MTS", { attributes: { metres: 14 } }), formOption("ABR-M", "ABR")],
+    code: "EF-2420",
+    name: "EasyFeed 2420",
+    kind: "FEEDER",
+    form: "EASYFEED",
+    specs: { tableWidthMm: 2420 },
+    spec: {},
+    options: [formOption("Crate-EF", "CRATE")],
   }),
 });
 
 describe("production form pipeline", () => {
   it("produces a workbook carrying every expected value and tick", () => {
-    const spec = xlsxForm("M_SERIES");
+    const spec = xlsxForm("EASYFEED");
     const patched = patchWorkbook(readTemplate(spec.template), spec.sheetPath, buildPatches(spec, ctx));
     const xml = strFromU8(unzipSync(patched)[spec.sheetPath]);
 
     expect(xml).toContain("Pathfinder Australia Pty Ltd");
     expect(xml).toContain("Relaxvanguard");
     expect(xml).toContain("Automotive");
-    expect(xml).toContain("2 x 6mm");
-    expect(xml).toContain("14");
 
-    for (const cell of ["J25", "J29", "J33", "J52", "F68", "D72", "J64"]) {
+    // J28 the printed 2420 width and D60 the crate -- one tick per role this
+    // order actually carries.
+    for (const cell of ["J28", "D60"]) {
       expect(xml, `expected a tick in ${cell}`).toMatch(
         new RegExp(`<c r="${cell}"[^>]*t="inlineStr"><is><t[^>]*>X</t>`),
       );
@@ -48,13 +53,27 @@ describe("production form pipeline", () => {
   });
 
   it("leaves untouched every box the quote did not ask for", () => {
-    const spec = xlsxForm("M_SERIES");
+    const spec = xlsxForm("EASYFEED");
     const patched = patchWorkbook(readTemplate(spec.template), spec.sheetPath, buildPatches(spec, ctx));
     const xml = strFromU8(unzipSync(patched)[spec.sheetPath]);
 
-    // H25 is model M3, O25 is M10 -- neither was ordered.
-    for (const cell of ["H25", "O25", "L25"]) {
+    // H28 is the 2020 width, L28 is the 3220 width, O28 is "Other?" -- none
+    // was ordered.
+    for (const cell of ["H28", "L28", "O28"]) {
       expect(xml).not.toMatch(new RegExp(`<c r="${cell}"[^>]*t="inlineStr"`));
     }
+  });
+
+  it("rewrites the width label for a size the row has no box for", () => {
+    const custom = formContext({
+      ...ctx,
+      item: formItem({ ...ctx.item, specs: { tableWidthMm: 4030 } }),
+    });
+    const spec = xlsxForm("EASYFEED");
+    const patched = patchWorkbook(readTemplate(spec.template), spec.sheetPath, buildPatches(spec, custom));
+    const xml = strFromU8(unzipSync(patched)[spec.sheetPath]);
+
+    expect(xml).toMatch(new RegExp(`<c r="O28"[^>]*t="inlineStr"><is><t[^>]*>X</t>`));
+    expect(xml).toContain("Other?  4030mm");
   });
 });

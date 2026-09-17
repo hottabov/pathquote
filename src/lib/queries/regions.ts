@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { db } from "@/lib/db";
+import { toBankRows, type BankDetailRow } from "@/lib/sheet-data";
 
 export type RegionAdminListItem = {
   id: string;
@@ -113,4 +114,45 @@ export const getRegionAdmin = cache(async function getRegionAdmin(
  * `countActiveAdmins` in src/lib/queries/users.ts). */
 export async function countActiveUsersInRegion(regionId: string): Promise<number> {
   return db.user.count({ where: { regionId, active: true } });
+}
+
+export type RegionDocumentEntity = {
+  code: string;
+  name: string;
+  entityName: string;
+  entityLegalId: string | null;
+  entityAddress: string | null;
+  bankDetails: BankDetailRow[];
+  footerText: string | null;
+  /** `Region.logoUrl` — an `/api/files/…` upload (raster or SVG), or null. */
+  logoUrl: string | null;
+  currency: string;
+  taxName: string;
+  taxRate: string;
+};
+
+/**
+ * The legal-entity details a region prints on every new quote — for the
+ * read-only Account page. Bank details go through `toBankRows`, the same
+ * label mapping the sheet uses, so this view never disagrees with the
+ * printed document. (A FINAL quote prints its frozen `entitySnapshot`
+ * instead; see `toSheetData`.)
+ */
+export async function getRegionDocumentEntity(regionId: string | null): Promise<RegionDocumentEntity | null> {
+  if (!regionId) return null;
+  const r = await db.region.findUnique({ where: { id: regionId } });
+  if (!r) return null;
+  return {
+    code: r.code,
+    name: r.name,
+    entityName: r.entityName,
+    entityLegalId: r.entityLegalId,
+    entityAddress: r.entityAddress,
+    bankDetails: toBankRows(r.bankDetails),
+    footerText: r.footerText,
+    logoUrl: r.logoUrl,
+    currency: r.currency,
+    taxName: r.taxName,
+    taxRate: r.taxRate.toString(),
+  };
 }

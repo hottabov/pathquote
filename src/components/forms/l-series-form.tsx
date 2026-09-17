@@ -1,7 +1,7 @@
 import type { OptionRole } from "@prisma/client";
 import type { FormContext } from "@/lib/production-forms/types";
 import { EndUserSection, FormSheet, provenance } from "./form-sheet";
-import { Footnote, InlineValue, Label, OfficeUse, Section, SectionRow, Tick, TickGrid, WriteIn } from "./primitives";
+import { Footnote, InlineValue, Label, OfficeUse, Section, Tick, TickGrid, WriteIn } from "./primitives";
 import { PathWorksSection, ScreenSideBlock, hasRole } from "./m-series-form";
 
 /**
@@ -43,22 +43,17 @@ const OPTIONS: Array<{ role: OptionRole; code: string; desc?: string }> = [
 
 const WIDTHS = [180, 220, 320] as const;
 
-const SHIPPING = [
-  { value: "complete", label: "Complete, whole" },
-  { value: "crate-disassembled", label: "Wood crate, disassembled" },
-  { value: "crate-whole", label: "Wood crate, whole" },
-] as const;
-
 export function LSeriesForm({ ctx }: { ctx: FormContext }) {
   const spec = ctx.item.spec as {
     ui?: string;
     voltage?: string;
     voltageOtherVac?: string;
-    shipping?: string;
     specialNotes?: string;
   };
   const side = spec.ui ?? "-Y";
-  const extended = ctx.item.specs.extended === true;
+  // Extended either by the product code (L-320E) or by the priced
+  // extension option (180-E, 220-E) on a standard machine.
+  const extended = ctx.item.specs.extended === true || hasRole(ctx, "L_EXTENDED");
   const belt = ctx.item.specs.belt;
   const tools = ctx.item.options.filter((option) => option.role === "L_TOOL");
 
@@ -133,27 +128,18 @@ export function LSeriesForm({ ctx }: { ctx: FormContext }) {
         ) : null}
       </Section>
 
-      <SectionRow>
-        <Section title="Voltage">
-          <TickGrid variant="row">
-            <Tick lead on={spec.voltage === "220/230"}>
-              <span className="pf-num">220 / 230</span>
-            </Tick>
-            <Tick lead on={spec.voltage === "other"}>
-              Other <InlineValue value={spec.voltageOtherVac ?? ""} unit="VAC" />
-            </Tick>
-          </TickGrid>
-        </Section>
-        <Section title="Shipping">
-          <TickGrid variant="row">
-            {SHIPPING.map((mode) => (
-              <Tick key={mode.value} on={spec.shipping === mode.value}>
-                {mode.label}
-              </Tick>
-            ))}
-          </TickGrid>
-        </Section>
-      </SectionRow>
+      {/* No shipping row: packing and delivery are logistics' document, not
+          the workshop's (Vadym, 2026-09-16). */}
+      <Section title="Voltage">
+        <TickGrid variant="row">
+          <Tick lead on={spec.voltage === "220/230"}>
+            <span className="pf-num">220 / 230</span>
+          </Tick>
+          <Tick lead on={spec.voltage === "other"}>
+            Other <InlineValue value={spec.voltageOtherVac ?? ""} unit="VAC" />
+          </Tick>
+        </TickGrid>
+      </Section>
 
       <Section title="Options">
         <TickGrid>
@@ -181,7 +167,6 @@ export function LSeriesForm({ ctx }: { ctx: FormContext }) {
           "System reg. no.",
           "Distribution date",
           "Person",
-          "Expected dispatch date",
           "Client expected install",
           "Actual install date",
         ]}

@@ -1,9 +1,41 @@
 import { describe, it, expect } from "vitest";
+import type { OptionRole } from "@prisma/client";
 import { coveredRoles, resolveForm, unmatchedOptions } from "../src/lib/production-forms/resolve";
 import { FORM_SPECS } from "../src/lib/production-forms/specs";
 import { isXlsxForm } from "../src/lib/production-forms/types";
+import { PATHWORKS_ROLES } from "../src/lib/production-forms/pathworks";
 import { lSeriesSpecSchema, xCalibreSpecSchema } from "../src/lib/validation/production-spec";
 import { formContext, formItem } from "./helpers/fixtures";
+
+/** A synthetic option line for each role, one per role, so a form's coverage
+ * can be checked against the whole set at once. */
+const optionsFor = (roles: readonly OptionRole[]) =>
+  roles.map((role, i) => ({ id: `opt-${i}`, code: `opt-${role}`, role, qty: 1, attributes: null }));
+
+/**
+ * Every option role the catalogue sells against a series (2026-09-16 dump),
+ * checked here rather than only against `coveredRoles` -- a spec that
+ * declares coverage for a role the catalogue never actually sells against
+ * that series would pass a `coveredRoles`-only check while a role the
+ * catalogue does sell, and the spec forgot, would not be caught by it
+ * either. Fully optioning one item with all of them and expecting nothing
+ * left over is what would actually happen on a real quote.
+ */
+const M_COMPATIBLE_ROLES = [
+  "ABR", "AFP", "APM", "BCR", "CRATE", "DMT", "DR2", "DRG_1", "DRG_2", "DRG_3",
+  "HDC", "HFV", "IJP", "IKA", "MRK", "OFD", "OFJ", "OFP", "PM", "PRM",
+  "TRANSFORMER", "MTS", "MTS_TRAVEL", ...PATHWORKS_ROLES,
+] as const satisfies readonly OptionRole[];
+
+const X_COMPATIBLE_ROLES = [
+  "BCR", "CRATE", "DMT", "HDC", "MTS", "MTS_TRAVEL", "OFD", "OFJ", "OFP", "PRM",
+  "TRANSFORMER", ...PATHWORKS_ROLES,
+] as const satisfies readonly OptionRole[];
+
+const L_COMPATIBLE_ROLES = [
+  "ABR", "APM", "BCR", "CRATE", "L_TOOL", "L_EXTENDED", "HDC", "HFV", "JTP",
+  "MRK", "OFD", "OFP", "PM", "PRM", ...PATHWORKS_ROLES,
+] as const satisfies readonly OptionRole[];
 
 describe("the form registry", () => {
   it("has exactly one spec per ProductionForm value it claims", () => {
@@ -46,14 +78,20 @@ describe("X-Calibre", () => {
     }
   });
 
-  it("sends a DuctMasTer to the Additional items sheet — the form has no box for it", () => {
-    // DMT is compatible with the X series in the catalogue but absent from
-    // the printed form. Surfacing it is the point: silently dropping a
-    // A$18,240 option is the failure this engine exists to prevent.
+  it("ticks a DuctMasTer rather than sending it to the Additional items sheet", () => {
+    // X-Calibre gained a DMT box (2026-09-16), so it no longer needs the
+    // Additional items sheet to surface a DMT line.
     const dmt = { id: "o", code: "DMT", role: "DMT" as const, qty: 1, attributes: null };
     const ctx = formContext({ item: formItem({ form: "X_CALIBRE", options: [dmt] }) });
 
-    expect(unmatchedOptions(spec, ctx).map((o) => o.code)).toEqual(["DMT"]);
+    expect(unmatchedOptions(spec, ctx).map((o) => o.code)).toEqual([]);
+  });
+
+  it("leaves nothing unmatched when every X-compatible role is on the item", () => {
+    const ctx = formContext({
+      item: formItem({ form: "X_CALIBRE", options: optionsFor(X_COMPATIBLE_ROLES) }),
+    });
+    expect(unmatchedOptions(spec, ctx)).toEqual([]);
   });
 });
 
@@ -77,10 +115,29 @@ describe("L-Series", () => {
     expect(lSeriesSpecSchema.safeParse({ voltage: "220/230" }).success).toBe(true);
   });
 
-  it("accepts the three shipping options the form prints, and nothing else", () => {
-    for (const shipping of ["complete", "crate-disassembled", "crate-whole"]) {
-      expect(lSeriesSpecSchema.safeParse({ shipping }).success, shipping).toBe(true);
-    }
-    expect(lSeriesSpecSchema.safeParse({ shipping: "post" }).success).toBe(false);
+  it("strips a stored shipping answer -- the field is gone from the schema", () => {
+    // Packing and delivery moved to logistics' own document (2026-09-16); a
+    // value saved before that change is dropped on the next parse rather
+    // than rejected, so an old quote does not fail to load.
+    const parsed = lSeriesSpecSchema.parse({ shipping: "crate-whole" });
+    expect(parsed).not.toHaveProperty("shipping");
+  });
+
+  it("leaves nothing unmatched when every L-compatible role is on the item", () => {
+    const ctx = formContext({
+      item: formItem({ form: "L_SERIES", options: optionsFor(L_COMPATIBLE_ROLES) }),
+    });
+    expect(unmatchedOptions(spec, ctx)).toEqual([]);
+  });
+});
+
+describe("M-Series", () => {
+  const spec = resolveForm("M_SERIES")!;
+
+  it("leaves nothing unmatched when every M-compatible role is on the item", () => {
+    const ctx = formContext({
+      item: formItem({ form: "M_SERIES", options: optionsFor(M_COMPATIBLE_ROLES) }),
+    });
+    expect(unmatchedOptions(spec, ctx)).toEqual([]);
   });
 });

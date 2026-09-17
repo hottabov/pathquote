@@ -148,7 +148,7 @@ describe("buildSeedDataFromDump rules", () => {
     const built = build({ products: [product({ prices: { AU: price("0"), US: price("0") } })] });
 
     expect(productsOf(built)[0]).toMatchObject({ price: 0, needsReview: false });
-    expect(built.usPrices.prices).toEqual([{ code: "P-1", amountUsd: 0 }]);
+    expect(built.usPrices.prices).toEqual([{ code: "P-1", kind: "product", amountUsd: 0 }]);
   });
 
   it("drops a US price still flagged for review rather than publishing a placeholder", () => {

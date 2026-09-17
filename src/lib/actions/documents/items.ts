@@ -15,6 +15,8 @@ import { recalcAndEnforce } from "@/lib/documents/recalc";
 import { catalogVisibilityUserId, isProductHidden } from "@/lib/catalog-visibility";
 import { getHiddenCatalogIds } from "@/lib/queries/catalog-visibility";
 import { idSchema, isPermutation, reorderSchema } from "@/lib/validation/documents";
+import { compatibilityOrFilter } from "@/lib/catalog-compat";
+import { defaultOptionRoles, pickDefaultOptions } from "@/lib/production-forms/default-options";
 import { NOT_FOUND_ERROR, flattenZodError } from "../_shared";
 import { assertStillDraft, mapDraftWriteError, type ActionResult } from "./_internal";
 
@@ -91,7 +93,7 @@ export async function addItem(documentId: string, productId: string): Promise<Ac
         _max: { sortOrder: true },
       });
 
-      await tx.documentItem.create({
+      const item = await tx.documentItem.create({
         data: {
           documentId: document.id,
           productId: product.id,
@@ -115,6 +117,43 @@ export async function addItem(documentId: string, productId: string): Promise<Ac
           showImage: Boolean(product.imageUrl),
         },
       });
+
+      // Options the machine always ships with (the FabricPro's crate --
+      // see DEFAULT_OPTION_ROLES). Same rules as a hand-picked option:
+      // active, compatible with this product, priced in this region. One
+      // that fails any of them is simply not added -- the machine still is,
+      // and the manager can pick the option by hand.
+      const roles = defaultOptionRoles(product.form);
+      if (roles.length > 0) {
+        const defaults = await tx.option.findMany({
+          where: {
+            active: true,
+            role: { in: roles },
+            compat: { some: { OR: compatibilityOrFilter(product.id, product.seriesId) ?? [] } },
+            prices: { some: { regionId: document.regionId, needsReview: false } },
+          },
+          include: { prices: { where: { regionId: document.regionId } } },
+          orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
+        });
+        const picked = pickDefaultOptions(roles, defaults);
+        if (picked.length > 0) {
+          await tx.documentLine.createMany({
+            data: picked.map((option, index) => ({
+              documentId: document.id,
+              itemId: item.id,
+              kind: "OPTION" as const,
+              refId: option.id,
+              code: option.code,
+              name: option.name,
+              description: option.shortDescription,
+              qty: 1,
+              unitPrice: option.prices[0].amount,
+              listPrice: option.prices[0].amount,
+              sortOrder: index,
+            })),
+          });
+        }
+      }
 
       concessionWarning = (await recalcAndEnforce(document.id, tx, session.user.role)).warning;
     });

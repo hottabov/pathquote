@@ -66,7 +66,8 @@ export const easyFeedSpec: FormSpec = {
 
     // Voltage (H36) carries a printed X: 240/50 is the only one available,
     // so it is a fact about the machine rather than a question. Left alone.
-    { cell: "D48", when: (c) => c.item.spec.exWorks === true },
+    // D48 (Ex-Works) is left blank: delivery terms belong to logistics,
+    // not to a workshop sheet (Vadym, 2026-09-16).
     crateTick("D60"),
   ],
 };

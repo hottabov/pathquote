@@ -176,10 +176,6 @@ describe("buildFormContexts", () => {
     expect(ctx.softwareCodes).toEqual(["PTW(I)"]);
   });
 
-  it("reuses the main address as delivery when they are the same", () => {
-    const ctx = buildFormContexts(baseDocument as never)[0];
-    expect(ctx.deliveryAddressLines).toEqual(ctx.company.addressLines);
-  });
 });
 
 /**

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FieldRow, fieldInputClass } from "@/components/ui-kit";
 import { IndustryPicker, type IndustryOption } from "@/components/clients/industry-picker";
@@ -22,14 +22,15 @@ export type CompanyFormValues = CompanyFieldValues & {
 };
 
 /**
- * Bundled props for the `IndustryPicker` field. The picker writes through
- * its own server actions (see industry-picker.tsx), so it needs a real
- * `companyId` to point at — it is only ever passed on the edit screen
- * (src/app/(app)/clients/[companyId]/page.tsx). Left `undefined` on the
- * "new client" screen, where no company exists yet to set an industry on.
+ * Bundled props for the `IndustryPicker` field. On the edit screen
+ * (src/app/(app)/clients/[companyId]/page.tsx) `companyId` is set and the
+ * picker saves through its own server action (see industry-picker.tsx). On
+ * the "new client" screen there is no company yet, so `companyId` is left
+ * out: the choice is held here and submitted with the form as `industryId`,
+ * restricted to the existing list.
  */
 export type IndustryPickerProps = {
-  companyId: string;
+  companyId?: string;
   industries: IndustryOption[];
   selectedId: string | null;
   /** `null` when the count must be withheld — see `IndustryPicker`'s prop. */
@@ -61,7 +62,7 @@ export function CompanyForm({
   action: (formData: FormData) => Promise<ActionResult>;
   defaultValues: CompanyFormValues;
   submitLabel: string;
-  /** Omitted on the "new client" screen — see `IndustryPickerProps`. */
+  /** See `IndustryPickerProps`. Omitted, the form has no industry field. */
   industryPicker?: IndustryPickerProps;
 }) {
   const [state, formAction, pending] = useActionState(
@@ -75,6 +76,9 @@ export function CompanyForm({
   // the way through. State survives that reset; `defaultValue` does not.
   const [values, setValues] = useState<CompanyFormValues>(defaultValues);
   const sameAsMain = values.deliverySameAsMain;
+  // Only read without a `companyId` (the create screen); with one, the picker
+  // saves on its own and its `selectedId` comes back from the server render.
+  const [industryId, setIndustryId] = useState<string | null>(industryPicker?.selectedId ?? null);
 
   function set<K extends keyof CompanyFormValues>(field: K, value: CompanyFormValues[K]) {
     setValues((current) => ({ ...current, [field]: value }));
@@ -90,8 +94,21 @@ export function CompanyForm({
     named: true,
   };
 
+  // Submitted through `onSubmit` rather than `<form action>`: with `action`,
+  // React 19 calls `form.reset()` once the action settles, and a native
+  // `<select>` resets its DOM value to the first option even when it is
+  // controlled -- React never re-syncs it because the state did not change.
+  // The country showed "Select a country..." after every save, the phone
+  // picker jumped to the first dialling code, and the *next* save posted the
+  // blank country from the DOM. Browser validation still runs before submit.
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    startTransition(() => formAction(formData));
+  }
+
   return (
-    <form action={formAction} className="flex flex-col gap-6">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-6">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <CompanyField binding={binding} field="name" required minLength={2} />
         <CompanyField binding={binding} field="website" />
@@ -101,9 +118,17 @@ export function CompanyForm({
           <FieldRow label="Industry" htmlFor="company-industry" className="lg:col-span-2">
             <IndustryPicker
               id="company-industry"
-              companyId={industryPicker.companyId}
               industries={industryPicker.industries}
-              selectedId={industryPicker.selectedId}
+              {...(industryPicker.companyId
+                ? { companyId: industryPicker.companyId, selectedId: industryPicker.selectedId }
+                : {
+                    selectedId: industryId,
+                    onChange: setIndustryId,
+                    name: "industryId",
+                  })}
+              // Industries come from the list admins keep in Settings ->
+              // Industries; a manager picks one, never types a new one.
+              allowCreate={false}
               usageCount={industryPicker.usageCount}
               canRename={industryPicker.canRename}
             />

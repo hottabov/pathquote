@@ -8,7 +8,7 @@ import { columnIndex, splitRef } from "../src/lib/production-forms/cell-ref";
 
 const TEMPLATE = path.resolve(
   __dirname,
-  "../src/lib/production-forms/templates/m-series-order-12.xlsx",
+  "../src/lib/production-forms/templates/punchline-order-form-05.xlsx",
 );
 const SHEET = "xl/worksheets/sheet1.xml";
 

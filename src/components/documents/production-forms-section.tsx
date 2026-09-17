@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { AlertTriangle, Download, FileText } from "lucide-react";
+import { AlertTriangle, Download, Factory, FileText } from "lucide-react";
 import { SectionCard } from "@/components/ui-kit";
 import { buildFormContexts } from "@/lib/production-forms/context";
 import { missingRequirements, resolveForm, unmatchedOptions } from "@/lib/production-forms/resolve";
@@ -11,6 +10,26 @@ const pdfLinkClass =
 
 const downloadAllClass =
   "focus-ring flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand text-sm font-medium text-white transition-colors hover:bg-brand/90 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 sm:w-auto sm:px-6";
+
+/**
+ * The download row for a quote's Additional items page — the document-level
+ * custom lines plus any option no machine form has a box for. Shared between
+ * the readiness list and the no-machine-forms case (a quote of only custom
+ * lines) so the two never drift; `?item=extras` renders exactly this page.
+ */
+function AdditionalItemsRow({ documentId, count }: { documentId: string; count: number }) {
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+      <span className="text-sm text-brand-dark">
+        Additional items <span className="text-slate-400">({count})</span>
+      </span>
+      <a href={`/api/quotes/${documentId}/production-forms?item=extras`} className={pdfLinkClass}>
+        <FileText className="size-4" aria-hidden="true" />
+        PDF
+      </a>
+    </li>
+  );
+}
 
 /**
  * Readiness list plus the download links for a finalized quote's production
@@ -30,9 +49,17 @@ export function ProductionFormsSection({ document }: { document: DocumentForForm
   const contexts = buildFormContexts(document);
 
   return (
-    <SectionCard title="Production forms">
+    <SectionCard title="Production forms" icon={<Factory className="size-5" />}>
       {contexts.length === 0 ? (
-        <p className="text-sm text-slate-500">No production forms apply to this quote.</p>
+        document.lines.length > 0 ? (
+          // No machine forms, but the quote still has custom line items to
+          // send to the workshop as their own page.
+          <ul className="flex flex-col divide-y divide-slate-100">
+            <AdditionalItemsRow documentId={document.id} count={document.lines.length} />
+          </ul>
+        ) : (
+          <p className="text-sm text-slate-500">No production forms apply to this quote.</p>
+        )
       ) : (
         <ProductionFormsBody document={document} contexts={contexts} />
       )}
@@ -86,10 +113,10 @@ function ProductionFormsBody({
               <span className="font-mono text-xs text-slate-500">{ctx.item.code}</span>
             </span>
             {missing.length === 0 ? (
-              <Link href={`/api/quotes/${document.id}/production-forms?item=${ctx.item.id}`} className={pdfLinkClass}>
+              <a href={`/api/quotes/${document.id}/production-forms?item=${ctx.item.id}`} className={pdfLinkClass}>
                 <FileText className="size-4" aria-hidden="true" />
                 PDF
-              </Link>
+              </a>
             ) : (
               <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
                 missing: {missing.join(", ")}
@@ -97,11 +124,7 @@ function ProductionFormsBody({
             )}
           </li>
         ))}
-        {extras > 0 ? (
-          <li className="flex items-center justify-between gap-2 py-2.5 text-sm text-slate-500">
-            Additional items ({extras})
-          </li>
-        ) : null}
+        {extras > 0 ? <AdditionalItemsRow documentId={document.id} count={extras} /> : null}
       </ul>
 
       {blocked ? (
@@ -110,10 +133,10 @@ function ProductionFormsBody({
           Download all forms
         </button>
       ) : (
-        <Link href={`/api/quotes/${document.id}/production-forms`} className={downloadAllClass}>
+        <a href={`/api/quotes/${document.id}/production-forms`} className={downloadAllClass}>
           <Download className="size-4" aria-hidden="true" />
           Download all forms ({rows.length + (extras > 0 ? 1 : 0)} pages)
-        </Link>
+        </a>
       )}
     </div>
   );

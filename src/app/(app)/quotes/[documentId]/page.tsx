@@ -1,7 +1,18 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Download, Eye } from "lucide-react";
+import {
+  Download,
+  Eye,
+  Percent,
+  Truck,
+  CalendarClock,
+  StickyNote,
+  ScrollText,
+  Camera,
+  Receipt,
+  PenLine,
+} from "lucide-react";
 import { auth } from "@/auth";
 import { requireRegion } from "@/lib/authz";
 import { isAdminRole } from "@/lib/roles";
@@ -21,6 +32,7 @@ import { getHiddenCatalogIds } from "@/lib/queries/catalog-visibility";
 import { getQuoteValidityDays, getShowOptionIcons } from "@/lib/queries/settings";
 import { getSpecImages } from "@/lib/queries/spec-images";
 import { getUser } from "@/lib/queries/users";
+import { listIndustries } from "@/lib/queries/industries";
 import { canAuthorSign, canRevoke, canSendToClient, signingStatusLabel } from "@/lib/signing/state";
 import { concessionCapMessage, markupCapMessage } from "@/lib/pricing";
 import { formatDateAU } from "@/lib/format";
@@ -40,12 +52,18 @@ import { ProductionFormsSection } from "@/components/documents/production-forms-
 import { DocumentTotals, StickyFooter } from "@/components/builder/sticky-footer";
 import { FinalizeButton } from "@/components/builder/finalize-button";
 import { UnfinalizeButton } from "@/components/builder/unfinalize-button";
+import { AcceptButton } from "@/components/builder/accept-button";
+import { VoidSignatureButton } from "@/components/builder/void-signature-button";
+import { UnsentChangesBanner } from "@/components/builder/unsent-changes-banner";
+import { RevisionsSection, EmailHistorySection } from "@/components/builder/quote-history-sections";
+import { getQuoteHistory } from "@/lib/queries/quote-revisions";
 import { SignButton } from "@/components/builder/sign-button";
 import { SendToClientButton } from "@/components/builder/send-to-client-button";
 import { RevokeSigningLinkButton } from "@/components/builder/revoke-signing-link-button";
 import { DeleteDraftButton } from "@/components/builder/delete-draft-button";
 import { ConcessionCapBadge } from "@/components/builder/concession-cap-badge";
 import { ConcessionCapToast } from "@/components/builder/concession-cap-toast";
+import { describeIssues, productionIssues } from "@/lib/production-forms/readiness";
 
 export const dynamic = "force-dynamic";
 
@@ -151,6 +169,10 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
   // now that matters.
   const hiddenCatalogIdsPromise = getHiddenCatalogIds(catalogVisibilityUserId(session.user));
 
+  // Started alongside the batch below rather than added to it, to keep that
+  // destructuring untouched. Aliases ride along as search keys only.
+  const industriesPromise = listIndustries();
+
   const [
     companies,
     catalog,
@@ -189,6 +211,12 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
     ),
   ]);
 
+  const industries = (await industriesPromise).map((i) => ({
+    id: i.id,
+    name: i.name,
+    aliases: i.aliases.map((alias) => ({ name: alias.name })),
+  }));
+
   const compatibleOptionsByItemKey: Record<string, CompatibleOption[]> = Object.fromEntries(
     compatibleOptionsEntries
   );
@@ -214,17 +242,30 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
   const title = document.company?.name ?? "New quote";
   const description = `Quote · ${document.number ?? "draft"}${!isDraft ? " — final and read-only" : ""}`;
 
+  // Revision + send history for the sections below the signing panel. Scoped
+  // to the same user; null only for a foreign/missing id, which can't happen
+  // here since `document` already loaded under the same scope.
+  const history = await getQuoteHistory(session.user, document.id);
+
   return (
     <div className="flex flex-col gap-6 pb-4">
       <PageHeader backHref="/quotes" title={title} description={description} />
 
-      <SigningPanel document={document} />
+      {/* Never while the client has already signed — a signed quote has, by
+          definition, no changes waiting to be sent (and clears any stale flag
+          left by an older send that predated the flag being cleared on send). */}
+      <UnsentChangesBanner
+        hasUnsentChanges={document.hasUnsentChanges && document.signingStatus !== "SIGNED"}
+        sentAt={document.sentAt}
+        label={document.number}
+      />
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
         <div className="flex flex-col gap-4 lg:col-span-2">
           <ClientSection
             documentId={document.id}
             companies={companies}
+            industries={industries}
             initialCompanyId={document.company?.id ?? null}
             initialContactId={document.contactId}
             readOnly={!isDraft}
@@ -250,46 +291,49 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
             readOnly={!isDraft}
           />
 
-          <SectionCard title="Discounts">
-            <DocumentDiscountField
-              documentId={document.id}
-              discountMode={document.discountMode}
-              discountValue={document.discountValue}
-              currency={document.currency}
-              currencySymbol={document.currencySymbol}
-              readOnly={!isDraft}
-            />
-          </SectionCard>
+          {/* Three small document-level fields, side by side on md+ (they each
+              hold a single control, so a full-width card apiece wasted the
+              row); they stack on mobile. */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <SectionCard title="Discounts" icon={<Percent className="size-5" />}>
+              <DocumentDiscountField
+                documentId={document.id}
+                discountMode={document.discountMode}
+                discountValue={document.discountValue}
+                currency={document.currency}
+                currencySymbol={document.currencySymbol}
+                readOnly={!isDraft}
+              />
+            </SectionCard>
 
-          {/* An export sale collected at the factory door is not a domestic
-              taxable supply (the meeting question left unanswered: "What if
-              there's no GST? If it's Ex Works?") — this is what lets a quote
-              show no tax without hand-editing the tax rate. */}
-          <SectionCard title="Delivery terms">
-            <DeliveryTermsField
-              documentId={document.id}
-              deliveryTerms={document.deliveryTerms}
-              readOnly={!isDraft}
-            />
-          </SectionCard>
+            {/* An export sale collected at the factory door is not a domestic
+                taxable supply (the meeting question left unanswered: "What if
+                there's no GST? If it's Ex Works?") — this is what lets a quote
+                show no tax without hand-editing the tax rate. */}
+            <SectionCard title="Delivery terms" icon={<Truck className="size-5" />}>
+              <DeliveryTermsField
+                documentId={document.id}
+                deliveryTerms={document.deliveryTerms}
+                readOnly={!isDraft}
+              />
+            </SectionCard>
 
-          {/* Per-quote validity override (owner: "What's your capex process?
-              ... I'll give you eight [weeks]") — placed next to Notes since
-              both are small document-level fields with no pricing effect.
-              Defaults to the org-wide setting (/settings) when the document
-              has no override of its own. */}
-          <SectionCard title="Quote validity">
-            <ValidityDaysField
-              documentId={document.id}
-              validityDays={document.validityDays}
-              orgDefaultDays={orgDefaultValidityDays}
-              readOnly={!isDraft}
-            />
-          </SectionCard>
+            {/* Per-quote validity override (owner: "What's your capex process?
+                ... I'll give you eight [weeks]"). Defaults to the org-wide
+                setting (/settings) when the document has no override. */}
+            <SectionCard title="Quote validity" icon={<CalendarClock className="size-5" />}>
+              <ValidityDaysField
+                documentId={document.id}
+                validityDays={document.validityDays}
+                orgDefaultDays={orgDefaultValidityDays}
+                readOnly={!isDraft}
+              />
+            </SectionCard>
+          </div>
 
           {/* Freeform remarks carried through to whichever renderer the
               document uses (see NotesSection's doc comment). */}
-          <SectionCard title="Notes">
+          <SectionCard title="Notes" icon={<StickyNote className="size-5" />}>
             <NotesSection
               documentId={document.id}
               notes={document.notes}
@@ -308,6 +352,7 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
           <SectionCard
             title="Terms and documents"
             description="The figures this quote promises, and the agreements it prints."
+            icon={<ScrollText className="size-5" />}
           >
             <TermsDocumentsPanel
               documentId={document.id}
@@ -331,6 +376,7 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
           <SectionCard
             title="Setup image"
             description="A photo of the finished configuration, shown full width on the quotation's first page."
+            icon={<Camera className="size-5" />}
           >
             <HeroImageSection
               documentId={document.id}
@@ -339,7 +385,7 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
             />
           </SectionCard>
 
-          <SectionCard title="Quotation pricing display">
+          <SectionCard title="Quotation pricing display" icon={<Eye className="size-5" />}>
             <PriceDisplayToggles
               documentId={document.id}
               showItemPrices={document.showItemPrices}
@@ -348,46 +394,65 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
             />
           </SectionCard>
 
+          {/* History and the forms sit at the bottom of the working column:
+              revisions first, the production forms to download right under
+              them, then the email log. */}
+          {history ? (
+            <RevisionsSection
+              revisions={history.revisions}
+              documentId={document.id}
+              currency={document.currency}
+              currencySymbol={document.currencySymbol}
+            />
+          ) : null}
+
           {formsDocument ? <ProductionFormsSection document={formsDocument} /> : null}
+
+          {history ? <EmailHistorySection emails={history.emails} /> : null}
         </div>
 
-        {/* Desktop/tablet-lg summary: sticky so it stays visible while the
-            left column's sections scroll. Hidden below lg — the mobile
-            equivalent is the plain (non-sticky) block further down plus the
-            sticky totals bar at the very bottom of the viewport. */}
-        <aside className="hidden lg:sticky lg:top-6 lg:col-span-1 lg:block">
-          <SectionCard title="Summary">
-            <div className="flex flex-col gap-4">
-              <DocumentSummaryHeader document={document} />
-              {capMessageText ? <ConcessionCapBadge message={capMessageText} /> : null}
-              <div className="border-t border-slate-100 pt-4">
-                <DocumentTotals
-                  taxName={document.taxName}
-                  taxRate={document.taxRate}
-                  subtotal={document.summarySubtotal}
-                  discountAmount={document.summaryDiscountAmount}
-                  taxAmount={document.taxAmount}
-                  total={document.total}
-                  currency={document.currency}
-                  currencySymbol={document.currencySymbol}
-                  commission={document.commission}
-                />
-              </div>
-              <div className="flex flex-col gap-2 border-t border-slate-100 pt-4">
-                <DocumentActions
-                  document={document}
-                  isDraft={isDraft}
-                  isAdmin={isAdmin}
-                  mySignatureUrl={mySignatureUrl}
-                />
-              </div>
-              {isDraft ? (
+        {/* Right column: Summary, then the signing status. Kept short so it
+            never needs an inner scrollbar. Visible on every breakpoint so
+            signing shows on mobile too; only the Summary card is desktop-only
+            (its totals live in the sticky footer on mobile, never twice on one
+            screen). Sticky on lg. */}
+        <aside className="flex flex-col gap-4 lg:sticky lg:top-6 lg:col-span-1">
+          <div className="hidden lg:block">
+            <SectionCard title="Summary" icon={<Receipt className="size-5" />}>
+              <div className="flex flex-col gap-4">
+                <DocumentSummaryHeader document={document} />
+                {capMessageText ? <ConcessionCapBadge message={capMessageText} /> : null}
                 <div className="border-t border-slate-100 pt-4">
-                  <DeleteDraftButton documentId={document.id} />
+                  <DocumentTotals
+                    taxName={document.taxName}
+                    taxRate={document.taxRate}
+                    subtotal={document.summarySubtotal}
+                    discountAmount={document.summaryDiscountAmount}
+                    taxAmount={document.taxAmount}
+                    total={document.total}
+                    currency={document.currency}
+                    currencySymbol={document.currencySymbol}
+                    commission={document.commission}
+                  />
                 </div>
-              ) : null}
-            </div>
-          </SectionCard>
+                <div className="flex flex-col gap-2 border-t border-slate-100 pt-4">
+                  <DocumentActions
+                    document={document}
+                    isDraft={isDraft}
+                    isAdmin={isAdmin}
+                    mySignatureUrl={mySignatureUrl}
+                  />
+                </div>
+                {isDraft ? (
+                  <div className="border-t border-slate-100 pt-4">
+                    <DeleteDraftButton documentId={document.id} />
+                  </div>
+                ) : null}
+              </div>
+            </SectionCard>
+          </div>
+
+          <SigningPanel document={document} />
         </aside>
       </div>
 
@@ -395,7 +460,7 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
           block (totals stay exclusively in the sticky bar below so they're
           never shown twice on the same screen). */}
       <div className="lg:hidden">
-        <SectionCard title="Status & actions">
+        <SectionCard title="Status & actions" icon={<Receipt className="size-5" />}>
           <div className="flex flex-col gap-4">
             <DocumentSummaryHeader document={document} />
             {capMessageText ? <ConcessionCapBadge message={capMessageText} /> : null}
@@ -408,6 +473,7 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
           </div>
         </SectionCard>
       </div>
+
 
       {/* Mounted once, renders nothing visible — see its own doc comment.
           ADMIN-only: a MANAGER's save that would cross the cap is rejected
@@ -468,6 +534,7 @@ function SigningPanel({ document }: { document: DocumentForBuilder }) {
     <SectionCard
       title="Signing"
       description={sentCount > 1 ? `Sent to the client ${sentCount} times.` : undefined}
+      icon={<PenLine className="size-5" />}
     >
       <div className="flex flex-col gap-3 text-sm text-brand-dark">
         {label ? (
@@ -523,22 +590,9 @@ function SigningPanel({ document }: { document: DocumentForBuilder }) {
           </div>
         ) : null}
 
-        {document.signingStatus === "SIGNED" ? (
-          <a
-            href={`/api/quotes/${document.id}/signed-pdf`}
-            className="focus-ring inline-flex w-fit items-center gap-1.5 rounded text-sm font-medium text-brand underline underline-offset-2"
-          >
-            {/* Eye, not Download: the route serves `Content-Disposition:
-                inline` (src/app/api/quotes/[documentId]/signed-pdf/route.ts),
-                so the browser opens this rather than saving a file -- same
-                icon this page already uses for "Quotation preview" below,
-                which opens in-app rather than downloading for the same
-                reason. Download stays reserved for the one link that
-                actually triggers a save ("Quotation PDF", `attachment`). */}
-            <Eye className="size-4" aria-hidden="true" />
-            View signed PDF
-          </a>
-        ) : null}
+        {/* No "View signed PDF" link here on purpose: the Summary panel's
+            "Quotation PDF" already downloads the signed quote once it's
+            signed, and we don't split one action across two controls. */}
       </div>
     </SectionCard>
   );
@@ -588,25 +642,40 @@ function DocumentActions({
   const sendVerdict = canSendToClient({
     documentStatus: document.status,
     signingStatus: document.signingStatus,
-    hasAuthorSignature: document.signatures.some((s) => s.role === "AUTHOR"),
     contactEmail,
   });
   return (
     <div className="flex flex-col gap-2">
       {isDraft ? (
-        <FinalizeButton documentId={document.id} />
+        <FinalizeButton
+          documentId={document.id}
+          // The same readiness check finalizeDocument enforces, shown before
+          // the click so the manager knows what to complete.
+          blocker={(() => {
+            const issues = productionIssues(
+              document.items.map((item) => ({
+                code: item.code,
+                form: item.form,
+                productionSpec: item.productionSpec,
+                options: item.lines
+                  .filter((line) => line.kind === "OPTION")
+                  .map((line) => ({ role: line.role, attributes: line.attributes })),
+              }))
+            );
+            return issues.length > 0 ? describeIssues(issues) : null;
+          })()}
+        />
       ) : (
         <>
           {/* Signing is offered to whoever this page already scoped the
               document to (its author, or any admin — see
-              `signQuoteAsAuthor`'s own `documentWhereForUser` check),
-              independently of Unfinalize staying admin-only below. Gated on
-              `canAuthorSign` — the same function the action itself checks —
-              rather than "any FINAL document": nothing sets `signingStatus`
-              away from NOT_SENT yet, so this is currently a no-op, but it
-              stops the button from being shown (and refused) once
-              sending/revoking/declining exist. */}
-          {canAuthorSign(document.signingStatus) ? (
+              `signQuoteAsAuthor`'s own `documentWhereForUser` check). The
+              manager may sign a FINAL quote in ANY order relative to the
+              client — before sending, while the link is out, or after the
+              client has signed (the counter-signature that then enables
+              Accept). `canAuthorSign` is unconditional now; the gate stays so
+              the button and the action share one rule. */}
+          {canAuthorSign() ? (
             <SignButton
               documentId={document.id}
               hasAuthorSignature={document.signatures.some((s) => s.role === "AUTHOR")}
@@ -632,7 +701,27 @@ function DocumentActions({
           ) : null}
         </>
       )}
-      {!isDraft && isAdmin ? <UnfinalizeButton documentId={document.id} /> : null}
+      {/* Unfinalize is now for the owner (this page is already scoped to the
+          author or an admin) as well as an admin (spec §4), but only before
+          the client signs — once SIGNED the only way back is an admin's Void
+          signature below. Accept moves a fully-signed quote into production
+          (spec §1); it needs the manager's own signature present too. */}
+      {!isDraft && document.signingStatus !== "SIGNED" ? (
+        <UnfinalizeButton
+          documentId={document.id}
+          wasSent={document.signingStatus === "SENT" || document.signingStatus === "VIEWED"}
+          sentLabel={document.number}
+        />
+      ) : null}
+      {!isDraft &&
+      document.signingStatus === "SIGNED" &&
+      document.signatures.some((s) => s.role === "AUTHOR") &&
+      !document.acceptedAt ? (
+        <AcceptButton documentId={document.id} />
+      ) : null}
+      {!isDraft && document.signingStatus === "SIGNED" && isAdmin ? (
+        <VoidSignatureButton documentId={document.id} />
+      ) : null}
 
       <Link href={`/quotes/${document.id}/quotation`} className={actionLinkClass}>
         <Eye className="size-4" aria-hidden="true" />

@@ -1,4 +1,4 @@
-import { Receipt } from "lucide-react";
+import { ListPlus, Receipt } from "lucide-react";
 import { formatMoney } from "@/lib/format";
 import { toCents, fromCents } from "@/lib/pricing";
 import { SectionCard, EmptyState } from "@/components/ui-kit";
@@ -32,7 +32,7 @@ export function ExtraLinesSection({
   readOnly?: boolean;
 }) {
   return (
-    <SectionCard title="Extra">
+    <SectionCard title="Extra" icon={<ListPlus className="size-5" />}>
       {lines.length === 0 ? (
         <EmptyState icon={Receipt} title="No extras yet" description="Add delivery, install, or other one-off charges below." />
       ) : (

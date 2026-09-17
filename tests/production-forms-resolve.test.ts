@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
 import {
   resolveForm,
   specSchemaForForm,
@@ -6,6 +7,10 @@ import {
   missingRequirements,
   unmatchedOptions,
 } from "../src/lib/production-forms/resolve";
+import { PATHWORKS_BOXES, pathWorksTicked } from "../src/lib/production-forms/pathworks";
+import { EasyLoaderForm } from "../src/components/forms/easyloader-form";
+import { FabricProForm } from "../src/components/forms/fabricpro-form";
+import { FormDocument } from "../src/components/forms/form-sheet";
 import type { FormContext, FormItem, FormSpec } from "../src/lib/production-forms/types";
 import { formContext, formItem, formOption, xlsxForm } from "./helpers/fixtures";
 
@@ -14,6 +19,11 @@ import { formContext, formItem, formOption, xlsxForm } from "./helpers/fixtures"
  * codes because that is what a person recognises. */
 const unmatchedOptionCodes = (spec: FormSpec, ctx: FormContext) =>
   unmatchedOptions(spec, ctx).map((option) => option.code);
+
+const marked = (html: string, state: "pf-on" | "pf-std"): string[] =>
+  [...html.matchAll(new RegExp(`class="pf-tick[^"]*${state}"[^>]*>(.*?)</label>`, "g"))].map((m) =>
+    m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+  );
 
 const PTW_I = { code: "PTW(I)", specs: { softwareMode: "integrated" as const } };
 const PTW_S = { code: "PTW(S)", specs: { softwareMode: "standalone" as const } };
@@ -53,111 +63,94 @@ describe("specSchemaForForm", () => {
   // storable; the download button stays disabled on `missingRequirements`
   // until the rest of the form is answered.
   it("stores the first field chosen on an M-Series item with no spec yet", () => {
-    const form = xlsxForm("M_SERIES");
+    const form = resolveForm("M_SERIES")!;
     const result = specSchemaForForm("M_SERIES")!.safeParse({ knifeSize: "1.5x5.0" });
     expect(result.success).toBe(true);
-    expect(missingRequirements(form, result.success && result.data)).toEqual(["drills"]);
+    expect(missingRequirements(form, result.success && result.data)).toEqual([]);
   });
 });
 
+// The M-Series, EasyLoader and FabricPro all moved off the workbook
+// (2026-09-16): `buildPatches` is an `XlsxFormSpec`-only concern now, so the
+// generic engine behaviour it used to be exercised against on those forms is
+// checked here against HDRF, which is still xlsx and shares the same header
+// and crate-tick helpers every remaining xlsx form uses (see
+// `specs/shared-header.ts`). Anything specific to the EasyLoader or
+// FabricPro layouts is checked directly against the rendered component that
+// owns it now (see the "EasyLoader form" and "FabricPro form" blocks below,
+// and tests/table-forms-render.test.tsx).
+const hdrfItem = (overrides: Partial<FormItem> = {}) =>
+  formItem({
+    id: "i",
+    code: "HDRF-220",
+    name: "Heavy Duty Roll Feeder 220",
+    kind: "ACCESSORY",
+    form: "HDRF",
+    specs: { widthCode: 220 },
+    spec: {},
+    ...overrides,
+  });
+
 describe("buildPatches", () => {
-  it("ticks the model and width boxes from the product's specs", () => {
-    const patches = buildPatches(xlsxForm("M_SERIES"), formContext());
-    const cells = patches.map((p) => p.cell);
-    expect(cells).toContain("J25");
-    expect(cells).toContain("J29");
-    expect(cells).not.toContain("H25");
-  });
-
-  it("ticks every model and width the form prints", () => {
-    const expectModel = (modelTier: string, widthCode: number, model: string, width: string) => {
-      const item = formItem({ specs: { modelTier, widthCode } });
-      const cells = buildPatches(xlsxForm("M_SERIES"), formContext({ item })).map((p) => p.cell);
-      expect(cells, `${modelTier} ${widthCode}`).toContain(model);
-      expect(cells, `${modelTier} ${widthCode}`).toContain(width);
-    };
-    expectModel("M3", 180, "H25", "H29");
-    expectModel("M5", 220, "J25", "J29");
-    expectModel("M7", 300, "L25", "L29");
-    expectModel("M10", 390, "O25", "O29");
-  });
-
-  it("ticks no model or width box for a product with no specs", () => {
-    const cells = buildPatches(xlsxForm("M_SERIES"), formContext({ item: formItem({ specs: {} }) })).map(
-      (p) => p.cell,
-    );
-    for (const cell of ["H25", "J25", "L25", "O25", "H29", "J29", "L29", "O29"]) {
-      expect(cells).not.toContain(cell);
-    }
-  });
-
   it("writes X into every tick cell", () => {
-    const patches = buildPatches(xlsxForm("M_SERIES"), formContext());
-    expect(patches.find((p) => p.cell === "J25")?.value).toBe("X");
-  });
-
-  it("ticks an option against its role's box, whatever its catalogue code", () => {
-    // ABR-M and ABR-X both carry role ABR; the code is not consulted.
-    const patches = buildPatches(
-      xlsxForm("M_SERIES"),
-      formContext({ item: formItem({ options: [formOption("ABR-M", "ABR"), formOption("HDC-X", "HDC")] }) }),
-    );
-    const cells = patches.map((p) => p.cell);
-    expect(cells).toContain("J52");
-    expect(cells).toContain("F52");
+    const patches = buildPatches(xlsxForm("HDRF"), formContext({ item: hdrfItem() }));
+    expect(patches.find((p) => p.cell === "J28")?.value).toBe("X");
   });
 
   it("ticks nothing for an option with no role", () => {
     const patches = buildPatches(
-      xlsxForm("M_SERIES"),
-      formContext({ item: formItem({ options: [formOption("ABR-M", null)] }) }),
+      xlsxForm("HDRF"),
+      formContext({ item: hdrfItem({ options: [formOption("Crate-HDRF", null)] }) }),
     );
-    expect(patches.map((p) => p.cell)).not.toContain("J52");
-  });
-
-  it("ticks PathWorks modules only alongside the integrated PathWorks", () => {
-    const withIntegrated = buildPatches(
-      xlsxForm("M_SERIES"),
-      formContext({ software: [PTW_I, ANT_V6] }),
-    ).map((p) => p.cell);
-    expect(withIntegrated).toContain("J64");
-
-    const withStandalone = buildPatches(
-      xlsxForm("M_SERIES"),
-      formContext({ software: [PTW_S, ANT_V6] }),
-    ).map((p) => p.cell);
-    expect(withStandalone).not.toContain("J64");
-
-    const moduleAlone = buildPatches(xlsxForm("M_SERIES"), formContext({ software: [ANT_V6] })).map(
-      (p) => p.cell,
-    );
-    expect(moduleAlone).not.toContain("J64");
+    expect(patches.map((p) => p.cell)).not.toContain("D45");
   });
 
   it("omits value cells whose source is empty", () => {
     const patches = buildPatches(
-      xlsxForm("M_SERIES"),
-      formContext({ company: { name: "Relaxvanguard", addressLines: [], industry: null } }),
+      xlsxForm("HDRF"),
+      formContext({
+        item: hdrfItem(),
+        company: { name: "Relaxvanguard", addressLines: [], industry: null },
+      }),
     );
     const cells = patches.map((p) => p.cell);
-    expect(cells).not.toContain("H14");
-    expect(cells).not.toContain("H21");
+    expect(cells).not.toContain("I15");
+    expect(cells).not.toContain("I23");
+  });
+});
+
+describe("pathWorksTicked", () => {
+  const ptwI = PATHWORKS_BOXES.find((box) => box.role === "PTW_I")!;
+  const antV6 = PATHWORKS_BOXES.find((box) => box.role === "ANT_V6")!;
+
+  it("ticks from the option line on the machine itself", () => {
+    const ctx = formContext({ item: formItem({ options: [formOption("PDG", "PDG")] }) });
+    expect(pathWorksTicked(ctx, PATHWORKS_BOXES.find((box) => box.role === "PDG")!)).toBe(true);
   });
 
-  it("writes the MTS metres attribute as a string", () => {
-    const patches = buildPatches(
-      xlsxForm("M_SERIES"),
-      formContext({ item: formItem({ options: [formOption("MTS", "MTS", { attributes: { metres: 14 } })] }) }),
-    );
-    expect(patches.find((p) => p.cell === "M73")?.value).toBe("14");
-    expect(patches.map((p) => p.cell)).toContain("D72");
+  it("ticks PathWorks modules only alongside the integrated PathWorks", () => {
+    const withIntegrated = formContext({ software: [PTW_I, ANT_V6] });
+    expect(pathWorksTicked(withIntegrated, antV6)).toBe(true);
+
+    const withStandalone = formContext({ software: [PTW_S, ANT_V6] });
+    expect(pathWorksTicked(withStandalone, antV6)).toBe(false);
+
+    const moduleAlone = formContext({ software: [ANT_V6] });
+    expect(pathWorksTicked(moduleAlone, antV6)).toBe(false);
+  });
+
+  it("ticks PTW-I itself from the integrated software product alone", () => {
+    const ctx = formContext({ software: [PTW_I] });
+    expect(pathWorksTicked(ctx, ptwI)).toBe(true);
   });
 });
 
 describe("unmatchedOptions", () => {
+  const mSeries = resolveForm("M_SERIES")!;
+
   it("returns the option lines themselves, so the route can match by id", () => {
     const context = formContext({ item: formItem({ options: [formOption("EDS-500", "EDS", { qty: 3 })] }) });
-    expect(unmatchedOptions(xlsxForm("M_SERIES"), context)).toEqual([
+    expect(unmatchedOptions(mSeries, context)).toEqual([
       { id: "opt-EDS-500", code: "EDS-500", role: "EDS", qty: 3, attributes: null },
     ]);
   });
@@ -166,45 +159,55 @@ describe("unmatchedOptions", () => {
     const context = formContext({
       item: formItem({ options: [formOption("ABR-M", "ABR"), formOption("HDC-M", "HDC"), formOption("MTS", "MTS")] }),
     });
-    expect(unmatchedOptionCodes(xlsxForm("M_SERIES"), context)).toEqual([]);
+    expect(unmatchedOptionCodes(mSeries, context)).toEqual([]);
   });
 
   it("reports an option whose role has no box on this form", () => {
     const context = formContext({ item: formItem({ options: [formOption("ABR-M", "ABR"), formOption("EDS-500", "EDS")] }) });
-    expect(unmatchedOptionCodes(xlsxForm("M_SERIES"), context)).toEqual(["EDS-500"]);
+    expect(unmatchedOptionCodes(mSeries, context)).toEqual(["EDS-500"]);
   });
 
   it("reports an option with no role at all", () => {
     const context = formContext({ item: formItem({ options: [formOption("1.0mm dia punch", null)] }) });
-    expect(unmatchedOptionCodes(xlsxForm("M_SERIES"), context)).toEqual(["1.0mm dia punch"]);
+    expect(unmatchedOptionCodes(mSeries, context)).toEqual(["1.0mm dia punch"]);
   });
 
   it("does not treat a tick driven by the production spec as covering an option", () => {
     // The L_TOOL role exists in the catalogue, but the M-Series form has no
     // box for it -- only its knife size row, which comes from the spec.
     const context = formContext({ item: formItem({ options: [formOption("1.0mm dia punch", "L_TOOL")] }) });
-    expect(unmatchedOptionCodes(xlsxForm("M_SERIES"), context)).toEqual(["1.0mm dia punch"]);
+    expect(unmatchedOptionCodes(mSeries, context)).toEqual(["1.0mm dia punch"]);
   });
 });
 
 describe("missingRequirements", () => {
+  const mSeries = resolveForm("M_SERIES")!;
+
   it("reports nothing for a complete spec", () => {
-    expect(missingRequirements(xlsxForm("M_SERIES"), formItem().spec)).toEqual([]);
+    expect(missingRequirements(mSeries, formItem().spec)).toEqual([]);
   });
 
   it("reports every requirement when the spec is empty", () => {
     // "ui" is not among them: screenSideSchema defaults to -Y, so it can
     // never be missing.
-    expect(missingRequirements(xlsxForm("M_SERIES"), {})).toEqual(["knifeSize", "drills"]);
+    expect(missingRequirements(mSeries, {})).toEqual(["knifeSize"]);
   });
 
   it("reports drills when they are required with no detail", () => {
     const spec = { ui: "+Y", knifeSize: "1.5x5.0", drills: { required: true, detail: "" } };
-    expect(missingRequirements(xlsxForm("M_SERIES"), spec)).toEqual(["drills"]);
+    expect(missingRequirements(mSeries, spec)).toEqual(["drills"]);
   });
 });
 
+// The EasyLoader is drawn by `EasyLoaderForm` now, not patched into a
+// workbook (2026-09-16) -- see src/lib/production-forms/specs/easyloader.ts.
+// Its tick-by-tick layout is exercised in tests/table-forms-render.test.tsx
+// and its synchronisation default in tests/standard-fitment.test.ts; what is
+// left to check here is the roll-holder tick reading the option's role
+// rather than its code, the crate tick, and coverage (`unmatchedOptions`),
+// none of which needs a rendered page's exact cell positions.
 describe("EasyLoader form", () => {
+  const easyLoader = resolveForm("EASYLOADER")!;
   const elItem = (overrides: Partial<FormItem> = {}) =>
     formItem({
       id: "i",
@@ -213,103 +216,50 @@ describe("EasyLoader form", () => {
       kind: "TABLE",
       form: "EASYLOADER",
       specs: { tableWidthMm: 2420 },
-      spec: { ui: "-Y", usage: "onload", sections: [{ lengthM: 2.4, surface: "static" }] },
+      spec: { ui: "-Y", usage: "onload", sections: [] },
       ...overrides,
     });
-  const form = xlsxForm("EASYLOADER");
-
-  it("ticks the printed width box for a standard model", () => {
-    const cells = buildPatches(form, formContext({ item: elItem() })).map((p) => p.cell);
-    expect(cells).toContain("I33");
-    expect(cells).not.toContain("I35");
-
-    const narrow = buildPatches(form, formContext({ item: elItem({ specs: { tableWidthMm: 2020 } }) })).map(
-      (p) => p.cell,
-    );
-    expect(narrow).toContain("I31");
-    expect(narrow).not.toContain("I35");
-  });
-
-  it("ticks Custom and rewrites the label for a non-standard width", () => {
-    const item = elItem({ code: "EL-3220", specs: { tableWidthMm: 3220 }, spec: { ...elItem().spec, customWidthMm: 3220 } });
-    const patches = buildPatches(form, formContext({ item }));
-    expect(patches.find((p) => p.cell === "I35")?.value).toBe("X");
-    expect(patches.find((p) => p.cell === "J35")?.value).toContain("3220mm");
-  });
-
-  it("ticks Custom for a table whose width is not recorded", () => {
-    const cells = buildPatches(form, formContext({ item: elItem({ specs: {} }) })).map((p) => p.cell);
-    expect(cells).toContain("I35");
-  });
-
-  it("writes each table section length and surface", () => {
-    const item = elItem({
-      spec: {
-        ...elItem().spec,
-        sections: [
-          { lengthM: 2.4, surface: "static" },
-          { lengthM: 1.2, surface: "conveyor" },
-        ],
-      },
-    });
-    const patches = buildPatches(form, formContext({ item }));
-    expect(patches.find((p) => p.cell === "I43")?.value).toBe("2.4");
-    expect(patches.find((p) => p.cell === "I45")?.value).toBe("X");
-    expect(patches.find((p) => p.cell === "I47")?.value).toBe("1.2");
-    expect(patches.find((p) => p.cell === "K49")?.value).toBe("X");
-  });
+  const renderEl = (item: FormItem) => renderToStaticMarkup(FormDocument({ children: EasyLoaderForm({ ctx: formContext({ item }) }) }));
 
   it("requires only usage -- screen side defaults and an empty section list means one undivided table", () => {
-    expect(missingRequirements(form, {})).toEqual(["usage"]);
+    expect(missingRequirements(easyLoader, {})).toEqual(["usage"]);
   });
 
   it("ticks the roll holder box from the option's role, whatever its width-specific code", () => {
     const holder = "ST620 Roll Holder- Used to dispense perforated underlay paper.";
     for (const code of [`EL-2020 #${holder}`, `EL-2420 ${holder}`]) {
       const item = elItem({ options: [formOption(code, "EL_ROLL_HOLDER")] });
-      expect(buildPatches(form, formContext({ item })).map((p) => p.cell), code).toContain("D69");
+      expect(marked(renderEl(item), "pf-on"), code).toContain(
+        "Perforated paper roll holder attachment — with bar and cones"
+      );
     }
   });
 
-  it("ticks the sync and crate boxes from their roles", () => {
-    const item = elItem({ options: [formOption("Crate-EL", "CRATE"), formOption("EL-2420 Sync", "EL_SYNC")] });
-    const cells = buildPatches(form, formContext({ item })).map((p) => p.cell);
-    expect(cells).toContain("D71");
-    expect(cells).toContain("D56");
+  it("ticks the crate box from its role", () => {
+    const item = elItem({ options: [formOption("Crate-EL", "CRATE")] });
+    expect(marked(renderEl(item), "pf-on")).toContain(
+      "Wooden crate — built and packed by production"
+    );
   });
 
   it("does not report the crate or roll holder as unmapped options", () => {
-    const item = elItem({
-      options: [formOption("Crate-EL", "CRATE"), formOption("EL-2420 ST620-2420 Roll Holder", "EL_ROLL_HOLDER")],
+    const context = formContext({
+      item: elItem({
+        options: [formOption("Crate-EL", "CRATE"), formOption("EL-2420 ST620-2420 Roll Holder", "EL_ROLL_HOLDER")],
+      }),
     });
-    expect(unmatchedOptionCodes(form, formContext({ item }))).toEqual([]);
-  });
-
-  // Added up from the sections rather than from the options sold: the
-  // options are now derived from the sections, so the layout is the only
-  // number there is.
-  it("prints the total table length at M54, added up from the sections", () => {
-    const item = elItem({
-      spec: {
-        ...elItem().spec,
-        sections: [
-          { lengthM: 7.2, surface: "conveyor" },
-          { lengthM: 2.4, surface: "static" },
-        ],
-      },
-    });
-    const patches = buildPatches(form, formContext({ item }));
-    expect(patches.find((p) => p.cell === "M54")?.value).toBe("Total Table is 9.6 m");
-  });
-
-  it("omits the M54 total for a table with no modules", () => {
-    const item = elItem({ spec: { ...elItem().spec, sections: [] } });
-    const patches = buildPatches(form, formContext({ item }));
-    expect(patches.find((p) => p.cell === "M54")).toBeUndefined();
+    expect(unmatchedOptionCodes(easyLoader, context)).toEqual([]);
   });
 });
 
+// The FabricPro is drawn by `FabricProForm` now, not patched into a workbook
+// (2026-09-16) -- see src/lib/production-forms/specs/fabricpro.ts. Its
+// model, screen side, rail-length and standard-fitment ticks are exercised
+// in tests/table-forms-render.test.tsx; what is left to check here is that
+// it asks for nothing (screen side defaults) and ticks its crate from the
+// option's role.
 describe("FabricPro form", () => {
+  const fabricPro = resolveForm("FABRICPRO")!;
   const fpItem = (overrides: Partial<FormItem> = {}) =>
     formItem({
       id: "i",
@@ -318,44 +268,28 @@ describe("FabricPro form", () => {
       kind: "SPREADER",
       form: "FABRICPRO",
       specs: { cutWidthCm: 220, widthCode: 220 },
-      spec: { ui: "+Y", railLengthM: 6 },
+      spec: { ui: "+Y" },
       ...overrides,
     });
-  const form = xlsxForm("FABRICPRO");
-
-  it("ticks the model, screen side and the travel platform every machine has", () => {
-    const cells = buildPatches(form, formContext({ item: fpItem() })).map((p) => p.cell);
-    expect(cells).toEqual(expect.arrayContaining(["J27", "O41", "J44", "J46"]));
-  });
-
-  it("ticks one model box per width family", () => {
-    const cellFor = (widthCode: number) =>
-      buildPatches(form, formContext({ item: fpItem({ specs: { widthCode } }) }))
-        .map((p) => p.cell)
-        .filter((cell) => ["H27", "J27", "M27"].includes(cell));
-    expect(cellFor(180)).toEqual(["H27"]);
-    expect(cellFor(220)).toEqual(["J27"]);
-    expect(cellFor(300)).toEqual(["M27"]);
-  });
-
-  it("ticks no model box for a spreader whose width is not recorded", () => {
-    const cells = buildPatches(form, formContext({ item: fpItem({ specs: {} }) })).map((p) => p.cell);
-    expect(cells).not.toEqual(expect.arrayContaining(["H27"]));
-    expect(cells).not.toEqual(expect.arrayContaining(["J27"]));
-    expect(cells).not.toEqual(expect.arrayContaining(["M27"]));
-  });
-
-  it("writes the travel rail length", () => {
-    const patches = buildPatches(form, formContext({ item: fpItem() }));
-    expect(patches.find((p) => p.cell === "N46")?.value).toBe("6");
-  });
 
   it("requires nothing -- screen side defaults to -Y", () => {
-    expect(missingRequirements(form, {})).toEqual([]);
+    expect(missingRequirements(fabricPro, {})).toEqual([]);
+  });
+
+  it("ticks the crate box from its role", () => {
+    const item = fpItem({ options: [formOption("Crate-FP", "CRATE")] });
+    const html = renderToStaticMarkup(FormDocument({ children: FabricProForm({ ctx: formContext({ item }) }) }));
+    expect(marked(html, "pf-on")).toContain("Wooden crate — built and packed by production");
   });
 });
 
+// `coversOptions` names the EasyLoader's table-module roles, which have no
+// tick of their own -- the section rows and the printed total already
+// represent them. Without it they would be reported unmatched and printed
+// again on the Additional items sheet. This is coverage logic, not layout,
+// so it is checked against `resolveForm`/`unmatchedOptions` directly.
 describe("coversOptions", () => {
+  const easyLoader = resolveForm("EASYLOADER")!;
   const elItem = (extra: FormItem["options"] = []) =>
     formItem({
       id: "i",
@@ -374,17 +308,16 @@ describe("coversOptions", () => {
         ...extra,
       ],
     });
-  const form = xlsxForm("EASYLOADER");
 
   it("does not report the table module options as unmatched", () => {
     // They have no tick of their own -- the section rows and the printed
     // total are how the form states them -- so without coversOptions they
     // would be printed again on the Additional items sheet.
-    expect(unmatchedOptionCodes(form, formContext({ item: elItem() }))).toEqual([]);
+    expect(unmatchedOptionCodes(easyLoader, formContext({ item: elItem() }))).toEqual([]);
   });
 
   it("still reports an option the form genuinely has no place for", () => {
     const context = formContext({ item: elItem([formOption("EDS-500", "EDS")]) });
-    expect(unmatchedOptionCodes(form, context)).toEqual(["EDS-500"]);
+    expect(unmatchedOptionCodes(easyLoader, context)).toEqual(["EDS-500"]);
   });
 });

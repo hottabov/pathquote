@@ -56,9 +56,11 @@ describe("EasyFeed", () => {
     expect(cells("EASYFEED", { tableWidthMm: 2020 }).P28).toBeUndefined();
   });
 
-  it("ticks Ex-Works only when it was chosen, and the crate from the option", () => {
+  it("leaves Ex-Works blank -- delivery terms belong to logistics -- and still ticks the crate from the option", () => {
+    // D48 (Ex-Works) was removed (2026-09-16): it is not printed from any
+    // spec answer any more, so it is always blank.
     expect(cells("EASYFEED", { tableWidthMm: 2020 }).D48).toBeUndefined();
-    expect(cells("EASYFEED", { tableWidthMm: 2020 }, { exWorks: true }).D48).toBe("X");
+    expect(cells("EASYFEED", { tableWidthMm: 2020 }, { exWorks: true }).D48).toBeUndefined();
     expect(cells("EASYFEED", { tableWidthMm: 2020 }).D60).toBe("X");
   });
 });
@@ -120,9 +122,6 @@ describe("Leather Nesting Station", () => {
     expect(map.G13).toBe("Dandenong VIC 3175, Australia");
   });
 
-  it("prints the delivery address in its own column", () => {
-    expect(written.L12).toBe("12 Industrial Dr");
-  });
 });
 
 describe("every simple form", () => {

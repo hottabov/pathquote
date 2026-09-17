@@ -15,18 +15,20 @@ export const screenSideSchema = z.enum(["+Y", "-Y"]).default("-Y");
 
 /**
  * Drills. The printed form says `"TBC" is not acceptable`, so "required with
- * no detail" is not a valid state -- either there are no drills, or their
- * quantity, type and size are written down.
+ * no detail" cannot be PRINTED -- but it is a legitimate state while the
+ * manager is filling the panel in, and it is stored as such: ticking the box
+ * saves at once. Refusing it here used to leave the tick only on screen, so
+ * a manager who ticked and moved on got a form that said "No" (Vadym,
+ * 2026-09-17). `missingKeys` is the gate: required with no detail blocks the
+ * download until the detail is written.
+ *
+ * No 22-character cap any more: it came from the Excel row height, and the
+ * forms are HTML now.
  */
-export const drillsSchema = z
-  .object({
-    required: z.boolean(),
-    detail: z.string().trim().max(22, "Drill detail must be 22 characters or fewer"),
-  })
-  .refine((value) => !value.required || value.detail.length > 0, {
-    message: "Specify drill quantity, type and size",
-    path: ["detail"],
-  });
+export const drillsSchema = z.object({
+  required: z.boolean(),
+  detail: z.string().trim().max(200, "Drill detail must be 200 characters or fewer"),
+});
 
 /**
  * These schemas describe a spec *being filled in*, not a finished one, so
@@ -45,10 +47,10 @@ export const drillsSchema = z
  * and that the form route answers 422 on. One gate, at the point where the
  * spec is printed rather than at every keystroke on the way there.
  *
- * Nothing gains a default in place of being required, either: `missingKeys`
- * reads `drills: { required: false }` as asked-and-answered, so a default
- * would tell the workshop a question had been put to the customer that
- * never was.
+ * Nothing gains a default in place of being required, either. `drills` is
+ * the exception that proves it: the owner treats an unticked "Drills
+ * required" as "no", so `missingKeys` accepts it absent and the form prints
+ * "No" -- no stored default needed.
  */
 
 /**
@@ -61,7 +63,7 @@ export const mSeriesSpecSchema = z.object({
   knifeSize: z.enum(["1.5x5.0", "1.5x7.0", "2.0x7.0"]).optional(),
   voltage: z.enum(["220V", "400V", "415V", "480V"]).optional(),
   drills: drillsSchema.optional(),
-  specialNotes: z.string().trim().max(28, "Special notes must be 28 characters or fewer").optional(),
+  specialNotes: z.string().trim().max(500, "Special notes must be 500 characters or fewer").optional(),
 });
 
 /**
@@ -100,7 +102,9 @@ export const lSeriesSpecSchema = z.object({
   /** The printed row is 220/230 or a written-in figure. */
   voltage: z.enum(["220/230", "other"]).optional(),
   voltageOtherVac: z.string().trim().max(20).optional(),
-  shipping: z.enum(["complete", "crate-disassembled", "crate-whole"]).optional(),
+  // `shipping` is gone: packing and delivery go on logistics' own document,
+  // not on the workshop sheet (Vadym, 2026-09-16). A stored value is
+  // stripped on the next save.
   specialNotes: z.string().trim().optional(),
 }).refine((value) => value.voltage !== "other" || Boolean(value.voltageOtherVac), {
   message: "Specify the voltage",
@@ -183,21 +187,25 @@ export type FabricProSpec = z.infer<typeof fabricProSpecSchema>;
  * disabled download button and the 422 the route returns, so the UI and the
  * server can never disagree about what is missing.
  *
- * Two keys need more than a presence check: `drills` is satisfied by an
- * explicit "no drills", and `sections` is not satisfied by an empty array.
+ * Two keys need more than a presence check: `drills` is satisfied when absent
+ * or answered "no" and missing only when ticked with no detail, and
+ * `sections` is not satisfied by an empty array.
  */
 export function missingKeys(spec: unknown, required: string[]): string[] {
   const record = (spec ?? {}) as Record<string, unknown>;
 
   return required.filter((key) => {
     const value = record[key];
-    if (value === undefined || value === null) return true;
-
+    // Drills are optional: the "Drills required" box is a yes/no, and an
+    // unticked box means no. Only "required, but no detail" blocks the form.
     if (key === "drills") {
+      if (value === undefined || value === null) return false;
       const drills = value as { required?: boolean; detail?: string };
       if (drills.required === false) return false;
       return !drills.detail || drills.detail.trim().length === 0;
     }
+
+    if (value === undefined || value === null) return true;
 
     if (Array.isArray(value)) return value.length === 0;
     if (typeof value === "string") return value.trim().length === 0;

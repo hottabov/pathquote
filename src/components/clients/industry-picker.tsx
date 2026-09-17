@@ -22,7 +22,24 @@ export type IndustryOption = { id: string; name: string; aliases: { name: string
 type Props = {
   /** Matches the `htmlFor` of the `<FieldRow>` this is mounted in. */
   id?: string;
-  companyId: string;
+  /**
+   * The company to save the choice onto, through `setCompanyIndustry`.
+   * Omitted when there is no company yet (the "new client" screen, the
+   * builder's "+ New company" panel): the picker then only reports the
+   * choice through `onChange` and, with `name`, a hidden input, and the
+   * surrounding create action validates and stores it.
+   */
+  companyId?: string;
+  /** Called with the new selection once it has been applied (saved, when
+   * `companyId` is set). */
+  onChange?: (industryId: string | null) => void;
+  /** Form field name for a hidden input carrying the selection ("" = none). */
+  name?: string;
+  /**
+   * Whether a non-matching query offers "Create '...'". Defaults to true;
+   * pass false to restrict the choice to the existing list.
+   */
+  allowCreate?: boolean;
   industries: IndustryOption[];
   selectedId: string | null;
   /**
@@ -44,11 +61,13 @@ type Props = {
 /**
  * Typeahead over the global industry list: filters as you type, offers
  * "Create '...'" for a non-matching query, and (admin-only) a rename pencil
- * next to the current selection. Writes through its own server actions
- * (`setCompanyIndustry`, `createIndustry`, `renameIndustry`) rather than the
- * surrounding `CompanyForm`'s submit, so it only works on a company that
- * already exists — see the `industryPicker` prop on `CompanyForm`, which is
- * `undefined` on the "new client" screen.
+ * next to the current selection. With a `companyId` it writes through its
+ * own server actions (`setCompanyIndustry`, `createIndustry`,
+ * `renameIndustry`) rather than the surrounding `CompanyForm`'s submit (the
+ * edit screen, and the builder's selected-client card). Without one it is a
+ * plain controlled field — `selectedId` in, `onChange` out, plus a hidden
+ * `name` input — for the create flows, where there is no company to save
+ * onto yet and the create action stores the choice.
  *
  * Every mutation calls `revalidatePath`, and this is called directly (not
  * bound to a `<form>`), so a successful `choose`/`create`/`rename` refreshes
@@ -56,7 +75,17 @@ type Props = {
  * way any other server action refresh does in this app (see
  * contacts-section.tsx) — no local mirroring of the selection is needed.
  */
-export function IndustryPicker({ id = "company-industry", companyId, industries, selectedId, usageCount, canRename }: Props) {
+export function IndustryPicker({
+  id = "company-industry",
+  companyId,
+  onChange,
+  name,
+  allowCreate = true,
+  industries,
+  selectedId,
+  usageCount,
+  canRename,
+}: Props) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
@@ -99,18 +128,22 @@ export function IndustryPicker({ id = "company-industry", companyId, industries,
   // an alias of "Retail" offers the row rather than "Create 'Retail trade'" —
   // the duplicate the alias was recorded to prevent.
   const exactMatch = matches.some((i) => industryEqualsQuery(i, query));
-  const canCreate = query.trim().length > 0 && !exactMatch;
+  const canCreate = allowCreate && query.trim().length > 0 && !exactMatch;
 
   async function choose(industryId: string | null) {
-    setPending(true);
     setError(null);
-    const result = await setCompanyIndustry(companyId, industryId);
-    setPending(false);
-    if (result.error) setError(result.error);
-    else {
-      setOpen(false);
-      setQuery("");
+    if (companyId) {
+      setPending(true);
+      const result = await setCompanyIndustry(companyId, industryId);
+      setPending(false);
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
     }
+    onChange?.(industryId);
+    setOpen(false);
+    setQuery("");
   }
 
   async function create() {
@@ -151,6 +184,7 @@ export function IndustryPicker({ id = "company-industry", companyId, industries,
         }
       }}
     >
+      {name !== undefined ? <input type="hidden" name={name} value={selectedId ?? ""} /> : null}
       <div className="flex items-center gap-2">
         <input
           id={id}
@@ -162,7 +196,7 @@ export function IndustryPicker({ id = "company-industry", companyId, industries,
           aria-autocomplete="list"
           aria-haspopup="listbox"
           value={open ? query : (selected?.name ?? "")}
-          placeholder="Search or add an industry"
+          placeholder={allowCreate ? "Search or add an industry" : "Search industries"}
           disabled={pending}
           onFocus={() => setOpen(true)}
           onChange={(e) => setQuery(e.target.value)}
@@ -203,7 +237,7 @@ export function IndustryPicker({ id = "company-industry", companyId, industries,
                 disabled={pending}
                 className="focus-ring flex min-h-11 w-full items-center px-3 text-left text-sm text-slate-500 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Clear
+                &mdash; None &mdash;
               </button>
             </li>
           )}
@@ -231,6 +265,11 @@ export function IndustryPicker({ id = "company-industry", companyId, industries,
               </li>
             );
           })}
+          {matches.length === 0 && !canCreate && (
+            <li role="presentation" className="flex min-h-11 items-center px-3 text-sm text-slate-500">
+              No matching industries
+            </li>
+          )}
           {canCreate && (
             <li role="presentation">
               <button

@@ -147,12 +147,30 @@ export const SHEET_CSS = `
     border-left: 3px solid #00b8e2;
     background: #f7fbfd;
   }
+  /* Bumped 9px -> 11px: at 9px this read as a caption stuck on the box rather
+     than as the heading of the two blocks the whole header hangs off. 11px
+     with the same uppercase and 1px tracking still sits clearly under
+     .pq-client-name (13px, dark) in the hierarchy, so the company/person name
+     stays what the eye lands on first. The 3px bottom margin replaces the gap
+     the smaller cap height used to leave on its own. */
   .pq-client-label {
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 1px;
     text-transform: uppercase;
     color: #00b8e2;
+    margin-bottom: 3px;
+  }
+  /* Phone/email/website links. Chromium turns every <a href> into a real PDF
+     link annotation, so these are tappable in the sent PDF, not only in the
+     in-app preview. They deliberately inherit colour and drop the underline:
+     on a quote these are address lines that happen to be actionable, and a
+     page of blue underlined text would read as a web page, not a document.
+     Discoverability costs nothing here — a customer taps an email address
+     because it is an email address, not because it is styled like a link. */
+  .pq-link {
+    color: inherit;
+    text-decoration: none;
   }
   .pq-client-name {
     font-size: 13px;
@@ -166,34 +184,50 @@ export const SHEET_CSS = `
   .pq-client-contact {
     margin-top: 4px;
   }
-  /* "Prepared by" photo (see the JSX above) — sits at the right edge of the
-     block, opposite the name/phone/email text; only rendered when the
-     author has one, and nothing reserves its space otherwise (no
-     placeholder, no extra gap). */
+  /* "Prepared by" box (see the JSX above). It used to be a two-item flex row —
+     text column | photo — which is exactly what broke the email: the box is
+     (170mm - 16px gap) / 2 = ~313px, so after 12px padding and the 3px rule
+     its content had ~286px, and a 100px photo plus a 10px gap took 110px of
+     that. ~176px cannot hold brandon.clark@pathfindercut.com (~226px at 14px
+     Arial), so overflow-wrap: anywhere split the domain. Stacking removes the
+     competition for that width instead of mitigating it. */
   .pq-prepared-by-client {
+    display: block;
+  }
+  /* Row 1: photo + name only. A name is short and breaks at spaces, unlike an
+     email address, so it is safe to share a row with a fixed-width image.
+     align-items: center, not flex-start: the name is one line against a 56px
+     circle, and top-aligning it would hang it off the photo's forehead. */
+  .pq-prepared-by-identity {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
+    align-items: center;
     gap: 10px;
+    margin-top: 4px;
   }
-  /* The name/phone/email column beside the photo. min-width: 0 overrides a
-     flex item's default min-width: auto, which refuses to shrink below the
-     widest unbreakable run inside it — an address like
-     marketingmanager@pathfindercut.com is ~240px against a ~180px share, so
-     without this the column won the argument and pushed
-     .pq-prepared-by-avatar (flex-shrink: 0) out past the box. "anywhere"
-     rather than "break-word" because it also lowers the element's min-content
-     width, which is what the flex layout actually measures. */
-  .pq-prepared-by-text {
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
+  /* 56px and round, down from a 100px square: the photo's job here is to put a
+     face on the quote, not to be a portrait, and at this size it reads as the
+     author's identity mark beside the name. Half the width is also half of
+     what the old layout took from the text. flex-shrink: 0 so the flex
+     algorithm cannot squash the circle into an oval. */
   .pq-prepared-by-avatar {
-    width: 100px;
-    height: 100px;
-    border-radius: 4px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
     object-fit: cover;
     flex-shrink: 0;
+  }
+  /* .pq-client-name's 2px top margin is for a name sitting under a label; in a
+     centred flex row it only pushes the name off-axis. */
+  .pq-prepared-by-name {
+    margin-top: 0;
+  }
+  /* Row 2: phone + email across the box's full ~286px with nothing beside
+     them — room for an email of ~39 characters at 14px without wrapping.
+     overflow-wrap stays as the last resort for a genuinely longer address: a
+     safety net now, not the everyday behaviour it used to be. */
+  .pq-prepared-by-contact {
+    margin-top: 8px;
+    overflow-wrap: anywhere;
   }
   /* The setup image (see the JSX comment above) — full content width, a
      bounded height so one oversized upload can't push the price banner off

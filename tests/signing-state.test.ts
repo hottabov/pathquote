@@ -6,27 +6,28 @@ import {
   canComplete,
   canDecline,
   canAuthorSign,
+  canAccept,
   canDeleteDocument,
   statusAfterView,
   signatureRolesClearedBy,
   signingStatusLabel,
-  NO_AUTHOR_SIGNATURE,
   NOT_FINAL,
   NO_CONTACT_EMAIL,
   ALREADY_IN_FLIGHT,
   SIGNED_IS_FINAL,
   SIGNED_QUOTE_NOT_DELETABLE,
+  NOT_CLIENT_SIGNED,
+  NO_MANAGER_SIGNATURE,
 } from "../src/lib/signing/state";
 
 const sendable = {
   documentStatus: "FINAL" as const,
   signingStatus: "NOT_SENT" as const,
-  hasAuthorSignature: true,
   contactEmail: "client@example.com",
 };
 
 describe("canSendToClient", () => {
-  it("allows a FINAL, author-signed document with a contact email", () => {
+  it("allows a FINAL document with a contact email, with no manager signature required (§6.1)", () => {
     expect(canSendToClient(sendable)).toEqual({ ok: true });
   });
 
@@ -34,13 +35,6 @@ describe("canSendToClient", () => {
     expect(canSendToClient({ ...sendable, documentStatus: "DRAFT" })).toEqual({
       ok: false,
       reason: NOT_FINAL,
-    });
-  });
-
-  it("refuses when the author has not signed", () => {
-    expect(canSendToClient({ ...sendable, hasAuthorSignature: false })).toEqual({
-      ok: false,
-      reason: NO_AUTHOR_SIGNATURE,
     });
   });
 
@@ -82,35 +76,22 @@ describe("canSendToClient", () => {
       canSendToClient({
         documentStatus: "DRAFT",
         signingStatus: "SIGNED",
-        hasAuthorSignature: false,
         contactEmail: null,
       })
     ).toEqual({ ok: false, reason: SIGNED_IS_FINAL });
   });
 
-  it("prefers NOT_FINAL over a missing signature and a missing email", () => {
+  it("prefers NOT_FINAL over a missing email", () => {
     expect(
       canSendToClient({
         documentStatus: "DRAFT",
         signingStatus: "NOT_SENT",
-        hasAuthorSignature: false,
         contactEmail: null,
       })
     ).toEqual({ ok: false, reason: NOT_FINAL });
   });
 
-  it("prefers a missing signature over a missing email", () => {
-    expect(
-      canSendToClient({
-        documentStatus: "FINAL",
-        signingStatus: "NOT_SENT",
-        hasAuthorSignature: false,
-        contactEmail: null,
-      })
-    ).toEqual({ ok: false, reason: NO_AUTHOR_SIGNATURE });
-  });
-
-  it("prefers ALREADY_IN_FLIGHT over NOT_FINAL, a missing signature and a missing email", () => {
+  it("prefers ALREADY_IN_FLIGHT over NOT_FINAL and a missing email", () => {
     // Reachable: canUnfinalize permits unfinalizing a SENT document, so a
     // DRAFT quote with a live client link is a real state, not a contrived
     // one.
@@ -118,7 +99,6 @@ describe("canSendToClient", () => {
       canSendToClient({
         documentStatus: "DRAFT",
         signingStatus: "SENT",
-        hasAuthorSignature: false,
         contactEmail: null,
       })
     ).toEqual({ ok: false, reason: ALREADY_IN_FLIGHT });
@@ -160,20 +140,39 @@ describe("canComplete", () => {
 });
 
 describe("canAuthorSign", () => {
-  it("allows a quote that hasn't been sent yet", () => {
-    expect(canAuthorSign("NOT_SENT")).toBe(true);
+  it("lets the manager sign a FINAL quote in any order relative to the client", () => {
+    // Unconditional now: the two parties sign independently, in any order.
+    expect(canAuthorSign()).toBe(true);
+  });
+});
+
+describe("canAccept", () => {
+  it("allows accepting a client-signed quote once the manager has also signed", () => {
+    expect(canAccept({ signingStatus: "SIGNED", hasAuthorSignature: true })).toEqual({ ok: true });
   });
 
-  it("allows re-signing after the client declined", () => {
-    expect(canAuthorSign("DECLINED")).toBe(true);
-  });
-
-  it.each(["SENT", "VIEWED", "SIGNED"] as const)(
-    "refuses while a link is outstanding or already completed (%s)",
-    (status) => {
-      expect(canAuthorSign(status)).toBe(false);
+  it("refuses until the client has signed", () => {
+    for (const signingStatus of ["NOT_SENT", "SENT", "VIEWED", "DECLINED"] as const) {
+      expect(canAccept({ signingStatus, hasAuthorSignature: true })).toEqual({
+        ok: false,
+        reason: NOT_CLIENT_SIGNED,
+      });
     }
-  );
+  });
+
+  it("refuses a client-signed quote the manager hasn't signed, and says why", () => {
+    expect(canAccept({ signingStatus: "SIGNED", hasAuthorSignature: false })).toEqual({
+      ok: false,
+      reason: NO_MANAGER_SIGNATURE,
+    });
+  });
+
+  it("reports the missing client signature before the missing manager one", () => {
+    expect(canAccept({ signingStatus: "NOT_SENT", hasAuthorSignature: false })).toEqual({
+      ok: false,
+      reason: NOT_CLIENT_SIGNED,
+    });
+  });
 });
 
 describe("canDecline", () => {

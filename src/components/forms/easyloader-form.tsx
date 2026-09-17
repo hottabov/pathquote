@@ -1,5 +1,5 @@
 import type { FormContext } from "@/lib/production-forms/types";
-import { easyLoaderPrintedWidthCell } from "@/lib/production-forms/specs/easyloader";
+import { easyLoaderPrintedWidth } from "@/lib/production-forms/specs/easyloader";
 import { layoutTotals, MAX_SECTIONS, type Section as TableSection } from "@/lib/production-forms/table-sections";
 import { EndUserSection, FormSheet, provenance } from "./form-sheet";
 import { Footnote, InlineValue, OfficeUse, Section, SectionRow, Tick, TickGrid } from "./primitives";
@@ -37,7 +37,7 @@ export function EasyLoaderForm({ ctx }: { ctx: FormContext }) {
   const usage = spec.usage ?? "onload";
   const sections = spec.sections ?? [];
   const totals = layoutTotals(sections);
-  const printedWidth = easyLoaderPrintedWidthCell(ctx.item.specs);
+  const printedWidth = easyLoaderPrintedWidth(ctx.item.specs);
   const rollFeedQty = ctx.item.options
     .filter((option) => option.role === "EL_ROLL_FEED")
     .reduce((sum, option) => sum + option.qty, 0);
@@ -54,13 +54,13 @@ export function EasyLoaderForm({ ctx }: { ctx: FormContext }) {
 
       <Section title="Width">
         <TickGrid variant="col">
-          <Tick lead on={printedWidth === "I31"}>
+          <Tick lead on={printedWidth === 2020}>
             <span className="pf-num">2020 mm</span>{" "}
             <span className="pf-desc" style={{ fontSize: "7pt" }}>
               matched for 1800 mm spreading
             </span>
           </Tick>
-          <Tick lead on={printedWidth === "I33"}>
+          <Tick lead on={printedWidth === 2420}>
             <span className="pf-num">2420 mm</span>{" "}
             <span className="pf-desc" style={{ fontSize: "7pt" }}>
               matched for 2200 mm spreading
@@ -169,7 +169,9 @@ export function EasyLoaderForm({ ctx }: { ctx: FormContext }) {
           <Tick on={hasRole(ctx, "EL_ROLL_HOLDER")}>
             Perforated paper roll holder attachment <span className="pf-desc">— with bar and cones</span>
           </Tick>
-          <Tick on={hasRole(ctx, "CRATE")}>Crate required</Tick>
+          <Tick on={hasRole(ctx, "CRATE")}>
+            Wooden crate <span className="pf-desc">— built and packed by production</span>
+          </Tick>
         </div>
 
         {railM !== null ? (
@@ -192,7 +194,6 @@ export function EasyLoaderForm({ ctx }: { ctx: FormContext }) {
           "System reg. no.",
           "Person",
           "Distribution date",
-          "Expected dispatch date",
           "Client expected install",
           "Actual install date",
         ]}

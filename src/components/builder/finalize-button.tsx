@@ -18,7 +18,18 @@ import { finalizeDocument } from "@/lib/actions/finalize";
  * into its read-only FINAL view (every section below switches `readOnly`),
  * not just have one row's data change underneath it.
  */
-export function FinalizeButton({ documentId }: { documentId: string }) {
+export function FinalizeButton({
+  documentId,
+  blocker = null,
+}: {
+  documentId: string;
+  /**
+   * What still has to be completed before this quote can be finalized
+   * (`productionIssues`), or null. The button stays disabled while it is
+   * set; the server refuses the same state regardless.
+   */
+  blocker?: string | null;
+}) {
   const router = useRouter();
   const confirm = useConfirm();
   const toast = useToast();
@@ -50,12 +61,17 @@ export function FinalizeButton({ documentId }: { documentId: string }) {
       <Button
         type="button"
         onClick={handleClick}
-        disabled={pending}
+        disabled={pending || blocker !== null}
         className="h-11 w-full bg-brand text-white hover:bg-brand/90"
       >
         <CheckCircle2 className="size-4" data-icon="inline-start" aria-hidden="true" />
         {pending ? "Finalizing…" : "Finalize"}
       </Button>
+      {blocker ? (
+        <p role="status" className="text-sm text-amber-700">
+          Complete before finalizing — {blocker}
+        </p>
+      ) : null}
       {error ? (
         <p role="alert" className="text-sm text-destructive">
           {error}

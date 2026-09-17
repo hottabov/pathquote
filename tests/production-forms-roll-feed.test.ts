@@ -1,8 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { buildPatches, unmatchedOptions } from "../src/lib/production-forms/resolve";
-import { formContext, formItem, xlsxForm } from "./helpers/fixtures";
+import { renderToStaticMarkup } from "react-dom/server";
+import { resolveForm, unmatchedOptions } from "../src/lib/production-forms/resolve";
+import { EasyLoaderForm } from "../src/components/forms/easyloader-form";
+import { FormDocument } from "../src/components/forms/form-sheet";
+import { formContext, formItem } from "./helpers/fixtures";
 
-const spec = xlsxForm("EASYLOADER");
+const elForm = resolveForm("EASYLOADER")!;
 
 const rollFeedOption = (qty: number) => ({
   id: "opt-rf",
@@ -27,35 +30,49 @@ const context = (options: ReturnType<typeof rollFeedOption>[], distancesMm?: num
     }),
   });
 
-const patchFor = (cell: string, patches: { cell: string; value: string }[]) =>
-  patches.find((patch) => patch.cell === cell)?.value;
+const render = (options: ReturnType<typeof rollFeedOption>[], distancesMm?: number[]) =>
+  renderToStaticMarkup(FormDocument({ children: EasyLoaderForm({ ctx: context(options, distancesMm) }) }));
+
+const marked = (html: string, state: "pf-on" | "pf-std"): string[] =>
+  [...html.matchAll(new RegExp(`class="pf-tick[^"]*${state}"[^>]*>(.*?)</label>`, "g"))].map((m) =>
+    m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+  );
 
 describe("EasyLoader roll feed", () => {
   it("ticks the row and prints the quantity from the option line, not the spec", () => {
-    const patches = buildPatches(spec, context([rollFeedOption(2)], [300, 1500]));
+    const html = render([rollFeedOption(2)], [300, 1500]);
 
-    expect(patchFor("D59", patches)).toBe("X");
-    expect(patchFor("F61", patches)).toBe("2");
+    expect(marked(html, "pf-on")).toContain(
+      "Single roll feed attachment — EL-2020 / EL-2420 only, includes side keepers"
+    );
+    expect(html).toContain(">2</span>");
   });
 
   it("prints each distance in its own printed row", () => {
-    const patches = buildPatches(spec, context([rollFeedOption(3)], [300, 1500, 2700]));
+    const html = render([rollFeedOption(3)], [300, 1500, 2700]);
+    const rows = [...html.matchAll(/#(\d)<\/span><span class="pf-run pf-short">(\d*)<\/span>/g)].map(
+      (m) => [m[1], m[2]]
+    );
 
-    expect(patchFor("K61", patches)).toBe("300");
-    expect(patchFor("K63", patches)).toBe("1500");
-    expect(patchFor("K65", patches)).toBe("2700");
-    expect(patchFor("K67", patches)).toBeUndefined();
+    expect(rows).toEqual([
+      ["1", "300"],
+      ["2", "1500"],
+      ["3", "2700"],
+      ["4", ""],
+    ]);
   });
 
   it("leaves the row untouched when no attachment was sold", () => {
-    const patches = buildPatches(spec, context([]));
+    const html = render([]);
 
-    expect(patchFor("D59", patches)).toBeUndefined();
-    expect(patchFor("F61", patches)).toBeUndefined();
+    expect(marked(html, "pf-on")).not.toContain(
+      "Single roll feed attachment — EL-2020 / EL-2420 only, includes side keepers"
+    );
+    expect(html).not.toContain("Distance from X = 0");
   });
 
   it("keeps a sold attachment off the Additional items sheet", () => {
-    const unmatched = unmatchedOptions(spec, context([rollFeedOption(1)]));
+    const unmatched = unmatchedOptions(elForm, context([rollFeedOption(1)]));
 
     expect(unmatched.map((option) => option.code)).toEqual([]);
   });
@@ -63,9 +80,12 @@ describe("EasyLoader roll feed", () => {
   it("still prints the distances a spec carries for an attachment bought earlier", () => {
     // The customer owns the attachment already, so no option line -- the row
     // is not ticked, but the distances the service crew needs still print.
-    const patches = buildPatches(spec, context([], [300]));
+    const html = render([], [300]);
 
-    expect(patchFor("D59", patches)).toBeUndefined();
-    expect(patchFor("K61", patches)).toBe("300");
+    expect(marked(html, "pf-on")).not.toContain(
+      "Single roll feed attachment — EL-2020 / EL-2420 only, includes side keepers"
+    );
+    expect(html).toContain("Distance from X = 0");
+    expect(html).toContain(">300</span>");
   });
 });

@@ -491,8 +491,9 @@ describe("prices-us.json well-formedness", () => {
     }
   });
 
-  it("has no duplicate codes", () => {
-    const codes = usPrices.prices.map((p) => p.code);
+  it("has no duplicate code within a table", () => {
+    // A software code is priced once as a product and once as an option.
+    const codes = usPrices.prices.map((p) => `${p.kind ?? "?"}:${p.code}`);
     const duplicates = codes.filter((c, i) => codes.indexOf(c) !== i);
     expect(duplicates).toEqual([]);
   });

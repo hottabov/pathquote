@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { Building2, Search, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { SectionCard, fieldInputClass } from "@/components/ui-kit";
+import { FieldRow, SectionCard, fieldInputClass } from "@/components/ui-kit";
 import { useToast } from "@/components/ui-kit/client";
 import {
   CompanyDeliverySameAsMainField,
@@ -17,6 +17,7 @@ import {
   EMPTY_CONTACT_FIELDS,
   type ContactFieldValues,
 } from "@/components/clients/contact-fields";
+import { IndustryPicker, type IndustryOption } from "@/components/clients/industry-picker";
 import { cn } from "@/lib/utils";
 import { setDocumentClient } from "@/lib/actions/documents";
 import { createCompanyInline, createContactInline } from "@/lib/actions/clients";
@@ -53,16 +54,26 @@ import type { ClientPickerCompany } from "@/lib/queries/documents";
  * do (`@/components/clients/company-fields` and `.../contact-fields`) — only
  * the layout and the submission mechanics are this file's own, which is the
  * whole of what actually differs between the two screens.
+ *
+ * Industry (printed on the production order forms) belongs to the company,
+ * so the builder has no field of its own for it once a client is picked —
+ * it is edited on the company card at /clients. The "+ New company" panel
+ * still offers it, since that panel *is* the company card for a company
+ * that doesn't exist yet; creating a new industry stays on
+ * /settings/industries.
  */
 export function ClientSection({
   documentId,
   companies,
+  industries,
   initialCompanyId,
   initialContactId,
   readOnly = false,
 }: {
   documentId: string;
   companies: ClientPickerCompany[];
+  /** The shared Industry list, for the "+ New company" panel's picker. */
+  industries: IndustryOption[];
   initialCompanyId: string | null;
   initialContactId: string | null;
   readOnly?: boolean;
@@ -79,6 +90,7 @@ export function ClientSection({
   const [showCompanyForm, setShowCompanyForm] = useState(false);
   const [showMoreCompanyFields, setShowMoreCompanyFields] = useState(false);
   const [companyForm, setCompanyForm] = useState<CompanyFieldValues>(emptyCompanyFields);
+  const [companyIndustryId, setCompanyIndustryId] = useState<string | null>(null);
   const [companyFormPending, setCompanyFormPending] = useState(false);
   const [companyFormError, setCompanyFormError] = useState<string | null>(null);
 
@@ -151,6 +163,7 @@ export function ClientSection({
     setShowCompanyForm(false);
     setCompanyFormError(null);
     setCompanyForm(emptyCompanyFields());
+    setCompanyIndustryId(null);
     setShowMoreCompanyFields(false);
   }
 
@@ -165,7 +178,7 @@ export function ClientSection({
     setCompanyFormPending(true);
     // `CompanyFieldValues` and `CompanyInlineInput` carry the same fields
     // under the same names, so the whole form goes over as-is.
-    const result = await createCompanyInline(companyForm);
+    const result = await createCompanyInline({ ...companyForm, industryId: companyIndustryId });
     setCompanyFormPending(false);
 
     if ("error" in result) {
@@ -173,7 +186,12 @@ export function ClientSection({
       return;
     }
 
-    const newCompany: ClientPickerCompany = { id: result.company.id, name: result.company.name, contacts: [] };
+    const newCompany: ClientPickerCompany = {
+      id: result.company.id,
+      name: result.company.name,
+      industryId: companyIndustryId,
+      contacts: [],
+    };
     setLocalCompanies((prev) => [...prev, newCompany].sort((a, b) => a.name.localeCompare(b.name)));
     setCompanyId(result.company.id);
     setContactId("");
@@ -225,6 +243,7 @@ export function ClientSection({
   return (
     <SectionCard
       title="Client"
+      icon={<Building2 className="size-5" />}
       actions={
         !readOnly ? (
           <button
@@ -308,6 +327,17 @@ export function ClientSection({
                 <CompanyField binding={companyBinding} field="city" />
                 <CompanyField binding={companyBinding} field="country" />
                 <CompanyField binding={companyBinding} field="website" className="sm:col-span-2" />
+                <FieldRow label="Industry" htmlFor="inline-company-industry" className="sm:col-span-2">
+                  <IndustryPicker
+                    id="inline-company-industry"
+                    industries={industries}
+                    selectedId={companyIndustryId}
+                    onChange={setCompanyIndustryId}
+                    allowCreate={false}
+                    usageCount={null}
+                    canRename={false}
+                  />
+                </FieldRow>
               </div>
 
               <button

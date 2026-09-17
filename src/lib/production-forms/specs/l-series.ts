@@ -1,4 +1,5 @@
 import { lSeriesSpecSchema } from "@/lib/validation/production-spec";
+import { PATHWORKS_ROLES } from "../pathworks";
 import type { HtmlFormSpec } from "../types";
 
 /**
@@ -47,5 +48,6 @@ export const lSeriesSpec: HtmlFormSpec = {
     "CRATE",
     "MRK",
     "TRANSFORMER",
+    ...PATHWORKS_ROLES,
   ],
 };

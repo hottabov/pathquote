@@ -66,17 +66,6 @@ export function buildFormContexts(
   const company = document.company;
   const addressLines = company ? companyAddressLines(company) : [];
 
-  const deliveryAddressLines =
-    company && !company.deliverySameAsMain
-      ? companyAddressLines({
-          street: company.deliveryStreet,
-          city: company.deliveryCity,
-          state: company.deliveryState,
-          postcode: company.deliveryPostcode,
-          country: company.deliveryCountry,
-        })
-      : addressLines;
-
   // Which table each form prints rail lengths off, decided once for the whole
   // document: a FabricPro runs over one table, so the pairing is per machine
   // and never a sum (rails.ts). Both lists are in document order, which is
@@ -148,7 +137,6 @@ export function buildFormContexts(
           phone: document.contact?.phone ?? null,
           email: document.contact?.email ?? null,
         },
-        deliveryAddressLines,
         software,
         softwareCodes,
         rails: rails.get(item.id) ?? null,

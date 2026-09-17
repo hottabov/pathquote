@@ -1,568 +1,749 @@
 {
-  "extractedAt": "2026-09-11T13:31:32.760Z",
+  "extractedAt": "2026-09-17T01:57:06.330Z",
   "prices": [
     {
       "code": "180-E",
+      "kind": "option",
       "amountUsd": 5304
     },
     {
       "code": "220-E",
+      "kind": "option",
       "amountUsd": 7071
     },
     {
       "code": "ABR-L",
+      "kind": "option",
       "amountUsd": 2507
     },
     {
       "code": "ABR-M",
+      "kind": "option",
       "amountUsd": 2507
     },
     {
       "code": "AFP",
+      "kind": "option",
       "amountUsd": 1671
     },
     {
       "code": "ANT-V5",
+      "kind": "option",
+      "amountUsd": 6429
+    },
+    {
+      "code": "ANT-V5",
+      "kind": "product",
       "amountUsd": 6429
     },
     {
       "code": "ANT-V6",
+      "kind": "option",
+      "amountUsd": 9054
+    },
+    {
+      "code": "ANT-V6",
+      "kind": "product",
       "amountUsd": 9054
     },
     {
       "code": "APM-L",
+      "kind": "option",
       "amountUsd": 19500
     },
     {
       "code": "APM-M",
+      "kind": "option",
       "amountUsd": 19500
     },
     {
       "code": "BCR-L",
+      "kind": "option",
       "amountUsd": 1463
     },
     {
       "code": "BCR-M",
+      "kind": "option",
       "amountUsd": 1462.5
     },
     {
       "code": "Crate-EL",
+      "kind": "option",
       "amountUsd": 1125
     },
     {
       "code": "Crate-FP",
+      "kind": "option",
       "amountUsd": 1254
     },
     {
       "code": "Crate-HDRF-180",
+      "kind": "option",
       "amountUsd": 1254
     },
     {
       "code": "Crate-HDRF-220",
+      "kind": "option",
       "amountUsd": 1400
     },
     {
       "code": "Crate-HDRF-320",
+      "kind": "option",
       "amountUsd": 1600
     },
     {
       "code": "Crate-L-180",
+      "kind": "option",
       "amountUsd": 2507
     },
     {
       "code": "Crate-L-220",
+      "kind": "option",
       "amountUsd": 2786
     },
     {
       "code": "Crate-L-320",
+      "kind": "option",
       "amountUsd": 3000
     },
     {
       "code": "Crate-M-180",
+      "kind": "option",
       "amountUsd": 2507
     },
     {
       "code": "Crate-M-220",
+      "kind": "option",
       "amountUsd": 2786
     },
     {
       "code": "DKT-30",
+      "kind": "option",
       "amountUsd": 587
     },
     {
       "code": "DKT-45",
+      "kind": "option",
       "amountUsd": 587
     },
     {
       "code": "DMT",
+      "kind": "option",
       "amountUsd": 12768
     },
     {
       "code": "DR2",
+      "kind": "option",
       "amountUsd": 5850
     },
     {
       "code": "DRG-1",
+      "kind": "option",
       "amountUsd": 2674
     },
     {
       "code": "DRG-2",
+      "kind": "option",
       "amountUsd": 2674
     },
     {
       "code": "DRG-3",
+      "kind": "option",
       "amountUsd": 2674
     },
     {
       "code": "DRV-28",
+      "kind": "option",
       "amountUsd": 5143
     },
     {
       "code": "EF-2020",
+      "kind": "product",
       "amountUsd": 16714
     },
     {
       "code": "EF-2420",
+      "kind": "product",
       "amountUsd": 17829
     },
     {
       "code": "EF-3220",
+      "kind": "product",
       "amountUsd": 27161
     },
     {
       "code": "EF-4030",
+      "kind": "product",
       "amountUsd": 29250
     },
     {
       "code": "EL-2020",
+      "kind": "product",
       "amountUsd": 0
     },
     {
       "code": "EL-2020-BB12",
+      "kind": "option",
       "amountUsd": 209
     },
     {
       "code": "EL-2020-DM1",
+      "kind": "option",
       "amountUsd": 6936
     },
     {
       "code": "EL-2020-DM12",
+      "kind": "option",
       "amountUsd": 1337
     },
     {
       "code": "EL-2020-RF",
+      "kind": "option",
       "amountUsd": 613
     },
     {
       "code": "EL-2020-RL12",
+      "kind": "option",
       "amountUsd": 161
     },
     {
       "code": "EL-2020-ST12",
+      "kind": "option",
       "amountUsd": 557
     },
     {
       "code": "EL-2420",
+      "kind": "product",
       "amountUsd": 0
     },
     {
       "code": "EL-2420-BB12",
+      "kind": "option",
       "amountUsd": 209
     },
     {
       "code": "EL-2420-DM1",
+      "kind": "option",
       "amountUsd": 7340
     },
     {
       "code": "EL-2420-DM12",
+      "kind": "option",
       "amountUsd": 1741
     },
     {
       "code": "EL-2420-RF",
+      "kind": "option",
       "amountUsd": 641
     },
     {
       "code": "EL-2420-RL12",
+      "kind": "option",
       "amountUsd": 161
     },
     {
       "code": "EL-2420-ST12",
+      "kind": "option",
       "amountUsd": 585
     },
     {
       "code": "EL-3220",
+      "kind": "product",
       "amountUsd": 0
     },
     {
       "code": "EL-3220-BB12",
+      "kind": "option",
       "amountUsd": 209
     },
     {
       "code": "EL-3220-DM1",
+      "kind": "option",
       "amountUsd": 12480
     },
     {
       "code": "EL-3220-DM12",
+      "kind": "option",
       "amountUsd": 2406
     },
     {
       "code": "EL-3220-RL12",
+      "kind": "option",
       "amountUsd": 161
     },
     {
       "code": "EL-3220-ST12",
+      "kind": "option",
       "amountUsd": 1003
     },
     {
       "code": "EL-4030",
+      "kind": "product",
       "amountUsd": 0
     },
     {
       "code": "EL-4030-BB12",
+      "kind": "option",
       "amountUsd": 209
     },
     {
       "code": "EL-4030-DM1",
+      "kind": "option",
       "amountUsd": 12480
     },
     {
       "code": "EL-4030-DM12",
+      "kind": "option",
       "amountUsd": 2406
     },
     {
       "code": "EL-4030-RL12",
+      "kind": "option",
       "amountUsd": 161
     },
     {
       "code": "EL-4030-ST12",
+      "kind": "option",
       "amountUsd": 1003
     },
     {
       "code": "FP-180",
+      "kind": "product",
       "amountUsd": 42000
     },
     {
       "code": "FP-220",
+      "kind": "product",
       "amountUsd": 50250
     },
     {
       "code": "FP-300",
+      "kind": "product",
       "amountUsd": 68000
     },
     {
       "code": "HDC-L",
+      "kind": "option",
       "amountUsd": 2786
     },
     {
       "code": "HDC-M",
+      "kind": "option",
       "amountUsd": 2785.71
     },
     {
       "code": "HDRF-180",
+      "kind": "product",
       "amountUsd": 12500
     },
     {
       "code": "HDRF-220",
+      "kind": "product",
       "amountUsd": 13900
     },
     {
       "code": "HDRF-320",
+      "kind": "product",
       "amountUsd": 15290
     },
     {
       "code": "HFV-L",
+      "kind": "option",
       "amountUsd": 17143
     },
     {
       "code": "HFV-M",
+      "kind": "option",
       "amountUsd": 6129
     },
     {
       "code": "IJP",
+      "kind": "option",
       "amountUsd": 7020
     },
     {
       "code": "IKA",
+      "kind": "option",
       "amountUsd": 3970
     },
     {
       "code": "JTP",
+      "kind": "option",
       "amountUsd": 7500
     },
     {
       "code": "L-180",
+      "kind": "product",
       "amountUsd": 118029
     },
     {
       "code": "L-180F",
+      "kind": "product",
       "amountUsd": 113657
     },
     {
       "code": "L-220",
+      "kind": "product",
       "amountUsd": 131143
     },
     {
       "code": "L-220F",
+      "kind": "product",
       "amountUsd": 126771
     },
     {
       "code": "L-320E",
+      "kind": "product",
       "amountUsd": 159235
     },
     {
       "code": "L-320EF",
+      "kind": "product",
       "amountUsd": 154864
     },
     {
       "code": "LNS-2020",
+      "kind": "product",
       "amountUsd": 27534
     },
     {
       "code": "LNS-2420",
+      "kind": "product",
       "amountUsd": 28911
     },
     {
       "code": "LNS-3220",
+      "kind": "product",
       "amountUsd": 30356
     },
     {
       "code": "LSC",
+      "kind": "option",
+      "amountUsd": 9750
+    },
+    {
+      "code": "LSC",
+      "kind": "product",
       "amountUsd": 9750
     },
     {
       "code": "M-10180",
+      "kind": "product",
       "amountUsd": 185625
     },
     {
       "code": "M-10220",
+      "kind": "product",
       "amountUsd": 198990
     },
     {
       "code": "M-10300",
+      "kind": "product",
       "amountUsd": 266647
     },
     {
       "code": "M-10390",
+      "kind": "product",
       "amountUsd": 304425
     },
     {
       "code": "M-3180",
+      "kind": "product",
       "amountUsd": 163350
     },
     {
       "code": "M-3220",
+      "kind": "product",
       "amountUsd": 176715
     },
     {
       "code": "M-3300",
+      "kind": "product",
       "amountUsd": 235950
     },
     {
       "code": "M-3390",
+      "kind": "product",
       "amountUsd": 247500
     },
     {
       "code": "M-5180",
+      "kind": "product",
       "amountUsd": 170775
     },
     {
       "code": "M-5220",
+      "kind": "product",
       "amountUsd": 184140
     },
     {
       "code": "M-5300",
+      "kind": "product",
       "amountUsd": 246748
     },
     {
       "code": "M-5390",
+      "kind": "product",
       "amountUsd": 289575
     },
     {
       "code": "M-7180",
+      "kind": "product",
       "amountUsd": 178200
     },
     {
       "code": "M-7220",
+      "kind": "product",
       "amountUsd": 191565
     },
     {
       "code": "M-7300",
+      "kind": "product",
       "amountUsd": 256697
     },
     {
       "code": "M-7390",
+      "kind": "product",
       "amountUsd": 297000
     },
     {
       "code": "MRK",
+      "kind": "option",
       "amountUsd": 2507
     },
     {
       "code": "MTS",
+      "kind": "option",
       "amountUsd": 10446.43
     },
     {
       "code": "MTS-M",
+      "kind": "option",
       "amountUsd": 626.79
     },
     {
       "code": "NTT",
+      "kind": "option",
       "amountUsd": 763
     },
     {
       "code": "OFD-L",
+      "kind": "option",
       "amountUsd": 1950
     },
     {
       "code": "OFD-M",
+      "kind": "option",
       "amountUsd": 1950
     },
     {
       "code": "OFJ",
+      "kind": "option",
       "amountUsd": 3907.5
     },
     {
       "code": "OFP-L",
+      "kind": "option",
       "amountUsd": 3134
     },
     {
       "code": "OFP-M",
+      "kind": "option",
       "amountUsd": 3133.93
     },
     {
       "code": "PCH-1.0",
+      "kind": "option",
       "amountUsd": 80
     },
     {
       "code": "PCH-2.0",
+      "kind": "option",
       "amountUsd": 80
     },
     {
       "code": "PCH-3.0",
+      "kind": "option",
       "amountUsd": 80
     },
     {
       "code": "PCH-4.0",
+      "kind": "option",
       "amountUsd": 80
     },
     {
       "code": "PCH-5.0",
+      "kind": "option",
       "amountUsd": 80
     },
     {
       "code": "PCH-QR",
+      "kind": "option",
       "amountUsd": 362
     },
     {
       "code": "PDG",
+      "kind": "option",
+      "amountUsd": 2089
+    },
+    {
+      "code": "PDG",
+      "kind": "product",
       "amountUsd": 2089
     },
     {
       "code": "PM-L",
+      "kind": "option",
       "amountUsd": 2089
     },
     {
       "code": "PM-M",
+      "kind": "option",
       "amountUsd": 2089
     },
     {
       "code": "PRA",
+      "kind": "option",
+      "amountUsd": 2250
+    },
+    {
+      "code": "PRA",
+      "kind": "product",
       "amountUsd": 2250
     },
     {
       "code": "PRM-L",
+      "kind": "option",
       "amountUsd": 3214
     },
     {
       "code": "PRM-M",
+      "kind": "option",
       "amountUsd": 3214.29
     },
     {
       "code": "PTW-I",
+      "kind": "option",
+      "amountUsd": 2786
+    },
+    {
+      "code": "PTW-I",
+      "kind": "product",
       "amountUsd": 2786
     },
     {
       "code": "PTW-S",
+      "kind": "product",
       "amountUsd": 3621
     },
     {
       "code": "RKT-28",
+      "kind": "option",
       "amountUsd": 466
     },
     {
       "code": "RKT-40",
+      "kind": "option",
       "amountUsd": 506
     },
     {
       "code": "ST620-2020",
+      "kind": "option",
       "amountUsd": 1003
     },
     {
       "code": "ST620-2420",
+      "kind": "option",
       "amountUsd": 1031
     },
     {
       "code": "SVC-EF-INSTALL",
+      "kind": "option",
       "amountUsd": 360
     },
     {
       "code": "SVC-EL-INSTALL",
+      "kind": "option",
       "amountUsd": 180
     },
     {
       "code": "SVC-FP-INSTALL",
+      "kind": "option",
       "amountUsd": 960
     },
     {
       "code": "SVC-HDRF-INSTALL",
+      "kind": "option",
       "amountUsd": 180
     },
     {
       "code": "SVC-L-INSTALL-L",
+      "kind": "option",
       "amountUsd": 8820
     },
     {
       "code": "SVC-L-INSTALL-S",
+      "kind": "option",
       "amountUsd": 6900
     },
     {
       "code": "SVC-LNS-INSTALL",
+      "kind": "option",
       "amountUsd": 2600
     },
     {
       "code": "SVC-M-INSTALL",
+      "kind": "option",
       "amountUsd": 6900
     },
     {
       "code": "SVC-M-INSTALL-MTS",
+      "kind": "option",
       "amountUsd": 8820
     },
     {
       "code": "SVC-SW-TRAINING",
+      "kind": "option",
       "amountUsd": 480
     },
     {
       "code": "TR220",
+      "kind": "option",
       "amountUsd": 5036
     },
     {
       "code": "TR480",
+      "kind": "option",
       "amountUsd": 2716
     },
     {
       "code": "WPL",
+      "kind": "option",
+      "amountUsd": 5432
+    },
+    {
+      "code": "WPL",
+      "kind": "product",
       "amountUsd": 5432
     },
     {
       "code": "WPN",
+      "kind": "option",
+      "amountUsd": 696
+    },
+    {
+      "code": "WPN",
+      "kind": "product",
       "amountUsd": 696
     },
     {
       "code": "X-10180",
+      "kind": "product",
       "amountUsd": 248000
     },
     {
       "code": "X-10220",
+      "kind": "product",
       "amountUsd": 262000
     }
   ],

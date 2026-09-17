@@ -24,10 +24,11 @@ export type SigningStatus = "NOT_SENT" | "SENT" | "VIEWED" | "SIGNED" | "DECLINE
 export type Verdict = { ok: true } | { ok: false; reason: string };
 
 export const NOT_FINAL = "Finalize the quote before signing it.";
-export const NO_AUTHOR_SIGNATURE = "Sign the quote before sending it.";
 export const NO_CONTACT_EMAIL = "This quote's contact has no email address.";
 export const ALREADY_IN_FLIGHT = "This quote is already with the client. Revoke the link first.";
 export const SIGNED_IS_FINAL = "A signed quote cannot be reopened. Create a new quote instead.";
+export const NOT_CLIENT_SIGNED = "The client hasn't signed this quote yet.";
+export const NO_MANAGER_SIGNATURE = "Add your signature before accepting the quote.";
 export const SIGNED_QUOTE_NOT_DELETABLE =
   "This quote was signed by the client and is a permanent commercial record. It cannot be deleted.";
 
@@ -37,9 +38,14 @@ function isInFlight(status: SigningStatus): boolean {
 }
 
 /**
- * The three preconditions for emailing a quote to its client, checked in a
- * fixed order so the message a manager sees names the first thing to fix
- * rather than an arbitrary one.
+ * The preconditions for emailing a quote to its client, checked in a fixed
+ * order so the message a manager sees names the first thing to fix rather than
+ * an arbitrary one.
+ *
+ * The manager's own signature is NOT one of them (revisions/send spec §6.1):
+ * a quote is sent with an empty manager-signature block, the client signs
+ * first, and the manager signs only when accepting the signed quote (see
+ * `canAccept`). This reverses the old "sign before send" order.
  *
  * DECLINED is deliberately sendable: a client who said no, then rang to say
  * they had misread it, should not require a brand-new quote number.
@@ -47,13 +53,11 @@ function isInFlight(status: SigningStatus): boolean {
 export function canSendToClient(input: {
   documentStatus: "DRAFT" | "FINAL";
   signingStatus: SigningStatus;
-  hasAuthorSignature: boolean;
   contactEmail: string | null;
 }): Verdict {
   if (input.signingStatus === "SIGNED") return { ok: false, reason: SIGNED_IS_FINAL };
   if (isInFlight(input.signingStatus)) return { ok: false, reason: ALREADY_IN_FLIGHT };
   if (input.documentStatus !== "FINAL") return { ok: false, reason: NOT_FINAL };
-  if (!input.hasAuthorSignature) return { ok: false, reason: NO_AUTHOR_SIGNATURE };
   if (!input.contactEmail || input.contactEmail.trim() === "") {
     return { ok: false, reason: NO_CONTACT_EMAIL };
   }
@@ -68,25 +72,42 @@ export function canRevoke(status: SigningStatus): boolean {
 
 /**
  * Whether the document's author (or an admin signing on their behalf — see
- * `signQuoteAsAuthor`'s own doc comment) may apply their signature right
- * now. True for exactly two statuses:
+ * `signQuoteAsAuthor`'s own doc comment) may apply their signature right now.
  *
- * - NOT_SENT: nobody has been asked to sign yet, the ordinary starting point.
- * - DECLINED: the client said no. The author may re-sign (typically after a
- *   revision) and re-send — same reasoning as `canSendToClient`'s own
- *   comment on why DECLINED is sendable: a client who calls back to say they
- *   misread it shouldn't force a brand-new quote number.
+ * True for EVERY signing status of a FINAL quote — the two parties sign
+ * independently and in any order (product decision: "everyone should be able
+ * to sign, the order doesn't matter"). The manager can sign before sending,
+ * while the client's link is still out (SENT/VIEWED), after the client has
+ * signed (SIGNED — the counter-signature, which then makes the quote
+ * `canAccept`), or after a decline. Adding an AUTHOR `Signature` never reopens
+ * or changes the quote; it only records the manager's signature. When the
+ * client has already signed, `signQuoteAsAuthor` re-archives the signed PDF so
+ * the executed document shows both.
  *
- * False for SENT/VIEWED (a link is already outstanding — revoke it first,
- * `canRevoke` above) and SIGNED (the quote is done; see `SIGNED_IS_FINAL`).
- *
- * Lives here, beside every other transition rule, rather than as a
- * hand-written `!==`/`!==` check inside the action itself — the whole point
- * of this module (see its header comment) is that a rule like this one is
- * testable without a database.
+ * The document must still be FINAL — enforced by `signQuoteAsAuthor`'s own
+ * `status: "FINAL"` load, not here — so a DRAFT (which has no signing status
+ * that matters) is never reached. Kept as a function beside every other
+ * transition rule (and gating `SignButton`'s visibility) so the button and the
+ * action can never disagree, even though the rule is now unconditional.
  */
-export function canAuthorSign(status: SigningStatus): boolean {
-  return status === "NOT_SENT" || status === "DECLINED";
+export function canAuthorSign(): boolean {
+  return true;
+}
+
+/**
+ * Whether a client-signed quote may be accepted into production
+ * (CLIENT_SIGNED → ACCEPTED, spec §1). Two conditions, in priority order so
+ * the manager is told the more fundamental problem first:
+ *
+ * - the client must have signed (signingStatus SIGNED); and
+ * - the manager must have signed too (an AUTHOR Signature exists) — accepting
+ *   is the manager committing the deal, and a quote goes into production with
+ *   both signatures on it, not one.
+ */
+export function canAccept(input: { signingStatus: SigningStatus; hasAuthorSignature: boolean }): Verdict {
+  if (input.signingStatus !== "SIGNED") return { ok: false, reason: NOT_CLIENT_SIGNED };
+  if (!input.hasAuthorSignature) return { ok: false, reason: NO_MANAGER_SIGNATURE };
+  return { ok: true };
 }
 
 /**

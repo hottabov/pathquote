@@ -187,6 +187,19 @@ enum OptionRole {
   // Software mistakenly sold as an option (PTW, PRA-L) -- retired in
   // catalogue v2, role kept so the rows can be identified until then
   SOFTWARE
+  // Software sold as an option on the machine (the same programs also exist
+  // as SOFTWARE products, for laptop-only installs). One role per program,
+  // because each has its own box in the PathWorks section of the cutter
+  // forms. PTW_I is the integrated PathWorks licence; the standalone one is
+  // never an option.
+  PTW_I
+  PRA
+  LSC
+  PDG
+  WPN
+  WPL
+  ANT_V5
+  ANT_V6
   // Sets of consumables (drills)
   CONSUMABLE
 }
@@ -824,6 +837,51 @@ model Document {
   // columns. Null on a DRAFT and on any quote finalised before this
   // column existed — buildQuotationData falls back to live text then.
   documentsSnapshot Json?
+  // --- Revisions & send lifecycle (spec: pathquote-revisions-send) ---------
+  // The spec models a linear QuoteStatus; this repo keeps its deliberate
+  // two-axis model (DocumentStatus DRAFT/FINAL × SigningStatus) and layers the
+  // new lifecycle on as the columns below, so nothing about the existing
+  // finalize/signing state machine has to move. Mapping:
+  //   FINALIZED     = FINAL + signingStatus NOT_SENT
+  //   SENT          = FINAL + signingStatus SENT/VIEWED
+  //   CLIENT_SIGNED = FINAL + signingStatus SIGNED
+  //   ACCEPTED      = CLIENT_SIGNED + acceptedAt set (gate: an AUTHOR Signature
+  //                   exists — the manager's signature, see the Signature model)
+  //
+  // Revision counter and its display label. `revision` is null until the first
+  // finalize (revision 0, label = the bare number e.g. Q-AU-2026-001); each
+  // subsequent finalize that actually changed the content bumps it (label
+  // gains -R1, -R2, ...). Held on the row for a cheap read; the authoritative
+  // per-revision history is the QuoteRevision rows.
+  revision          Int?
+  finalizedAt       DateTime?
+  // Who finalized, as a bare user id (no FK) — the same shape the audit-ish
+  // QuoteEvent/QuoteEmail rows use for actorId/sentById, deliberately not a
+  // relation so a user row can never be blocked from deletion by a historical
+  // reference and this column never needs a back-relation on User.
+  finalizedById     String?
+  // Denormalised "last sent" stamp for the unsent-changes banner; the full
+  // send history is in QuoteEmail. Null until the quote is first sent.
+  sentAt            DateTime?
+  // True after the quote was unfinalized (or a signature voided) while a
+  // version was already out with the client — drives the "changes not yet
+  // sent" banner. Cleared on a successful (re)send.
+  hasUnsentChanges  Boolean          @default(false)
+  // Which revision the client actually signed. A soft reference (bare id, no
+  // FK): the signed revision's snapshot is a permanent legal record and must
+  // survive an admin voiding the signature, so voidSignature clears the
+  // CLIENT Signature row but never this id and never the QuoteRevision it
+  // points at. QuoteRevision rows only ever disappear when the whole Document
+  // is deleted (cascade), which SIGNED quotes are protected from anyway.
+  signedRevisionId  String?
+  // ACCEPTED — the quote is in production. Set only from CLIENT_SIGNED, and
+  // only once the manager (AUTHOR Signature) has signed. acceptedById is a
+  // bare user id for the same reason as finalizedById above.
+  acceptedAt        DateTime?
+  acceptedById      String?
+  revisions         QuoteRevision[]
+  events            QuoteEvent[]
+  emails            QuoteEmail[]
   exclusions        DocumentExclusion[]
   items             DocumentItem[]
   lines             DocumentLine[]
@@ -1011,6 +1069,81 @@ model NumberSequence {
   counter    Int    @default(0)
 
   @@unique([regionCode, year])
+}
+
+/// One frozen revision of a quote, written on every finalize that actually
+/// changed the content (an unfinalize→finalize with no edit reuses the last
+/// one — see finalizeDocument and hashRevisionSnapshot). `snapshot` is a
+/// self-contained, catalogue-independent description of everything the sheet
+/// renders from (built by buildRevisionSnapshot, src/lib/documents/revision-snapshot.ts),
+/// so an old revision still renders correctly after the catalogue, region or
+/// legal text have all moved on. `snapshotHash` is the sha256 of that
+/// snapshot's canonical JSON and is what the "don't burn a number for a no-op
+/// re-finalize" guard compares against. `pdfPath`/`signedPdfPath` are the
+/// generated PDFs on disk (data/uploads, same store as signed-PDF archives) —
+/// the second filled only once the client signs THIS revision, leaving the
+/// unsigned original untouched.
+model QuoteRevision {
+  id            String   @id @default(cuid())
+  documentId    String
+  document      Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  revision      Int // 0, 1, 2...
+  label         String // "Q-AU-2026-001" or "Q-AU-2026-001-R1"
+  snapshot      Json
+  snapshotHash  String
+  pdfPath       String?
+  signedPdfPath String?
+  total         Decimal  @db.Decimal(12, 2)
+  createdAt     DateTime @default(now())
+  createdById   String // bare user id, no FK (see Document.finalizedById)
+
+  @@unique([documentId, revision])
+  @@index([documentId])
+}
+
+/// A lifecycle event on a quote — FINALIZED, UNFINALIZED, SENT, CLIENT_SIGNED,
+/// MANAGER_SIGNED, SIGNATURE_VOIDED, ACCEPTED. The existing signing feature
+/// deliberately chose NOT to have an audit table (it spread the trail across
+/// SigningRequest + Signature timestamps); the revisions/send spec supersedes
+/// that for this workflow, because voidSignature and the unsent-changes flow
+/// need a durable "who did what, and why" record — `reason` in particular
+/// (mandatory on a void) has nowhere else to live. `type` is a plain string,
+/// not an enum, so a new event kind never needs a migration; `actorId` is a
+/// bare user id (see Document.finalizedById).
+model QuoteEvent {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  type       String
+  actorId    String?
+  reason     String?
+  meta       Json?
+  createdAt  DateTime @default(now())
+
+  @@index([documentId])
+}
+
+/// One email actually sent to a client about a quote (the Send-to-client
+/// dialog), recorded after the mail transport accepted it — see the send
+/// action. `bodyText` is the exact plain-text the manager sent, AFTER token
+/// substitution, so the history shows what the client received, not the
+/// template. `revisionId` pins which QuoteRevision's PDF was attached.
+/// `to`/`cc` are the resolved address lists; `providerId` is the message id
+/// the SMTP provider returned, for later delivery lookups.
+model QuoteEmail {
+  id         String   @id @default(cuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  revisionId String
+  to         String[]
+  cc         String[]
+  subject    String
+  bodyText   String
+  sentAt     DateTime @default(now())
+  sentById   String // bare user id, no FK (see Document.finalizedById)
+  providerId String?
+
+  @@index([documentId])
 }
 
 model Setting {

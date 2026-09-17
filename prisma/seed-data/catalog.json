@@ -1,5 +1,5 @@
 {
-  "extractedAt": "2026-09-11T13:31:32.760Z",
+  "extractedAt": "2026-09-17T01:57:06.330Z",
   "series": [
     {
       "seriesCode": "X",
@@ -444,7 +444,7 @@
         {
           "code": "PDG",
           "name": "PhotoDigitiser",
-          "description": "PhotoDigitiser-Digitizing of photo patterns using tools available within PathWorks",
+          "description": "<p>PhotoDigitiser - Digitizing of photo patterns using tools available within PathWorks</p>",
           "price": 1800,
           "needsReview": false,
           "kind": "SOFTWARE",
@@ -500,7 +500,7 @@
         {
           "code": "PTW-I",
           "name": "PathWorks Integrated",
-          "description": "PathWorks Integrated software module within PathCut™ . Pathworks features include, pattern creation tools, piece shredder, magnetic nesting, importing and exporting of standard DXF and G-code.",
+          "description": "<p>PathWorks Integrated software module within PathCut™. Pathworks features include, pattern creation tools, piece shredder, magnetic nesting, importing and exporting of standard DXF and G-code.</p>",
           "price": 3500,
           "needsReview": false,
           "kind": "SOFTWARE",
@@ -892,6 +892,36 @@
         "M"
       ],
       "role": "AFP",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "ANT-V5",
+      "name": "Automatic Nester V5",
+      "description": "Automatic Nester V5",
+      "price": 8320,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L",
+        "X",
+        "M"
+      ],
+      "role": "ANT_V5",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "ANT-V6",
+      "name": "Automatic Nester V6",
+      "description": "Automatic Nester V6 (Faster results, higher level nesting algorithm) Includes edge buffer function (container)",
+      "price": 11720,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L",
+        "X",
+        "M"
+      ],
+      "role": "ANT_V6",
       "parentProductCode": null,
       "unitLengthM": null
     },
@@ -1602,6 +1632,21 @@
       "unitLengthM": null
     },
     {
+      "code": "LSC",
+      "name": "LS Convert",
+      "description": "LS Convert software module (dongle protected)",
+      "price": 9018,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L",
+        "X",
+        "M"
+      ],
+      "role": "LSC",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
       "code": "MRK",
       "name": "Marking Tool",
       "description": "Marking tool includes standard Bic biro pen holder (After sales: Head cover replacement is at extra cost)",
@@ -1808,6 +1853,21 @@
       "unitLengthM": null
     },
     {
+      "code": "PDG",
+      "name": "PhotoDigitiser",
+      "description": "PhotoDigitiser - Digitizing of photo patterns using tools available within PathWorks",
+      "price": 1800,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L",
+        "X",
+        "M"
+      ],
+      "role": "PDG",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
       "code": "PM-L",
       "name": "Pattern Match",
       "description": "Pattern Match - spot light pattern match software",
@@ -1830,6 +1890,21 @@
         "M"
       ],
       "role": "PM",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "PRA",
+      "name": "Production Analyst",
+      "description": "Production Analyst is a stand alone software that enables remote manipulation of Production Manager data.",
+      "price": 3500,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L",
+        "X",
+        "M"
+      ],
+      "role": "PRA",
       "parentProductCode": null,
       "unitLengthM": null
     },
@@ -1857,6 +1932,21 @@
         "X"
       ],
       "role": "PRM",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "PTW-I",
+      "name": "PathWorks Integrated",
+      "description": "PathWorks Integrated software module within PathCut™ . Pathworks features include, pattern creation tools, piece shredder, magnetic nesting, importing and exporting of standard DXF and G-code.",
+      "price": 3500,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L",
+        "X",
+        "M"
+      ],
+      "role": "PTW_I",
       "parentProductCode": null,
       "unitLengthM": null
     },
@@ -2080,6 +2170,36 @@
         "M"
       ],
       "role": "TRANSFORMER",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "WPL",
+      "name": "PoolLiner Wizard",
+      "description": "PoolLiner Wizard - automatic creation of flat shapes (unfolding) based on 3D point measurements.",
+      "price": 5850,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L",
+        "X",
+        "M"
+      ],
+      "role": "WPL",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "WPN",
+      "name": "Panel Wizard",
+      "description": "Panel Wizard - Automatic creation of panels based with automatic tool path optimisation.",
+      "price": 500,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L",
+        "X",
+        "M"
+      ],
+      "role": "WPN",
       "parentProductCode": null,
       "unitLengthM": null
     }

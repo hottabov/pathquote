@@ -107,3 +107,16 @@ export function readMtsMetres(attributes: unknown): number | undefined {
   const metres = typeof raw === "number" ? raw : Number(raw);
   return Number.isFinite(metres) ? metres : undefined;
 }
+
+/**
+ * Whether an MTS line carries a usable travel distance: a number above zero.
+ * Required whenever an MTS is selected (Vadym, 2026-09-17) -- the distance
+ * decides the MTS-M metres billed and what the workshop builds.
+ */
+export function mtsMetresValid(attributes: unknown): boolean {
+  const metres = readMtsMetres(attributes);
+  return metres !== undefined && metres > 0;
+}
+
+/** The message shown when an MTS is saved without a travel distance. */
+export const MTS_METRES_REQUIRED = "Enter the MTS travel distance (m)";

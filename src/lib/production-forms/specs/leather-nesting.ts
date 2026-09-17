@@ -39,7 +39,7 @@ export const leatherNestingSpec: FormSpec = {
     // Two address rows, not three: `Contact:` starts at row 14. The tail is
     // joined into the second rather than dropped, the same way the M-Series
     // form handles its two-row address -- a silently missing country is a
-    // delivery to the wrong place.
+    // wrong address.
     { cell: "G12", from: (c) => c.company.addressLines[0] },
     { cell: "G13", from: (c) => c.company.addressLines.slice(1).join(", ") },
     { cell: "G14", from: (c) => c.contact.fullName },
@@ -47,9 +47,6 @@ export const leatherNestingSpec: FormSpec = {
     { cell: "G16", from: (c) => c.contact.phone },
     { cell: "G18", from: (c) => c.contact.email },
     { cell: "G19", from: (c) => c.company.industry },
-    { cell: "L12", from: (c) => c.deliveryAddressLines[0] },
-    { cell: "L13", from: (c) => c.deliveryAddressLines[1] },
-    { cell: "L14", from: (c) => c.deliveryAddressLines[2] },
   ],
 
   replaces: [],

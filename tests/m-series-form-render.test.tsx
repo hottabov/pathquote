@@ -36,6 +36,13 @@ function ticked(html: string): string[] {
   );
 }
 
+/** The text of a tick printed as standard fitment (grey, not selected). */
+function stood(html: string): string[] {
+  return [...html.matchAll(/class="pf-tick[^"]*pf-std[^"]*"[^>]*>(.*?)<\/label>/g)].map((m) =>
+    m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+  );
+}
+
 describe("the M-Series form renders from the quote", () => {
   it("is one sheet carrying one stylesheet", () => {
     const html = render(ctx());
@@ -52,13 +59,16 @@ describe("the M-Series form renders from the quote", () => {
   });
 
   it("ticks VRB on every machine — it is fitted, not sold", () => {
-    expect(ticked(render(ctx()))).toContain("VRB Vac Resealing Blind");
+    // VRB is standard fitment now, printed as a grey pf-std tick rather than
+    // a selected pf-on one -- see m-series-form.tsx OPTION_BOXES.
+    expect(stood(render(ctx()))).toContain("VRB Vac Resealing Blind");
+    expect(ticked(render(ctx()))).not.toContain("VRB Vac Resealing Blind");
   });
 
   it("ticks an option the customer actually bought", () => {
     const withHdc = ticked(render(ctx({}, {}, [option("HDC-M", "HDC")])));
-    expect(withHdc).toContain("HDC Head Cam");
-    expect(ticked(render(ctx()))).not.toContain("HDC Head Cam");
+    expect(withHdc).toContain("HDC HeadCam");
+    expect(ticked(render(ctx()))).not.toContain("HDC HeadCam");
   });
 
   it("ticks the voltage from the production spec, not from an option", () => {
@@ -86,7 +96,7 @@ describe("the M-Series form renders from the quote", () => {
       { code: "PTW-I", specs: { softwareMode: "integrated" } },
       { code: "PDG", specs: { pathworksModule: "PDG" } },
     ];
-    expect(ticked(render(ctx({ software: integrated as never })))).toContain("PDG PhotoDigitizer");
+    expect(ticked(render(ctx({ software: integrated as never })))).toContain("PDG PhotoDigitiser");
   });
 
   it("prints the drills answer and its detail", () => {
@@ -119,14 +129,27 @@ describe("the component registry", () => {
     // still claims, the option silently vanishes -- so the two are checked
     // against each other rather than trusted separately.
     const spec = resolveForm("M_SERIES")!;
-    const html = render(
-      ctx({}, {}, [...coveredRoles(spec)].map((role, i) => option(`opt-${i}`, role)))
+    const roles = [...coveredRoles(spec)];
+    // TRANSFORMER has no box printed under its own name -- it prints as
+    // TR220 or TR480, told apart by the option's code, not its role (see
+    // PowerTicks in m-series-form.tsx). A synthetic option for it needs a
+    // code one of those two boxes recognises.
+    const options = roles.flatMap((role) =>
+      role === "TRANSFORMER"
+        ? [option("TR220-X", "TRANSFORMER"), option("TR480-X", "TRANSFORMER")]
+        : [option(`opt-${role}`, role)]
     );
+    const html = render(ctx({}, {}, options));
     const marks = ticked(html).join(" | ");
 
-    for (const role of coveredRoles(spec)) {
+    for (const role of roles) {
       // MTS_TRAVEL prints as the metre figure beside MTS, not as its own box.
       if (role === "MTS_TRAVEL") continue;
+      if (role === "TRANSFORMER") {
+        expect(marks, role).toContain("TR220");
+        expect(marks, role).toContain("TR480");
+        continue;
+      }
       const code = role.replace("_", "-");
       expect(marks, role).toContain(code);
     }

@@ -183,6 +183,14 @@ export const OPTION_ROLES = [
   "INSTALL",
   "TRAINING",
   "SOFTWARE",
+  "PTW_I",
+  "PRA",
+  "LSC",
+  "PDG",
+  "WPN",
+  "WPL",
+  "ANT_V5",
+  "ANT_V6",
   "CONSUMABLE",
 ] as const;
 

@@ -36,8 +36,25 @@ function readCompanyForm(formData: FormData) {
     deliveryContactName: formData.get("deliveryContactName"),
     deliveryPhone: formData.get("deliveryPhone"),
     deliveryNotes: formData.get("deliveryNotes"),
+    // `get` returns null for a missing field; map that to `undefined` so a
+    // form without the industry input (the edit screen, whose picker saves
+    // on its own) leaves the stored value alone — see `industryIdSchema`.
+    industryId: formData.has("industryId") ? formData.get("industryId") : undefined,
   };
 }
+
+/**
+ * Whether a parsed `industryId` is usable: `undefined`/`null` always are, an
+ * id only when the row exists. Checked before the write so a stale or forged
+ * id is a form error rather than a foreign-key exception.
+ */
+async function industryExists(industryId: string | null | undefined): Promise<boolean> {
+  if (!industryId) return true;
+  const industry = await db.industry.findUnique({ where: { id: industryId }, select: { id: true } });
+  return industry !== null;
+}
+
+const UNKNOWN_INDUSTRY_ERROR = "That industry no longer exists. Pick another one.";
 
 function readContactForm(formData: FormData) {
   return {
@@ -70,10 +87,14 @@ export async function createCompany(formData: FormData): Promise<ActionResult> {
   if (!parsed.success) {
     return { error: flattenZodError(parsed.error) };
   }
+  if (!(await industryExists(parsed.data.industryId))) {
+    return { error: UNKNOWN_INDUSTRY_ERROR };
+  }
 
   const created = await db.company.create({
     data: {
       name: parsed.data.name,
+      industryId: parsed.data.industryId ?? null,
       street: parsed.data.street ?? null,
       city: parsed.data.city ?? null,
       state: parsed.data.state ?? null,
@@ -116,11 +137,16 @@ export async function updateCompany(companyId: string, formData: FormData): Prom
     where: { id: companyId, ...companyWhereForUser(session.user) },
   });
   if (!existing) return { error: NOT_FOUND_ERROR };
+  if (!(await industryExists(parsed.data.industryId))) {
+    return { error: UNKNOWN_INDUSTRY_ERROR };
+  }
 
   await db.company.update({
     where: { id: companyId },
     data: {
       name: parsed.data.name,
+      // Absent means "unchanged" (see `readCompanyForm`).
+      ...(parsed.data.industryId !== undefined ? { industryId: parsed.data.industryId } : {}),
       street: parsed.data.street ?? null,
       city: parsed.data.city ?? null,
       state: parsed.data.state ?? null,
@@ -310,6 +336,8 @@ export type CompanyInlineInput = {
   deliveryCountry?: string;
   deliveryContactName?: string;
   deliveryPhone?: string;
+  /** An existing Industry id, or null/"" for none. */
+  industryId?: string | null;
 };
 
 export type CreateCompanyInlineResult =
@@ -329,10 +357,14 @@ export async function createCompanyInline(input: CompanyInlineInput): Promise<Cr
   if (!parsed.success) {
     return { error: flattenZodError(parsed.error) };
   }
+  if (!(await industryExists(parsed.data.industryId))) {
+    return { error: UNKNOWN_INDUSTRY_ERROR };
+  }
 
   const created = await db.company.create({
     data: {
       name: parsed.data.name,
+      industryId: parsed.data.industryId ?? null,
       street: parsed.data.street ?? null,
       city: parsed.data.city ?? null,
       state: parsed.data.state ?? null,

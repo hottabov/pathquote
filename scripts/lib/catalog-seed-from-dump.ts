@@ -193,14 +193,19 @@ export function buildSeedDataFromDump(dump: CatalogDump, seriesHeaders: SeriesHe
     // placeholder across would publish a machine at $0. A genuine zero that
     // nobody flagged (the EasyLoader, which costs nothing because every part
     // of it is an option) is kept, because that one is an answer.
-    prices: [...activeProducts, ...activeOptions]
-      .flatMap((row) => {
+    // Each entry names its table: software is sold under the same code as a
+    // product and as a machine option, so a code alone is ambiguous.
+    prices: [
+      ...activeProducts.map((row) => ({ row, kind: "product" as const })),
+      ...activeOptions.map((row) => ({ row, kind: "option" as const })),
+    ]
+      .flatMap(({ row, kind }) => {
         const price = row.prices[US_REGION];
         if (!price || price.needsReview) return [];
         const amountUsd = Number(price.amount);
-        return Number.isFinite(amountUsd) ? [{ code: row.code, amountUsd }] : [];
+        return Number.isFinite(amountUsd) ? [{ code: row.code, kind, amountUsd }] : [];
       })
-      .sort((a, b) => a.code.localeCompare(b.code, "en")),
+      .sort((a, b) => a.code.localeCompare(b.code, "en") || a.kind.localeCompare(b.kind, "en")),
     // The dump is the catalogue, so every US price in it belongs to a row
     // that is also in it. The field exists for the spreadsheet extractor
     // this replaced, which could not say the same.

@@ -49,6 +49,9 @@ export type UserDetail = {
   role: "ADMIN" | "MANAGER" | "DEVELOPER";
   active: boolean;
   regionCode: string | null;
+  /** `User.regionId` — read fresh so the Account page reflects an admin's
+   * region change without waiting for the session JWT to refresh. */
+  regionId: string | null;
   magicLinkOnly: boolean;
   /** `User.image` — see `UserListItem.image`'s doc comment for the reuse
    * note. Feeds both the admin's user-edit avatar control and, for a
@@ -85,6 +88,7 @@ export const getUser = cache(async function getUser(userId: string): Promise<Use
     role: user.role,
     active: user.active,
     regionCode: user.region?.code ?? null,
+    regionId: user.regionId,
     magicLinkOnly: !user.passwordHash,
     image: user.image,
     signatureUrl: user.signatureUrl,

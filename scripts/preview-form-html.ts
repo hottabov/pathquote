@@ -51,11 +51,6 @@ const base = {
     phone: "+61 3 9314 8800",
     email: "d.whitcombe@biltautotrim.com.au",
   },
-  deliveryAddressLines: [
-    "Bilt Automotive Trim — Plant 2",
-    "8 Dohertys Road, Altona North",
-    "VIC 3025, Australia",
-  ],
   rails: null,
   documentNumber: "Q-AU-2026-014",
   itemIndex: 1,
@@ -104,11 +99,18 @@ const CASES: Array<{ form: ProductionForm; ctx: FormContext }> = [
           drills: { required: true, detail: "4 × Ø3 mm carbide" },
           specialNotes: "Screen side must match the EasyLoader on Line 1.",
         },
+        // Every M-compatible option in the catalogue, so the preview shows
+        // the fullest sheet the form can be asked to print.
         options: [
-          option("PM-M", "PM"),
-          option("HDC-M", "HDC"),
-          option("MRK", "MRK"),
-          option("Crate-M-220", "CRATE"),
+          ...[
+            ["ABR-M", "ABR"], ["AFP", "AFP"], ["APM-M", "APM"], ["BCR-M", "BCR"],
+            ["Crate-M-220", "CRATE"], ["DMT", "DMT"], ["DR2", "DR2"], ["DRG-1", "DRG_1"],
+            ["DRG-2", "DRG_2"], ["DRG-3", "DRG_3"], ["HDC-M", "HDC"], ["HFV-M", "HFV"],
+            ["IJP", "IJP"], ["IKA", "IKA"], ["MRK", "MRK"], ["OFD-M", "OFD"], ["OFJ", "OFJ"],
+            ["OFP-M", "OFP"], ["PM-M", "PM"], ["PRM-M", "PRM"], ["TR220", "TRANSFORMER"],
+            ["TR480", "TRANSFORMER"], ["PTW-I", "PTW_I"], ["PDG", "PDG"], ["WPL", "WPL"],
+            ["ANT-V5", "ANT_V5"], ["ANT-V6", "ANT_V6"], ["LSC", "LSC"], ["PRA", "PRA"],
+          ].map(([code, role]) => option(code, role)),
           option("MTS", "MTS", 1, { metres: 12 }),
           option("MTS-M", "MTS_TRAVEL", 3),
         ],
@@ -235,7 +237,6 @@ const CASES: Array<{ form: ProductionForm; ctx: FormContext }> = [
         spec: {
           ui: "-Y",
           voltage: "220/230",
-          shipping: "crate-whole",
           specialNotes: "2 × 30° drag blades in addition to the standard set.",
         },
         options: [

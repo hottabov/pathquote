@@ -52,6 +52,11 @@ describe("the L-Series form", () => {
     expect(on).toContain("Urethane");
   });
 
+  it("also ticks the extended cutting length from an L_EXTENDED option, not just the product code", () => {
+    const on = marked(render(ctx({}, {}, [option("L-EXT-KIT", "L_EXTENDED")])), "pf-on").join(" | ");
+    expect(on).toContain("316");
+  });
+
   it("marks MRK as standard on every machine", () => {
     expect(marked(render(), "pf-std").join(" | ")).toContain("MRK");
   });
@@ -74,12 +79,6 @@ describe("the L-Series form", () => {
   it("prints a written-in voltage only when one was written in", () => {
     expect(render(ctx({}, { voltage: "other", voltageOtherVac: "380" }))).toContain(">380</span>");
     expect(marked(render(ctx({}, { voltage: "220/230" })), "pf-on").join(" | ")).toContain("220 / 230");
-  });
-
-  it("ticks the shipping mode chosen", () => {
-    expect(marked(render(ctx({}, { shipping: "crate-whole" })), "pf-on").join(" | ")).toContain(
-      "Wood crate, whole"
-    );
   });
 
   it("keeps the fitting rules and consumables the paper form prints", () => {

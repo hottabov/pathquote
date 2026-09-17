@@ -23,12 +23,17 @@ export const runtime = "nodejs";
 
 type Params = { documentId: string };
 
+/** `?item=extras` is the reserved value that downloads ONLY the Additional
+ * items page (a real item id is a cuid, so it can never collide with this). */
+const EXTRAS_PARAM = "extras";
+
 /**
  * Streams the production forms for a finalized quote as one PDF, one A4 page
  * per machine. `?item=<itemId>` narrows it to a single form and suppresses
- * the "Additional items" page (that page always speaks for the whole
- * document -- "from M-320" only makes sense next to the other machines'
- * forms, not on its own).
+ * the "Additional items" page (that page speaks for the whole document, so it
+ * only makes sense next to the other machines' forms). `?item=extras` does
+ * the opposite: it downloads just the Additional items page on its own — the
+ * document-level custom lines plus every option no machine form has a box for.
  *
  * FINAL quotes only: a draft is still being reworked, and the workshop must
  * not receive a form for a machine whose options are about to change.
@@ -45,7 +50,9 @@ export async function GET(request: Request, { params }: { params: Promise<Params
     return Response.json({ error: "Production forms require a finalized quote" }, { status: 409 });
   }
 
-  const onlyItemId = new URL(request.url).searchParams.get("item");
+  const onlyParam = new URL(request.url).searchParams.get("item");
+  const extrasOnly = onlyParam === EXTRAS_PARAM;
+  const onlyItemId = extrasOnly ? null : onlyParam;
 
   // The operator/control-box side diagrams, the same admin-uploaded pair the
   // builder shows beside the dropdown. Marked rather than linked: Gotenberg's
@@ -60,9 +67,77 @@ export async function GET(request: Request, { params }: { params: Promise<Params
     }),
   );
 
-  const contexts = buildFormContexts(document, { screenSideImages }).filter(
-    (ctx) => !onlyItemId || ctx.item.id === onlyItemId,
-  );
+  const allContexts = buildFormContexts(document, { screenSideImages });
+  const contexts = allContexts.filter((ctx) => !onlyItemId || ctx.item.id === onlyItemId);
+
+  // Document-level lines, plus every option whose machine's form has no box
+  // for it. The second half is the important one: without it an option would
+  // reach neither the form nor the workshop. Built from ALL contexts, since an
+  // unmatched option can belong to any machine on the quote.
+  const extras: AdditionalItem[] = [
+    ...document.lines.map((line) => ({
+      name: line.name,
+      qty: line.qty,
+      description: line.description,
+      source: null,
+    })),
+    ...allContexts.flatMap((ctx) => {
+      const spec = resolveForm(ctx.item.form)!;
+      const item = document.items.find((row) => row.id === ctx.item.id);
+      return unmatchedOptions(spec, ctx).map((option) => {
+        // The line is found by `refId` (the option's id), not by its
+        // snapshotted code: the catalogue may have renamed the option since
+        // the quote was written. A line with no `refId` has no catalogue row
+        // at all, so its code is as stable as anything.
+        const line = item?.lines.find((row) =>
+          option.id !== null ? row.refId === option.id : row.code === option.code,
+        );
+        return {
+          name: line?.name ?? option.code,
+          qty: line?.qty ?? option.qty,
+          description: line?.description ?? null,
+          source: `${ctx.item.code} — ${ctx.item.name}`,
+        };
+      });
+    }),
+  ];
+
+  // `?item=extras`: render just the Additional items page and return.
+  // Deliberately ahead of the "no forms apply" and blockers checks below —
+  // those are about the machine forms, and this page is independent of them,
+  // so a quote of only custom lines (no machine forms), or one whose machine
+  // form isn't built yet, can still produce it.
+  if (extrasOnly) {
+    if (extras.length === 0) {
+      return Response.json({ error: "No additional items on this quote" }, { status: 404 });
+    }
+    let pdf: Buffer;
+    try {
+      // Dynamic import for the reason given at the top of src/lib/pdf.ts.
+      const { renderToStaticMarkup } = await import("react-dom/server");
+      const body = renderToStaticMarkup(
+        AdditionalItemsSheet({
+          documentNumber: document.number ?? "",
+          companyName: document.company?.name ?? "",
+          items: extras,
+        }),
+      );
+      pdf = await htmlToPdf(
+        `<!doctype html><html><head><meta charSet="utf-8"><style>@page{size:A4;margin:15mm}body{margin:0}</style></head><body>${body}</body></html>`,
+      );
+    } catch (error) {
+      console.error("Additional items generation failed", error);
+      return Response.json({ error: "PDF service unavailable" }, { status: 502 });
+    }
+    const extrasFilename = `${document.number ?? document.id}-additional-items.pdf`;
+    return new Response(new Uint8Array(pdf), {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${extrasFilename}"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
 
   if (contexts.length === 0) {
     return Response.json({ error: "No production forms apply to this quote" }, { status: 404 });
@@ -143,37 +218,6 @@ export async function GET(request: Request, { params }: { params: Promise<Params
       );
       pdfs.push(await xlsxToPdf(patched, `${spec.id}.xlsx`));
     }
-
-    // Document-level lines, plus every option whose machine's form has no box
-    // for it. The second half is the important one: without it an option
-    // would reach neither the form nor the workshop.
-    const extras: AdditionalItem[] = [
-      ...document.lines.map((line) => ({
-        name: line.name,
-        qty: line.qty,
-        description: line.description,
-        source: null,
-      })),
-      ...contexts.flatMap((ctx) => {
-        const spec = resolveForm(ctx.item.form)!;
-        const item = document.items.find((row) => row.id === ctx.item.id);
-        return unmatchedOptions(spec, ctx).map((option) => {
-          // The line is found by `refId` (the option's id), not by its
-          // snapshotted code: the catalogue may have renamed the option
-          // since the quote was written. A line with no `refId` has no
-          // catalogue row at all, so its code is as stable as anything.
-          const line = item?.lines.find((row) =>
-            option.id !== null ? row.refId === option.id : row.code === option.code,
-          );
-          return {
-            name: line?.name ?? option.code,
-            qty: line?.qty ?? option.qty,
-            description: line?.description ?? null,
-            source: `${ctx.item.code} — ${ctx.item.name}`,
-          };
-        });
-      }),
-    ];
 
     // Only when the run covers the whole document -- see the doc comment on
     // `onlyItemId` above for why a single-item download never gets this page.

@@ -105,41 +105,37 @@ export function FormSheet({
 }
 
 /**
- * The end user and delivery band, identical on every form that has one --
- * which is every form except the Leather Nesting Station, whose sheet is a
- * fixed list of contents.
+ * The end user band, identical on every form that has one -- which is every
+ * form except the Leather Nesting Station, whose sheet is a fixed list of
+ * contents.
+ *
+ * No delivery address: delivery is logistics' job and gets its own document
+ * (docs/specs/2026-09-11-order-forms-backlog.md, "Logistics"). A workshop
+ * sheet that names a destination reads as something the workshop arranges.
+ * Three rows, four columns -- the band used to be two stacked columns and
+ * took twice the height.
  */
 export function EndUserSection({ ctx }: { ctx: FormContext }) {
   return (
     <div className="pf-sec">
       <h2>
-        <span>End user &amp; delivery</span>
+        <span>End user</span>
       </h2>
-      <div className="pf-two">
-        <div className="pf-stack">
+      <div className="pf-eu">
+        <div className="pf-s2">
           <Field label="Company" value={ctx.company.name} />
-          <Field label="Address" value={ctx.company.addressLines.join(", ")} />
-          <div className="pf-pair">
-            <Field label="Contact" value={ctx.contact.fullName} />
-            <Field label="Title" value={ctx.contact.position} />
-          </div>
-          <div className="pf-pair">
-            <Field label="Phone" value={ctx.contact.phone} num />
-            <Field label="Industry" value={ctx.company.industry} />
-          </div>
-          <Field label="Email" value={ctx.contact.email} full />
         </div>
-        <div className="pf-stack">
-          <div className="pf-fld pf-lines">
-            <span className="pf-lb">Delivery address</span>
-            {Array.from({ length: 3 }, (_, i) => (
-              <span key={i} className="pf-ln">
-                {ctx.deliveryAddressLines[i] ?? ""}
-              </span>
-            ))}
-          </div>
+        <div className="pf-s2">
           <Field label="Machine" value={`${ctx.item.code} — ${ctx.item.name}`} />
         </div>
+        <div className="pf-s3">
+          <Field label="Address" value={ctx.company.addressLines.join(", ")} />
+        </div>
+        <Field label="Industry" value={ctx.company.industry} />
+        <Field label="Contact" value={ctx.contact.fullName} />
+        <Field label="Title" value={ctx.contact.position} />
+        <Field label="Phone" value={ctx.contact.phone} num />
+        <Field label="Email" value={ctx.contact.email} full />
       </div>
     </div>
   );

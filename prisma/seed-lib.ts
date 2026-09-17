@@ -330,7 +330,14 @@ export function mapCompatibility(catalog: Catalog): CompatPayload[] {
  *  kept so the file's shape is stable. */
 export interface UsPricesJson {
   extractedAt: string;
-  prices: { code: string; amountUsd: number }[];
+  /**
+   * `kind` says which table the code belongs to. It is needed since
+   * 2026-09-16: software is sold both as SOFTWARE products and as machine
+   * options under the SAME code (PTW-I, PDG, ...), so a code alone no longer
+   * names one row. Absent (older files), the code is looked up as before --
+   * product first, then option.
+   */
+  prices: { code: string; kind?: "product" | "option"; amountUsd: number }[];
   unmatched: { sheet: string; label: string; price: number }[];
 }
 
@@ -351,9 +358,9 @@ export interface UsPricesMapping {
 
 /**
  * Resolves each prices-us.json entry's code against the catalog's products
- * and options (a code is exactly one or the other, never both -- product
- * and option codes are drawn from disjoint namespaces) to produce US Price
- * payloads. Pure function of its inputs, like every other mapper in this
+ * and options to produce US Price payloads. An entry's `kind` decides the
+ * table when present (a software code can be both a product and an option);
+ * otherwise the code is tried as a product, then as an option. Pure function of its inputs, like every other mapper in this
  * file -- prisma/seed.ts is the only place that turns `payloads` into
  * upserts and reports `unknownCodes`.
  */
@@ -364,10 +371,12 @@ export function mapUsPrices(catalog: Catalog, usPrices: UsPricesJson): UsPricesM
   const payloads: PricePayload[] = [];
   const unknownCodes: string[] = [];
 
-  for (const { code, amountUsd } of usPrices.prices) {
-    if (productCodes.has(code)) {
+  for (const { code, kind, amountUsd } of usPrices.prices) {
+    const asProduct = kind !== "option" && productCodes.has(code);
+    const asOption = !asProduct && kind !== "product" && optionCodes.has(code);
+    if (asProduct) {
       payloads.push({ kind: "product", code, regionCode: "US", amount: amountUsd, needsReview: false });
-    } else if (optionCodes.has(code)) {
+    } else if (asOption) {
       payloads.push({ kind: "option", code, regionCode: "US", amount: amountUsd, needsReview: false });
     } else {
       unknownCodes.push(code);
@@ -382,12 +391,16 @@ export function mapUsPrices(catalog: Catalog, usPrices: UsPricesJson): UsPricesM
  *  informational, used by prisma/seed.ts to log a warning per missing code
  *  rather than leave the gap silent. */
 export function missingUsPriceCodes(catalog: Catalog, usPrices: UsPricesJson): string[] {
-  const pricedCodes = new Set(usPrices.prices.map((p) => p.code));
-  const allCodes = [
-    ...catalog.series.flatMap((s) => s.products.map((p) => p.code)),
-    ...catalog.options.map((o) => o.code),
+  // Keyed by kind as well as code: a software code can be priced as a
+  // product and still be unpriced as an option. An entry with no kind
+  // counts for both, as it did before `kind` existed.
+  const priced = (kind: "product" | "option", code: string) =>
+    usPrices.prices.some((p) => p.code === code && (p.kind ?? kind) === kind);
+  const missing = [
+    ...catalog.series.flatMap((s) => s.products.map((p) => p.code)).filter((code) => !priced("product", code)),
+    ...catalog.options.map((o) => o.code).filter((code) => !priced("option", code)),
   ];
-  return allCodes.filter((code) => !pricedCodes.has(code)).sort((a, b) => a.localeCompare(b, "en"));
+  return missing.sort((a, b) => a.localeCompare(b, "en"));
 }
 
 // --- quote documents ------------------------------------------------------

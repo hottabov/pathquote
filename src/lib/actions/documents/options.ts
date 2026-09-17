@@ -25,7 +25,7 @@ import {
   EL_MODULE_ROLE_LIST,
   isEasyLoaderModuleRole,
 } from "@/lib/production-forms/table-sections";
-import { normaliseMtsSelections } from "@/lib/production-forms/mts";
+import { MTS_METRES_REQUIRED, mtsMetresValid, normaliseMtsSelections } from "@/lib/production-forms/mts";
 import { idSchema, optionSelectionSchema, type OptionSelectionInput } from "@/lib/validation/documents";
 import { NOT_FOUND_ERROR, flattenZodError } from "../_shared";
 import {
@@ -185,6 +185,11 @@ async function withDerivedMtsTravel(
   const roleById = new Map(roles.map((option) => [option.id, option.role]));
 
   const { selections: kept, travelMetres } = normaliseMtsSelections(selections, (id) => roleById.get(id));
+
+  // An MTS is not an answer without its travel distance: the distance is
+  // what decides the MTS-M metres billed and what the workshop builds.
+  const mts = kept.find((selection) => roleById.get(selection.optionId) === "MTS");
+  if (mts && !mtsMetresValid(mts.attributes)) return { error: MTS_METRES_REQUIRED };
   if (travelMetres === 0) return { selections: kept };
 
   // One row in the catalogue, sold per metre to every cutter. Picked by role

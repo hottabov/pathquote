@@ -1,4 +1,5 @@
 import { xCalibreSpecSchema } from "@/lib/validation/production-spec";
+import { PATHWORKS_ROLES } from "../pathworks";
 import type { HtmlFormSpec } from "../types";
 
 /**
@@ -27,10 +28,22 @@ export const xCalibreSpec: HtmlFormSpec = {
   specSchema: xCalibreSpecSchema,
   requires: ["drills"],
 
-  // The option boxes the printed form has, left to right down its three
-  // columns. Notably absent, and deliberately so: `DMT`, which the catalogue
-  // marks compatible with the X series but which this form has no box for.
-  // Until the form gains one, a DuctMasTer sold on an X-Calibre prints on
-  // the Additional items sheet rather than disappearing.
-  covers: ["HDC", "BCR", "OFJ", "OFD", "OFP", "DR2", "PRM", "CRATE", "MTS", "MTS_TRAVEL"],
+  // Every X-compatible option in the catalogue has a box (2026-09-16 dump):
+  // the selected column, TR220/TR480 in the power column, the crate, MTS
+  // with its travel, and the PathWorks section.
+  covers: [
+    "HDC",
+    "BCR",
+    "OFJ",
+    "OFD",
+    "OFP",
+    "DR2",
+    "PRM",
+    "DMT",
+    "CRATE",
+    "TRANSFORMER",
+    "MTS",
+    "MTS_TRAVEL",
+    ...PATHWORKS_ROLES,
+  ],
 };

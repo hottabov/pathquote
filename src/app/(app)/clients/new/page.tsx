@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { createCompany } from "@/lib/actions/clients";
+import { listIndustries } from "@/lib/queries/industries";
 import { CompanyForm } from "@/components/clients/company-form";
 import { PageHeader, SectionCard } from "@/components/ui-kit";
 
@@ -12,6 +13,8 @@ export const dynamic = "force-dynamic";
 // stopped at the screens where region genuinely decides something (prices,
 // and the document builder), which is where that check belongs.
 export default async function NewCompanyPage() {
+  const industries = await listIndustries();
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -45,6 +48,17 @@ export default async function NewCompanyPage() {
             deliveryNotes: "",
           }}
           submitLabel="Create company"
+          industryPicker={{
+            // Aliases as names only — search keys, never options of their own.
+            industries: industries.map((i) => ({
+              id: i.id,
+              name: i.name,
+              aliases: i.aliases.map((alias) => ({ name: alias.name })),
+            })),
+            selectedId: null,
+            usageCount: null,
+            canRename: false,
+          }}
         />
       </SectionCard>
     </div>

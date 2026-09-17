@@ -235,7 +235,6 @@ export function formContext(overrides: Partial<FormContext> = {}): FormContext {
     authorName: "Vadym H",
     company: { name: "Relaxvanguard", addressLines: ["12 Industrial Dr"], industry: "Automotive" },
     contact: { fullName: "John Smith", position: "Manager", phone: "+61", email: "j@example.com" },
-    deliveryAddressLines: ["12 Industrial Dr"],
     software,
     softwareCodes: software.map((s) => s.code),
     rails: null,

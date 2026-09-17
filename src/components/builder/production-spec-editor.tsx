@@ -9,8 +9,9 @@ import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 import { applyScreenSideToQuote, setProductionSpec } from "@/lib/actions/production";
 import { setEasyLoaderLayout } from "@/lib/actions/documents";
-import { resolveForm } from "@/lib/production-forms/resolve";
-import { easyLoaderPrintedWidthCell } from "@/lib/production-forms/specs/easyloader";
+import { formHasScreenSide, missingRequirements, resolveForm } from "@/lib/production-forms/resolve";
+import { REQUIREMENT_LABELS } from "@/lib/production-forms/readiness";
+import { easyLoaderPrintedWidth } from "@/lib/production-forms/specs/easyloader";
 import type { ProductSpecs } from "@/lib/validation/product-specs";
 import {
   layoutTotals,
@@ -172,24 +173,17 @@ type Drills = { required?: boolean; detail?: string } | undefined;
  * The drills question, shared by the M-Series and the X-Calibre forms --
  * both print it, and both print the same warning that `"TBC" is not
  * acceptable`.
- *
- * The 22-character cap is an Excel artefact: rows 81-82 of the M-Series
- * workbook are tall hand-writing rows in a large font with no empty cell to
- * overflow into, so anything longer is clipped rather than wrapped. It goes
- * when these forms are redrawn as components.
  */
 function DrillsField({
   itemId,
   drills,
   draft,
   save,
-  setDraft,
 }: {
   itemId: string;
   drills: Drills;
   draft: Record<string, unknown>;
   save: (next: Record<string, unknown>, kind: "spec" | "layout") => void;
-  setDraft: (next: Record<string, unknown>) => void;
 }) {
   return (
         <fieldset className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3">
@@ -198,18 +192,12 @@ function DrillsField({
             <input
               type="checkbox"
               checked={drills?.required ?? false}
-              // Ticking the box is the only control here that does not
-              // write immediately. The printed form says "TBC" is not
-              // acceptable, so `drillsSchema` refuses "drills required,
-              // detail blank" -- which is precisely the half-answer a
-              // tick on its own is. Hold it in the draft, let it reveal
-              // the detail field, and write both halves together on
-              // that field's blur. Unticking is a complete answer ("no
-              // drills") and saves like everything else.
+              // Both answers save at once. "Required" with no detail yet is
+              // stored as such and blocks the form download ("missing:
+              // drills") until the detail below is written -- holding the
+              // tick only on screen printed "No" on the form.
               onChange={(e) =>
-                e.target.checked
-                  ? setDraft({ ...draft, drills: { required: true, detail: "" } })
-                  : save({ ...draft, drills: { required: false, detail: "" } }, "spec")
+                save({ ...draft, drills: { required: e.target.checked, detail: "" } }, "spec")
               }
               className={checkboxClass}
             />
@@ -220,7 +208,7 @@ function DrillsField({
               <input
                 id={`${itemId}-drills-detail`}
                 type="text"
-                maxLength={22}
+                maxLength={200}
                 defaultValue={drills?.detail ?? ""}
                 onBlur={(e) =>
                   save({ ...draft, drills: { required: true, detail: e.target.value } }, "spec")
@@ -397,7 +385,10 @@ export function ProductionSpecEditor({
     });
   }
 
-  const missing = form.requires.filter((key) => draft[key] === undefined);
+  // The same rule the finalize gate and the form download apply -- a plain
+  // "is the key set" check counted untouched drills as missing and missed
+  // drills ticked with no detail.
+  const missing = missingRequirements(form, draft);
   const drills = draft.drills as { required?: boolean; detail?: string } | undefined;
   const sections = (draft.sections as Section[] | undefined) ?? [];
   const rollFeedDistances = (draft.rollFeedDistancesMm as number[] | undefined) ?? [];
@@ -407,9 +398,13 @@ export function ProductionSpecEditor({
   // table somebody deliberately left unsynchronised.
   const syncWithCutter = (draft.syncWithCutter as boolean | undefined) ?? true;
   const totals = layoutTotals(sections);
-  // "Operator screen side" everywhere except the EasyLoader, whose printed
-  // form calls the same +Y/-Y choice "Control Box Side".
-  const screenSideLabel = isEasyLoader ? "Control Box Side" : "Operator screen side";
+  // "Operator screen side" on the cutters; the EasyLoader and the EasyFeeder
+  // have a control box rather than a screen, and their forms call the same
+  // +Y/-Y choice "Control Box Side". The Heavy Duty Roll Feeder and the
+  // Leather Nesting System have neither, so they are not asked at all.
+  const hasScreenSide = formHasScreenSide(form.form);
+  const screenSideLabel =
+    isEasyLoader || form.form === "EASYFEED" ? "Control Box Side" : "Operator screen side";
   const currentSide = (draft.ui as string) ?? "-Y";
 
   const breakdown = [
@@ -437,7 +432,7 @@ export function ProductionSpecEditor({
         ) : null}
         {missing.length > 0 ? (
           <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
-            {missing.length} missing
+            Missing: {missing.map((key) => REQUIREMENT_LABELS[key] ?? key).join(", ")}
           </span>
         ) : null}
         <ChevronDown
@@ -572,6 +567,8 @@ export function ProductionSpecEditor({
             </div>
           ) : null}
 
+          {hasScreenSide ? (
+            <>
           <CompactField label={screenSideLabel} htmlFor={`${itemId}-ui`}>
             <select
               id={`${itemId}-ui`}
@@ -628,6 +625,9 @@ export function ProductionSpecEditor({
             </div>
           ) : null}
 
+            </>
+          ) : null}
+
           {form.form === "X_CALIBRE" ? (
             <>
               {/* No knife size: the X-Calibre form prints one, 2.4 x 8.5. */}
@@ -649,7 +649,7 @@ export function ProductionSpecEditor({
                 </select>
               </CompactField>
 
-              <DrillsField itemId={itemId} drills={drills} draft={draft} save={save} setDraft={setDraft} />
+              <DrillsField itemId={itemId} drills={drills} draft={draft} save={save} />
 
               <CompactField label="Special notes (optional)" htmlFor={`${itemId}-special-notes`}>
                 <input
@@ -700,22 +700,6 @@ export function ProductionSpecEditor({
                 </CompactField>
               ) : null}
 
-              <CompactField label="Shipping" htmlFor={`${itemId}-l-shipping`}>
-                <select
-                  id={`${itemId}-l-shipping`}
-                  value={(draft.shipping as string) ?? ""}
-                  onChange={(e) =>
-                    save({ ...draft, shipping: e.target.value === "" ? undefined : e.target.value }, "spec")
-                  }
-                  className={cn(fieldInputClass, compactControlClass, "w-56")}
-                >
-                  <option value="">—</option>
-                  <option value="complete">Complete (whole)</option>
-                  <option value="crate-disassembled">Wood crate (disassembled)</option>
-                  <option value="crate-whole">Wood crate (whole)</option>
-                </select>
-              </CompactField>
-
               <CompactField label="Special notes (optional)" htmlFor={`${itemId}-l-notes`}>
                 <input
                   id={`${itemId}-l-notes`}
@@ -764,13 +748,13 @@ export function ProductionSpecEditor({
                 </select>
               </CompactField>
 
-              <DrillsField itemId={itemId} drills={drills} draft={draft} save={save} setDraft={setDraft} />
+              <DrillsField itemId={itemId} drills={drills} draft={draft} save={save} />
 
               <CompactField label="Special notes (optional)" htmlFor={`${itemId}-special-notes`}>
                 <input
                   id={`${itemId}-special-notes`}
                   type="text"
-                  maxLength={28}
+                  maxLength={500}
                   defaultValue={(draft.specialNotes as string) ?? ""}
                   onBlur={(e) => save({ ...draft, specialNotes: e.target.value }, "spec")}
                   className={cn(fieldInputClass, compactControlClass, "flex-1 min-w-[10rem]")}
@@ -797,8 +781,8 @@ export function ProductionSpecEditor({
 
               {/* The printed form has a box for two widths and a "Custom
                   ___mm" line for the rest; the field exists exactly when the
-                  box does not -- see `easyLoaderPrintedWidthCell`. */}
-              {easyLoaderPrintedWidthCell(productSpecs) === null ? (
+                  box does not -- see `easyLoaderPrintedWidth`. */}
+              {easyLoaderPrintedWidth(productSpecs) === null ? (
                 <CompactField label="Custom width (mm)" htmlFor={`${itemId}-custom-width`}>
                   <input
                     id={`${itemId}-custom-width`}

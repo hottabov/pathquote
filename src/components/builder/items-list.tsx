@@ -12,7 +12,7 @@ import { ItemShowImageToggle } from "@/components/builder/item-show-image-toggle
 import { ProductionSpecEditor } from "@/components/builder/production-spec-editor";
 import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
-import { resolveForm } from "@/lib/production-forms/resolve";
+import { formHasScreenSide } from "@/lib/production-forms/resolve";
 import { assignRails, type RailSource } from "@/lib/production-forms/rails";
 import { EL_MODULE_ROLES } from "@/lib/production-forms/table-sections";
 import type { OptionRole } from "@prisma/client";
@@ -167,7 +167,7 @@ export function ItemsList({
   // The offer to apply a screen side to the rest of the quote is noise on a
   // single-machine one, so it only appears once the document holds two or
   // more items a production form recognizes.
-  const machineCount = optimisticItems.filter((item) => resolveForm(item.form) !== null).length;
+  const machineCount = optimisticItems.filter((item) => formHasScreenSide(item.form)).length;
 
   // Rail length for the FabricPro cards, read off the EasyLoader cards in the
   // same quote -- the rails bolt to the table, not to the FabricPro, so the

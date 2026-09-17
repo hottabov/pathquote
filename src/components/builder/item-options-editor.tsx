@@ -7,7 +7,14 @@ import { Button } from "@/components/ui/button";
 import { fieldInputClass } from "@/components/ui-kit";
 import { formatMoney } from "@/lib/format";
 import { formatMetres } from "@/lib/option-length";
-import { MTS_INCLUDED_M, MTS_METRES_FIELD, MTS_METRES_KEY, mtsTravelMetres } from "@/lib/production-forms/mts";
+import {
+  MTS_INCLUDED_M,
+  MTS_METRES_FIELD,
+  MTS_METRES_KEY,
+  MTS_METRES_REQUIRED,
+  mtsMetresValid,
+  mtsTravelMetres,
+} from "@/lib/production-forms/mts";
 import { isOptionDisabled } from "@/lib/catalog-compat";
 import {
   selectionsFromLines,
@@ -121,24 +128,33 @@ function MtsLengthField({
 }) {
   const metres = value === "" ? undefined : Number(value);
   const extra = mtsTravelMetres(metres);
+  // Required: an MTS is not an answer without its travel distance.
+  const invalid = !mtsMetresValid({ [MTS_METRES_KEY]: value });
 
   return (
     <div className="flex flex-col gap-1">
       <label htmlFor={id} className="flex items-center gap-2 text-xs text-slate-500">
         {MTS_METRES_FIELD.label}
+        <span className="text-destructive" aria-hidden="true">
+          *
+        </span>
         <input
           id={id}
           type="number"
           inputMode="decimal"
-          min={0}
+          min={0.1}
           step="0.1"
+          required
+          aria-invalid={invalid}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className={cn(fieldInputClass, "h-11 w-24 sm:h-9")}
+          className={cn(fieldInputClass, "h-11 w-24 sm:h-9", invalid && "border-destructive")}
         />
       </label>
-      <p className="text-xs text-slate-500">
-        {extra === 0
+      <p className={cn("text-xs", invalid ? "text-destructive" : "text-slate-500")}>
+        {invalid
+          ? `${MTS_METRES_REQUIRED} — required.`
+          : extra === 0
           ? `Up to ${MTS_INCLUDED_M} m is included in the MTS price.`
           : `${MTS_INCLUDED_M} m included — ${extra} m of MTS-M added automatically.`}
       </p>
@@ -297,6 +313,16 @@ export function ItemOptionsEditor({
 
   function save() {
     setError(null);
+    const mtsWithoutLength = compatibleOptions.some(
+      (option) =>
+        option.role === "MTS" &&
+        effective.has(option.id) &&
+        !mtsMetresValid(effective.get(option.id)!.attributes)
+    );
+    if (mtsWithoutLength) {
+      setError(MTS_METRES_REQUIRED);
+      return;
+    }
     const selections: OptionSelectionInput[] = compatibleOptions
       .filter((option) => effective.has(option.id))
       .map((option) => {

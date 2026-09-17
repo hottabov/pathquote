@@ -17,6 +17,7 @@
 import { mkdir, writeFile, unlink } from "fs/promises";
 import path from "path";
 import { headers } from "next/headers";
+import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { uploadsDir, saveUpload, UploadValidationError, IMAGE_URL_PATTERN, resolveUploadPath } from "@/lib/uploads";
@@ -412,12 +413,19 @@ export async function completeSigning(token: string): Promise<ActionResult> {
     throw error;
   }
 
-  await sendCompletionEmails({
-    documentId: request.documentId,
-    clientEmail: request.email,
-    clientName: request.signerName,
-    pdf,
-  });
+  // Deferred with `after` so the client is NOT kept waiting on two SMTP
+  // round-trips: the quote is already signed and archived by the point this
+  // runs, and the emails are best-effort (each send swallows its own failure).
+  // This is what makes the client's tap feel instant instead of "very long" —
+  // the Gotenberg render above is the only thing left on the critical path.
+  after(() =>
+    sendCompletionEmails({
+      documentId: request.documentId,
+      clientEmail: request.email,
+      clientName: request.signerName,
+      pdf,
+    }),
+  );
 
   revalidatePath(`/sign/${token}`);
   return {};
@@ -537,61 +545,72 @@ async function sendCompletionEmails(input: {
 
   const transport = createAppMailTransport();
 
-  try {
-    const mail = buildCompletionEmailForClient({ quoteNumber, entityName, authorName, replyTo });
-    const result = await transport.sendMail({
-      to: input.clientEmail,
-      from: mailFromAddress(),
-      replyTo: mail.replyTo,
-      subject: mail.subject,
-      text: mail.text,
-      html: mail.html,
-      attachments: [
-        {
-          filename: `${quoteNumber || "quotation"}-signed.pdf`,
-          content: input.pdf,
-          contentType: "application/pdf",
-        },
-      ],
-    });
-    const failed = [...(result.rejected ?? []), ...(result.pending ?? [])].filter(Boolean);
-    if (failed.length) throw new Error(`Email (${failed.join(", ")}) could not be sent`);
-  } catch (error) {
-    console.error("[signing] completion email failed (client)", error);
-  }
+  // The two notifications are independent, so they go out concurrently rather
+  // than one-after-the-other -- halving the time this best-effort step takes.
+  // Each keeps its own try/catch so one failing never stops the other, and
+  // neither ever throws out of this function (the caller treats mail as
+  // best-effort, and now also runs it via `after`, off the client's path).
+  await Promise.all([
+    (async () => {
+      try {
+        const mail = buildCompletionEmailForClient({ quoteNumber, entityName, authorName, replyTo });
+        const result = await transport.sendMail({
+          to: input.clientEmail,
+          from: mailFromAddress(),
+          replyTo: mail.replyTo,
+          subject: mail.subject,
+          text: mail.text,
+          html: mail.html,
+          attachments: [
+            {
+              filename: `${quoteNumber || "quotation"}-signed.pdf`,
+              content: input.pdf,
+              contentType: "application/pdf",
+            },
+          ],
+        });
+        const failed = [...(result.rejected ?? []), ...(result.pending ?? [])].filter(Boolean);
+        if (failed.length) throw new Error(`Email (${failed.join(", ")}) could not be sent`);
+      } catch (error) {
+        console.error("[signing] completion email failed (client)", error);
+      }
+    })(),
 
-  // No AUTH_URL, no valid link to send -- logged and skipped rather than
-  // mailing the author a message whose one call to action is a dead "/quotes/
-  // undefined" URL. Deliberately not the same up-front, request-refusing
-  // check `resolveSigningBaseUrl` (src/lib/actions/signing.ts) does for the
-  // invite email: that guard exists to stop a token/row/send from being
-  // created at all when the link would be dead. By the time this runs the
-  // quote is already signed, so misconfiguration here can only cost this one
-  // notification, not the completion itself.
-  const rawAuthUrl = process.env.AUTH_URL?.trim();
-  if (!rawAuthUrl) {
-    console.error("[signing] completion email to author skipped: AUTH_URL is not set");
-  } else {
-    try {
-      const authUrl = rawAuthUrl.replace(/\/+$/, "");
-      const mail = buildCompletionEmailForAuthor({
-        quoteNumber,
-        clientName: input.clientName,
-        companyName,
-        documentUrl: `${authUrl}/quotes/${input.documentId}`,
-      });
-      const result = await transport.sendMail({
-        to: document.author.email,
-        from: mailFromAddress(),
-        replyTo: mail.replyTo,
-        subject: mail.subject,
-        text: mail.text,
-        html: mail.html,
-      });
-      const failed = [...(result.rejected ?? []), ...(result.pending ?? [])].filter(Boolean);
-      if (failed.length) throw new Error(`Email (${failed.join(", ")}) could not be sent`);
-    } catch (error) {
-      console.error("[signing] completion email failed (author)", error);
-    }
-  }
+    (async () => {
+      // No AUTH_URL, no valid link to send -- logged and skipped rather than
+      // mailing the author a message whose one call to action is a dead
+      // "/quotes/undefined" URL. Deliberately not the same up-front,
+      // request-refusing check `resolveSigningBaseUrl` (src/lib/actions/signing.ts)
+      // does for the invite email: that guard exists to stop a token/row/send
+      // from being created at all when the link would be dead. By the time this
+      // runs the quote is already signed, so misconfiguration here can only
+      // cost this one notification, not the completion itself.
+      const rawAuthUrl = process.env.AUTH_URL?.trim();
+      if (!rawAuthUrl) {
+        console.error("[signing] completion email to author skipped: AUTH_URL is not set");
+        return;
+      }
+      try {
+        const authUrl = rawAuthUrl.replace(/\/+$/, "");
+        const mail = buildCompletionEmailForAuthor({
+          quoteNumber,
+          clientName: input.clientName,
+          companyName,
+          documentUrl: `${authUrl}/quotes/${input.documentId}`,
+        });
+        const result = await transport.sendMail({
+          to: document.author.email,
+          from: mailFromAddress(),
+          replyTo: mail.replyTo,
+          subject: mail.subject,
+          text: mail.text,
+          html: mail.html,
+        });
+        const failed = [...(result.rejected ?? []), ...(result.pending ?? [])].filter(Boolean);
+        if (failed.length) throw new Error(`Email (${failed.join(", ")}) could not be sent`);
+      } catch (error) {
+        console.error("[signing] completion email failed (author)", error);
+      }
+    })(),
+  ]);
 }

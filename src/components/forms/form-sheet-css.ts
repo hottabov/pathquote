@@ -612,6 +612,30 @@ export const FORM_SHEET_CSS = `
   .pf-sheet.pf-dense .pf-sidefig { width: 12mm; height: 12mm; }
   .pf-sheet.pf-dense .pf-footnote { margin-top: 1.6mm; padding-top: 1mm; }
 
+  /* ═══ 2026-09-16 layout pass ═════════════════════════════════════════ */
+  /* Selected ticks sitting side by side in the options grid read as one
+     band without a gap between them, so the grid gets a column gap. */
+  .pf-opts:not(.pf-row):not(.pf-col):not(.pf-one) { column-gap: 1.2mm; }
+  .pf-opts.pf-four { row-gap: 0.6mm; }
+  /* A labelled line under a grid -- the M-Series power row. */
+  .pf-subrow {
+    display: flex; align-items: center; gap: 3mm;
+    margin-top: 1.2mm; padding-top: 1mm;
+    border-top: 0.22mm solid var(--rule-soft);
+  }
+  .pf-subrow > .pf-lb { flex: none; padding-left: 2.5mm; }
+  .pf-subrow > .pf-opts.pf-row { gap: 0.6mm 1.2mm; }
+  /* End user: three compact rows instead of two stacked columns. */
+  .pf-eu {
+    display: grid;
+    grid-template-columns: 1fr 1fr 0.85fr 1.35fr;
+    gap: 1.6mm 4mm;
+  }
+  .pf-eu .pf-s2 { grid-column: span 2; }
+  .pf-eu .pf-s3 { grid-column: span 3; }
+  /* Side diagram: level with the label, right beside the ticks. */
+  .pf-sideblock { gap: 4mm; }
+
   /* ═══ Print ═══════════════════════════════════════════════════════════ */
   /* One sheet per form, each starting a new page. \`break-after\` on the last
      sheet would emit a trailing blank page, so it is set on every sheet but

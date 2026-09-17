@@ -400,6 +400,25 @@ export type DocumentForBuilder = {
    * route in this app re-resolves its own path — see that route's own doc
    * comment); the panel itself never needs the raw filename. */
   signedPdfName: string | null;
+  /** `Document.revision` — the current FINAL content's revision counter
+   * (0, 1, 2…), null until the first finalize. Drives the revision label. */
+  revision: number | null;
+  /** `Document.hasUnsentChanges` — true after an unfinalize (or an admin void)
+   * while a version was already out with the client; drives the "changes not
+   * yet sent" banner. Cleared on a successful (re)send. */
+  hasUnsentChanges: boolean;
+  /** `Document.sentAt` — when the quote was last emailed to the client (the
+   * rich send, `sendQuoteToClient`). Null until first sent; paired with the
+   * banner. */
+  sentAt: Date | null;
+  /** `Document.acceptedAt` — when a client-signed quote was accepted into
+   * production (ACCEPTED, `acceptQuote`). Null otherwise; gates the Accept
+   * button on the document page. */
+  acceptedAt: Date | null;
+  /** `Document.signedRevisionId` — which QuoteRevision the client signed. A
+   * soft pointer that survives an admin void as a legal record. Null until
+   * signed. */
+  signedRevisionId: string | null;
   /** `Document.signingRequests`, newest first. One row per send — a resend
    * revokes the previous row and inserts a new one (see the model's own doc
    * comment in schema.prisma) — so index 0 is always "the current one" (the
@@ -898,6 +917,11 @@ async function loadDocumentForBuilder(
     signingStatus: document.signingStatus,
     completedAt: document.completedAt,
     signedPdfName: document.signedPdfName,
+    revision: document.revision,
+    hasUnsentChanges: document.hasUnsentChanges,
+    sentAt: document.sentAt,
+    acceptedAt: document.acceptedAt,
+    signedRevisionId: document.signedRevisionId,
     signingRequests: document.signingRequests,
     updatedAt: document.updatedAt,
   };

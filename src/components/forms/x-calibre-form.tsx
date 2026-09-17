@@ -17,6 +17,7 @@ import {
   MACHINE_OFFICE_FIELDS,
   MtsSection,
   PathWorksSection,
+  PowerTicks,
   ScreenSideBlock,
   hasRole,
 } from "./m-series-form";
@@ -49,14 +50,8 @@ const SELECTED: Array<{ role: OptionRole; code: string; desc: string }> = [
   { role: "OFP", code: "OFP", desc: "Offload Printer" },
   { role: "DR2", code: "DR2", desc: "Secondary Drill, AUX" },
   { role: "PRM", code: "PRM", desc: "Production Manager" },
+  { role: "DMT", code: "DMT", desc: "DuctMasTer" },
 ];
-
-const VOLTAGES = [
-  { value: "220V", desc: "TR220 ext. xfmr" },
-  { value: "400V", desc: undefined },
-  { value: "415V", desc: undefined },
-  { value: "480V", desc: "TR480 int. xfmr" },
-] as const;
 
 const STANDARD = [
   { code: "IKA", desc: "Ice Knife Air" },
@@ -106,12 +101,7 @@ export function XCalibreForm({ ctx }: { ctx: FormContext }) {
             ))}
           </OptionColumn>
           <OptionColumn caption="Power &amp; packing">
-            {VOLTAGES.map((voltage) => (
-              <Tick key={voltage.value} on={spec.voltage === voltage.value}>
-                <span className="pf-code pf-num">{voltage.value}</span>
-                {voltage.desc ? <span className="pf-desc"> {voltage.desc}</span> : null}
-              </Tick>
-            ))}
+            <PowerTicks ctx={ctx} voltage={spec.voltage} />
             <Tick on={hasRole(ctx, "CRATE")} code="CRATE" />
           </OptionColumn>
           <OptionColumn caption="Standard — always fitted">

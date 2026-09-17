@@ -1,12 +1,19 @@
 "use server";
 
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { db } from "@/lib/db";
+import { signedPdfFilename, sha256Hex } from "@/lib/signing/archive";
 import { requireSession } from "@/lib/authz";
-import { revalidateDocument } from "@/lib/revalidate";
+import { revalidateDocument, revalidateDocumentList } from "@/lib/revalidate";
 import { documentWhereForUser } from "@/lib/scope";
 import { idSchema } from "@/lib/validation/documents";
-import { saveUpload, UploadValidationError } from "@/lib/uploads";
+import { saveUpload, uploadsDir, UploadValidationError } from "@/lib/uploads";
 import { parseSignatureDataUrl } from "@/lib/signing/data-url";
+import { buildQuoteSendEmail } from "@/lib/email/quote-send";
+import { getDocumentForBuilder } from "@/lib/queries/documents";
+import { getQuoteDocumentsForRegion } from "@/lib/queries/quote-documents";
+import { renderQuotationPdfForDocument } from "@/lib/pdf";
 import {
   canAuthorSign,
   canRevoke,
@@ -67,16 +74,16 @@ export async function signQuoteAsAuthor(documentId: string, dataUrl: string): Pr
 
   const document = await db.document.findFirst({
     where: { id: parsedId.data, status: "FINAL", ...documentWhereForUser(session.user) },
-    select: { id: true, signingStatus: true },
+    select: { id: true, signingStatus: true, signedPdfName: true },
   });
   if (!document) return { error: NOT_FOUND_ERROR };
   // The precondition lives in src/lib/signing/state.ts, beside every other
-  // signing transition rule, rather than as a hand-written check here -- see
-  // that function's own doc comment for why NOT_SENT and DECLINED are the
-  // two allowed statuses. `SignButton` (src/components/builder/sign-button.tsx)
-  // gates its own visibility on the same function so the two can never
-  // disagree.
-  if (!canAuthorSign(document.signingStatus)) {
+  // signing transition rule, rather than as a hand-written check here.
+  // `canAuthorSign` is now unconditional (the manager may sign a FINAL quote
+  // in any order relative to the client — see its doc comment), but the call
+  // stays so `SignButton` (src/components/builder/sign-button.tsx) and this
+  // action can never disagree about when the button is offered.
+  if (!canAuthorSign()) {
     return { error: "This quote can no longer be signed." };
   }
 
@@ -148,6 +155,43 @@ export async function signQuoteAsAuthor(documentId: string, dataUrl: string): Pr
     },
   });
 
+  // Record the signature as a lifecycle event (spec §2).
+  await db.quoteEvent.create({
+    data: { documentId: document.id, type: "MANAGER_SIGNED", actorId: session.user.id },
+  });
+
+  // If the client has ALREADY signed, the archived signed PDF was rendered at
+  // completion with only their signature on it. Re-render and re-archive it now
+  // so the executed document shows both — a counter-signature, which adds the
+  // manager's signature without changing any quote content the client agreed
+  // to. Best-effort: a Gotenberg hiccup must not undo the signature already
+  // saved above (the live preview shows both regardless, and this regenerates
+  // on a retry). Only for SIGNED — in every other status no archived PDF
+  // exists yet, and the client's own `completeSigning` renders one that already
+  // includes this signature.
+  if (document.signingStatus === "SIGNED") {
+    try {
+      const forPdf = await getDocumentForBuilder(session.user, document.id);
+      if (forPdf) {
+        const quoteDocuments = await getQuoteDocumentsForRegion(forPdf.regionId);
+        const pdf = await renderQuotationPdfForDocument(forPdf, quoteDocuments);
+        const name = signedPdfFilename();
+        await mkdir(uploadsDir(), { recursive: true });
+        await writeFile(path.join(uploadsDir(), name), pdf);
+        await db.document.update({
+          where: { id: document.id },
+          data: { signedPdfName: name, signedPdfSha256: sha256Hex(pdf) },
+        });
+        // Best-effort delete of the superseded (client-only) archive.
+        if (document.signedPdfName && document.signedPdfName !== name) {
+          await unlink(path.join(uploadsDir(), document.signedPdfName)).catch(() => {});
+        }
+      }
+    } catch (error) {
+      console.error("[signing] re-archiving signed PDF after manager counter-signature failed", error);
+    }
+  }
+
   revalidateDocument(document.id);
   return {};
 }
@@ -170,7 +214,6 @@ const SENDABLE_SIGNING_STATUSES: SigningStatus[] = ALL_SIGNING_STATUSES.filter(
     canSendToClient({
       documentStatus: "FINAL",
       signingStatus,
-      hasAuthorSignature: true,
       contactEmail: "probe@example.com",
     }).ok
 );
@@ -292,7 +335,6 @@ export async function sendQuoteForSignature(documentId: string): Promise<ActionR
   const verdict = canSendToClient({
     documentStatus: document.status,
     signingStatus: document.signingStatus,
-    hasAuthorSignature: document.signatures.length > 0,
     contactEmail: document.contact?.email ?? null,
   });
   if (!verdict.ok) return { error: verdict.reason };
@@ -402,7 +444,240 @@ export async function sendQuoteForSignature(documentId: string): Promise<ActionR
     return { error: "The quote could not be emailed. Nothing was sent — try again." };
   }
 
+  // The client now holds this version: clear the "changes not sent" flag and
+  // stamp when it went out (both drive the manager page's banner). After a
+  // confirmed send, like sendQuoteToClient, so a failed send never clears it.
+  await db.document.update({
+    where: { id: document.id },
+    data: { sentAt: now, hasUnsentChanges: false },
+  });
+
   revalidateDocument(document.id);
+  revalidateDocumentList();
+  return {};
+}
+
+// --- sendQuoteToClient (the rich "Send quotation" dialog) --------------------
+
+export interface SendQuoteInput {
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject: string;
+  message: string;
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const cleanEmails = (list: string[] | undefined): string[] =>
+  (list ?? []).map((e) => e.trim()).filter((e) => e !== "");
+
+/**
+ * The client-facing "Send quotation" send (spec §7.5): issues a signing link
+ * for the current revision exactly like `sendQuoteForSignature` (same
+ * concurrency-guarded claim, same revoke-the-previous rule), but sends the
+ * bulletproof HTML email built from the manager's dialog text with the
+ * revision's PDF attached, and records a `QuoteEmail` row so the quote page
+ * can show a send history.
+ *
+ * The attached PDF is the FROZEN revision's (`QuoteRevision.pdfPath`), not a
+ * re-render of current state — the whole point of revisions. If that PDF
+ * hasn't been generated yet (a finalize whose best-effort PDF step failed) it
+ * is rendered on the fly as a fallback; the document is FINAL and unchanged,
+ * so that render is the same content.
+ *
+ * `bcc` is delivered but deliberately not stored on `QuoteEmail` (a blind copy
+ * has no place in a visible history). On a send failure the issued link is
+ * undone and the status restored, mirroring `sendQuoteForSignature`.
+ */
+export async function sendQuoteToClient(
+  documentId: string,
+  input: SendQuoteInput
+): Promise<ActionResult> {
+  const session = await requireSession();
+
+  const parsedId = idSchema.safeParse(documentId);
+  if (!parsedId.success) return { error: NOT_FOUND_ERROR };
+
+  const to = cleanEmails(input.to);
+  const cc = cleanEmails(input.cc);
+  const bcc = cleanEmails(input.bcc);
+  if (to.length === 0) return { error: "Add at least one recipient." };
+  if ([...to, ...cc, ...bcc].some((e) => !EMAIL_RE.test(e))) {
+    return { error: "One of the email addresses is not valid." };
+  }
+  if (input.subject.trim() === "") return { error: "The email needs a subject." };
+
+  const resolvedAuthUrl = resolveSigningBaseUrl();
+  if (!resolvedAuthUrl.ok) return { error: resolvedAuthUrl.error };
+
+  const document = await db.document.findFirst({
+    where: { id: parsedId.data, ...documentWhereForUser(session.user) },
+    select: {
+      id: true,
+      number: true,
+      status: true,
+      signingStatus: true,
+      total: true,
+      currency: true,
+      currencySymbol: true,
+      issueDate: true,
+      validityDays: true,
+      revision: true,
+      contactId: true,
+      contact: { select: { id: true, email: true } },
+      author: { select: { name: true, email: true, phone: true, active: true } },
+      region: { select: { entityName: true, entityAddress: true, logoUrl: true } },
+      items: { orderBy: { sortOrder: "asc" }, select: { name: true } },
+      revisions: { orderBy: { revision: "desc" }, take: 1, select: { id: true, label: true, total: true, pdfPath: true } },
+    },
+  });
+  if (!document) return { error: NOT_FOUND_ERROR };
+
+  const verdict = canSendToClient({
+    documentStatus: document.status,
+    signingStatus: document.signingStatus,
+    contactEmail: to[0],
+  });
+  if (!verdict.ok) return { error: verdict.reason };
+
+  const contactId = document.contactId;
+  if (!contactId) return { error: "This quote has no client contact." };
+
+  const revision = document.revisions[0];
+  if (!revision) return { error: "This quote has no revision to send. Re-finalize it first." };
+
+  // The frozen PDF for this revision, or an on-the-fly render if the
+  // best-effort finalize step hadn't produced it yet.
+  let pdfBytes: Buffer;
+  try {
+    if (revision.pdfPath) {
+      pdfBytes = await readFile(path.join(uploadsDir(), revision.pdfPath));
+    } else {
+      const forPdf = await getDocumentForBuilder(session.user, document.id);
+      if (!forPdf) return { error: NOT_FOUND_ERROR };
+      const quoteDocuments = await getQuoteDocumentsForRegion(forPdf.regionId);
+      pdfBytes = await renderQuotationPdfForDocument(forPdf, quoteDocuments);
+    }
+  } catch (error) {
+    console.error("[signing] sendQuoteToClient: could not load the revision PDF", error);
+    return { error: "The quotation PDF could not be prepared. Try again." };
+  }
+
+  const days = await getSigningLinkValidityDays();
+  const token = generateSigningToken();
+  const now = new Date();
+  const expiresAt = addDays(now, days);
+  const previousStatus = document.signingStatus;
+
+  let requestId: string;
+  try {
+    requestId = await db.$transaction(async (tx) => {
+      const claimed = await tx.document.updateMany({
+        where: { id: document.id, signingStatus: { in: SENDABLE_SIGNING_STATUSES } },
+        data: { signingStatus: "SENT" },
+      });
+      if (claimed.count === 0) throw new AlreadyClaimedError();
+      await tx.signingRequest.updateMany({
+        where: { documentId: document.id, revokedAt: null },
+        data: { revokedAt: now },
+      });
+      const created = await tx.signingRequest.create({
+        data: { documentId: document.id, contactId, email: to[0], tokenHash: hashSigningToken(token), expiresAt },
+        select: { id: true },
+      });
+      return created.id;
+    });
+  } catch (error) {
+    if (error instanceof AlreadyClaimedError) return { error: ALREADY_IN_FLIGHT };
+    throw error;
+  }
+
+  const configuration = document.items.map((i) => i.name).join(" + ");
+  const email = buildQuoteSendEmail({
+    subject: input.subject.trim(),
+    message: input.message,
+    summary: {
+      label: revision.label,
+      configuration,
+      total: formatMoney(revision.total, document.currency, document.currencySymbol),
+      validUntil: formatDateAU(addDays(document.issueDate, document.validityDays ?? 0)),
+    },
+    signature: {
+      fullName: document.author.name ?? document.author.email,
+      title: null, // User has no job-title field (see impl notes §"data sources")
+      phone: document.author.phone,
+      email: document.author.email,
+    },
+    company: {
+      name: document.region.entityName,
+      website: null, // Region has no website field
+      address: document.region.entityAddress,
+    },
+    signLink: `${resolvedAuthUrl.baseUrl}/sign/${token}`,
+    logoUrl: document.region.logoUrl ? `${resolvedAuthUrl.baseUrl}${document.region.logoUrl}` : null,
+  });
+
+  let providerId: string | null = null;
+  try {
+    const transport = createAppMailTransport();
+    const result = await transport.sendMail({
+      to,
+      cc: cc.length ? cc : undefined,
+      bcc: bcc.length ? bcc : undefined,
+      from: mailFromAddress(),
+      replyTo: resolveReplyTo(document.author, process.env.EMAIL_REPLY_TO),
+      subject: email.subject,
+      text: email.text,
+      html: email.html,
+      attachments: [
+        { filename: `${revision.label}.pdf`, content: pdfBytes, contentType: "application/pdf" },
+      ],
+    });
+    const failed = [...(result.rejected ?? []), ...(result.pending ?? [])].filter(Boolean);
+    if (failed.length) throw new Error(`Email (${failed.join(", ")}) could not be sent`);
+    providerId = typeof result.messageId === "string" ? result.messageId : null;
+  } catch (error) {
+    console.error("[signing] sendQuoteToClient: email failed", error);
+    // Undo the issued link and restore the status — nothing was delivered.
+    await db.$transaction(async (tx) => {
+      await tx.signingRequest.update({ where: { id: requestId }, data: { revokedAt: new Date() } });
+      await tx.document.update({ where: { id: document.id }, data: { signingStatus: previousStatus } });
+    });
+    return { error: "The quote could not be emailed. Nothing was sent — try again." };
+  }
+
+  // Delivered: record the send and clear the unsent-changes flag. Only now,
+  // after the provider accepted it (spec §7.6 — a failed send must never leave
+  // the quote reading as "sent").
+  await db.$transaction(async (tx) => {
+    await tx.document.update({
+      where: { id: document.id },
+      data: { sentAt: now, hasUnsentChanges: false },
+    });
+    await tx.quoteEmail.create({
+      data: {
+        documentId: document.id,
+        revisionId: revision.id,
+        to,
+        cc,
+        subject: email.subject,
+        bodyText: input.message,
+        sentById: session.user.id,
+        providerId,
+      },
+    });
+    await tx.quoteEvent.create({
+      data: {
+        documentId: document.id,
+        type: "SENT",
+        actorId: session.user.id,
+        meta: { revisionId: revision.id, label: revision.label, to },
+      },
+    });
+  });
+
+  revalidateDocument(document.id);
+  revalidateDocumentList();
   return {};
 }
 

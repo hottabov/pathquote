@@ -27,6 +27,8 @@ export type ClientPickerContact = {
 export type ClientPickerCompany = {
   id: string;
   name: string;
+  /** `Industry.id`, or null — the builder's client card edits it in place. */
+  industryId: string | null;
   contacts: ClientPickerContact[];
 };
 
@@ -50,6 +52,7 @@ export async function listClientPickerCompanies(user: ScopeUser): Promise<Client
   return companies.map((c) => ({
     id: c.id,
     name: c.name,
+    industryId: c.industryId,
     contacts: c.contacts.map((contact) => ({
       id: contact.id,
       firstName: contact.firstName,

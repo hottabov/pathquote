@@ -192,6 +192,45 @@ describe("companySchema - delivery address", () => {
   });
 });
 
+describe("companySchema - industryId", () => {
+  const id = "clindustry0000000001";
+
+  function parseIndustry(industryId: unknown) {
+    return companySchema.safeParse({ name: "Acme", industryId });
+  }
+
+  it("leaves an absent industryId undefined (update: keep the stored value)", () => {
+    const result = companySchema.safeParse({ name: "Acme" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.industryId).toBeUndefined();
+  });
+
+  it.each([
+    ["an empty string", ""],
+    ["whitespace", "   "],
+    ["null", null],
+  ])("collapses %s to null (no industry)", (_label, value) => {
+    const result = parseIndustry(value);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.industryId).toBeNull();
+  });
+
+  it("accepts and trims a well-formed id", () => {
+    const result = parseIndustry(`  ${id} `);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.industryId).toBe(id);
+  });
+
+  it.each([
+    ["a too-short id", "abc"],
+    ["an over-long id", "x".repeat(41)],
+    ["a number", 42],
+    ["an object", { id }],
+  ])("rejects %s", (_label, value) => {
+    expect(parseIndustry(value).success).toBe(false);
+  });
+});
+
 describe("contactSchema", () => {
   const base = {
     firstName: "Jamie",

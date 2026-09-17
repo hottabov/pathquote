@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { isValidCountryCode } from "@/lib/countries";
 import { validatePhone } from "@/lib/phone";
+import { idSchema } from "@/lib/validation/documents";
 
 // --- shared field pieces -----------------------------------------------
 
@@ -159,6 +160,27 @@ const deliveryContactNameSchema = optionalText(160, "Delivery contact name");
 const deliveryPhoneSchema = optionalPhone("Delivery phone");
 const deliveryNotesSchema = optionalText(500, "Delivery notes");
 
+// --- industry --------------------------------------------------------------
+
+/**
+ * The company's industry, picked from the shared Industry list (never free
+ * text — see `IndustryPicker`). Three states, because the edit screen's
+ * picker writes through its own action (`setCompanyIndustry`) and never
+ * submits this field:
+ * - absent (`undefined`) — "leave it as it is"; the update action skips it,
+ * - `null` / blank — "no industry",
+ * - an id — "this industry"; the action still checks the row exists, since
+ *   a well-formed id is not proof of one.
+ */
+const industryIdSchema = z.preprocess(
+  (value) => {
+    if (value === undefined) return undefined;
+    if (value === null || (typeof value === "string" && value.trim() === "")) return null;
+    return value;
+  },
+  idSchema.nullable().optional()
+);
+
 // --- company -------------------------------------------------------------
 
 const baseCompanySchema = z.object({
@@ -180,6 +202,7 @@ const baseCompanySchema = z.object({
   deliveryContactName: deliveryContactNameSchema,
   deliveryPhone: deliveryPhoneSchema,
   deliveryNotes: deliveryNotesSchema,
+  industryId: industryIdSchema,
 });
 
 const DELIVERY_REQUIRED_MESSAGE = "Required when the delivery address is different from the main address";

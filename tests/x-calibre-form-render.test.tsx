@@ -73,12 +73,14 @@ describe("the X-Calibre form", () => {
     expect(html).toContain(">14</span>");
   });
 
-  it("sends a DuctMasTer to the Additional items sheet — it has no box here", () => {
+  it("ticks a DuctMasTer rather than sending it to the Additional items sheet", () => {
+    // X-Calibre gained a DMT box (2026-09-16): it is covered now, so a DMT
+    // line no longer needs the Additional items sheet to be seen.
     const spec = resolveForm("X_CALIBRE")!;
     const context = ctx({}, [option("DMT", "DMT")]);
 
-    expect(render(context)).not.toContain("DuctMasTer");
-    expect(unmatchedOptions(spec, context).map((o) => o.code)).toEqual(["DMT"]);
+    expect(marked(render(context), "pf-on")).toContain("DMT DuctMasTer");
+    expect(unmatchedOptions(spec, context).map((o) => o.code)).toEqual([]);
   });
 
   it("prints where the page came from", () => {
@@ -88,10 +90,24 @@ describe("the X-Calibre form", () => {
   it("prints a box for every option role its spec claims to cover", () => {
     const spec = resolveForm("X_CALIBRE")!;
     const roles = [...coveredRoles(spec)].filter((role) => role !== "MTS_TRAVEL");
-    const html = render(ctx({}, roles.map((role, i) => option(`opt-${i}`, role))));
+    // TRANSFORMER prints as TR220 or TR480, told apart by the option's code
+    // rather than its role -- see PowerTicks in m-series-form.tsx.
+    const options = roles.flatMap((role) =>
+      role === "TRANSFORMER"
+        ? [option("TR220-X", "TRANSFORMER"), option("TR480-X", "TRANSFORMER")]
+        : [option(`opt-${role}`, role)]
+    );
+    const html = render(ctx({}, options));
     const on = marked(html, "pf-on").join(" | ");
 
-    for (const role of roles) expect(on, role).toContain(role.replace("_", "-"));
+    for (const role of roles) {
+      if (role === "TRANSFORMER") {
+        expect(on, role).toContain("TR220");
+        expect(on, role).toContain("TR480");
+        continue;
+      }
+      expect(on, role).toContain(role.replace("_", "-"));
+    }
   });
 
   it("is registered", () => {

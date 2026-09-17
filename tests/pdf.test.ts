@@ -278,7 +278,9 @@ describe("renderQuotationHtml — header prepared for/by", () => {
       preparedBy: { name: null, email: "noname@example.com", phone: null, avatar: null },
     });
     const html = await renderQuotationHtml(data);
-    expect(html).toContain('<div class="pq-client-name">noname@example.com</div>');
+    expect(html).toContain(
+      '<div class="pq-client-name pq-prepared-by-name">noname@example.com</div>',
+    );
     // The email doesn't also print a second time as its own line — that
     // second line only appears when there's a name for it to sit alongside.
     expect((html.match(/noname@example\.com/g) ?? []).length).toBe(1);

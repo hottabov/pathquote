@@ -47,7 +47,6 @@ export type FormContext = {
   authorName: string;
   company: { name: string; addressLines: string[]; industry: string | null };
   contact: { fullName: string; position: string | null; phone: string | null; email: string | null };
-  deliveryAddressLines: string[];
   /**
    * Every SOFTWARE item on the document with its specs, so a form can ask
    * whether the integrated PathWorks was sold and which modules came with it.

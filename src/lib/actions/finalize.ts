@@ -1,5 +1,6 @@
 "use server";
 
+import { describeIssues, productionIssues } from "@/lib/production-forms/readiness";
 import { revalidateDocument, revalidateDocumentList } from "@/lib/revalidate";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
@@ -13,8 +14,14 @@ import { allocateNumber, formatDocNumber } from "@/lib/numbering";
 import { getQuoteValidityDays } from "@/lib/queries/settings";
 import { getDocumentForBuilder } from "@/lib/queries/documents";
 import { getQuoteDocumentsForRegion } from "@/lib/queries/quote-documents";
-import { buildQuotationData, type DocumentsSnapshot } from "@/lib/quotation-data";
-import { canUnfinalize, signatureRolesClearedBy } from "@/lib/signing/state";
+import { buildQuotationData, resolveQuoteDocuments, type DocumentsSnapshot } from "@/lib/quotation-data";
+import { canAccept, canUnfinalize, signatureRolesClearedBy } from "@/lib/signing/state";
+import {
+  buildAndHashRevisionSnapshot,
+  documentToRevisionSnapshotInput,
+} from "@/lib/documents/revision-snapshot";
+import { planRevision, revisionLabel } from "@/lib/documents/revision-plan";
+import { generateRevisionPdf } from "@/lib/documents/revision";
 import { NOT_FOUND_ERROR } from "./_shared";
 
 /** Thrown inside `finalizeDocument`'s `$transaction` to roll it back when
@@ -29,6 +36,13 @@ class NotFinalizableError extends Error {}
 
 export type FinalizeResult = { ok: true; number: string } | { error: string };
 export type UnfinalizeResult = { ok: true } | { error: string };
+export type VoidSignatureResult = { ok: true } | { error: string };
+export type AcceptResult = { ok: true } | { error: string };
+
+// Module-private, not exported: a "use server" file may only export async
+// functions (Next enforces this), and nothing outside this file needs these.
+const VOID_REASON_REQUIRED = "A reason is required to void a signature.";
+const NOT_SIGNED_TO_VOID = "This quote has no client signature to void.";
 
 // Re-exported so callers of this action module (and its own tests) can reach
 // the pure eligibility check without a second import — the implementation
@@ -116,9 +130,9 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
   // action's draft guard (`assertStillDraft`, src/lib/actions/documents.ts)
   // meets that same lock and rolls back rather than editing a document this
   // is in the middle of finalizing.
-  let number: string;
+  let result: { number: string; revisionId: string | null };
   try {
-    number = await db.$transaction(async (tx) => {
+    result = await db.$transaction(async (tx) => {
       // Recompute totals first (a discount cap may have been lowered since
       // this was last saved) and check the violations it reports before
       // allowing the document to become FINAL. `negativeSubtotal` isn't
@@ -159,6 +173,44 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
         document.currencySymbol
       );
       if (validationError) throw new NotFinalizableError(validationError);
+
+      // Production readiness: nothing becomes FINAL while an item's order
+      // form would print incomplete (a missing knife size, drills ticked with
+      // no detail, an MTS with no travel distance). Same check the builder's
+      // Finalize button shows before the click -- see readiness.ts.
+      const productionItems = await tx.documentItem.findMany({
+        where: { documentId: document.id },
+        orderBy: { sortOrder: "asc" },
+        select: {
+          code: true,
+          productionSpec: true,
+          product: { select: { form: true } },
+          lines: { where: { kind: "OPTION" }, select: { refId: true, attributes: true } },
+        },
+      });
+      const optionRefIds = productionItems.flatMap((item) =>
+        item.lines.map((line) => line.refId).filter((id): id is string => id !== null)
+      );
+      const optionRoles = new Map(
+        (optionRefIds.length > 0
+          ? await tx.option.findMany({ where: { id: { in: optionRefIds } }, select: { id: true, role: true } })
+          : []
+        ).map((option) => [option.id, option.role])
+      );
+      const issues = productionIssues(
+        productionItems.map((item) => ({
+          code: item.code,
+          form: item.product?.form ?? null,
+          productionSpec: item.productionSpec,
+          options: item.lines.map((line) => ({
+            role: line.refId ? (optionRoles.get(line.refId) ?? null) : null,
+            attributes: line.attributes,
+          })),
+        }))
+      );
+      if (issues.length > 0) {
+        throw new NotFinalizableError(`Complete the production details first — ${describeIssues(issues)}`);
+      }
 
       // An ADMIN is allowed to finalize over a discount-cap violation (see
       // validateFinalizable's header comment) — this is the "logged in report"
@@ -275,12 +327,94 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
         ),
       };
 
+      // --- Revision snapshot (spec §5) ------------------------------------
+      // Freeze a self-contained, catalogue-independent description of
+      // everything the sheet renders from (buildRevisionSnapshot,
+      // src/lib/documents/revision-snapshot.ts) and hash it. The RAW,
+      // pre-substitution document bodies go in — never the date-substituted
+      // `documentsSnapshot` above — so the hash depends on content alone and a
+      // no-op unfinalize→finalize hashes identically. Totals are read fresh
+      // from the row `recalcDocument` just wrote, not from the pre-transaction
+      // `document` copy which predates the recalc.
+      const freshTotals = await tx.document.findUnique({
+        where: { id: document.id },
+        select: { subtotal: true, taxAmount: true, total: true },
+      });
+      if (!freshTotals) throw new NotFinalizableError(NOT_FOUND_ERROR);
+
+      // Resolve the included legal documents exactly as buildQuotationData
+      // does (resolveQuoteDocuments → included-and-not-excluded → sortOrder),
+      // keeping the RAW body so the hash never depends on the per-finalize
+      // date `{{validityDate}}` would bake in. The rest of the projection is
+      // shared with the backfill via documentToRevisionSnapshotInput.
+      const excludedKeys = new Set(forSnapshot.excludedDocumentKeys);
+      const resolvedDocuments = Array.from(
+        resolveQuoteDocuments(quoteDocuments, forSnapshot.regionId).values()
+      )
+        .filter((row) => row.includedByDefault && !excludedKeys.has(row.key))
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((row) => ({ key: row.key, title: row.title, body: row.body }));
+
+      const snapshotInput = documentToRevisionSnapshotInput({
+        document,
+        entity: entitySnapshot,
+        totals: freshTotals,
+        validityDays,
+        documents: resolvedDocuments,
+      });
+
+      const { snapshot, snapshotHash } = buildAndHashRevisionSnapshot(snapshotInput);
+
+      const lastRevision = await tx.quoteRevision.findFirst({
+        where: { documentId: document.id },
+        orderBy: { revision: "desc" },
+        select: { revision: true, snapshotHash: true },
+      });
+      const plan = planRevision({
+        lastRevision: lastRevision?.revision ?? null,
+        lastSnapshotHash: lastRevision?.snapshotHash ?? null,
+        newSnapshotHash: snapshotHash,
+      });
+      const label = revisionLabel(resolvedNumber, plan.revision) ?? resolvedNumber;
+
+      // Only mint a row when the content actually changed (plan.create). A
+      // no-op re-finalize keeps the number and adds nothing — the whole point
+      // of the hash. `createdRevisionId` drives the post-commit PDF below.
+      let createdRevisionId: string | null = null;
+      if (plan.create) {
+        const created = await tx.quoteRevision.create({
+          data: {
+            documentId: document.id,
+            revision: plan.revision,
+            label,
+            snapshot: snapshot as unknown as Prisma.InputJsonValue,
+            snapshotHash,
+            total: freshTotals.total,
+            createdById: session.user.id,
+          },
+          select: { id: true },
+        });
+        createdRevisionId = created.id;
+      }
+
+      // A finalize is a lifecycle event worth recording (spec §2/§5): the
+      // reason field stays null here (finalize needs no reason), meta carries
+      // the resolved revision so the history reads without a join.
+      await tx.quoteEvent.create({
+        data: {
+          documentId: document.id,
+          type: "FINALIZED",
+          actorId: session.user.id,
+          meta: { revision: plan.revision, label, created: plan.create },
+        },
+      });
+
       // Guard against a concurrent finalize (e.g. a double-click, or two
       // requests racing) with a status-scoped `updateMany` instead of an
       // unconditional `update`: if another request already flipped this
       // document to FINAL between our `findFirst` above and here, `count`
       // comes back 0 and we throw to roll back the whole transaction —
-      // including the number allocation above.
+      // including the number allocation and the revision row above.
       const res = await tx.document.updateMany({
         where: { id: document.id, status: "DRAFT" },
         data: {
@@ -288,6 +422,9 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
           number: resolvedNumber,
           issueDate: issuedAt,
           validityDays,
+          revision: plan.revision,
+          finalizedAt: issuedAt,
+          finalizedById: session.user.id,
           entitySnapshot: entitySnapshot as Prisma.InputJsonValue,
           documentsSnapshot: documentsSnapshot as Prisma.InputJsonValue,
           ...commissionFields,
@@ -295,7 +432,7 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
       });
       if (res.count !== 1) throw new Error("ALREADY_FINALIZED");
 
-      return resolvedNumber;
+      return { number: resolvedNumber, revisionId: createdRevisionId };
     });
   } catch (err) {
     if (err instanceof NotFinalizableError) return { error: err.message };
@@ -305,18 +442,31 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
     throw err;
   }
 
+  // Best-effort: render and store this revision's PDF outside the transaction
+  // so a Gotenberg failure can never roll back an issued quote (spec §5.4). A
+  // null pdfPath just means "not generated yet", regenerable later.
+  if (result.revisionId) {
+    await generateRevisionPdf(session.user, document.id, result.revisionId).catch((err) => {
+      console.error("[finalize] revision PDF generation failed", {
+        documentId: document.id,
+        revisionId: result.revisionId,
+        err,
+      });
+    });
+  }
+
   revalidateDocumentList();
   revalidateDocument(document.id);
 
-  return { ok: true, number };
+  return { ok: true, number: result.number };
 }
 
-// --- unfinalize (admin escape hatch) -----------------------------------------
+// --- unfinalize (owner or admin, before the client signs) --------------------
 
 /**
- * ADMIN-only escape hatch for a FINAL document issued in error: flips it
- * back to DRAFT so it becomes editable again, but deliberately keeps
- * `number`, `entitySnapshot`, and the frozen `commission*` columns set —
+ * Reopens a FINAL quote for editing (spec §4): flips it back to DRAFT, but
+ * deliberately keeps `number`, `entitySnapshot`, and the frozen `commission*`
+ * columns set —
  * re-finalizing (see above) reuses the existing number rather than
  * allocating a new one, so a document can never accumulate more than one
  * number across an unfinalize/finalize cycle. The stale `commission*`
@@ -352,9 +502,22 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
  * writes a fresh one. D7's guarantee ("legal text is frozen into the quote at
  * FINAL") is untouched — the quote is DRAFT at this moment, and a DRAFT has
  * never been the thing that must not change.
+ *
+ * Access (spec §3/§4): the OWNER (a manager on their own quote) or an ADMIN,
+ * and only before the client has signed. Ownership is enforced by
+ * `documentWhereForUser` in the load below — a manager who isn't the author
+ * simply gets `null` → NOT_FOUND — and `canUnfinalize` refuses a SIGNED quote
+ * for everyone (a signed quote is reopened only by an admin's `voidSignature`,
+ * which keeps the signed revision as a legal record). Reopening a quote that
+ * was already SENT sets `hasUnsentChanges` so the page can warn that the
+ * client is holding a version that no longer matches; `reason` is optional
+ * (making it mandatory would only breed "." — spec §4.4).
  */
-export async function unfinalizeDocument(documentId: string): Promise<UnfinalizeResult> {
-  const session = await requireAdmin();
+export async function unfinalizeDocument(
+  documentId: string,
+  reason?: string
+): Promise<UnfinalizeResult> {
+  const session = await requireSession();
 
   const parsedId = idSchema.safeParse(documentId);
   if (!parsedId.success) return { error: NOT_FOUND_ERROR };
@@ -364,28 +527,30 @@ export async function unfinalizeDocument(documentId: string): Promise<Unfinalize
   });
   if (!document) return { error: NOT_FOUND_ERROR };
 
-  // The one new lock this feature adds: a SIGNED quote cannot be reopened.
-  // Every other immutability guarantee already comes from the `status:
-  // "DRAFT"` clause every editing action carries (see
+  // A SIGNED quote cannot be reopened by anyone through this path — see
+  // `canUnfinalize`. Every other immutability guarantee already comes from the
+  // `status: "DRAFT"` clause every editing action carries (see
   // src/lib/actions/documents/_internal.ts), which is what makes FINAL
   // immutable today.
   const verdict = canUnfinalize(document.signingStatus);
   if (!verdict.ok) return { error: verdict.reason };
 
-  // Reopening an issued quote is the most consequential thing an admin can
-  // do to one: it un-issues a numbered document, and the next finalize
-  // overwrites the entity snapshot, the documents snapshot and the
-  // commission columns with whatever is true then. Logged for the same
-  // reason — and in the same shape — as the two admin overrides
-  // `finalizeDocument` logs above: there is no admin-activity report to
-  // write it into yet (D12 in
-  // docs/superpowers/specs/2026-09-07-quote-documentation-design.md decides
-  // deliberately against an audit table for now), so a grep-able server-log
-  // line naming who did it is the record. Prefix: "[finalize] unfinalize".
+  // A version already out with the client (SENT or VIEWED) means the copy in
+  // their inbox is about to stop matching the quote — flagged so the page can
+  // show the "changes not yet sent" banner until a resend clears it.
+  const wasSent = document.signingStatus === "SENT" || document.signingStatus === "VIEWED";
+
+  // Reopening an issued quote is consequential: it un-issues a numbered
+  // document, and the next finalize overwrites the entity snapshot, the
+  // documents snapshot and the commission columns with whatever is true then.
+  // The durable record is now the QuoteEvent written in the transaction below;
+  // this grep-able server-log line (prefix "[finalize] unfinalize") stays for
+  // operational visibility.
   console.warn("[finalize] unfinalize: FINAL document returned to DRAFT", {
     documentId: document.id,
     documentNumber: document.number,
-    adminUserId: session.user.id,
+    actorId: session.user.id,
+    wasSent,
   });
 
   // The content is about to become editable again, so everything that
@@ -413,9 +578,149 @@ export async function unfinalizeDocument(documentId: string): Promise<Unfinalize
       // `Json?` column does not accept: it must be a SQL NULL, the one thing
       // `readDocumentsSnapshot` reads back as "no snapshot". Cleared in the
       // same write that flips the status, so a quote is never DRAFT while
-      // still carrying what it printed.
-      data: { status: "DRAFT", signingStatus: "NOT_SENT", documentsSnapshot: Prisma.DbNull },
+      // still carrying what it printed. `hasUnsentChanges` is set only when a
+      // version was actually out with the client.
+      data: {
+        status: "DRAFT",
+        signingStatus: "NOT_SENT",
+        documentsSnapshot: Prisma.DbNull,
+        ...(wasSent ? { hasUnsentChanges: true } : {}),
+      },
     });
+    await tx.quoteEvent.create({
+      data: {
+        documentId: document.id,
+        type: "UNFINALIZED",
+        actorId: session.user.id,
+        reason: reason?.trim() ? reason.trim() : null,
+        meta: { wasSent },
+      },
+    });
+  });
+
+  revalidateDocumentList();
+  revalidateDocument(document.id);
+
+  return { ok: true };
+}
+
+// --- voidSignature (admin only) ----------------------------------------------
+
+/**
+ * ADMIN-only (spec §6): annuls a client's signature on a CLIENT_SIGNED quote
+ * and reopens it to DRAFT, so a signature captured in error (wrong version,
+ * wrong signatory, a client who says they didn't mean to) can be undone —
+ * something `unfinalizeDocument` deliberately refuses for a SIGNED quote.
+ *
+ * The signed revision is a permanent legal record and is NEVER destroyed:
+ * `signedRevisionId` is left pointing at the QuoteRevision the client signed,
+ * that QuoteRevision row (its snapshot and its signed PDF) stays in the
+ * database, and only the live CLIENT/AUTHOR `Signature` rows are cleared (the
+ * text is about to change, so neither party's signature is a signature of what
+ * will exist afterwards). `reason` is MANDATORY — a void is exactly the event
+ * where "why" matters — and recorded as a SIGNATURE_VOIDED QuoteEvent.
+ * `hasUnsentChanges` is set: the client is holding a version that has just
+ * been un-signed under them.
+ */
+export async function voidSignature(documentId: string, reason: string): Promise<VoidSignatureResult> {
+  const session = await requireAdmin();
+
+  const parsedId = idSchema.safeParse(documentId);
+  if (!parsedId.success) return { error: NOT_FOUND_ERROR };
+
+  const trimmedReason = reason?.trim() ?? "";
+  if (trimmedReason === "") return { error: VOID_REASON_REQUIRED };
+
+  const document = await db.document.findFirst({
+    where: { id: parsedId.data, status: "FINAL", ...documentWhereForUser(session.user) },
+  });
+  if (!document) return { error: NOT_FOUND_ERROR };
+  if (document.signingStatus !== "SIGNED") return { error: NOT_SIGNED_TO_VOID };
+
+  console.warn("[finalize] voidSignature: client signature annulled", {
+    documentId: document.id,
+    documentNumber: document.number,
+    adminUserId: session.user.id,
+  });
+
+  await db.$transaction(async (tx) => {
+    // Clear both live signatures (the quote is going back to DRAFT), but NOT
+    // `signedRevisionId` and NOT the QuoteRevision it points at — that is the
+    // legal trail the spec (§6) insists survives a void forever.
+    await tx.signature.deleteMany({
+      where: { documentId: document.id, role: { in: signatureRolesClearedBy("unfinalize") } },
+    });
+    await tx.document.update({
+      where: { id: document.id },
+      data: {
+        status: "DRAFT",
+        signingStatus: "NOT_SENT",
+        hasUnsentChanges: true,
+        documentsSnapshot: Prisma.DbNull,
+      },
+    });
+    await tx.quoteEvent.create({
+      data: {
+        documentId: document.id,
+        type: "SIGNATURE_VOIDED",
+        actorId: session.user.id,
+        reason: trimmedReason,
+        meta: { signedRevisionId: document.signedRevisionId },
+      },
+    });
+  });
+
+  revalidateDocumentList();
+  revalidateDocument(document.id);
+
+  return { ok: true };
+}
+
+// --- acceptQuote (owner or admin) --------------------------------------------
+
+/**
+ * Accepts a client-signed quote into production (CLIENT_SIGNED → ACCEPTED,
+ * spec §1). Owner or admin (scoped by `documentWhereForUser`). Gated by
+ * `canAccept`: the client must have signed AND the manager (AUTHOR Signature)
+ * must have signed too — accepting is the manager committing the deal, and a
+ * quote goes into production with both signatures on it. Sets `acceptedAt`/
+ * `acceptedById`; the quote stays FINAL/SIGNED (ACCEPTED is derived from
+ * `acceptedAt` being set — see the schema comment on the status mapping).
+ */
+export async function acceptQuote(documentId: string): Promise<AcceptResult> {
+  const session = await requireSession();
+
+  const parsedId = idSchema.safeParse(documentId);
+  if (!parsedId.success) return { error: NOT_FOUND_ERROR };
+
+  const document = await db.document.findFirst({
+    where: { id: parsedId.data, status: "FINAL", ...documentWhereForUser(session.user) },
+    include: { signatures: { where: { role: "AUTHOR" }, select: { id: true } } },
+  });
+  if (!document) return { error: NOT_FOUND_ERROR };
+  if (document.acceptedAt) return { ok: true }; // idempotent: already accepted
+
+  const verdict = canAccept({
+    signingStatus: document.signingStatus,
+    hasAuthorSignature: document.signatures.length > 0,
+  });
+  if (!verdict.ok) return { error: verdict.reason };
+
+  const now = new Date();
+  await db.$transaction(async (tx) => {
+    // Guard the transition with a status/acceptance-scoped updateMany so two
+    // concurrent accepts don't both write an event.
+    const res = await tx.document.updateMany({
+      where: { id: document.id, status: "FINAL", signingStatus: "SIGNED", acceptedAt: null },
+      data: { acceptedAt: now, acceptedById: session.user.id },
+    });
+    if (res.count !== 1) throw new Error("ALREADY_ACCEPTED");
+    await tx.quoteEvent.create({
+      data: { documentId: document.id, type: "ACCEPTED", actorId: session.user.id },
+    });
+  }).catch((err) => {
+    if (err instanceof Error && err.message === "ALREADY_ACCEPTED") return;
+    throw err;
   });
 
   revalidateDocumentList();
