@@ -352,7 +352,7 @@ feed, «Drive section» для секції 1; на FabricPro — єдина н�
 HDRF crate не додається (на відміну від FabricPro) — якщо треба, це один
 рядок у `DEFAULT_OPTION_ROLES`.
 
-## K. EasyFeed — HTML, без xlsx (17.09)
+## K. EasyFeeder — HTML, без xlsx (17.09)
 
 `easyFeedSpec` тепер `renderer: "html"`, форму малює `EasyFeedForm`
 (src/components/forms/easyfeed-form.tsx), шаблон

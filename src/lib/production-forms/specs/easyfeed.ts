@@ -22,7 +22,7 @@ export const easyFeedSpecSchema = z.object({});
 
 export const easyFeedSpec: HtmlFormSpec = {
   id: "easyfeed",
-  title: "EasyFeed Order Form",
+  title: "EasyFeeder Order Form",
   form: "EASYFEED",
   renderer: "html",
   specSchema: easyFeedSpecSchema,

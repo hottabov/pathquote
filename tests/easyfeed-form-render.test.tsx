@@ -22,7 +22,7 @@ const ticked = (html: string) =>
     m[1].replace(/<[^>]+>/g, "").trim()
   );
 
-describe("EasyFeed form", () => {
+describe("EasyFeeder form", () => {
   it("is drawn by a component, not a workbook", () => {
     expect(resolveForm("EASYFEED")?.renderer).toBe("html");
     expect(formComponent("EASYFEED")).toBe(EasyFeedForm);
@@ -46,7 +46,7 @@ describe("EasyFeed form", () => {
 
   it("keeps the header and the office block", () => {
     const html = render(ctx("EF-2420", { tableWidthMm: 2420 }));
-    expect(html).toContain("EasyFeed Order Form");
+    expect(html).toContain("EasyFeeder Order Form");
     expect(html).toContain("Office use only");
     expect(html).toContain("EASYFEED · Q-AU-2026-041 · item 1 of 1 · 17.09.2026");
   });

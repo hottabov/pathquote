@@ -1,7 +1,7 @@
 import type { FormContext, XlsxFormSpec } from "../types";
 
 /**
- * The "machine sale" header block, shared verbatim by the EasyFeed, HDRF,
+ * The "machine sale" header block, shared verbatim by the EasyFeeder, HDRF,
  * Punchline and FabricPro Trolley forms. All four were drawn from the same
  * master, down to the column: `Distributor:` in D10, `Name:` in M10, then an
  * End User block whose labels run down column G from row 14.

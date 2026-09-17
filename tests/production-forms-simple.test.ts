@@ -19,7 +19,7 @@ const cells = (form: ProductionForm, specs: Record<string, unknown>, spec = {}, 
 
 describe("the shared machine-sale header", () => {
   // Punchline and the Fabric Trolley were drawn from one master (with
-  // EasyFeed and HDRF, now HTML forms), so one assertion covers the header.
+  // EasyFeeder and HDRF, now HTML forms), so one assertion covers the header.
   it.each(["PUNCHLINE", "FP_TROLLEY"] as const)("fills %s", (form) => {
     const written = cells(form, {});
 

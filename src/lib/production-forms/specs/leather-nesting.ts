@@ -8,7 +8,7 @@ import type { FormSpec } from "../types";
  * months of RSP) and asks nothing. There is nothing to tick and nothing to
  * choose, so this spec is a header and no more.
  *
- * Its header is laid out differently from the EasyFeed/HDRF/Punchline family
+ * Its header is laid out differently from the EasyFeeder/HDRF/Punchline family
  * -- `Distributor:` in D7 rather than D10, and the End User labels run down
  * column E, not G -- so it does not use `machineSaleHeader`. The company name
  * goes in G11 because the original arrived with "Relaxvanguard" sitting

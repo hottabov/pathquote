@@ -225,7 +225,7 @@ const CASES: Array<{ form: ProductionForm; ctx: FormContext }> = [
       item: {
         id: "i7",
         code: "EF-2420",
-        name: "EasyFeed 2420",
+        name: "EasyFeeder 2420",
         kind: "ACCESSORY",
         form: "EASYFEED",
         specs: { tableWidthMm: 2420 },

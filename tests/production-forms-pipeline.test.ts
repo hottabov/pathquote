@@ -10,7 +10,7 @@ import { formContext, formItem, formOption, xlsxForm } from "./helpers/fixtures"
 // -- every value below is asserted on somewhere in this file, which is why
 // it overrides so much of the shared fixture.
 //
-// The M-Series, EasyLoader, HDRF and EasyFeed all moved off the workbook, so
+// The M-Series, EasyLoader, HDRF and EasyFeeder all moved off the workbook, so
 // the end-to-end workbook-patching pipeline is exercised here against the
 // Punchline form instead -- it is still an `XlsxFormSpec`, and its header
 // values and role-driven ticks carry the same shape the earlier versions of

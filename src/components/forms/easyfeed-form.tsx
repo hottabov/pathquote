@@ -25,7 +25,7 @@ export function EasyFeedForm({ ctx }: { ctx: FormContext }) {
   const width = widthOf(ctx);
 
   return (
-    <FormSheet ctx={ctx} title="EasyFeed Order Form">
+    <FormSheet ctx={ctx} title="EasyFeeder Order Form">
       <EndUserSection ctx={ctx} />
 
       <Section title="Model">
