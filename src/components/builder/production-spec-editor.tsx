@@ -398,13 +398,13 @@ export function ProductionSpecEditor({
   // table somebody deliberately left unsynchronised.
   const syncWithCutter = (draft.syncWithCutter as boolean | undefined) ?? true;
   const totals = layoutTotals(sections);
-  // "Operator screen side" on the cutters; the EasyLoader and the EasyFeeder
-  // have a control box rather than a screen, and their forms call the same
-  // +Y/-Y choice "Control Box Side". The Heavy Duty Roll Feeder and the
-  // Leather Nesting System have neither, so they are not asked at all.
+  // "Operator screen side" on the cutters; the EasyLoader has a control box
+  // rather than a screen, and its form calls the same +Y/-Y choice "Control
+  // Box Side". The Heavy Duty Roll Feeder, the Leather Nesting System and
+  // the EasyFeeder are not asked at all (see `formHasScreenSide`).
   const hasScreenSide = formHasScreenSide(form.form);
   const screenSideLabel =
-    isEasyLoader || form.form === "EASYFEED" ? "Control Box Side" : "Operator screen side";
+    isEasyLoader ? "Control Box Side" : "Operator screen side";
   const currentSide = (draft.ui as string) ?? "-Y";
 
   const breakdown = [

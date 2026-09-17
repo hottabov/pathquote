@@ -1,10 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { buildPatches, unmatchedOptions } from "../src/lib/production-forms/resolve";
-import { easyFeedWidthCell } from "../src/lib/production-forms/specs/easyfeed";
 import { formContext, formItem, xlsxForm } from "./helpers/fixtures";
 import type { ProductionForm } from "@prisma/client";
 
-const crate = { id: "crate", code: "Crate-EF", role: "CRATE" as const, qty: 1, attributes: null };
+const crate = { id: "crate", code: "Crate-P", role: "CRATE" as const, qty: 1, attributes: null };
 
 const ctx = (
   form: ProductionForm,
@@ -19,9 +18,9 @@ const cells = (form: ProductionForm, specs: Record<string, unknown>, spec = {}, 
 };
 
 describe("the shared machine-sale header", () => {
-  // EasyFeed, Punchline and the Fabric Trolley were drawn from one master
-  // (with HDRF, now an HTML form), so one assertion covers the header.
-  it.each(["EASYFEED", "PUNCHLINE", "FP_TROLLEY"] as const)("fills %s", (form) => {
+  // Punchline and the Fabric Trolley were drawn from one master (with
+  // EasyFeed and HDRF, now HTML forms), so one assertion covers the header.
+  it.each(["PUNCHLINE", "FP_TROLLEY"] as const)("fills %s", (form) => {
     const written = cells(form, {});
 
     expect(written.G10).toBe("Pathfinder Australia Pty Ltd");
@@ -31,37 +30,6 @@ describe("the shared machine-sale header", () => {
     expect(written.I18).toBe("John Smith");
     expect(written.I22).toBe("j@example.com");
     expect(written.I23).toBe("Automotive");
-  });
-});
-
-describe("EasyFeed", () => {
-  it.each([
-    [2020, "H28"],
-    [2420, "J28"],
-    [3220, "L28"],
-  ])("ticks the printed box for a %i table", (tableWidthMm, cell) => {
-    expect(easyFeedWidthCell({ tableWidthMm })).toBe(cell);
-    expect(cells("EASYFEED", { tableWidthMm })[cell]).toBe("X");
-  });
-
-  it("falls back to the Other box and writes the width over its label", () => {
-    const written = cells("EASYFEED", { tableWidthMm: 4030 });
-
-    expect(written.O28).toBe("X");
-    expect(written.P28).toBe("Other?  4030mm");
-    expect(written.H28).toBeUndefined();
-  });
-
-  it("leaves the Other label alone for a width with a box of its own", () => {
-    expect(cells("EASYFEED", { tableWidthMm: 2020 }).P28).toBeUndefined();
-  });
-
-  it("leaves Ex-Works blank -- delivery terms belong to logistics -- and still ticks the crate from the option", () => {
-    // D48 (Ex-Works) was removed (2026-09-16): it is not printed from any
-    // spec answer any more, so it is always blank.
-    expect(cells("EASYFEED", { tableWidthMm: 2020 }).D48).toBeUndefined();
-    expect(cells("EASYFEED", { tableWidthMm: 2020 }, { exWorks: true }).D48).toBeUndefined();
-    expect(cells("EASYFEED", { tableWidthMm: 2020 }).D60).toBe("X");
   });
 });
 
@@ -108,7 +76,7 @@ describe("Leather Nesting Station", () => {
 });
 
 describe("every simple form", () => {
-  it.each(["EASYFEED", "PUNCHLINE"] as const)(
+  it.each(["PUNCHLINE"] as const)(
     "%s keeps its crate off the Additional items sheet",
     (form) => {
       expect(unmatchedOptions(xlsxForm(form), ctx(form, {}))).toEqual([]);
@@ -116,6 +84,6 @@ describe("every simple form", () => {
   );
 
   it.each(["FP_TROLLEY", "LNS"] as const)("%s has no crate box, so a crate is reported", (form) => {
-    expect(unmatchedOptions(xlsxForm(form), ctx(form, {})).map((o) => o.code)).toEqual(["Crate-EF"]);
+    expect(unmatchedOptions(xlsxForm(form), ctx(form, {})).map((o) => o.code)).toEqual(["Crate-P"]);
   });
 });

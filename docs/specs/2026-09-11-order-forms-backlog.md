@@ -334,7 +334,7 @@ src/lib/production-forms/default-options.ts); менеджер може її з�
 і `fabric-pro-order-form-08.xlsx` видалено. Покриття звірене з каталогом:
 модулі столу (drive/conveyor/static/busbar/rail) — рядки секцій і загальна
 довжина; `EL-*-RF`, `ST620-*`, `Crate-EL`, `Crate-FP` — бокси. На xlsx
-лишаються тільки EasyFeed, Punchline, FabricPro Trolley і LNS.
+лишаються тільки Punchline, FabricPro Trolley і LNS.
 
 Текст, що досі зашитий у компоненти (факти, не дані квоти): на EasyLoader —
 «matched for 1800/2200 mm spreading», «EL-2020 / EL-2420 only» біля roll
@@ -351,3 +351,15 @@ feed, «Drive section» для секції 1; на FabricPro — єдина н�
 моделлю; сумісність із серією HDRF додана в дампі 17.09). Автоматично до
 HDRF crate не додається (на відміну від FabricPro) — якщо треба, це один
 рядок у `DEFAULT_OPTION_ROLES`.
+
+## K. EasyFeed — HTML, без xlsx (17.09)
+
+`easyFeedSpec` тепер `renderer: "html"`, форму малює `EasyFeedForm`
+(src/components/forms/easyfeed-form.tsx), шаблон
+`easy-feed-order-form-05.xlsx` видалено. На формі лише модель —
+EF-2020 / 2420 / 3220 / 4030 (як у EasyLoader), з `specs.tableWidthMm`.
+Рядок «Other?___mm» зник: EF-4030 має власний бокс. Прибрано за рішенням
+Вадима: вольтаж (завжди 240 В / 50 Гц, живиться від машини), Control Box
+Side (білдер більше не питає — `formHasScreenSide`), Freight/Ex-Works
+(доставка окремо). Опцій форма не покриває — будь-яка опція йде на
+Additional items. Тести xlsx-двигуна тепер на Punchline.

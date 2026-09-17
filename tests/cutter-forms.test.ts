@@ -44,10 +44,18 @@ describe("the form registry", () => {
   });
 
   it("gives every component-rendered form an explicit coverage list", () => {
+    // Forms that print no option box by design: the EasyFeeder asks for the
+    // model only (Vadym, 2026-09-17), so any option on it belongs on the
+    // Additional items sheet. Anything else here is a mistake.
+    const NO_OPTIONS = new Set(["easyfeed"]);
     for (const spec of FORM_SPECS.filter((s) => !isXlsxForm(s))) {
       // A JSX layout is not enumerable, so coverage cannot be assembled from
       // the ticks. An empty list would silently send every option to the
       // Additional items sheet.
+      if (NO_OPTIONS.has(spec.id)) {
+        expect(coveredRoles(spec).size, spec.id).toBe(0);
+        continue;
+      }
       expect(coveredRoles(spec).size, spec.id).toBeGreaterThan(0);
     }
   });

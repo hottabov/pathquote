@@ -216,6 +216,28 @@ const CASES: Array<{ form: ProductionForm; ctx: FormContext }> = [
     } as unknown as FormContext,
   },
   {
+    form: "EASYFEED",
+    ctx: {
+      ...base,
+      software: [],
+      softwareCodes: [],
+      itemIndex: 3,
+      item: {
+        id: "i7",
+        code: "EF-2420",
+        name: "EasyFeed 2420",
+        kind: "ACCESSORY",
+        form: "EASYFEED",
+        specs: { tableWidthMm: 2420 },
+        spec: {},
+        options: [],
+        optionCodes: [],
+        optionAttributes: {},
+        optionQtys: [],
+      },
+    } as unknown as FormContext,
+  },
+  {
     form: "HDRF",
     ctx: {
       ...base,

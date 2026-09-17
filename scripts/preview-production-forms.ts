@@ -74,8 +74,6 @@ function sampleContext(
 
 /** One representative configuration per form. */
 const CASES: Record<string, FormContext> = {
-  easyfeed: sampleContext("EASYFEED", { tableWidthMm: 2420 }, { exWorks: true }),
-  hdrf: sampleContext("HDRF", { widthCode: 320 }),
   punchline: sampleContext("PUNCHLINE", { widthCode: 220 }, { exWorks: true }),
   "fabric-trolley": sampleContext("FP_TROLLEY", {}),
   "leather-nesting": sampleContext("LNS", {}),

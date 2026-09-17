@@ -20,10 +20,13 @@ export function resolveForm(form: ProductionForm | null | undefined): FormSpec |
 /**
  * Whether a form asks for the +Y/-Y operator side. The Heavy Duty Roll Feeder
  * and the Leather Nesting System have no screen and no control box, so the
- * builder does not ask and "apply this side to the quote" skips them.
+ * builder does not ask and "apply this side to the quote" skips them. The
+ * EasyFeeder's form asks for the model only (Vadym, 2026-09-17).
  */
+const NO_SCREEN_SIDE: ReadonlySet<ProductionForm> = new Set(["HDRF", "LNS", "EASYFEED"]);
+
 export function formHasScreenSide(form: ProductionForm | null | undefined): boolean {
-  return resolveForm(form) !== null && form !== "HDRF" && form !== "LNS";
+  return resolveForm(form) !== null && !NO_SCREEN_SIDE.has(form!);
 }
 
 /** The productionSpec schema for an item, or null when it prints no form. */
