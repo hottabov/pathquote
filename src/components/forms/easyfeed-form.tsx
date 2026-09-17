@@ -52,7 +52,7 @@ export function EasyFeedForm({ ctx }: { ctx: FormContext }) {
         ]}
       />
 
-      <Footnote provenance={provenance(ctx, "easyfeed")} />
+      <Footnote provenance={provenance(ctx, "easyfeeder")} />
     </FormSheet>
   );
 }

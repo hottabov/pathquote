@@ -48,7 +48,7 @@ describe("EasyFeeder form", () => {
     const html = render(ctx("EF-2420", { tableWidthMm: 2420 }));
     expect(html).toContain("EasyFeeder Order Form");
     expect(html).toContain("Office use only");
-    expect(html).toContain("EASYFEED · Q-AU-2026-041 · item 1 of 1 · 17.09.2026");
+    expect(html).toContain("EASYFEEDER · Q-AU-2026-041 · item 1 of 1 · 17.09.2026");
   });
 
   it("sends any option to the Additional items sheet -- the form has no box for one", () => {
