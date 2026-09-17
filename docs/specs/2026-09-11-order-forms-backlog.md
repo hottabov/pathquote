@@ -334,9 +334,20 @@ src/lib/production-forms/default-options.ts); менеджер може її з�
 і `fabric-pro-order-form-08.xlsx` видалено. Покриття звірене з каталогом:
 модулі столу (drive/conveyor/static/busbar/rail) — рядки секцій і загальна
 довжина; `EL-*-RF`, `ST620-*`, `Crate-EL`, `Crate-FP` — бокси. На xlsx
-лишаються тільки EasyFeed, HDRF, Punchline, FabricPro Trolley і LNS.
+лишаються тільки EasyFeed, Punchline, FabricPro Trolley і LNS.
 
 Текст, що досі зашитий у компоненти (факти, не дані квоти): на EasyLoader —
 «matched for 1800/2200 mm spreading», «EL-2020 / EL-2420 only» біля roll
 feed, «Drive section» для секції 1; на FabricPro — єдина напруга
 220–240 / 50–60 (опції трансформатора для FP у каталозі немає, див. F.3).
+
+## J. HDRF — HTML, без xlsx (17.09)
+
+`hdrfSpec` тепер `renderer: "html"`, форму малює `HdrfForm`
+(src/components/forms/hdrf-form.tsx), шаблон `hdrf-01.xlsx` видалено. На
+формі дві речі: модель (HDRF-180/220/320 з `specs.widthCode`, запасний
+варіант — код продукту) і crate. Crate тікається з опції з роллю `CRATE` —
+у каталозі їх три (`Crate-HDRF-180/220/320`, кожна сумісна зі своєю
+моделлю; сумісність із серією HDRF додана в дампі 17.09). Автоматично до
+HDRF crate не додається (на відміну від FabricPro) — якщо треба, це один
+рядок у `DEFAULT_OPTION_ROLES`.

@@ -34,7 +34,7 @@ export const FORM_SHEET_CSS = `
     --navy:       #243478;
     --alarm:      #a41f1f;
     /* One box size for every tick on the sheet */
-    --bx: 3.6mm;
+    --bx: 3.7042mm; /* exactly 14px at 96dpi, so both edges land on whole pixels */
 
     width: 210mm;
     min-height: 297mm;
@@ -625,6 +625,25 @@ export const FORM_SHEET_CSS = `
      2026-09-17): an unticked option is a box and its text on plain paper;
      a ticked one gets the tint band and the tick, nothing else. */
   .pf-opts > .pf-tick { box-shadow: none; border: 0; }
+
+  /* ═══ One tick box, everywhere ══════════════════════════════════════ */
+  /* The box is the same square in every block (Vadym, 2026-09-17). The lead
+     ticks (Model, Width, side) used to centre the box on their larger text,
+     which parked it on a fractional pixel and made it render a pixel taller
+     than the boxes in Options. Now every box sits at the top of its cell,
+     has a fixed border-box size that nothing can stretch or shrink, and a
+     lead tick centres its TEXT on the box instead. */
+  .pf-tick .pf-bx {
+    box-sizing: border-box;
+    width: var(--bx); height: var(--bx);
+    min-width: var(--bx); min-height: var(--bx);
+    max-width: var(--bx); max-height: var(--bx);
+    border-width: 0.2646mm;
+    align-self: start;
+    flex: none;
+  }
+  .pf-tick.pf-lead { align-items: start; }
+  .pf-tick.pf-lead .pf-tx { padding-top: 0; line-height: var(--bx); }
 
   /* ═══ Print ═══════════════════════════════════════════════════════════ */
   /* One sheet per form, each starting a new page. \`break-after\` on the last

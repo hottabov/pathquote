@@ -216,6 +216,28 @@ const CASES: Array<{ form: ProductionForm; ctx: FormContext }> = [
     } as unknown as FormContext,
   },
   {
+    form: "HDRF",
+    ctx: {
+      ...base,
+      software: [],
+      softwareCodes: [],
+      itemIndex: 2,
+      item: {
+        id: "i6",
+        code: "HDRF-220",
+        name: "Heavy Duty Roll Feeder 220",
+        kind: "ACCESSORY",
+        form: "HDRF",
+        specs: { widthCode: 220 },
+        spec: {},
+        options: [option("Crate-HDRF-220", "CRATE")],
+        optionCodes: [],
+        optionAttributes: {},
+        optionQtys: [],
+      },
+    } as unknown as FormContext,
+  },
+  {
     form: "L_SERIES",
     ctx: {
       ...base,

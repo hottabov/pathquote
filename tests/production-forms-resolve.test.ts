@@ -73,43 +73,43 @@ describe("specSchemaForForm", () => {
 // The M-Series, EasyLoader and FabricPro all moved off the workbook
 // (2026-09-16): `buildPatches` is an `XlsxFormSpec`-only concern now, so the
 // generic engine behaviour it used to be exercised against on those forms is
-// checked here against HDRF, which is still xlsx and shares the same header
+// checked here against EasyFeed, which is still xlsx and shares the same header
 // and crate-tick helpers every remaining xlsx form uses (see
 // `specs/shared-header.ts`). Anything specific to the EasyLoader or
 // FabricPro layouts is checked directly against the rendered component that
 // owns it now (see the "EasyLoader form" and "FabricPro form" blocks below,
 // and tests/table-forms-render.test.tsx).
-const hdrfItem = (overrides: Partial<FormItem> = {}) =>
+const easyFeedItem = (overrides: Partial<FormItem> = {}) =>
   formItem({
     id: "i",
-    code: "HDRF-220",
-    name: "Heavy Duty Roll Feeder 220",
+    code: "EF-2420",
+    name: "EasyFeed 2420",
     kind: "ACCESSORY",
-    form: "HDRF",
-    specs: { widthCode: 220 },
+    form: "EASYFEED",
+    specs: { tableWidthMm: 2420 },
     spec: {},
     ...overrides,
   });
 
 describe("buildPatches", () => {
   it("writes X into every tick cell", () => {
-    const patches = buildPatches(xlsxForm("HDRF"), formContext({ item: hdrfItem() }));
+    const patches = buildPatches(xlsxForm("EASYFEED"), formContext({ item: easyFeedItem() }));
     expect(patches.find((p) => p.cell === "J28")?.value).toBe("X");
   });
 
   it("ticks nothing for an option with no role", () => {
     const patches = buildPatches(
-      xlsxForm("HDRF"),
-      formContext({ item: hdrfItem({ options: [formOption("Crate-HDRF", null)] }) }),
+      xlsxForm("EASYFEED"),
+      formContext({ item: easyFeedItem({ options: [formOption("Crate-EF", null)] }) }),
     );
-    expect(patches.map((p) => p.cell)).not.toContain("D45");
+    expect(patches.map((p) => p.cell)).not.toContain("D60");
   });
 
   it("omits value cells whose source is empty", () => {
     const patches = buildPatches(
-      xlsxForm("HDRF"),
+      xlsxForm("EASYFEED"),
       formContext({
-        item: hdrfItem(),
+        item: easyFeedItem(),
         company: { name: "Relaxvanguard", addressLines: [], industry: null },
       }),
     );

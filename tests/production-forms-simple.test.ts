@@ -19,9 +19,9 @@ const cells = (form: ProductionForm, specs: Record<string, unknown>, spec = {}, 
 };
 
 describe("the shared machine-sale header", () => {
-  // EasyFeed, HDRF, Punchline and the Fabric Trolley were drawn from one
-  // master, so one assertion covers the header on all four.
-  it.each(["EASYFEED", "HDRF", "PUNCHLINE", "FP_TROLLEY"] as const)("fills %s", (form) => {
+  // EasyFeed, Punchline and the Fabric Trolley were drawn from one master
+  // (with HDRF, now an HTML form), so one assertion covers the header.
+  it.each(["EASYFEED", "PUNCHLINE", "FP_TROLLEY"] as const)("fills %s", (form) => {
     const written = cells(form, {});
 
     expect(written.G10).toBe("Pathfinder Australia Pty Ltd");
@@ -62,23 +62,6 @@ describe("EasyFeed", () => {
     expect(cells("EASYFEED", { tableWidthMm: 2020 }).D48).toBeUndefined();
     expect(cells("EASYFEED", { tableWidthMm: 2020 }, { exWorks: true }).D48).toBeUndefined();
     expect(cells("EASYFEED", { tableWidthMm: 2020 }).D60).toBe("X");
-  });
-});
-
-describe("HDRF", () => {
-  it.each([
-    [180, "H28"],
-    [220, "J28"],
-    // The third label sits in N28 and its box in M28, not the narrow column
-    // the other two use. Confirmed against a rendered page.
-    [320, "M28"],
-  ])("ticks the box for HDRF%i", (widthCode, cell) => {
-    expect(cells("HDRF", { widthCode })[cell]).toBe("X");
-  });
-
-  it("ticks no model box for a product with no width spec", () => {
-    const written = cells("HDRF", {});
-    expect([written.H28, written.J28, written.M28]).toEqual([undefined, undefined, undefined]);
   });
 });
 
@@ -125,7 +108,7 @@ describe("Leather Nesting Station", () => {
 });
 
 describe("every simple form", () => {
-  it.each(["EASYFEED", "HDRF", "PUNCHLINE"] as const)(
+  it.each(["EASYFEED", "PUNCHLINE"] as const)(
     "%s keeps its crate off the Additional items sheet",
     (form) => {
       expect(unmatchedOptions(xlsxForm(form), ctx(form, {}))).toEqual([]);

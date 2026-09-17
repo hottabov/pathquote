@@ -82,8 +82,8 @@ export function NotesSection({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-medium text-brand-dark">Body</span>
+      {/* No field label: the card title already says "Notes". */}
+      <div className="flex items-center justify-end gap-2">
         <AutosaveIndicator status={status} error={error} />
       </div>
       <RichTextEditor

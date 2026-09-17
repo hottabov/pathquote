@@ -1,42 +1,26 @@
 import { z } from "zod";
-import type { FormContext, FormSpec } from "../types";
-import { crateTick, machineSaleHeader } from "./shared-header";
+import type { HtmlFormSpec } from "../types";
 
 /**
- * The Heavy Duty Roll Feeder. One row of three model boxes and a crate --
- * the shortest form Pathfinder prints.
+ * The Heavy Duty Roll Feeder. Drawn by `HdrfForm`
+ * (src/components/forms/hdrf-form.tsx); the workbook `hdrf-01.xlsx` and its
+ * cell map are gone (2026-09-17).
  *
- * HDRF lives in the `EF` series beside the EasyFeeder but has its own form,
- * which is the case that made matching on `Product.form` rather than on the
- * series necessary in the first place.
- *
- * The third box's label sits in N28 rather than O28 (and reads "HDRF 320",
- * with a stray space), so its box is M28 and not the narrow column the other
- * two use. That is the sheet's own inconsistency, confirmed by eye against a
- * rendered page, not a transcription slip.
+ * The sheet asks two things: the model, which is the product itself
+ * (`HDRF-180/220/320`, `Product.specs.widthCode`), and the crate, which is
+ * the priced option sold with it -- `Crate-HDRF-180/220/320`, one per model,
+ * all `role: CRATE`. Nothing is asked of the manager, so the spec is empty
+ * and nothing is required.
  */
-const PRINTED_WIDTH: Record<number, string> = { 180: "H28", 220: "J28", 320: "M28" };
-
 export const hdrfSpecSchema = z.object({});
 
-export const hdrfSpec: FormSpec = {
+export const hdrfSpec: HtmlFormSpec = {
   id: "hdrf",
   title: "HDRF Order Form",
-  renderer: "xlsx",
-  template: "hdrf-01.xlsx",
-  sheetPath: "xl/worksheets/sheet1.xml",
   form: "HDRF",
+  renderer: "html",
   specSchema: hdrfSpecSchema,
   requires: [],
 
-  values: [...machineSaleHeader()],
-  replaces: [],
-
-  ticks: [
-    ...Object.entries(PRINTED_WIDTH).map(([widthCode, cell]) => ({
-      cell,
-      when: (c: FormContext) => c.item.specs.widthCode === Number(widthCode),
-    })),
-    crateTick("D45"),
-  ],
+  covers: ["CRATE"],
 };
