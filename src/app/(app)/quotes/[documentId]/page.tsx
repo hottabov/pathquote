@@ -478,12 +478,9 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
 
 
       {/* Mounted once, renders nothing visible — see its own doc comment.
-          ADMIN-only: a MANAGER's save that would cross the cap is rejected
-          outright, so a MANAGER's own actions can never produce the
-          within-cap -> over-cap transition this toasts. */}
-      {isAdmin ? (
-        <ConcessionCapToast exceedsCap={capExceeded} message={capMessageText} />
-      ) : null}
+          Every role: an over-cap save is kept as a draft with a warning, and
+          Finalize is what refuses it. */}
+      <ConcessionCapToast exceedsCap={capExceeded} message={capMessageText} />
 
       <StickyFooter
         documentId={document.id}

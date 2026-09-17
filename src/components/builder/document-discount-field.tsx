@@ -79,45 +79,49 @@ export function DocumentDiscountField({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center gap-2">
-        {/* Visually hidden: the card title already says "Discounts", and a
-            visible label pushed the % / amount switch onto a second line. */}
-        <label htmlFor="document-discount" className="sr-only">
-          Discount
-        </label>
-        <input
-          id="document-discount"
-          type="text"
-          inputMode="decimal"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="0"
-          className={cn(fieldInputClass, "h-11 w-24 sm:h-10")}
-        />
-        <div
-          role="group"
-          aria-label="Discount type"
-          className="flex overflow-hidden rounded-md border border-slate-200 text-sm font-medium"
-        >
-          <button
-            type="button"
-            onClick={() => switchMode("PERCENT")}
-            aria-pressed={mode === "PERCENT"}
-            className={cn("h-10 px-3", mode === "PERCENT" ? "bg-brand-dark text-white" : "bg-white text-slate-500")}
+        {/* Input and the % / amount switch share one line: the input is
+            narrow enough for the one-third-width card (fits 7 digits). */}
+        <span className="flex flex-nowrap items-center gap-2">
+          {/* Visually hidden: the card title already says "Discounts", and a
+              visible label pushed the % / amount switch onto a second line. */}
+          <label htmlFor="document-discount" className="sr-only">
+            Discount
+          </label>
+          <input
+            id="document-discount"
+            type="text"
+            inputMode="decimal"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="0"
+            className={cn(fieldInputClass, "h-11 w-24 min-w-0 px-2.5 sm:h-10 sm:w-20")}
+          />
+          <div
+            role="group"
+            aria-label="Discount type"
+            className="flex overflow-hidden rounded-md border border-slate-200 text-sm font-medium"
           >
-            %
-          </button>
-          <button
-            type="button"
-            onClick={() => switchMode("AMOUNT")}
-            aria-pressed={mode === "AMOUNT"}
-            className={cn(
-              "h-10 border-l border-slate-200 px-3",
-              mode === "AMOUNT" ? "bg-brand-dark text-white" : "bg-white text-slate-500"
-            )}
-          >
-            {symbol}
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => switchMode("PERCENT")}
+              aria-pressed={mode === "PERCENT"}
+              className={cn("h-10 px-2.5", mode === "PERCENT" ? "bg-brand-dark text-white" : "bg-white text-slate-500")}
+            >
+              %
+            </button>
+            <button
+              type="button"
+              onClick={() => switchMode("AMOUNT")}
+              aria-pressed={mode === "AMOUNT"}
+              className={cn(
+                "h-10 border-l border-slate-200 px-2.5",
+                mode === "AMOUNT" ? "bg-brand-dark text-white" : "bg-white text-slate-500"
+              )}
+            >
+              {symbol}
+            </button>
+          </div>
+        </span>
         <AutosaveIndicator status={status} error={error} />
       </div>
     </div>

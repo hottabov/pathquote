@@ -12,7 +12,6 @@ import { revalidateDocument } from "@/lib/revalidate";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/authz";
-import { isAdminRole } from "@/lib/roles";
 import { documentWhereForUser } from "@/lib/scope";
 import { capPct, discountCents, toCents } from "@/lib/pricing";
 import { recalcAndEnforce } from "@/lib/documents/recalc";
@@ -197,9 +196,7 @@ export async function setItemDiscount(itemId: string, formData: FormData): Promi
         item.document.currencySymbol,
         "item"
       );
-      if (!isAdminRole(session.user.role)) {
-        return { error: message };
-      }
+      // Saved for every role; finalize is the hard stop (validateFinalizable).
       warning = message;
     }
   }
@@ -342,9 +339,7 @@ export async function setDocumentDiscount(documentId: string, formData: FormData
         document.currencySymbol,
         "quote"
       );
-      if (!isAdminRole(session.user.role)) {
-        return { error: message };
-      }
+      // Saved for every role; finalize is the hard stop (validateFinalizable).
       warning = message;
     }
   }

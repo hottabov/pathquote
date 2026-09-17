@@ -1,7 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { getCommissionTiers } from "@/lib/queries/settings";
-import { isAdminRole } from "@/lib/roles";
 import {
   computeTotals,
   concessionCapMessage,
@@ -275,10 +274,10 @@ export async function recalcDocument(documentId: string, client: RecalcClient = 
  * `NegativeSubtotalError` pattern, extended here to `ConcessionCapError`):
  *
  *  - `negativeSubtotal` — unconditional, same as before this change.
- *  - `documentConcession.exceedsCap` — a MANAGER's save is rejected and
- *    rolled back (throws `ConcessionCapError`); an ADMIN's save proceeds,
- *    and the message comes back as `warning` for the caller to surface as a
- *    non-blocking toast — the same MANAGER-blocked/ADMIN-warned split
+ *  - `documentConcession.exceedsCap` — the save proceeds for every role
+ *    (2026-09-17; it used to be rejected for a MANAGER) and the message
+ *    comes back as `warning`; finalizing is what is refused, see
+ *    `validateFinalizable`. Originally described as — the same MANAGER-blocked/ADMIN-warned split
  *    `setItemDiscount`/`setDocumentDiscount` already give a per-item/
  *    per-document discount-cap breach (see their own doc comments), now
  *    applied to the aggregate whole-document figure instead. This is what
@@ -290,7 +289,7 @@ export async function recalcDocument(documentId: string, client: RecalcClient = 
  *  - `documentConcession.exceedsMarkupCap` — the mirror of `exceedsCap`
  *    above, for `Region.maxMarkupPct` (Ross: "he's got a minimum selling
  *    price. And a maximum selling price."): same MANAGER-rejected/
- *    ADMIN-warned split, via the same `ConcessionCapError`/`warning` path
+ *    warned-on-save split, via the same `warning` path
  *    (see `markupCapMessage`). Mutually exclusive with `exceedsCap` in
  *    practice — a concession can't be simultaneously a discount and a
  *    markup — so this is checked as a separate `if`, not an `else if`, but
@@ -311,13 +310,11 @@ export async function recalcAndEnforce(
     tx
   );
   if (negativeSubtotal) throw new NegativeSubtotalError();
-  if (documentConcession.exceedsCap) {
-    if (!isAdminRole(role)) throw new ConcessionCapError(concessionMessage!);
-    return { warning: concessionMessage! };
-  }
-  if (documentConcession.exceedsMarkupCap) {
-    if (!isAdminRole(role)) throw new ConcessionCapError(markupMessage!);
-    return { warning: markupMessage! };
-  }
+  // Over the cap is saved for every role and comes back as a warning
+  // (Vadym, 2026-09-17): a manager may keep an over-limit draft while the
+  // deal is negotiated. The hard stop is at finalize (validateFinalizable).
+  void role;
+  if (documentConcession.exceedsCap) return { warning: concessionMessage! };
+  if (documentConcession.exceedsMarkupCap) return { warning: markupMessage! };
   return {};
 }

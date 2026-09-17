@@ -19,7 +19,7 @@ import { TriangleAlert } from "lucide-react";
  * that could drift from it.
  *
  * Styled as a warning (amber), not an error (rose/destructive) — a MANAGER
- * can't create this state at all (their save that would cross the cap is
+ * can save this state too (2026-09-17; their save used to be
  * rejected outright, see `recalcAndEnforce`), and an ADMIN may save it as a
  * draft. Finalizing it is refused for everyone (`validateFinalizable`), and
  * the Finalize button says so.

@@ -39,7 +39,7 @@ export type FinalizerRole = "ADMIN" | "MANAGER" | "DEVELOPER";
  *      lowers `Region.maxDiscountPct` later — see the NOTE on
  *      `recalcDocument` in src/lib/actions/documents.ts — so this must be
  *      re-checked at finalize time, not just at save time). Blocks every
- *      role: an ADMIN may still SAVE an over-cap draft, but not finalize it.
+ *      role: any role may SAVE an over-cap draft, but none may finalize it.
  *   4. the whole-document `documentConcession` (see its own doc comment on
  *      `PricingTotals` in src/lib/pricing.ts) exceeds the region cap — same
  *      re-check-at-finalize-time reasoning as #3 (a cap can be lowered after
