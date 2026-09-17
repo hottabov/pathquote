@@ -155,13 +155,14 @@ export function MtsSection({ ctx }: { ctx: FormContext }) {
   );
 }
 
-/** Drills and special notes, identical on both cutter forms. */
-export function DrillsAndNotesSection({ ctx, warn }: { ctx: FormContext; warn: string }) {
+/** Drills and special notes, identical on both cutter forms. Yes/No plus the
+ * detail when yes -- no warning tag (Vadym, 2026-09-17). */
+export function DrillsAndNotesSection({ ctx }: { ctx: FormContext }) {
   const spec = ctx.item.spec as { drills?: { required?: boolean; detail?: string }; specialNotes?: string };
   return (
     <Section title="Drills &amp; notes">
       <div className="pf-two" style={{ gridTemplateColumns: "1.25fr 1fr", gap: "5mm" }}>
-        <WriteIn label="Drills required" warn={warn}>
+        <WriteIn label="Drills required">
           <div className="pf-yesno">
             <Tick on={spec.drills?.required === true}>Yes</Tick>
             {/* Unticked in the builder means no drills. */}
@@ -315,7 +316,7 @@ export function MSeriesForm({ ctx }: { ctx: FormContext }) {
         <MtsSection ctx={ctx} />
       </SectionRow>
 
-      <DrillsAndNotesSection ctx={ctx} warn="“TBC” not accepted" />
+      <DrillsAndNotesSection ctx={ctx} />
 
       <OfficeUse fields={MACHINE_OFFICE_FIELDS} signature="Salesman confirmation — signed" />
 

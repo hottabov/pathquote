@@ -20,8 +20,9 @@ import { TriangleAlert } from "lucide-react";
  *
  * Styled as a warning (amber), not an error (rose/destructive) — a MANAGER
  * can't create this state at all (their save that would cross the cap is
- * rejected outright, see `recalcAndEnforce`), and an ADMIN's is a deliberate,
- * still-valid choice, not a mistake to fix before saving again.
+ * rejected outright, see `recalcAndEnforce`), and an ADMIN may save it as a
+ * draft. Finalizing it is refused for everyone (`validateFinalizable`), and
+ * the Finalize button says so.
  */
 export function ConcessionCapBadge({ message }: { message: string }) {
   return (

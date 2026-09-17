@@ -79,7 +79,9 @@ export function DocumentDiscountField({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center gap-2">
-        <label htmlFor="document-discount" className="text-sm text-slate-500">
+        {/* Visually hidden: the card title already says "Discounts", and a
+            visible label pushed the % / amount switch onto a second line. */}
+        <label htmlFor="document-discount" className="sr-only">
           Discount
         </label>
         <input

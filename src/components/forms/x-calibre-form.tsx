@@ -128,14 +128,12 @@ export function XCalibreForm({ ctx }: { ctx: FormContext }) {
         <MtsSection ctx={ctx} />
       </SectionRow>
 
-      <DrillsAndNotesSection ctx={ctx} warn="state drills or “no drill”" />
+      <DrillsAndNotesSection ctx={ctx} />
 
       <OfficeUse fields={MACHINE_OFFICE_FIELDS} signature="Salesman confirmation — signed" />
 
-      <Footnote
-        note="IKA, AFP and HFV are fitted to every X-Calibre and are not order options."
-        provenance={provenance(ctx, "x-calibre")}
-      />
+      {/* No standard-fitment note: the grey ticks already say it. */}
+      <Footnote provenance={provenance(ctx, "x-calibre")} />
     </FormSheet>
   );
 }

@@ -439,6 +439,7 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
                   <DocumentActions
                     document={document}
                     isDraft={isDraft}
+                    capExceeded={capExceeded}
                     isAdmin={isAdmin}
                     mySignatureUrl={mySignatureUrl}
                   />
@@ -467,6 +468,7 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
             <DocumentActions
               document={document}
               isDraft={isDraft}
+              capExceeded={capExceeded}
               isAdmin={isAdmin}
               mySignatureUrl={mySignatureUrl}
             />
@@ -620,10 +622,14 @@ function DocumentActions({
   isDraft,
   isAdmin,
   mySignatureUrl,
+  capExceeded,
 }: {
   document: DocumentForBuilder;
   isDraft: boolean;
   isAdmin: boolean;
+  /** Over the region's discount cap or markup ceiling — Finalize is refused
+   * for every role (validateFinalizable); the badge above says by how much. */
+  capExceeded: boolean;
   /** The signed-in viewer's own saved signature (`User.signatureUrl`), or
    * `null` on a DRAFT where it was never fetched — see the page body's own
    * comment. Feeds SignButton's "Use this" shortcut. */
@@ -649,6 +655,15 @@ function DocumentActions({
       {isDraft ? (
         <FinalizeButton
           documentId={document.id}
+          // Over the region's discount cap or markup ceiling: a hard stop at
+          // finalize for every role (validateFinalizable), shown up front.
+          capBlocker={
+            capExceeded
+              ? document.documentConcession.exceedsMarkupCap
+                ? "the price is above the region’s markup ceiling."
+                : "the discount is above the region’s limit."
+              : null
+          }
           // The same readiness check finalizeDocument enforces, shown before
           // the click so the manager knows what to complete.
           blocker={(() => {

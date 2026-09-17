@@ -61,19 +61,24 @@ export function ValidityDaysField({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center gap-2">
-        <label htmlFor="validity-days" className="text-sm text-slate-500">
-          Valid for
-        </label>
-        <input
-          id="validity-days"
-          type="text"
-          inputMode="numeric"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder={String(orgDefaultDays)}
-          className={cn(fieldInputClass, "h-11 w-20 sm:h-10")}
-        />
-        <span className="text-sm text-slate-500">days</span>
+        {/* "Valid for XX days" never breaks: the input is sized for two
+            digits so the phrase fits the one-third-width card on one line. */}
+        <span className="flex items-center gap-2 whitespace-nowrap">
+          <label htmlFor="validity-days" className="text-sm text-slate-500">
+            Valid for
+          </label>
+          <input
+            id="validity-days"
+            type="text"
+            inputMode="numeric"
+            maxLength={3}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder={String(orgDefaultDays)}
+            className={cn(fieldInputClass, "h-11 w-14 px-2 text-center sm:h-10")}
+          />
+          <span className="text-sm text-slate-500">days</span>
+        </span>
         <AutosaveIndicator status={status} error={error} />
       </div>
       {/* Non-blocking — a sales guideline, not a hard rule; the field still

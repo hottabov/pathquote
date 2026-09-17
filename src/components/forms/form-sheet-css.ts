@@ -251,10 +251,6 @@ export const FORM_SHEET_CSS = `
   /* Padding lives on the cell so the hit tint reads as a full row band. */
   .pf-opts > .pf-tick { padding: 0.85mm 2.5mm; border-radius: 0.7mm; }
   .pf-opts > .pf-tick.pf-on { background: var(--tint-hit); }
-  /* Hairline column rules only in the 3-up options grid, where 24 rows need
-     the vertical guide. The 4/5-up rows are short enough to read unaided. */
-  .pf-opts:not(.pf-row) > .pf-tick:not(:nth-child(3n + 1)) { box-shadow: inset 0.22mm 0 0 var(--rule-soft); }
-  .pf-opts.pf-four > .pf-tick, .pf-opts.pf-five > .pf-tick { box-shadow: none; }
 
   /* PathWorks modules: code on top, name under it — the code is what the
      workshop matches against, the name is what a reader needs once. */
@@ -435,9 +431,6 @@ export const FORM_SHEET_CSS = `
     transform: translateY(-0.28mm) rotate(43deg);
     visibility: hidden;
   }
-  .pf-opts:not(.pf-row):not(.pf-col):not(.pf-one) > .pf-tick:not(:nth-child(3n + 1)) {
-    box-shadow: inset 0.22mm 0 0 var(--rule-soft);
-  }
   /* ═══ Interface-side diagram ═════════════════════════════════════════ */
   .pf-uiblock {
     display: grid; grid-template-columns: auto auto;
@@ -549,9 +542,6 @@ export const FORM_SHEET_CSS = `
   .pf-tick.pf-qty .pf-q { display: block; }
   .pf-tick.pf-qty .pf-tx { font-weight: 700; }
   .pf-opts > .pf-tick.pf-on, .pf-opts > .pf-tick.pf-qty { background: var(--tint-hit); }
-  .pf-opts:not(.pf-row):not(.pf-col):not(.pf-one):not(.pf-five) > .pf-tick:not(:nth-child(3n + 1)) {
-    box-shadow: inset 0.22mm 0 0 var(--rule-soft);
-  }
   .pf-opts.pf-stacked > .pf-tick { align-items: start; }
   /* ═══ Write-in block ══════════════════════════════════════════════════ */
   .pf-writein {
@@ -604,12 +594,6 @@ export const FORM_SHEET_CSS = `
   .pf-sheet.pf-dense .pf-notes li { margin-bottom: 0.2mm; line-height: 1.25; }
   .pf-sheet.pf-dense .pf-metastrip { margin-top: 2.2mm; }
   .pf-sheet.pf-dense .pf-secrow { margin-top: 2.4mm !important; }
-  /* The side diagram costs height the L-Series does not have -- it is the one
-     sheet that already runs to the bottom rule, which is what the dense flag
-     is for. Smaller here rather than smaller everywhere: on the other four
-     the 20mm square is the size the artwork is drawn to.
-     (No backticks in this file: it is one template literal.) */
-  .pf-sheet.pf-dense .pf-sidefig { width: 12mm; height: 12mm; }
   .pf-sheet.pf-dense .pf-footnote { margin-top: 1.6mm; padding-top: 1mm; }
 
   /* ═══ 2026-09-16 layout pass ═════════════════════════════════════════ */
@@ -635,6 +619,12 @@ export const FORM_SHEET_CSS = `
   .pf-eu .pf-s3 { grid-column: span 3; }
   /* Side diagram: level with the label, right beside the ticks. */
   .pf-sideblock { gap: 4mm; }
+
+  /* ═══ Option cells: box and text only ═══════════════════════════════ */
+  /* No rules, outlines or edge strokes on an option cell (Vadym,
+     2026-09-17): an unticked option is a box and its text on plain paper;
+     a ticked one gets the tint band and the tick, nothing else. */
+  .pf-opts > .pf-tick { box-shadow: none; border: 0; }
 
   /* ═══ Print ═══════════════════════════════════════════════════════════ */
   /* One sheet per form, each starting a new page. \`break-after\` on the last

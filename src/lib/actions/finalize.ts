@@ -5,7 +5,6 @@ import { revalidateDocument, revalidateDocumentList } from "@/lib/revalidate";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireAdmin, requireSession } from "@/lib/authz";
-import { isAdminRole } from "@/lib/roles";
 import { documentWhereForUser } from "@/lib/scope";
 import { idSchema } from "@/lib/validation/documents";
 import { validateFinalizable, type FinalizableDocument } from "@/lib/validation/finalize";
@@ -210,29 +209,6 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
       );
       if (issues.length > 0) {
         throw new NotFinalizableError(`Complete the production details first — ${describeIssues(issues)}`);
-      }
-
-      // An ADMIN is allowed to finalize over a discount-cap violation (see
-      // validateFinalizable's header comment) — this is the "logged in report"
-      // half of that: a structured server-log line naming who overrode it and
-      // by how much, since there's no dedicated admin-activity report to write
-      // it into yet. Grep-able by the "[finalize] admin override" prefix.
-      if (violations.length > 0 && isAdminRole(session.user.role)) {
-        console.warn("[finalize] admin override: discount-cap violation(s) finalized anyway", {
-          documentId: document.id,
-          adminUserId: session.user.id,
-          violations,
-        });
-      }
-
-      // Same override-logging as above, for the whole-document concession cap
-      // (see `validateFinalizable`'s point 4).
-      if (documentConcession.exceedsCap && isAdminRole(session.user.role)) {
-        console.warn("[finalize] admin override: document concession cap exceeded, finalized anyway", {
-          documentId: document.id,
-          adminUserId: session.user.id,
-          documentConcession,
-        });
       }
 
       // Frozen alongside entitySnapshot above — see Document.commissionAmount's

@@ -85,6 +85,11 @@ L-Series, якої ще немає. `MTS_TRAVEL` тіка не має за за�
 - **Rails.** Зараз пишуться у `E73` — порожній ряд між «Crate Required» і
   «Office Use Only». Працює, але це не підписаний рядок. У HTML має бути
   нормальний пункт «FabricPro rails».
+- **Custom Width — TODO (Вадим, 17.09).** Поговорити з директором: як часто
+  EasyLoader замовляють нестандартної ширини і як це показувати в PathQuote
+  (окремий товар / опція / поле в специфікації, ціна, хто підтверджує з
+  виробництвом). Зараз форма лише друкує «Custom widths must be confirmed
+  with production before the order is placed.»
 
 ### L-Series
 - **Ряд `Tools` — це кількості, не галочки.** «Replace 'X' with Qty required if

@@ -21,6 +21,7 @@ import { finalizeDocument } from "@/lib/actions/finalize";
 export function FinalizeButton({
   documentId,
   blocker = null,
+  capBlocker = null,
 }: {
   documentId: string;
   /**
@@ -29,6 +30,11 @@ export function FinalizeButton({
    * set; the server refuses the same state regardless.
    */
   blocker?: string | null;
+  /**
+   * The region discount-cap / markup-ceiling message when the quote is over
+   * it, or null. A hard stop for every role -- see `validateFinalizable`.
+   */
+  capBlocker?: string | null;
 }) {
   const router = useRouter();
   const confirm = useConfirm();
@@ -61,12 +67,17 @@ export function FinalizeButton({
       <Button
         type="button"
         onClick={handleClick}
-        disabled={pending || blocker !== null}
+        disabled={pending || blocker !== null || capBlocker !== null}
         className="h-11 w-full bg-brand text-white hover:bg-brand/90"
       >
         <CheckCircle2 className="size-4" data-icon="inline-start" aria-hidden="true" />
         {pending ? "Finalizing…" : "Finalize"}
       </Button>
+      {capBlocker ? (
+        <p role="status" className="text-sm text-destructive">
+          Can&rsquo;t finalize — {capBlocker} Bring it within the limit first.
+        </p>
+      ) : null}
       {blocker ? (
         <p role="status" className="text-sm text-amber-700">
           Complete before finalizing — {blocker}

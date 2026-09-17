@@ -27,14 +27,14 @@ function formatStamp(date: Date): string {
 
 /**
  * Where this page came from, printed along the bottom of every form:
- * `M-SERIES · Q-AU-2026-014 · item 1 of 3 · generated 11.09.2026`.
+ * `M-SERIES · Q-AU-2026-014 · item 1 of 3 · 11.09.2026`.
  */
 export function provenance(ctx: FormContext, formId: string): string {
   return [
     formId.toUpperCase(),
     ctx.documentNumber,
     `item ${ctx.itemIndex} of ${ctx.itemCount}`,
-    `generated ${formatStamp(ctx.generatedAt)}`,
+    formatStamp(ctx.generatedAt),
   ]
     .filter(Boolean)
     .join(" · ");

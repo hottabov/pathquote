@@ -61,8 +61,9 @@ export function DeliveryTermsField({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex flex-wrap items-center gap-2">
-        <label htmlFor="delivery-terms" className="text-sm text-slate-500">
-          Terms
+        {/* Visually hidden -- the card title names the field. */}
+        <label htmlFor="delivery-terms" className="sr-only">
+          Delivery terms
         </label>
         <select
           id="delivery-terms"
@@ -75,16 +76,10 @@ export function DeliveryTermsField({
         </select>
         <AutosaveIndicator status={status} error={error} />
       </div>
-      {/* Explains *why* there's no tax, so an Ex Works quote reads as
-          deliberate rather than a rate someone forgot to set — same reason
-          the sheet prints this instead of a "GST 0%" line (see
-          quotation-sheet.tsx). */}
-      {value === "EX_WORKS" ? (
-        <p className="text-xs text-slate-500">
-          An export sale collected at the factory door isn&rsquo;t a domestic taxable supply — no GST is charged
-          on this quote.
-        </p>
-      ) : null}
+      {/* Says the quote carries no tax, so an Ex Works quote reads as
+          deliberate rather than a rate someone forgot to set. Kept to two
+          words (Vadym, 2026-09-17). */}
+      {value === "EX_WORKS" ? <p className="text-xs text-slate-500">0 taxes</p> : null}
     </div>
   );
 }

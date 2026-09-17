@@ -6,8 +6,7 @@
 // a plain `vitest run` of pure logic; see tests/finalize-validation.test.ts).
 // `EngineViolation` is a plain type from the dependency-free pricing engine
 // (src/lib/pricing.ts).
-import { concessionCapMessage, type DocumentConcession, type EngineViolation } from "../pricing";
-import { isAdminRole } from "../roles";
+import { concessionCapMessage, markupCapMessage, type DocumentConcession, type EngineViolation } from "../pricing";
 
 /** The minimal shape `validateFinalizable` needs — deliberately not typed
  * against Prisma's generated `Document` payload so this stays trivial to
@@ -39,18 +38,13 @@ export type FinalizerRole = "ADMIN" | "MANAGER" | "DEVELOPER";
  *      discount can end up violating its cap after the fact if an admin
  *      lowers `Region.maxDiscountPct` later — see the NOTE on
  *      `recalcDocument` in src/lib/actions/documents.ts — so this must be
- *      re-checked at finalize time, not just at save time) — but ONLY for a
- *      MANAGER. An ADMIN may finalize over a discount-cap violation (they
- *      can already set an over-cap item discount in the first place — see
- *      `setItemDiscount` — so blocking them again at finalize time would
- *      just be a second copy of a rule that's already role-gated upstream);
- *      the caller (`finalizeDocument`) is responsible for logging that an
- *      admin overrode a violation.
+ *      re-checked at finalize time, not just at save time). Blocks every
+ *      role: an ADMIN may still SAVE an over-cap draft, but not finalize it.
  *   4. the whole-document `documentConcession` (see its own doc comment on
  *      `PricingTotals` in src/lib/pricing.ts) exceeds the region cap — same
  *      re-check-at-finalize-time reasoning as #3 (a cap can be lowered after
- *      a manual price was saved), and same MANAGER-blocked/ADMIN-allowed
- *      split. This is the finalize-time half of closing Ross's hole: without
+ *      a manual price was saved), and likewise blocks every role; the markup
+ *      ceiling (`exceedsMarkupCap`) is checked the same way. This is the finalize-time half of closing Ross's hole: without
  *      it, a MANAGER could still get an over-cap manually-priced document
  *      *saved* as a draft (blocked at every mutating action — see
  *      `recalcAndEnforce`, src/lib/actions/documents.ts) but never actually
@@ -76,15 +70,27 @@ export function validateFinalizable(
     return "Add at least one item or line before finalizing";
   }
 
-  if (violations.length > 0 && !isAdminRole(role)) {
+  // The region's discount cap and markup ceiling are hard limits at
+  // finalize, for EVERY role (Vadym, 2026-09-17): a quote over the limit is
+  // never finalized, not even by an admin -- an admin who wants the deal
+  // raises the region's limit in Settings first, which is a visible,
+  // deliberate act rather than a warning clicked past. `role` is kept in the
+  // signature for callers and for any future role-specific rule.
+  void role;
+
+  if (violations.length > 0) {
     const detail = violations
       .map((v) => `item ${v.itemIndex + 1} (max ${v.allowedPct}%)`)
       .join(", ");
     return `Reduce the discount before finalizing: ${detail}`;
   }
 
-  if (documentConcession.exceedsCap && !isAdminRole(role)) {
-    return concessionCapMessage(documentConcession, regionName, currency, currencySymbol);
+  if (documentConcession.exceedsCap) {
+    return `Reduce the discount before finalizing: ${concessionCapMessage(documentConcession, regionName, currency, currencySymbol)}`;
+  }
+
+  if (documentConcession.exceedsMarkupCap) {
+    return `Reduce the price before finalizing: ${markupCapMessage(documentConcession, regionName, currency, currencySymbol)}`;
   }
 
   return null;

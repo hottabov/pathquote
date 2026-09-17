@@ -107,7 +107,7 @@ describe("the M-Series form renders from the quote", () => {
 
   it("prints where the page came from", () => {
     const html = render(ctx());
-    expect(html).toContain("M-SERIES · Q-AU-2026-014 · item 1 of 3 · generated 11.09.2026");
+    expect(html).toContain("M-SERIES · Q-AU-2026-014 · item 1 of 3 · 11.09.2026");
   });
 
   it("leaves the office-use fields blank — they are filled by hand", () => {

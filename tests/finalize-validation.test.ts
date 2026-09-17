@@ -95,16 +95,14 @@ describe("validateFinalizable", () => {
     expect(result).toContain("5%");
   });
 
-  it("allows an ADMIN to finalize a document with discount-cap violations", () => {
+  it("rejects an ADMIN and a DEVELOPER with discount-cap violations too", () => {
     const doc = baseDoc();
     const violations: EngineViolation[] = [{ itemIndex: 0, allowedPct: 10 }];
-    expect(validateFinalizable(doc, violations, noConcession, ADMIN, REGION_NAME, CURRENCY)).toBeNull();
-  });
-
-  it("allows a DEVELOPER to finalize a document with discount-cap violations, same as an ADMIN", () => {
-    const doc = baseDoc();
-    const violations: EngineViolation[] = [{ itemIndex: 0, allowedPct: 10 }];
-    expect(validateFinalizable(doc, violations, noConcession, DEVELOPER, REGION_NAME, CURRENCY)).toBeNull();
+    for (const role of [ADMIN, DEVELOPER]) {
+      expect(validateFinalizable(doc, violations, noConcession, role, REGION_NAME, CURRENCY)).toBe(
+        "Reduce the discount before finalizing: item 1 (max 10%)"
+      );
+    }
   });
 
   it("returns null for a valid, finalizable document regardless of role", () => {
@@ -141,11 +139,28 @@ describe("validateFinalizable", () => {
     expect(result).toContain(REGION_NAME);
   });
 
-  it("allows an ADMIN to finalize a document whose whole-document concession exceeds the region cap", () => {
+  it("rejects an ADMIN too when the whole-document concession exceeds the region cap", () => {
     const doc = baseDoc();
-    expect(
-      validateFinalizable(doc, noViolations, overCapConcession, ADMIN, REGION_NAME, CURRENCY)
-    ).toBeNull();
+    const result = validateFinalizable(doc, noViolations, overCapConcession, ADMIN, REGION_NAME, CURRENCY);
+    expect(result).toMatch(/^Reduce the discount before finalizing/);
+    expect(result).toContain(REGION_NAME);
+  });
+
+  it("rejects every role when the markup ceiling is exceeded", () => {
+    const doc = baseDoc();
+    const overMarkup: DocumentConcession = {
+      ...noConcession,
+      concession: "-2000.00",
+      listValue: "10000.00",
+      effectivePct: -20,
+      allowedMarkupPct: 10,
+      exceedsMarkupCap: true,
+    };
+    for (const role of [MANAGER, ADMIN, DEVELOPER]) {
+      expect(validateFinalizable(doc, noViolations, overMarkup, role, REGION_NAME, CURRENCY)).toMatch(
+        /^Reduce the price before finalizing/
+      );
+    }
   });
 
   it("checks client and emptiness before the concession cap, for both roles", () => {

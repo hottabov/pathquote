@@ -84,7 +84,7 @@ describe("the X-Calibre form", () => {
   });
 
   it("prints where the page came from", () => {
-    expect(render(ctx())).toContain("X-CALIBRE · Q-AU-2026-021 · item 1 of 2 · generated 11.09.2026");
+    expect(render(ctx())).toContain("X-CALIBRE · Q-AU-2026-021 · item 1 of 2 · 11.09.2026");
   });
 
   it("prints a box for every option role its spec claims to cover", () => {

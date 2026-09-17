@@ -62,36 +62,40 @@ export function LSeriesForm({ ctx }: { ctx: FormContext }) {
       <EndUserSection ctx={ctx} />
 
       <Section title="Machine">
+        {/* Same shape as the X-Calibre and M-Series: every machine choice in
+            the left column, the interface side alone in the right, so the side
+            block and its diagram print at the same size on all three. */}
         <div className="pf-two" style={{ gridTemplateColumns: "1fr 1fr" }}>
           <div>
-            <Label>Model</Label>
-            <TickGrid variant="row">
-              {WIDTHS.map((width) => (
-                <Tick key={width} lead on={ctx.item.specs.widthCode === width}>
-                  L{width}
-                </Tick>
-              ))}
-            </TickGrid>
-            <div style={{ margin: "2.4mm 0 1.4mm" }}>
-              <Label>Cutting length</Label>
+            <div className="pf-pair">
+              <div>
+                <Label>Model</Label>
+                <TickGrid variant="row">
+                  {WIDTHS.map((width) => (
+                    <Tick key={width} lead on={ctx.item.specs.widthCode === width}>
+                      L{width}
+                    </Tick>
+                  ))}
+                </TickGrid>
+              </div>
+              <div>
+                <Label>Cutting length</Label>
+                <TickGrid variant="row">
+                  <Tick lead on={!extended}>
+                    <span className="pf-num">175</span>{" "}
+                    <span className="pf-desc" style={{ fontSize: "7pt" }}>
+                      (std)
+                    </span>
+                  </Tick>
+                  <Tick lead on={extended}>
+                    <span className="pf-num">316</span>{" "}
+                    <span className="pf-desc" style={{ fontSize: "7pt" }}>
+                      (E)
+                    </span>
+                  </Tick>
+                </TickGrid>
+              </div>
             </div>
-            <TickGrid variant="row">
-              <Tick lead on={!extended}>
-                <span className="pf-num">175</span>{" "}
-                <span className="pf-desc" style={{ fontSize: "7pt" }}>
-                  (std)
-                </span>
-              </Tick>
-              <Tick lead on={extended}>
-                <span className="pf-num">316</span>{" "}
-                <span className="pf-desc" style={{ fontSize: "7pt" }}>
-                  (E)
-                </span>
-              </Tick>
-            </TickGrid>
-          </div>
-          <div>
-            <ScreenSideBlock ctx={ctx} side={side} />
             <div style={{ margin: "2.4mm 0 1.4mm" }}>
               <Label>Cutting surface</Label>
             </div>
@@ -110,6 +114,7 @@ export function LSeriesForm({ ctx }: { ctx: FormContext }) {
               </Tick>
             </TickGrid>
           </div>
+          <ScreenSideBlock ctx={ctx} side={side} />
         </div>
       </Section>
 
