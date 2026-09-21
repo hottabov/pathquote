@@ -88,8 +88,13 @@ COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 # whether the runtime needs it at all is a Phase 2 question (Prisma 7 with a
 # driver adapter inlines the schema into the generated client).
 COPY --from=tools /app/prisma ./prisma
-# Production forms are read from disk at request time; Next's standalone
-# trace cannot include dynamically selected template filenames automatically.
-COPY --from=build /app/src/lib/production-forms/templates ./src/lib/production-forms/templates
+# Production forms used to be read from disk at request time (xlsx
+# templates under src/lib/production-forms/templates), which Next's
+# standalone trace cannot include automatically -- hence a manual COPY here.
+# 8ef58f0 ("replace legacy Excel production forms with TSX components")
+# deleted the last of those workbooks, so the directory no longer exists and
+# the COPY started failing the image build. Every production form is now a
+# TSX component compiled into the app; nothing at runtime reads that path
+# any more, so the copy is gone rather than fixed.
 EXPOSE 3000
 CMD ["node", "server.js"]
