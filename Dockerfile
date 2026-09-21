@@ -27,16 +27,28 @@ RUN npm ci
 # deserves a direct dependency rather than someone else's hoisting.)
 #
 # The `rm` shares this RUN deliberately. Deleting in a later layer leaves the
-# files in the parent layer and saves nothing on the wire. `@next/swc-*` is
-# the Rust compiler `next build` shells out to — on Alpine both the gnu and
-# musl variants install, ~180 MB together — and nothing at runtime loads it:
-# every `npm run` script in the tools image was checked against a tree built
-# exactly this way.
+# files in the parent layer and saves nothing on the wire. What goes, and why
+# nothing in the image can want it:
+#
+#   @next/swc-*  the Rust compiler `next build` shells out to (~180 MB, both
+#                the gnu and musl variants install on Alpine)
+#   next         the framework itself (~52 MB gzipped). The image runs no
+#                server — `app` does that, from its own standalone bundle.
+#   sharp, @img  image processing for the app's /api/files derivatives
+#                (~21 MB gzipped, nearly all of it libvips). `images:import`
+#                copies files; it never resizes one.
+#
+# None of that is guesswork, and it must not become guesswork later:
+# tests/tools-image-imports.test.ts walks the import graph of every `tsx`
+# script in package.json and fails if one of them reaches a package deleted
+# here. Add a script that imports `next` and CI says so, instead of the VPS
+# saying so in the middle of a deploy.
 FROM node:22-alpine AS prod-deps
 WORKDIR /app
 COPY package*.json prisma.config.ts ./
 COPY prisma/schema.prisma ./prisma/schema.prisma
-RUN npm ci --omit=dev && rm -rf node_modules/@next/swc-*
+RUN npm ci --omit=dev \
+    && rm -rf node_modules/@next/swc-* node_modules/next node_modules/sharp node_modules/@img
 
 FROM node:22-alpine AS build
 WORKDIR /app

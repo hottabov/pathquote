@@ -200,28 +200,34 @@ same tree:
   `prisma/schema.prisma`. No `node_modules` of its own, no migrations, no
   seed data.
 - **`tools`** (migrations, seeding, operator scripts) — a production-only
-  `node_modules` (`npm ci --omit=dev`, `@next/swc-*` deleted in the same
-  layer), plus `prisma/`, `scripts/` and `src/`. `tsx` and `dotenv` are in
-  `dependencies`, not `devDependencies`, so they survive that prune: every
-  operator script runs under tsx and `prisma.config.ts` imports
-  `dotenv/config` at load time.
+  `node_modules` (`npm ci --omit=dev`, then `@next/swc-*`, `next`, `sharp`
+  and `@img` deleted in the same layer), plus `prisma/`, `scripts/` and
+  `src/`. `tsx` and `dotenv` are in `dependencies`, not `devDependencies`,
+  so they survive that prune: every operator script runs under tsx and
+  `prisma.config.ts` imports `dotenv/config` at load time.
 - **`deps` / `prod-deps` / `build`** — never pushed; they exist to produce
   the two above.
 
 This matters because the VPS pulls at ~500 KB/s (measured 2026-09-21), so
 every megabyte in `tools` is paid again on every deploy that changes
-dependencies. Dropping the dev tree and the SWC compiler binaries took that
-image's dependency layer from ~325 MB to ~216 MB gzipped (measured on a
-linux/amd64 test install, so approximate) — roughly a third, or about three
-minutes of that link.
+dependencies. The prune took that image's dependency layer from ~325 MB to
+~144 MB gzipped (measured on a linux/amd64 install, so approximate) — well
+over half, or about six minutes of that link.
 
-`@next/swc-*` is the only deletion by hand. It is the Rust compiler
-`next build` shells out to, both variants install on Alpine, and nothing at
-runtime loads it. Two neighbours that look equally droppable are not:
-`@prisma/studio-core` and `@prisma/dev` are ~60 MB of apparent dead weight,
-but removing them breaks the Prisma CLI outright (`Cannot find module
+Four deletions by hand, none of them guesses. `@next/swc-*` is the Rust
+compiler `next build` shells out to. `next` is the framework — the image
+runs no server; `app` does that from its own standalone bundle. `sharp` and
+`@img` are the app's image pipeline (`images:import` copies files, it never
+resizes one). `tests/tools-image-imports.test.ts` holds that line: it walks
+the import graph of every `tsx` script in package.json and fails if one
+reaches a deleted package, so a future script that imports `next` is caught
+by CI rather than by a deploy.
+
+Two neighbours that look equally droppable are not: `@prisma/studio-core`
+and `@prisma/dev` are ~60 MB of apparent dead weight, but removing them
+breaks the Prisma CLI outright (`Cannot find module
 '@prisma/studio-core/data/bff'`) — so `prisma migrate deploy` stops working.
-Verify any further pruning by running every `tsx` script in package.json
+Before deleting anything else, run every `tsx` script in package.json
 against the pruned tree with an unreachable `DATABASE_URL`: a real failure
 says `Cannot find module`, a healthy one says `P1001`.
 

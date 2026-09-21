@@ -599,8 +599,11 @@ export const FORM_SHEET_CSS = `
      at its foot. The mockup overflows A4 by ~90px for the same reason.
      Rather than drop a block the workshop reads, the sheet tightens: the
      dense grids keep their type size and lose a little air.
-     Measured, not guessed -- see scripts/preview-form-html.ts and the
-     Playwright measurement described in the order-form-components memory. */
+     Measured, not guessed -- with the Playwright measurement described in
+     the order-form-components memory, against scripts/preview-form-html.ts,
+     which rendered each form to a standalone page. That script was removed
+     once the forms were signed off (git log -- scripts/preview-form-html.ts
+     brings it back if a form is ever reworked). */
   .pf-sheet.pf-dense .pf-sec { margin-top: 2.4mm; }
   .pf-sheet.pf-dense .pf-sec > h2 { margin-bottom: 1.4mm; padding-top: 0.7mm; padding-bottom: 0.7mm; }
   .pf-sheet.pf-dense .pf-opts > .pf-tick { padding-top: 0.6mm; padding-bottom: 0.6mm; }
