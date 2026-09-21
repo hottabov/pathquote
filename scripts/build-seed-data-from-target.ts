@@ -12,7 +12,7 @@ import type { Catalog } from "../prisma/seed-lib";
  * the target file is still the record of what that cleanup did.
  *
  * Regenerates prisma/seed-data/catalog.json and prisma/seed-data/prices-us.json
- * from docs/reference/catalog-v2-target.json, so `npm run db:seed` on a
+ * from prisma/seed-data/catalog-v2-target.json, so `npm run db:seed` on a
  * fresh database produces the cleaned catalogue (only non-deleted rows, new
  * codes, identity columns). The series list -- order, names, discount caps
  * -- is carried over from the catalog.json already in place; the target
@@ -28,7 +28,7 @@ import type { Catalog } from "../prisma/seed-lib";
  */
 function main() {
   const root = path.resolve(__dirname, "..");
-  const targetPath = path.join(root, "docs", "reference", "catalog-v2-target.json");
+  const targetPath = path.join(root, "prisma", "seed-data", "catalog-v2-target.json");
   const catalogPath = path.join(root, "prisma", "seed-data", "catalog.json");
   const usPricesPath = path.join(root, "prisma", "seed-data", "prices-us.json");
 

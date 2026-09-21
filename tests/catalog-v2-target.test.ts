@@ -7,7 +7,7 @@ import catalogData from "../prisma/seed-data/catalog.json";
 import type { Catalog } from "../prisma/seed-lib";
 
 const ROOT = path.resolve(__dirname, "..");
-const target = JSON.parse(readFileSync(path.join(ROOT, "docs/reference/catalog-v2-target.json"), "utf8")) as CatalogTarget;
+const target = JSON.parse(readFileSync(path.join(ROOT, "prisma/seed-data/catalog-v2-target.json"), "utf8")) as CatalogTarget;
 const catalog = catalogData as Catalog;
 
 const products = target.products.filter((p) => p.action !== "delete");

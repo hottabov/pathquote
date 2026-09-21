@@ -190,6 +190,49 @@ Since 2026-09-04 the VPS builds nothing. On a push to `main`:
 Migrations always run before the new app starts, so the code and the schema
 can never disagree in the window between them.
 
+### What each image carries
+
+Three images come out of one Dockerfile and they are deliberately not the
+same tree:
+
+- **`run`** (the app) — `.next/standalone` (Next's own traced subset of
+  node_modules), the static assets, the generated Prisma client and
+  `prisma/schema.prisma`. No `node_modules` of its own, no migrations, no
+  seed data.
+- **`tools`** (migrations, seeding, operator scripts) — a production-only
+  `node_modules` (`npm ci --omit=dev`, `@next/swc-*` deleted in the same
+  layer), plus `prisma/`, `scripts/` and `src/`. `tsx` and `dotenv` are in
+  `dependencies`, not `devDependencies`, so they survive that prune: every
+  operator script runs under tsx and `prisma.config.ts` imports
+  `dotenv/config` at load time.
+- **`deps` / `prod-deps` / `build`** — never pushed; they exist to produce
+  the two above.
+
+This matters because the VPS pulls at ~500 KB/s (measured 2026-09-21), so
+every megabyte in `tools` is paid again on every deploy that changes
+dependencies. Dropping the dev tree and the SWC compiler binaries took that
+image's dependency layer from ~325 MB to ~216 MB gzipped (measured on a
+linux/amd64 test install, so approximate) — roughly a third, or about three
+minutes of that link.
+
+`@next/swc-*` is the only deletion by hand. It is the Rust compiler
+`next build` shells out to, both variants install on Alpine, and nothing at
+runtime loads it. Two neighbours that look equally droppable are not:
+`@prisma/studio-core` and `@prisma/dev` are ~60 MB of apparent dead weight,
+but removing them breaks the Prisma CLI outright (`Cannot find module
+'@prisma/studio-core/data/bff'`) — so `prisma migrate deploy` stops working.
+Verify any further pruning by running every `tsx` script in package.json
+against the pruned tree with an unreachable `DATABASE_URL`: a real failure
+says `Cannot find module`, a healthy one says `P1001`.
+
+Anything the seed or the scripts read at runtime must live under `prisma/`,
+`scripts/` or `src/`. `docs/` is in `.dockerignore` and never reaches an
+image: `prisma/seed.ts` imported its retire-list from
+`docs/reference/catalog-v2-target.json` until 2026-09-21, which made
+`db:seed` fail in the container while passing in CI — CI seeds from the
+checked-out repo, not from the image. The file now lives in
+`prisma/seed-data/` with the rest of the seed input.
+
 ### Rolling back
 
 The previous image is still on the box (the workflow's `docker image prune -f`

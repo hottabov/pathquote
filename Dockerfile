@@ -13,6 +13,31 @@ COPY package*.json prisma.config.ts ./
 COPY prisma/schema.prisma ./prisma/schema.prisma
 RUN npm ci
 
+# The runtime-only tree, for the `tools` image. `deps` above installs
+# devDependencies as well, because `next build` needs them; `tools` never
+# builds anything — it runs `prisma migrate`, `db:seed` and the operator
+# scripts through tsx — so eslint, vitest, tailwind, typescript and their
+# transitive trees are pure transfer cost on every deploy. The VPS pulls at
+# ~500 KB/s, which is where that cost is actually paid.
+#
+# `tsx` and `dotenv` are in `dependencies`, not `devDependencies`, precisely
+# so they survive `--omit=dev`: every operator script runs under tsx, and
+# prisma.config.ts imports `dotenv/config` at load time. (dotenv also arrives
+# transitively via prisma -> @prisma/config -> c12, but a direct import
+# deserves a direct dependency rather than someone else's hoisting.)
+#
+# The `rm` shares this RUN deliberately. Deleting in a later layer leaves the
+# files in the parent layer and saves nothing on the wire. `@next/swc-*` is
+# the Rust compiler `next build` shells out to — on Alpine both the gnu and
+# musl variants install, ~180 MB together — and nothing at runtime loads it:
+# every `npm run` script in the tools image was checked against a tree built
+# exactly this way.
+FROM node:22-alpine AS prod-deps
+WORKDIR /app
+COPY package*.json prisma.config.ts ./
+COPY prisma/schema.prisma ./prisma/schema.prisma
+RUN npm ci --omit=dev && rm -rf node_modules/@next/swc-*
+
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
@@ -60,14 +85,15 @@ RUN DATABASE_URL="postgresql://build:build@localhost:5432/build" \
     npm run build
 
 # Migrations, seeding and the operator scripts (`npm run db:seed`,
-# `npm run user:create`, the image importers). Built from `deps`, not from
-# `build`: it needs the source and node_modules but never `.next`, and taking
-# it from `build` used to drag the compiled app — and the build-time secret
-# placeholders — into an image an operator runs by hand.
+# `npm run user:create`, the image importers). Built from `prod-deps`, not
+# from `build`: it needs the source and node_modules but never `.next`, and
+# taking it from `build` used to drag the compiled app — and the build-time
+# secret placeholders — into an image an operator runs by hand. It took the
+# full `deps` tree until the runtime-only one above existed.
 FROM node:22-alpine AS tools
 WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=deps /app/node_modules ./node_modules
+COPY --from=prod-deps /app/node_modules ./node_modules
 COPY package.json prisma.config.ts tsconfig.json ./
 COPY prisma ./prisma
 COPY scripts ./scripts
@@ -83,11 +109,12 @@ COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
 COPY --from=build /app/public ./public
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
-# Taken from `tools` rather than `build`, which no longer holds the whole
-# prisma/ directory. Kept byte-identical to the previous image for now;
-# whether the runtime needs it at all is a Phase 2 question (Prisma 7 with a
-# driver adapter inlines the schema into the generated client).
-COPY --from=tools /app/prisma ./prisma
+# Only the schema. The rest of prisma/ is operator territory — migrations
+# (the `tools` image applies them) and ~7 MB of seed-data product images —
+# and nothing under src/ reads either at request time. The schema itself
+# stays because it costs 40 KB and Prisma tooling expects to find it; with a
+# driver adapter the generated client already carries its own copy.
+COPY --from=tools /app/prisma/schema.prisma ./prisma/schema.prisma
 # Production forms used to be read from disk at request time (xlsx
 # templates under src/lib/production-forms/templates), which Next's
 # standalone trace cannot include automatically -- hence a manual COPY here.

@@ -10,7 +10,7 @@ import { readProductSpecs } from "../src/lib/validation/product-specs";
 /**
  * Invariants over prisma/seed-data/catalog.json -- the file
  * scripts/build-seed-data-from-target.ts regenerates from
- * docs/reference/catalog-v2-target.json. These hold whatever the director
+ * prisma/seed-data/catalog-v2-target.json. These hold whatever the director
  * renames next; the counts and code literals the pre-v2 version of this
  * file asserted are gone with the spreadsheets that produced them.
  */

@@ -16,7 +16,7 @@ import { Prisma } from "@prisma/client";
 import catalogData from "./seed-data/catalog.json";
 import quoteDocumentsData from "./seed-data/quote-documents.json";
 import usPricesData from "./seed-data/prices-us.json";
-import catalogV2Target from "../docs/reference/catalog-v2-target.json";
+import catalogV2Target from "./seed-data/catalog-v2-target.json";
 import type { CatalogTarget } from "../scripts/lib/catalog-v2-plan";
 import {
   type Catalog,
@@ -39,7 +39,7 @@ const usPricesJson = usPricesData as UsPricesJson;
 const v2Target = catalogV2Target as CatalogTarget;
 
 /**
- * Rows catalogue v2 deletes (docs/reference/catalog-v2-target.json, action
+ * Rows catalogue v2 deletes (prisma/seed-data/catalog-v2-target.json, action
  * "delete"): AU-only options, software sold as options, duplicates, the
  * X-Calibre widths not on the US list. scripts/migrate-catalog-v2.ts
  * removes them from a live database; the seed retires them too (delete, or
@@ -262,7 +262,7 @@ async function main() {
 
   // 6b. Prices (US region) -- from prisma/seed-data/prices-us.json, written
   // by `npm run catalog:build-seed-data` from the US figures in
-  // docs/reference/catalog-v2-target.json. Unlike step 6's AU prices, these are always
+  // prisma/seed-data/catalog-v2-target.json. Unlike step 6's AU prices, these are always
   // upserted regardless of whether a row already exists: the US price list
   // is the authoritative source for every code it covers, never a
   // provisional/needsReview placeholder, so a re-run always brings the DB

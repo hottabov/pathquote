@@ -5,7 +5,7 @@
  *
  * This replaces the target-file route
  * (scripts/build-seed-data-from-target.ts, from
- * docs/reference/catalog-v2-target.json) as the way the seed is refreshed.
+ * prisma/seed-data/catalog-v2-target.json) as the way the seed is refreshed.
  * That file was the plan for a one-off cleanup and stopped being the truth
  * the moment the cleanup landed and people carried on editing the catalogue
  * in the app: by 2026-09-11 it still listed twelve X-Calibre products and a

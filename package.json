@@ -39,6 +39,7 @@
     "@tiptap/starter-kit": "^3.30.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "dotenv": "^17.4.2",
     "fflate": "^0.8.3",
     "google-libphonenumber": "^3.2.46",
     "isomorphic-dompurify": "^3.23.0",
@@ -52,6 +53,7 @@
     "sharp": "^0.35.4",
     "signature_pad": "^5.1.4",
     "tailwind-merge": "^3.6.0",
+    "tsx": "^4.23.12",
     "xlsx": "^0.18.5",
     "zod": "^4.5.2"
   },
@@ -62,11 +64,9 @@
     "@types/nodemailer": "^8.0.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "dotenv": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
     "tailwindcss": "^4",
-    "tsx": "^4.23.12",
     "typescript": "^5",
     "vitest": "^4.1.11"
   }

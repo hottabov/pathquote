@@ -324,7 +324,7 @@ export function mapCompatibility(catalog: Catalog): CompatPayload[] {
 
 /** Shape of prisma/seed-data/prices-us.json, written by
  *  scripts/build-seed-data-from-target.ts from the US figures in
- *  docs/reference/catalog-v2-target.json. `unmatched` isn't consumed here
+ *  prisma/seed-data/catalog-v2-target.json. `unmatched` isn't consumed here
  *  -- it is a leftover of the spreadsheet extractor that used to write the
  *  file (rows with no catalog code to attach to) and is always `[]` now;
  *  kept so the file's shape is stable. */

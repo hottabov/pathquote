@@ -16,7 +16,7 @@ import type { Catalog } from "../prisma/seed-lib";
  * scripts/lib/catalog-seed-from-dump.ts.
  *
  * Supersedes scripts/build-seed-data-from-target.ts, which built the same
- * two files from docs/reference/catalog-v2-target.json -- a one-off cleanup
+ * two files from prisma/seed-data/catalog-v2-target.json -- a one-off cleanup
  * plan that stopped matching reality as soon as people edited the catalogue
  * in the app.
  */

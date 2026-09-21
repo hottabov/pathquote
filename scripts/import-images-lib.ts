@@ -57,7 +57,7 @@ export const SERIES_IMAGES: Record<string, string> = {
  * source material, same "one shot per line" convention SERIES_IMAGES uses).
  * "LSC" (LS Convert) is the SW series' one other product and is deliberately
  * left unmapped (see UNMAPPED_IMAGE_FILES). Codes are the catalogue v2 codes
- * (docs/reference/catalog-v2-target.json); the import script matches a row
+ * (prisma/seed-data/catalog-v2-target.json); the import script matches a row
  * by its current code, so a renamed row needs its entry here updated. PTN
  * and EDG were deleted in v2.
  */

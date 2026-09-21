@@ -18,7 +18,7 @@
 
 import type { OptionRole, ProductKind, ProductionForm } from "@prisma/client";
 
-// --- Target file (docs/reference/catalog-v2-target.json) --------------------
+// --- Target file (prisma/seed-data/catalog-v2-target.json) --------------------
 
 export type TargetAction = "keep" | "rename" | "add" | "delete";
 

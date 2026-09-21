@@ -13,7 +13,7 @@ import {
 } from "./lib/catalog-v2-plan";
 
 /**
- * Applies docs/reference/catalog-v2-target.json to the live catalogue --
+ * Applies prisma/seed-data/catalog-v2-target.json to the live catalogue --
  * phase 3 of docs/plans/2026-09-05-catalog-identity-and-cleanup.md.
  *
  *   npx tsx scripts/migrate-catalog-v2.ts --dry-run   # print the diff, write nothing
@@ -229,7 +229,7 @@ async function apply(tx: Tx, operations: Operation[]) {
 
 async function main() {
   const dryRun = process.argv.includes("--dry-run");
-  const targetPath = path.resolve(__dirname, "..", "docs", "reference", "catalog-v2-target.json");
+  const targetPath = path.resolve(__dirname, "..", "prisma", "seed-data", "catalog-v2-target.json");
   const target = JSON.parse(readFileSync(targetPath, "utf8")) as CatalogTarget;
 
   const { db } = await import("../src/lib/db");

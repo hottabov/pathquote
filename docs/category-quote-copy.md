@@ -357,7 +357,7 @@ this copy keeps.
 
 **Unsure.** The Pathfinder Brain (`02 Products/Product Portfolio MOC.md`)
 records the Roll Trolley as **not currently on the Australian price list** —
-consistent with `FP-TROLLEY`'s `AU: 0.0` in `docs/reference/catalog-v2-target.json`,
+consistent with `FP-TROLLEY`'s `AU: 0.0` in `prisma/seed-data/catalog-v2-target.json`,
 which the seed turns into `price: null, needsReview: true`. That is a pricing
 data question, not a copy one, but it means this body will print under a
 section whose structural price line is currently blank until AU pricing is
