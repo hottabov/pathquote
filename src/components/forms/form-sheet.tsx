@@ -40,13 +40,79 @@ export function provenance(ctx: FormContext, formId: string): string {
     .join(" · ");
 }
 
+/** What the masthead and the meta strip print, on any sheet. */
+export type SheetHeader = {
+  title: string;
+  distributorName: string;
+  authorName: string;
+  documentNumber: string;
+  /** The entity logo as a data URI, or null to print the Pathfinder wordmark. */
+  logo: string | null;
+  /** The line under the form title. Machine forms print "Production order". */
+  kicker?: string;
+};
+
 /**
  * The A4 page every form is drawn on: masthead, the distributor/salesperson/
  * quote strip, then whatever the form itself puts below.
  *
+ * Takes plain fields rather than a `FormContext` so the sheets that belong to
+ * the whole quote rather than to one machine -- the Software Order Form --
+ * are drawn by the same shell as the machine forms. `FormSheet` is the
+ * machine-form wrapper over it.
+ *
  * The stylesheet travels with the first sheet only -- a document holding
  * three forms needs one copy of it, not three. `FormDocument` handles that.
  */
+export function SheetShell({
+  header,
+  dense = false,
+  children,
+}: {
+  header: SheetHeader;
+  dense?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className={dense ? "pf-sheet pf-dense" : "pf-sheet"}>
+      <div className="pf-mast">
+        {/* The entity's own logo when the region has uploaded one, and the
+            Pathfinder wordmark otherwise. Never a text fallback: the paper
+            forms all carried the mark, and a sheet arriving at the workshop
+            without it does not look like a Pathfinder order. */}
+        {header.logo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img className="pf-logo" src={header.logo} alt={header.distributorName} />
+        ) : (
+          <div className="pf-logo" dangerouslySetInnerHTML={{ __html: PATHFINDER_LOGO_SVG }} />
+        )}
+
+        <div className="pf-doctitle">
+          {header.title}
+          <small>{header.kicker ?? "Production order"}</small>
+        </div>
+
+        <div className="pf-contact">
+          <div>
+            <b>{HEAD_OFFICE.phone}</b>
+          </div>
+          <div>{HEAD_OFFICE.email}</div>
+          <div>{HEAD_OFFICE.website}</div>
+        </div>
+      </div>
+
+      <div className="pf-metastrip">
+        <Field label="Distributor" value={header.distributorName} />
+        <Field label="Salesperson" value={header.authorName} />
+        <Field label="Quote ref." value={header.documentNumber} num />
+      </div>
+
+      {children}
+    </div>
+  );
+}
+
+/** The machine-form sheet: `SheetShell` fed from a `FormContext`. */
 export function FormSheet({
   ctx,
   title,
@@ -66,41 +132,18 @@ export function FormSheet({
   children: ReactNode;
 }) {
   return (
-    <div className={dense ? "pf-sheet pf-dense" : "pf-sheet"}>
-      <div className="pf-mast">
-        {/* The entity's own logo when the region has uploaded one, and the
-            Pathfinder wordmark otherwise. Never a text fallback: the paper
-            forms all carried the mark, and a sheet arriving at the workshop
-            without it does not look like a Pathfinder order. */}
-        {ctx.logo ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img className="pf-logo" src={ctx.logo} alt={ctx.distributorName} />
-        ) : (
-          <div className="pf-logo" dangerouslySetInnerHTML={{ __html: PATHFINDER_LOGO_SVG }} />
-        )}
-
-        <div className="pf-doctitle">
-          {title}
-          <small>Production order</small>
-        </div>
-
-        <div className="pf-contact">
-          <div>
-            <b>{HEAD_OFFICE.phone}</b>
-          </div>
-          <div>{HEAD_OFFICE.email}</div>
-          <div>{HEAD_OFFICE.website}</div>
-        </div>
-      </div>
-
-      <div className="pf-metastrip">
-        <Field label="Distributor" value={ctx.distributorName} />
-        <Field label="Salesperson" value={ctx.authorName} />
-        <Field label="Quote ref." value={ctx.documentNumber} num />
-      </div>
-
+    <SheetShell
+      header={{
+        title,
+        distributorName: ctx.distributorName,
+        authorName: ctx.authorName,
+        documentNumber: ctx.documentNumber,
+        logo: ctx.logo,
+      }}
+      dense={dense}
+    >
       {children}
-    </div>
+    </SheetShell>
   );
 }
 
@@ -117,25 +160,48 @@ export function FormSheet({
  */
 export function EndUserSection({ ctx }: { ctx: FormContext }) {
   return (
+    <EndUserBand
+      company={ctx.company}
+      contact={ctx.contact}
+      machine={`${ctx.item.code} — ${ctx.item.name}`}
+    />
+  );
+}
+
+/**
+ * The band itself, on plain fields. `machine` is omitted on a sheet that
+ * belongs to the quote rather than to one machine (the Software Order Form),
+ * and the email takes that column instead of sitting on its own.
+ */
+export function EndUserBand({
+  company,
+  contact,
+  machine,
+}: {
+  company: FormContext["company"];
+  contact: FormContext["contact"];
+  machine?: string;
+}) {
+  return (
     <div className="pf-sec">
       <h2>
         <span>End user</span>
       </h2>
       <div className="pf-eu">
         <div className="pf-s2">
-          <Field label="Company" value={ctx.company.name} />
+          <Field label="Company" value={company.name} />
         </div>
         <div className="pf-s2">
-          <Field label="Machine" value={`${ctx.item.code} — ${ctx.item.name}`} />
+          {machine ? <Field label="Machine" value={machine} /> : <Field label="Email" value={contact.email} full />}
         </div>
         <div className="pf-s3">
-          <Field label="Address" value={ctx.company.addressLines.join(", ")} />
+          <Field label="Address" value={company.addressLines.join(", ")} />
         </div>
-        <Field label="Industry" value={ctx.company.industry} />
-        <Field label="Contact" value={ctx.contact.fullName} />
-        <Field label="Title" value={ctx.contact.position} />
-        <Field label="Phone" value={ctx.contact.phone} num />
-        <Field label="Email" value={ctx.contact.email} full />
+        <Field label="Industry" value={company.industry} />
+        <Field label="Contact" value={contact.fullName} />
+        <Field label="Title" value={contact.position} />
+        <Field label="Phone" value={contact.phone} num />
+        {machine ? <Field label="Email" value={contact.email} full /> : null}
       </div>
     </div>
   );

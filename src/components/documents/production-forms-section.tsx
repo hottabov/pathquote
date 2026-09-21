@@ -1,6 +1,6 @@
 import { AlertTriangle, Download, Factory, FileText } from "lucide-react";
 import { SectionCard } from "@/components/ui-kit";
-import { buildFormContexts } from "@/lib/production-forms/context";
+import { buildFormContexts, softwareItemsOnDocument } from "@/lib/production-forms/context";
 import { missingRequirements, resolveForm, unmatchedOptions } from "@/lib/production-forms/resolve";
 import type { FormContext } from "@/lib/production-forms/types";
 import type { DocumentForForms } from "@/lib/queries/documents";
@@ -32,6 +32,25 @@ function AdditionalItemsRow({ documentId, count }: { documentId: string; count: 
 }
 
 /**
+ * The Software Order Form's row -- one sheet per quote listing the software
+ * sold on it, Martin's order rather than the workshop's. `?item=software`
+ * renders exactly this page.
+ */
+function SoftwareRow({ documentId, count }: { documentId: string; count: number }) {
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+      <span className="text-sm text-brand-dark">
+        Software order form <span className="text-slate-400">({count})</span>
+      </span>
+      <a href={`/api/quotes/${documentId}/production-forms?item=software`} className={pdfLinkClass}>
+        <FileText className="size-4" aria-hidden="true" />
+        PDF
+      </a>
+    </li>
+  );
+}
+
+/**
  * Readiness list plus the download links for a finalized quote's production
  * forms. Returns `null` for anything that is not FINAL, mirroring
  * exactly the check `/api/quotes/[documentId]/production-forms` makes —
@@ -47,21 +66,25 @@ export function ProductionFormsSection({ document }: { document: DocumentForForm
   if (document.status !== "FINAL") return null;
 
   const contexts = buildFormContexts(document);
+  const software = softwareItemsOnDocument(document);
 
   return (
     <SectionCard title="Production forms" icon={<Factory className="size-5" />}>
       {contexts.length === 0 ? (
-        document.lines.length > 0 ? (
-          // No machine forms, but the quote still has custom line items to
-          // send to the workshop as their own page.
+        software.length > 0 || document.lines.length > 0 ? (
+          // No machine forms, but the quote still has software to order or
+          // custom line items to send on as their own page.
           <ul className="flex flex-col divide-y divide-slate-100">
-            <AdditionalItemsRow documentId={document.id} count={document.lines.length} />
+            {software.length > 0 ? <SoftwareRow documentId={document.id} count={software.length} /> : null}
+            {document.lines.length > 0 ? (
+              <AdditionalItemsRow documentId={document.id} count={document.lines.length} />
+            ) : null}
           </ul>
         ) : (
           <p className="text-sm text-slate-500">No production forms apply to this quote.</p>
         )
       ) : (
-        <ProductionFormsBody document={document} contexts={contexts} />
+        <ProductionFormsBody document={document} contexts={contexts} software={software} />
       )}
     </SectionCard>
   );
@@ -70,9 +93,11 @@ export function ProductionFormsSection({ document }: { document: DocumentForForm
 function ProductionFormsBody({
   document,
   contexts,
+  software,
 }: {
   document: DocumentForForms;
   contexts: FormContext[];
+  software: Array<{ code: string }>;
 }) {
   const rows = contexts.map((ctx) => {
     const spec = resolveForm(ctx.item.form)!;
@@ -91,10 +116,10 @@ function ProductionFormsBody({
   // A PathWorks module (`specs.pathworksModule`) needs a PathWorks licence
   // to run in -- either the standalone or the integrated one, which is what
   // `specs.softwareMode` marks.
-  const software = contexts[0].software;
+  const softwareSpecs = contexts[0].software;
   const modulesWithoutHost =
-    software.some((s) => s.specs.pathworksModule !== undefined) &&
-    !software.some((s) => s.specs.softwareMode !== undefined);
+    softwareSpecs.some((s) => s.specs.pathworksModule !== undefined) &&
+    !softwareSpecs.some((s) => s.specs.softwareMode !== undefined);
 
   return (
     <div className="flex flex-col gap-4">
@@ -124,6 +149,7 @@ function ProductionFormsBody({
             )}
           </li>
         ))}
+        {software.length > 0 ? <SoftwareRow documentId={document.id} count={software.length} /> : null}
         {extras > 0 ? <AdditionalItemsRow documentId={document.id} count={extras} /> : null}
       </ul>
 
@@ -135,7 +161,7 @@ function ProductionFormsBody({
       ) : (
         <a href={`/api/quotes/${document.id}/production-forms`} className={downloadAllClass}>
           <Download className="size-4" aria-hidden="true" />
-          Download all forms ({rows.length + (extras > 0 ? 1 : 0)} pages)
+          Download all forms ({rows.length + (software.length > 0 ? 1 : 0) + (extras > 0 ? 1 : 0)} pages)
         </a>
       )}
     </div>

@@ -40,6 +40,13 @@ export const FORM_SHEET_CSS = `
     min-height: 297mm;
     padding: 9mm 11mm 8mm;
     box-sizing: border-box;
+    /* A column, so the "Office use only" block can be pushed to the foot of
+       the page (see its own margin-top: auto below). Without it that block
+       sat wherever the content above happened to end, which put it halfway up
+       a short sheet -- the workshop reads it as the last thing on the page
+       and files by it. */
+    display: flex;
+    flex-direction: column;
     background: #fff;
     color: var(--ink);
     font-family: Arial, Helvetica, "Liberation Sans", sans-serif;
@@ -50,6 +57,10 @@ export const FORM_SHEET_CSS = `
     print-color-adjust: exact;
   }
   .pf-sheet * { box-sizing: border-box; }
+  /* Sheet blocks keep their own height: a flex item shrinks by default, and
+     a full sheet (the L-Series) would otherwise squeeze its sections instead
+     of simply filling the page. */
+  .pf-sheet > * { flex: 0 0 auto; }
 
   /* ═══ Masthead ════════════════════════════════════════════════════════ */
   .pf-mast {
@@ -318,7 +329,13 @@ export const FORM_SHEET_CSS = `
 
   /* ═══ Office use only ═════════════════════════════════════════════════ */
   .pf-office {
-    margin-top: 3.6mm;
+    /* Pinned to the foot of the sheet: an auto top margin eats whatever
+       vertical space
+       is left, so the block lands at the bottom of a short form and simply
+       follows the content on a full one. What a form prints AFTER it -- the
+       L-Series reference notes, every form's footnote -- travels with it,
+       which is right: they are the foot of the page too. */
+    margin-top: auto;
     border: 0.28mm dashed #a9aec0;
     border-radius: 1mm;
     padding: 2mm 2.8mm 2.8mm;
@@ -587,7 +604,9 @@ export const FORM_SHEET_CSS = `
   .pf-sheet.pf-dense .pf-sec { margin-top: 2.4mm; }
   .pf-sheet.pf-dense .pf-sec > h2 { margin-bottom: 1.4mm; padding-top: 0.7mm; padding-bottom: 0.7mm; }
   .pf-sheet.pf-dense .pf-opts > .pf-tick { padding-top: 0.6mm; padding-bottom: 0.6mm; }
-  .pf-sheet.pf-dense .pf-office { margin-top: 2.6mm; padding: 1.6mm 2.8mm 2.2mm; }
+  /* No margin-top here: the office block is pinned to the foot of the sheet
+     (margin-top: auto), and a fixed value would unpin it. */
+  .pf-sheet.pf-dense .pf-office { padding: 1.6mm 2.8mm 2.2mm; }
   .pf-sheet.pf-dense .pf-officegrid { gap: 2mm 6mm; }
   .pf-sheet.pf-dense .pf-writein { min-height: 9mm; padding: 1.2mm 2.2mm 1.4mm; }
   .pf-sheet.pf-dense .pf-notes { margin-top: 2mm; padding-top: 1.2mm; }
@@ -644,6 +663,17 @@ export const FORM_SHEET_CSS = `
   }
   .pf-tick.pf-lead { align-items: start; }
   .pf-tick.pf-lead .pf-tx { padding-top: 0; line-height: var(--bx); }
+
+  /* The Leather Nesting System sheet is a fixed list of contents rather
+     than boxes to tick, so its two columns read as body text -- the grey
+     6.2pt of the reference notes is for a footer, not for the only thing on
+     the page. */
+  .pf-comprises {
+    margin-top: 0; padding-top: 0; border-top: 0;
+    font-size: 7.6pt; line-height: 1.45; color: var(--ink);
+    grid-template-columns: 1.35fr 1fr;
+  }
+  .pf-comprises li { margin-bottom: 1mm; }
 
   /* ═══ Print ═══════════════════════════════════════════════════════════ */
   /* One sheet per form, each starting a new page. \`break-after\` on the last

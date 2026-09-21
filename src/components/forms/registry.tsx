@@ -6,6 +6,8 @@ import { XCalibreForm } from "./x-calibre-form";
 import { EasyLoaderForm } from "./easyloader-form";
 import { FabricProForm } from "./fabricpro-form";
 import { LSeriesForm } from "./l-series-form";
+import { FabricTrolleyForm } from "./fabric-trolley-form";
+import { LeatherNestingForm } from "./leather-nesting-form";
 import { HdrfForm } from "./hdrf-form";
 import { EasyFeederForm } from "./easyfeeder-form";
 
@@ -28,6 +30,8 @@ const COMPONENTS: Partial<Record<ProductionForm, (props: { ctx: FormContext }) =
   EASYLOADER: EasyLoaderForm,
   FABRICPRO: FabricProForm,
   L_SERIES: LSeriesForm,
+  FP_TROLLEY: FabricTrolleyForm,
+  LNS: LeatherNestingForm,
   HDRF: HdrfForm,
   EASYFEEDER: EasyFeederForm,
 };

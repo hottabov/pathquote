@@ -97,20 +97,36 @@ export type FormContext = {
   item: FormItem;
 };
 
-/** What turns a spec into a printed page. */
-export type FormRenderer = "xlsx" | "html";
-
-/** Everything a form declares regardless of how it is drawn. */
-type FormSpecBase = {
+/**
+ * Everything a form declares. There used to be two shapes here -- a workbook
+ * patched at hard-coded cell addresses and a React component -- discriminated
+ * by `renderer`. The last workbook form (Punchline) was dropped on 2026-09-18
+ * at the owner's instruction, and with it the whole xlsx path
+ * (`docs/superpowers/specs/2026-09-03-web-production-forms-design.md` §7.1),
+ * so one shape is left. `renderer` survives as the marker of that: a spec
+ * says out loud that a component draws it, and the render tests assert it
+ * rather than trusting the absence of a template field.
+ *
+ * Layout is JSX and therefore not enumerable, so the coverage question --
+ * "does this form have a box for option X?" -- cannot be assembled from the
+ * layout the way it once was from the ticks, and is declared here instead.
+ * That question is the safety-critical part of the engine: it is what sends
+ * an option the form cannot express to the Additional items sheet rather
+ * than letting it vanish.
+ */
+export type HtmlFormSpec = {
   id: string;
   title: string;
   /** The `Product.form` value this spec prints. */
   form: ProductionForm;
+  renderer: "html";
   /** productionSpec keys that block generation while unanswered. */
   requires: string[];
   specSchema: z.ZodTypeAny;
+  /** Option roles this form prints a box for. */
+  covers: OptionRole[];
   /**
-   * Option roles this form accounts for without a tick of their own -- the
+   * Option roles this form accounts for without a box of its own -- the
    * EasyLoader's table modules, which the section rows and the printed total
    * already represent. Without this they would be reported unmatched and
    * printed again on the Additional items sheet, telling the workshop the
@@ -120,48 +136,9 @@ type FormSpecBase = {
 };
 
 /**
- * A form drawn by patching the original workbook. The three cell arrays are
- * the whole of its layout, and they are what
- * `docs/superpowers/specs/2026-09-03-web-production-forms-design.md` §7.1
- * deletes: every one of these becomes a component. Nothing new should be
- * written in this shape.
+ * Every order form is a component now, so there is nothing left to union.
+ * The alias stays because the engine (`resolve.ts`, the PDF route, the
+ * builder) asks "which form does this item print on?" and should not have to
+ * care that the answer happens to be drawn as HTML.
  */
-export type XlsxFormSpec = FormSpecBase & {
-  renderer: "xlsx";
-  template: string;
-  /** Path of the worksheet inside the xlsx zip. */
-  sheetPath: string;
-  /** Written into blank cells. */
-  values: Array<{ cell: string; from: (ctx: FormContext) => string | number | null | undefined }>;
-  /** Overwrites printed label text -- rare, and declared separately so it is visible. */
-  replaces: Array<{ cell: string; from: (ctx: FormContext) => string | null | undefined }>;
-  /**
-   * `covers` names the option role a tick consumes. It is what lets the
-   * engine work out which of an item's options the form has no box for --
-   * a tick's `when` alone cannot say that, and an option that silently
-   * vanishes is the worst failure this feature could have. Ticks driven by
-   * the product's specs or the production spec leave it undefined.
-   */
-  ticks: Array<{ cell: string; when: (ctx: FormContext) => boolean; covers?: OptionRole }>;
-};
-
-/**
- * A form drawn as a React component. Its layout is JSX and therefore not
- * enumerable, so the coverage question -- "does this form have a box for
- * option X?" -- can no longer be assembled from the ticks and is declared
- * here instead. That question is the safety-critical part of the engine: it
- * is what sends an option the form cannot express to the Additional items
- * sheet rather than letting it vanish.
- */
-export type HtmlFormSpec = FormSpecBase & {
-  renderer: "html";
-  /** Option roles this form prints a box for. */
-  covers: OptionRole[];
-};
-
-export type FormSpec = XlsxFormSpec | HtmlFormSpec;
-
-/** Narrowing helper: only an xlsx spec has cells to patch. */
-export function isXlsxForm(spec: FormSpec): spec is XlsxFormSpec {
-  return spec.renderer === "xlsx";
-}
+export type FormSpec = HtmlFormSpec;

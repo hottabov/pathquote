@@ -1,9 +1,13 @@
-// Server-only: template loading + Gotenberg conversion for production forms
-// (src/app/api/quotes/[documentId]/production-forms/route.ts). Kept
+// Server-only: the Gotenberg call that joins the production forms into one
+// download (src/app/api/quotes/[documentId]/production-forms/route.ts). Kept
 // separate from the route so each step is independently testable, matching
 // the split src/lib/pdf.ts makes for the document PDF pipeline.
-import { readFileSync } from "node:fs";
-import path from "node:path";
+//
+// `readTemplate` and `xlsxToPdf` used to live here too, for the forms drawn
+// by patching the original workbook. The last of those (Punchline) was
+// dropped on 2026-09-18 and the xlsx path with it, so what is left is the
+// merge: every form is HTML, but each sheet is still its own PDF, and the
+// order the workshop expects comes from concatenating them here.
 
 const GOTENBERG_TIMEOUT_MS = 60_000;
 
@@ -26,25 +30,6 @@ async function postToGotenberg(route: string, form: FormData): Promise<Buffer> {
   }
 
   return Buffer.from(await response.arrayBuffer());
-}
-
-/** Templates are committed beside the specs and read straight off disk. */
-export function readTemplate(name: string): Uint8Array {
-  const file = path.join(process.cwd(), "src/lib/production-forms/templates", name);
-  return new Uint8Array(readFileSync(file));
-}
-
-/**
- * Converts a patched workbook to PDF. LibreOffice honours the template's own
- * print settings -- A4 portrait, an explicit print area, fitToPage -- so the
- * one-page-per-form guarantee comes from the template rather than from us.
- * Do not add paper size/margin options to this call: the template already
- * carries correct ones, and Gotenberg's own would override them.
- */
-export async function xlsxToPdf(xlsx: Uint8Array, filename: string): Promise<Buffer> {
-  const form = new FormData();
-  form.set("files", new Blob([xlsx as BlobPart]), filename);
-  return postToGotenberg("/forms/libreoffice/convert", form);
 }
 
 /**

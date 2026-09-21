@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import type { OptionRole } from "@prisma/client";
 import { coveredRoles, resolveForm, unmatchedOptions } from "../src/lib/production-forms/resolve";
 import { FORM_SPECS } from "../src/lib/production-forms/specs";
-import { isXlsxForm } from "../src/lib/production-forms/types";
 import { PATHWORKS_ROLES } from "../src/lib/production-forms/pathworks";
 import { lSeriesSpecSchema, xCalibreSpecSchema } from "../src/lib/validation/production-spec";
 import { formContext, formItem } from "./helpers/fixtures";
@@ -43,15 +42,17 @@ describe("the form registry", () => {
     expect(new Set(forms).size).toBe(forms.length);
   });
 
-  it("gives every component-rendered form an explicit coverage list", () => {
+  it("gives every form an explicit coverage list", () => {
     // Forms that print no option box by design: the EasyFeeder asks for the
-    // model only (Vadym, 2026-09-17), so any option on it belongs on the
-    // Additional items sheet. Anything else here is a mistake.
-    const NO_OPTIONS = new Set(["easyfeeder"]);
-    for (const spec of FORM_SPECS.filter((s) => !isXlsxForm(s))) {
-      // A JSX layout is not enumerable, so coverage cannot be assembled from
-      // the ticks. An empty list would silently send every option to the
-      // Additional items sheet.
+    // model only (Vadym, 2026-09-17), and the Fabric Trolley and the Leather
+    // Nesting System ask nothing at all (2026-09-18) -- the catalogue sells
+    // no option for either, so one sold later belongs on the Additional
+    // items sheet. Anything else here is a mistake.
+    const NO_OPTIONS = new Set(["easyfeeder", "fabric-trolley", "leather-nesting"]);
+    for (const spec of FORM_SPECS) {
+      // A JSX layout is not enumerable, so coverage cannot be read back off
+      // the page and has to be declared. An empty list would silently send
+      // every option to the Additional items sheet.
       if (NO_OPTIONS.has(spec.id)) {
         expect(coveredRoles(spec).size, spec.id).toBe(0);
         continue;
@@ -60,7 +61,7 @@ describe("the form registry", () => {
     }
   });
 
-  it("resolves the two cutter forms that have no workbook", () => {
+  it("resolves the two cutter forms that never had a workbook", () => {
     for (const form of ["X_CALIBRE", "L_SERIES"] as const) {
       const spec = resolveForm(form);
       expect(spec?.renderer, form).toBe("html");

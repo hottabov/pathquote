@@ -44,7 +44,6 @@ const ITEM: Record<ProductionForm, Record<string, unknown>> = {
   FABRICPRO: { code: "FP-220", specs: { widthCode: 220, cutWidthCm: 220 }, spec: {} },
   EASYFEEDER: {},
   HDRF: {},
-  PUNCHLINE: {},
   FP_TROLLEY: {},
   LNS: {},
 };

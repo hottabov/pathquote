@@ -57,8 +57,27 @@ describe("the L-Series form", () => {
     expect(on).toContain("316");
   });
 
-  it("marks MRK as standard on every machine", () => {
+  it("marks MRK as standard on a machine with no other marking tool", () => {
     expect(marked(render(), "pf-std").join(" | ")).toContain("MRK");
+  });
+
+  it.each([
+    ["IJP", "IJP"],
+    ["JTP", "JetPen"],
+    ["ABR-L", "ABR"],
+  ])("prints MRK as not fitted when %s shares its mount", (code, label) => {
+    const role = code === "ABR-L" ? "ABR" : code;
+    const html = render(ctx({}, {}, [option(code, role)]));
+
+    // Printed, not dropped: the workshop has to read that the mount is taken.
+    expect(marked(html, "pf-std").join(" | ")).not.toContain("MRK");
+    expect(html).toContain(`not fitted — ${label} ordered`);
+  });
+
+  it("keeps MRK standard when the MRK option itself is on the quote", () => {
+    const html = render(ctx({}, {}, [option("MRK", "MRK")]));
+    expect(marked(html, "pf-std").join(" | ")).toContain("MRK");
+    expect(html).not.toContain("not fitted");
   });
 
   it("prints each tool sold, with a plain mark for one", () => {

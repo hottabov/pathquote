@@ -54,12 +54,11 @@ describe("series to production form", () => {
 
   it("gives every buildable form at least one series", () => {
     const mapped = new Set(Object.values(FORM_BY_SERIES));
-    // PUNCHLINE is the exception: the products were deleted from the
-    // catalogue on 2026-09-11 and the spec is kept only until the xlsx path
-    // is removed.
-    const orphans = FORM_SPECS.map((spec) => spec.form).filter(
-      (form) => form !== "PUNCHLINE" && !mapped.has(form)
-    );
+    // No exceptions any more. PUNCHLINE was one until 2026-09-18: its
+    // products were deleted from the catalogue on 2026-09-11 and the spec
+    // outlived them, held open only by the xlsx path. Both are gone, so a
+    // form with no series is once again simply a mistake.
+    const orphans = FORM_SPECS.map((spec) => spec.form).filter((form) => !mapped.has(form));
 
     expect(orphans, "a form no product can reach can never be printed").toEqual([]);
   });

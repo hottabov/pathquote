@@ -3,7 +3,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   resolveForm,
   specSchemaForForm,
-  buildPatches,
   missingRequirements,
   unmatchedOptions,
 } from "../src/lib/production-forms/resolve";
@@ -12,7 +11,7 @@ import { EasyLoaderForm } from "../src/components/forms/easyloader-form";
 import { FabricProForm } from "../src/components/forms/fabricpro-form";
 import { FormDocument } from "../src/components/forms/form-sheet";
 import type { FormContext, FormItem, FormSpec } from "../src/lib/production-forms/types";
-import { formContext, formItem, formOption, xlsxForm } from "./helpers/fixtures";
+import { formContext, formItem, formOption } from "./helpers/fixtures";
 
 /** The codes of the options a form has no box for -- what the Additional
  * items sheet prints. The route matches the lines by id; the tests read the
@@ -67,55 +66,6 @@ describe("specSchemaForForm", () => {
     const result = specSchemaForForm("M_SERIES")!.safeParse({ knifeSize: "1.5x5.0" });
     expect(result.success).toBe(true);
     expect(missingRequirements(form, result.success && result.data)).toEqual([]);
-  });
-});
-
-// The M-Series, EasyLoader and FabricPro all moved off the workbook
-// (2026-09-16): `buildPatches` is an `XlsxFormSpec`-only concern now, so the
-// generic engine behaviour it used to be exercised against on those forms is
-// checked here against Punchline, which is still xlsx and shares the same header
-// and crate-tick helpers every remaining xlsx form uses (see
-// `specs/shared-header.ts`). Anything specific to the EasyLoader or
-// FabricPro layouts is checked directly against the rendered component that
-// owns it now (see the "EasyLoader form" and "FabricPro form" blocks below,
-// and tests/table-forms-render.test.tsx).
-const punchlineItem = (overrides: Partial<FormItem> = {}) =>
-  formItem({
-    id: "i",
-    code: "P-220",
-    name: "Punchline 220",
-    kind: "ACCESSORY",
-    form: "PUNCHLINE",
-    specs: { widthCode: 220 },
-    spec: {},
-    ...overrides,
-  });
-
-describe("buildPatches", () => {
-  it("writes X into every tick cell", () => {
-    const patches = buildPatches(xlsxForm("PUNCHLINE"), formContext({ item: punchlineItem() }));
-    expect(patches.find((p) => p.cell === "J28")?.value).toBe("X");
-  });
-
-  it("ticks nothing for an option with no role", () => {
-    const patches = buildPatches(
-      xlsxForm("PUNCHLINE"),
-      formContext({ item: punchlineItem({ options: [formOption("Crate-P", null)] }) }),
-    );
-    expect(patches.map((p) => p.cell)).not.toContain("D58");
-  });
-
-  it("omits value cells whose source is empty", () => {
-    const patches = buildPatches(
-      xlsxForm("PUNCHLINE"),
-      formContext({
-        item: punchlineItem(),
-        company: { name: "Relaxvanguard", addressLines: [], industry: null },
-      }),
-    );
-    const cells = patches.map((p) => p.cell);
-    expect(cells).not.toContain("I15");
-    expect(cells).not.toContain("I23");
   });
 });
 

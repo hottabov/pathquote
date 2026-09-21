@@ -590,6 +590,23 @@ export type QuotationMachineSection = {
 };
 
 export type QuotationBaseRow = {
+  /**
+   * The product's own catalogue image, resolved the same way an option row's
+   * is and printed at the same 24px in the same column -- so a machine
+   * bought with no options still shows something in that table rather than
+   * an empty first cell (Vadym, 2026-09-18).
+   *
+   * Deliberately NOT gated by the item's `showImage` toggle: that toggle
+   * decides whether the big photo runs under the product title, which is a
+   * layout choice about the write-up, while this is the row's own icon, the
+   * way every option row has had one. `null` when the product carries no
+   * image or resolution failed, and the sheet then leaves the cell blank
+   * rather than printing a broken image.
+   *
+   * The Investment Summary stays iconless (owner, same day): it is a table
+   * of money, and a column of thumbnails there reads as a catalogue.
+   */
+  icon: string | null;
   /** `null` when the code is already the leading word of `name`, so the
    * sheet doesn't print "X-10180 — X-10180 Cutting System" — same
    * `dedupeOptionCode` rule the option rows follow. */
@@ -1059,6 +1076,7 @@ export function buildQuotationData(
     const baseRow: QuotationBaseRow | null = assembledFromOptions
       ? null
       : {
+          icon: item.imageUrl ? (resolveImage(item.imageUrl) ?? null) : null,
           code: dedupeOptionCode(lineSummary.code, lineSummary.name),
           name: lineSummary.name,
           qty: lineSummary.breakdown.qty,

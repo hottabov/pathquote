@@ -4,7 +4,6 @@ import { easyLoaderSpec } from "./easyloader";
 import { fabricProSpec } from "./fabricpro";
 import { easyFeederSpec } from "./easyfeeder";
 import { hdrfSpec } from "./hdrf";
-import { punchlineSpec } from "./punchline";
 import { fabricTrolleySpec } from "./fabric-trolley";
 import { leatherNestingSpec } from "./leather-nesting";
 import { xCalibreSpec } from "./x-calibre";
@@ -17,7 +16,6 @@ export const FORM_SPECS: FormSpec[] = [
   fabricProSpec,
   easyFeederSpec,
   hdrfSpec,
-  punchlineSpec,
   fabricTrolleySpec,
   leatherNestingSpec,
   xCalibreSpec,

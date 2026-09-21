@@ -110,7 +110,15 @@ export function EquipmentDetail({
             <tbody>
               {section.baseRow ? (
                 <tr className="pq-option-row pq-base-row">
-                  <td className="pq-opt-col-icon" />
+                  {/* The product's own icon, so the first row of the table
+                      reads like the option rows under it -- and a machine
+                      sold with no options is not a table of one blank cell. */}
+                  <td className="pq-opt-col-icon">
+                    {section.baseRow.icon ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={section.baseRow.icon} alt="" className="pq-option-icon" />
+                    ) : null}
+                  </td>
                   <td className="pq-opt-col-option">
                     <div className="pq-option-name">
                       {section.baseRow.code ? (

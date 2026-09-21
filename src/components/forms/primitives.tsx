@@ -226,7 +226,8 @@ export function WriteIn({
   /** Omitted when the section heading already says what the block is. */
   label?: ReactNode;
   warn?: ReactNode;
-  children: ReactNode;
+  /** Omitted for a block nobody fills in on screen -- the workshop writes in it. */
+  children?: ReactNode;
 }) {
   return (
     <div className="pf-writein">
@@ -246,12 +247,22 @@ export function WriteIn({
  * ground, so "not ours to fill" is visible rather than conventional -- these
  * fields are blank by design and always will be.
  */
-export function OfficeUse({ fields, signature }: { fields: string[]; signature?: string }) {
+export function OfficeUse({
+  fields,
+  signature,
+  hint = "completed by hand in the workshop",
+}: {
+  fields: string[];
+  signature?: string;
+  /** Who fills the block in -- the workshop on a machine form, the office on
+   * the Software Order Form, which nothing is built from. */
+  hint?: string;
+}) {
   return (
     <div className="pf-office">
       <h2>
         <span>Office use only</span>
-        <span className="pf-hint">completed by hand in the workshop</span>
+        <span className="pf-hint">{hint}</span>
       </h2>
       <div className="pf-officegrid">
         {fields.map((label) => (

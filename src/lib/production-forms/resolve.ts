@@ -2,9 +2,7 @@ import type { OptionRole, ProductionForm } from "@prisma/client";
 import type { z } from "zod";
 import { missingKeys } from "@/lib/validation/production-spec";
 import { FORM_SPECS } from "./specs";
-import type { CellPatch } from "./xlsx-patch";
-import { isXlsxForm } from "./types";
-import type { FormContext, FormItemOption, FormSpec, XlsxFormSpec } from "./types";
+import type { FormContext, FormItemOption, FormSpec } from "./types";
 
 /**
  * Which form a quote item prints on. Keyed on `Product.form`, the column
@@ -40,34 +38,6 @@ export function missingRequirements(spec: FormSpec, productionSpec: unknown): st
 }
 
 /**
- * Turns a spec plus a context into the exact list of cell writes. A tick is
- * the literal "X"; the cell's border and centring already live in the
- * template. Empty values are skipped so a missing optional never blanks a
- * cell that was meant to stay untouched.
- */
-export function buildPatches(spec: XlsxFormSpec, ctx: FormContext): CellPatch[] {
-  const patches: CellPatch[] = [];
-
-  for (const { cell, from } of spec.values) {
-    const value = from(ctx);
-    if (value === null || value === undefined || value === "") continue;
-    patches.push({ cell, value: String(value) });
-  }
-
-  for (const { cell, from } of spec.replaces) {
-    const value = from(ctx);
-    if (value === null || value === undefined) continue;
-    patches.push({ cell, value });
-  }
-
-  for (const { cell, when } of spec.ticks) {
-    if (when(ctx)) patches.push({ cell, value: "X" });
-  }
-
-  return patches;
-}
-
-/**
  * Options on this item that the form does not account for anywhere,
  * returned as the option lines themselves (id, code, role, qty) so the
  * caller can find the document line by `refId` rather than by a code the
@@ -76,9 +46,9 @@ export function buildPatches(spec: XlsxFormSpec, ctx: FormContext): CellPatch[] 
  * These are not dropped: they go on the "Additional items" sheet. An option
  * the workshop never sees is the worst thing this feature could do, so the
  * absence of a box has to be detectable rather than invisible -- which is
- * what `covers` on each option tick exists for.
+ * what a spec's `covers` exists for.
  *
- * A tick is not the only way a form can account for an option, though. The
+ * A box is not the only way a form can account for an option, though. The
  * EasyLoader's table modules are represented by the three section rows and
  * the printed total rather than by a box of their own, and listing them
  * again on the Additional items sheet would tell the workshop the form had
@@ -94,15 +64,15 @@ export function unmatchedOptions(spec: FormSpec, ctx: FormContext): FormItemOpti
 }
 
 /**
- * Every option role this form accounts for. An xlsx form assembles it from
- * the `covers` on each tick; an html form declares it outright, because its
- * layout is JSX and its boxes are not enumerable. Both add `coversOptions`,
- * for what a form states without a box of its own.
+ * Every option role this form accounts for: the boxes it prints (`covers`)
+ * plus what it states without a box of its own (`coversOptions`).
+ *
+ * Both are declared rather than derived. A form's layout is JSX and its
+ * boxes are not enumerable, so nothing can read the coverage back off the
+ * page -- which is why the workbook forms, whose ticks *were* enumerable and
+ * carried their own `covers`, assembled this list instead. That path went
+ * with the last of them (2026-09-18) and this is now one set union.
  */
 export function coveredRoles(spec: FormSpec): Set<OptionRole> {
-  const fromTicks = isXlsxForm(spec)
-    ? spec.ticks.map((tick) => tick.covers).filter((role): role is OptionRole => role !== undefined)
-    : spec.covers;
-
-  return new Set<OptionRole>([...fromTicks, ...(spec.coversOptions ?? [])]);
+  return new Set<OptionRole>([...spec.covers, ...(spec.coversOptions ?? [])]);
 }

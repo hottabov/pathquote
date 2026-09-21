@@ -3,6 +3,7 @@ import type { DocumentForForms } from "@/lib/queries/documents";
 import { readProductSpecs } from "@/lib/validation/product-specs";
 import { assignRails } from "./rails";
 import { resolveForm } from "./resolve";
+import type { SoftwareFormContext, SoftwareItem } from "./software";
 import type { Section } from "./table-sections";
 import type { FormContext, FormItem, FormItemOption } from "./types";
 
@@ -149,4 +150,51 @@ export function buildFormContexts(
         item: formItem,
       };
     });
+}
+
+/**
+ * The SOFTWARE products on a document, for the Software Order Form (which is
+ * one sheet per quote, not per item -- software has no machine to hang off).
+ * Snapshotted code and name, so a catalogue rename never changes what an
+ * issued quote's sheet says. Quantity is 1 per line, because a
+ * `DocumentItem` has no quantity: two licences are two lines.
+ */
+export function softwareItemsOnDocument(document: DocumentForForms): SoftwareItem[] {
+  return document.items
+    .filter((item) => item.product?.kind === "SOFTWARE")
+    .map((item) => ({ code: item.code, name: item.name, qty: 1 }));
+}
+
+/**
+ * Everything the Software Order Form needs. Built here beside
+ * `buildFormContexts` so the two sheets read the company, contact and
+ * distributor the same way -- the software sheet has no item, which is the
+ * only difference.
+ */
+export function buildSoftwareFormContext(
+  document: DocumentForForms,
+  settings: { logo?: string | null; now?: Date } = {}
+): SoftwareFormContext {
+  const snapshot = document.entitySnapshot as { entityName?: string } | null;
+  const company = document.company;
+
+  return {
+    distributorName: snapshot?.entityName ?? document.region.entityName,
+    authorName: document.author.name ?? "",
+    company: {
+      name: company?.name ?? "",
+      addressLines: company ? companyAddressLines(company) : [],
+      industry: company?.industry?.name ?? null,
+    },
+    contact: {
+      fullName: [document.contact?.firstName, document.contact?.lastName].filter(Boolean).join(" "),
+      position: document.contact?.position ?? null,
+      phone: document.contact?.phone ?? null,
+      email: document.contact?.email ?? null,
+    },
+    documentNumber: document.number ?? "",
+    generatedAt: settings.now ?? new Date(),
+    logo: settings.logo ?? null,
+    items: softwareItemsOnDocument(document),
+  };
 }

@@ -25,7 +25,6 @@
     "images:import": "tsx scripts/import-product-images.ts",
     "import:industries": "tsx scripts/import-industries.ts",
     "import:act-industries": "tsx scripts/import-act-industries.ts",
-    "forms:preview": "tsx scripts/preview-production-forms.ts",
     "catalog:check-form-enum": "tsx scripts/check-production-form-enum.ts"
   },
   "dependencies": {

@@ -2,18 +2,20 @@ import { auth } from "@/auth";
 import { getDocumentForForms } from "@/lib/queries/documents";
 import { getSpecImages } from "@/lib/queries/spec-images";
 import { fileImageResolver, htmlToPdf, inlineSheetImages } from "@/lib/pdf";
-import { buildFormContexts } from "@/lib/production-forms/context";
 import {
-  buildPatches,
+  buildFormContexts,
+  buildSoftwareFormContext,
+  softwareItemsOnDocument,
+} from "@/lib/production-forms/context";
+import {
   missingRequirements,
   resolveForm,
   unmatchedOptions,
 } from "@/lib/production-forms/resolve";
-import { patchWorkbook } from "@/lib/production-forms/xlsx-patch";
-import { isXlsxForm } from "@/lib/production-forms/types";
-import { mergePdfs, readTemplate, xlsxToPdf } from "@/lib/production-forms/render";
+import { mergePdfs } from "@/lib/production-forms/render";
 import { AdditionalItemsSheet, type AdditionalItem } from "@/components/sheet/additional-items-sheet";
 import { FormDocument } from "@/components/forms/form-sheet";
+import { SoftwareForm } from "@/components/forms/software-form";
 import { formComponent, isRenderable } from "@/components/forms/registry";
 
 // `react-dom/server` (imported dynamically below, see the comment at the top
@@ -26,6 +28,11 @@ type Params = { documentId: string };
 /** `?item=extras` is the reserved value that downloads ONLY the Additional
  * items page (a real item id is a cuid, so it can never collide with this). */
 const EXTRAS_PARAM = "extras";
+
+/** `?item=software` downloads ONLY the Software Order Form -- the one sheet
+ * that belongs to the whole quote rather than to a machine. Reserved the same
+ * way as `extras`: a real item id is a cuid. */
+const SOFTWARE_PARAM = "software";
 
 /**
  * Streams the production forms for a finalized quote as one PDF, one A4 page
@@ -52,7 +59,13 @@ export async function GET(request: Request, { params }: { params: Promise<Params
 
   const onlyParam = new URL(request.url).searchParams.get("item");
   const extrasOnly = onlyParam === EXTRAS_PARAM;
-  const onlyItemId = extrasOnly ? null : onlyParam;
+  const softwareOnly = onlyParam === SOFTWARE_PARAM;
+  const onlyItemId = extrasOnly || softwareOnly ? null : onlyParam;
+
+  // SOFTWARE products sold on this quote -- what the Software Order Form
+  // lists. Document-level, like the Additional items page: software has no
+  // machine to hang off, and three programs are one order, not three sheets.
+  const softwareItems = softwareItemsOnDocument(document);
 
   // The operator/control-box side diagrams, the same admin-uploaded pair the
   // builder shows beside the dropdown. Marked rather than linked: Gotenberg's
@@ -102,6 +115,43 @@ export async function GET(request: Request, { params }: { params: Promise<Params
     }),
   ];
 
+  /** The Software Order Form as its own one-page PDF. */
+  const softwarePdf = async (): Promise<Buffer> => {
+    // Dynamic import for the reason given at the top of src/lib/pdf.ts.
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const sheet = renderToStaticMarkup(
+      FormDocument({ children: SoftwareForm({ ctx: buildSoftwareFormContext(document) }) }),
+    );
+    return htmlToPdf(
+      `<!doctype html><html><head><meta charSet="utf-8"></head><body>${sheet}</body></html>`,
+      undefined,
+      { printBackground: true },
+    );
+  };
+
+  // `?item=software`: the Software Order Form on its own. Ahead of the
+  // machine-form checks for the same reason `extras` is -- a quote selling
+  // only software has no machine form and must still produce this sheet.
+  if (softwareOnly) {
+    if (softwareItems.length === 0) {
+      return Response.json({ error: "No software on this quote" }, { status: 404 });
+    }
+    let pdf: Buffer;
+    try {
+      pdf = await softwarePdf();
+    } catch (error) {
+      console.error("Software order form generation failed", error);
+      return Response.json({ error: "PDF service unavailable" }, { status: 502 });
+    }
+    return new Response(new Uint8Array(pdf), {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${document.number ?? document.id}-software-order.pdf"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
+
   // `?item=extras`: render just the Additional items page and return.
   // Deliberately ahead of the "no forms apply" and blockers checks below —
   // those are about the machine forms, and this page is independent of them,
@@ -139,17 +189,20 @@ export async function GET(request: Request, { params }: { params: Promise<Params
     });
   }
 
-  if (contexts.length === 0) {
+  // A quote of software alone still produces a sheet -- the software one.
+  if (contexts.length === 0 && softwareItems.length === 0) {
     return Response.json({ error: "No production forms apply to this quote" }, { status: 404 });
   }
 
   const blockers = contexts.flatMap((ctx) => {
     const spec = resolveForm(ctx.item.form)!;
 
-    // A form nothing can draw. Blocked loudly rather than skipped: a PDF
+    // A form nothing can draw: a spec exists but no component has been
+    // written for it yet. Every form is a component now, so having none is
+    // the whole of the question. Blocked loudly rather than skipped: a PDF
     // quietly missing one machine's page is how a machine gets built from
     // nothing.
-    if (!isRenderable(ctx.item.form!) && !isXlsxForm(spec)) {
+    if (!isRenderable(ctx.item.form!)) {
       return [{ itemId: ctx.item.id, code: ctx.item.code, missing: [`${spec.title} is not built yet`] }];
     }
 
@@ -172,51 +225,38 @@ export async function GET(request: Request, { params }: { params: Promise<Params
     // One pass over the items, in `sortOrder` -- the order the quote lists
     // them and the order the workshop expects the printed stack in.
     //
-    // Component forms were briefly batched into one html document (one
-    // Gotenberg call, no merge) but that put every component page ahead of
-    // every workbook page, so a quote whose EasyLoader still renders from
-    // xlsx came out shuffled. While the two paths coexist, order wins over
-    // the round trip; once the last workbook is gone this collapses back to
-    // a single call with `break-before: page` between sheets, which is what
-    // `FormDocument` and the `.pf-sheet + .pf-sheet` rule are already for.
+    // Still one Gotenberg call and one PDF per sheet rather than one html
+    // document with `break-before: page` between the sheets. That collapse
+    // is now possible -- it was blocked only while workbook pages and
+    // component pages had to interleave in `sortOrder` -- but it is a change
+    // to what Chromium is handed for every quote, so it is worth doing on
+    // its own with a printed pair to compare, not as a side effect of
+    // deleting the xlsx path. `FormDocument` and the `.pf-sheet + .pf-sheet`
+    // rule are already written for it.
     //
-    // A form with a component is drawn by it even while its workbook is
-    // still committed: that is the migration order the render spec sets out
-    // (§10) -- build the components behind this route, compare a printed
-    // pair by eye with production, then delete the xlsx path. The component
-    // registry is the single answer to "what draws this form"; there is no
-    // flag to get out of step with.
-    const { renderToStaticMarkup } = contexts.some((ctx) => isRenderable(ctx.item.form!))
-      ? // Dynamic import for the reason given at the top of src/lib/pdf.ts.
-        await import("react-dom/server")
-      : { renderToStaticMarkup: null as never };
+    // Dynamic import for the reason given at the top of src/lib/pdf.ts.
+    const { renderToStaticMarkup } = await import("react-dom/server");
 
     for (const ctx of contexts) {
-      const spec = resolveForm(ctx.item.form)!;
-      const Component = formComponent(ctx.item.form!);
-
-      if (Component) {
-        const sheet = await inlineSheetImages(
-          renderToStaticMarkup(FormDocument({ children: Component({ ctx }) })),
-        );
-        pdfs.push(
-          await htmlToPdf(
-            `<!doctype html><html><head><meta charSet="utf-8"></head><body>${sheet}</body></html>`,
-            undefined,
-            { printBackground: true },
-          ),
-        );
-        continue;
-      }
-
-      // Blocked above; narrowing only.
-      if (!isXlsxForm(spec)) continue;
-      const patched = patchWorkbook(
-        readTemplate(spec.template),
-        spec.sheetPath,
-        buildPatches(spec, ctx),
+      // Non-null: a form with no component was blocked above.
+      const Component = formComponent(ctx.item.form!)!;
+      const sheet = await inlineSheetImages(
+        renderToStaticMarkup(FormDocument({ children: Component({ ctx }) })),
       );
-      pdfs.push(await xlsxToPdf(patched, `${spec.id}.xlsx`));
+      pdfs.push(
+        await htmlToPdf(
+          `<!doctype html><html><head><meta charSet="utf-8"></head><body>${sheet}</body></html>`,
+          undefined,
+          { printBackground: true },
+        ),
+      );
+    }
+
+    // The software sheet, after the machine forms and before the additional
+    // items page. Whole-document runs only, like that page: a single
+    // machine's download is the sheet for that machine.
+    if (softwareItems.length > 0 && !onlyItemId) {
+      pdfs.push(await softwarePdf());
     }
 
     // Only when the run covers the whole document -- see the doc comment on

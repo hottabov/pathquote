@@ -131,7 +131,6 @@ export const PRODUCTION_FORMS = [
   "FABRICPRO",
   "EASYFEEDER",
   "HDRF",
-  "PUNCHLINE",
   "FP_TROLLEY",
   "LNS",
   "X_CALIBRE",

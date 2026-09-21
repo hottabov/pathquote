@@ -3,6 +3,10 @@ import type { FormContext } from "@/lib/production-forms/types";
 import { EndUserSection, FormSheet, provenance } from "./form-sheet";
 import { Footnote, InlineValue, Label, OfficeUse, Section, Tick, TickGrid, WriteIn } from "./primitives";
 import { PathWorksSection, ScreenSideBlock, hasRole } from "./m-series-form";
+import {
+  MARKING_TOOL_LABELS,
+  markingToolReplacingMrk,
+} from "@/lib/production-forms/marking-tools";
 
 /**
  * The L-Series order form.
@@ -56,6 +60,11 @@ export function LSeriesForm({ ctx }: { ctx: FormContext }) {
   const extended = ctx.item.specs.extended === true || hasRole(ctx, "L_EXTENDED");
   const belt = ctx.item.specs.belt;
   const tools = ctx.item.options.filter((option) => option.role === "L_TOOL");
+  // MRK is standard on every L-Series, but it shares its mount with the ink
+  // jet printer, the JetPen and the air brush -- so one of those on the quote
+  // takes it off the machine. The sheet says which, rather than quietly
+  // dropping the row: the workshop has to know the mount is taken.
+  const replacingMrk = markingToolReplacingMrk(ctx.item.options.map((option) => option.role));
 
   return (
     <FormSheet ctx={ctx} title="L-Series Order Form" dense>
@@ -120,10 +129,13 @@ export function LSeriesForm({ ctx }: { ctx: FormContext }) {
 
       <Section title="Tools">
         <TickGrid>
-          {/* MRK first and always: the printed form says "standard on all",
-              and it is removed only when IJP, JetPen or ABR is fitted -- a
-              rule the footnotes state and an OptionConflictGroup enforces. */}
-          <Tick std code="MRK" desc="standard on all" />
+          {/* MRK first: standard on all, unless one of the tools that shares
+              its mount was ordered (see `markingToolReplacingMrk`). */}
+          {replacingMrk ? (
+            <Tick code="MRK" desc={`not fitted — ${MARKING_TOOL_LABELS[replacingMrk]} ordered`} />
+          ) : (
+            <Tick std code="MRK" desc="standard on all" />
+          )}
           {tools.map((tool) => (
             <Tick key={tool.id ?? tool.code} qty={tool.qty} code={tool.code} />
           ))}

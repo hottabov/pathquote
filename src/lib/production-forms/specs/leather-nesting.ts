@@ -1,58 +1,29 @@
 import { z } from "zod";
-import type { FormSpec } from "../types";
+import type { HtmlFormSpec } from "../types";
 
 /**
- * Leather Nesting Station. Jeff: "I will leave it by default" -- the sheet
- * prints a fixed list of what an LNS consists of (static table, console,
- * computer, camera, standalone PathWorks, ANT T6.0, the Hide Wizard, twelve
- * months of RSP) and asks nothing. There is nothing to tick and nothing to
- * choose, so this spec is a header and no more.
+ * Leather Nesting System. Drawn by `LeatherNestingForm`
+ * (src/components/forms/leather-nesting-form.tsx); the workbook
+ * `leather-nesting-station-01.xlsx` and its cell map are gone.
  *
- * Its header is laid out differently from the EasyFeeder/HDRF/Punchline family
- * -- `Distributor:` in D7 rather than D10, and the End User labels run down
- * column E, not G -- so it does not use `machineSaleHeader`. The company name
- * goes in G11 because the original arrived with "Relaxvanguard" sitting
- * there; that sample, and the sample industry in I20, are blanked in the
- * committed template.
+ * The sheet asks nothing (Jeff: "I will leave it by default"): an LNS is one
+ * fixed system -- static table, operator console, computer, camera, and the
+ * standalone PathWorks with ANT-V6 and the Hide Wizard -- and the only thing
+ * that varies is the table width, which the product code already says
+ * (`LNS-2420`). So there is no production spec and nothing to tick.
  *
- * The sheet prints "Industry:" twice, at E19 and again at G20. E19 is the one
- * in line with the rest of the End User labels and is the one filled here.
- * The stray second label is left alone: this template is a reference copy,
- * and tidying the printed form happens when it is redrawn in HTML.
+ * The catalogue sells no option for an LNS, so `covers` is empty; one added
+ * later surfaces on the Additional items sheet until this form has a box.
  */
 export const leatherNestingSpecSchema = z.object({});
 
-export const leatherNestingSpec: FormSpec = {
+export const leatherNestingSpec: HtmlFormSpec = {
   id: "leather-nesting",
-  title: "Leather Nesting Station Order Form",
-  renderer: "xlsx",
-  template: "leather-nesting-station-01.xlsx",
-  sheetPath: "xl/worksheets/sheet1.xml",
+  title: "Leather Nesting System Order Form",
   form: "LNS",
+  renderer: "html",
   specSchema: leatherNestingSpecSchema,
   requires: [],
 
-  values: [
-    { cell: "G7", from: (c) => c.distributorName },
-    { cell: "O7", from: (c) => c.authorName },
-    { cell: "G11", from: (c) => c.company.name },
-    // Two address rows, not three: `Contact:` starts at row 14. The tail is
-    // joined into the second rather than dropped, the same way the M-Series
-    // form handles its two-row address -- a silently missing country is a
-    // wrong address.
-    { cell: "G12", from: (c) => c.company.addressLines[0] },
-    { cell: "G13", from: (c) => c.company.addressLines.slice(1).join(", ") },
-    { cell: "G14", from: (c) => c.contact.fullName },
-    { cell: "G15", from: (c) => c.contact.position },
-    { cell: "G16", from: (c) => c.contact.phone },
-    { cell: "G18", from: (c) => c.contact.email },
-    { cell: "G19", from: (c) => c.company.industry },
-  ],
-
-  replaces: [],
-
-  // The one box on the sheet, beside the "Leather Nesting Station" heading in
-  // E24. There is nothing to decide -- an LNS item is an LNS -- but an empty
-  // box on a printed form reads as an unanswered question, so it is ticked.
-  ticks: [{ cell: "D24", when: () => true }],
+  covers: [],
 };

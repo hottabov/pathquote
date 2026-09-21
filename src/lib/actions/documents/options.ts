@@ -25,6 +25,7 @@ import {
   EL_MODULE_ROLE_LIST,
   isEasyLoaderModuleRole,
 } from "@/lib/production-forms/table-sections";
+import { markingToolConflict } from "@/lib/production-forms/marking-tools";
 import { MTS_METRES_REQUIRED, mtsMetresValid, normaliseMtsSelections } from "@/lib/production-forms/mts";
 import { idSchema, optionSelectionSchema, type OptionSelectionInput } from "@/lib/validation/documents";
 import { NOT_FOUND_ERROR, flattenZodError } from "../_shared";
@@ -316,6 +317,16 @@ async function writeItemOptions(
   }
   if (unpricedCodes.length > 0) {
     return { error: `Price required for: ${unpricedCodes.join(", ")}` };
+  }
+
+  // The L-Series fits one marking tool. MRK is on every machine as standard
+  // and shares its mount with IJP, JetPen and ABR, so two of the four on one
+  // item is a machine that cannot be built (see marking-tools.ts). Checked
+  // here rather than as an `OptionConflictGroup`, which is catalogue-wide:
+  // on an M-Series the same options are independent boxes.
+  if (item.product.form === "L_SERIES") {
+    const markingToolError = markingToolConflict(options.map((option) => option.role));
+    if (markingToolError) return { error: markingToolError };
   }
 
   const conflictsById = conflictPartnersByGroup(

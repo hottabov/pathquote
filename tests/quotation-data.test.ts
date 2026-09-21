@@ -1357,6 +1357,23 @@ describe("buildQuotationData — unified options table (QuotationOptionRow)", ()
     expect(data.machineSections[0].optionRows[0].icon).toBeNull();
   });
 
+  it("gives the base row the product's own icon, so a machine with no options still shows one", () => {
+    const doc = quotationDoc({
+      items: [quotationItem({ imageUrl: "/api/files/m5180.png", showImage: false, lines: [] })],
+    });
+    const data = buildQuotationData(doc, [], { resolveImage: (url) => `resolved:${url}` });
+
+    // Not gated by `showImage`: that toggle decides the big photo under the
+    // product title, while this is the row's own icon (Vadym, 2026-09-18).
+    expect(data.machineSections[0].baseRow?.icon).toBe("resolved:/api/files/m5180.png");
+    expect(data.machineSections[0].optionRows).toEqual([]);
+  });
+
+  it("leaves the base row icon null for a product with no catalogue image", () => {
+    const doc = quotationDoc({ items: [quotationItem({ imageUrl: null, lines: [] })] });
+    expect(buildQuotationData(doc, []).machineSections[0].baseRow?.icon).toBeNull();
+  });
+
   it("describes each row from its own line, never from another row's", () => {
     // The old rule this replaces: a row's description came from the block
     // its option's `contentBlockKey` named — deliberately not from its code,

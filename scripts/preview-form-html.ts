@@ -4,15 +4,18 @@
  *
  *   OUT=/tmp/forms npx tsx scripts/preview-form-html.ts
  *
- * Same purpose as scripts/preview-production-forms.ts, which does this for
- * the workbook-backed forms. Both exist until the xlsx path is deleted: this
- * is the "new" half of the side-by-side the render spec's §10 sign-off gate
- * asks production to look at.
+ * It was the "new" half of the side-by-side the render spec's §10 sign-off
+ * gate asked production to look at, opposite scripts/preview-production-
+ * forms.ts, which did the same for the workbook-backed forms. That half went
+ * with the xlsx path on 2026-09-18; this one stays, because looking at a
+ * rendered page is still the only way to catch a sheet that is correct and
+ * unreadable.
  */
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { FormDocument } from "@/components/forms/form-sheet";
+import { SoftwareForm } from "@/components/forms/software-form";
 import { formComponent } from "@/components/forms/registry";
 import type { FormContext } from "@/lib/production-forms/types";
 import type { ProductionForm } from "@prisma/client";
@@ -297,6 +300,54 @@ const CASES: Array<{ form: ProductionForm; ctx: FormContext }> = [
       },
     } as unknown as FormContext,
   },
+  {
+    form: "FP_TROLLEY",
+    ctx: {
+      ...base,
+      software: [],
+      softwareCodes: [],
+      itemIndex: 1,
+      itemCount: 1,
+      documentNumber: "Q-AU-2026-041",
+      item: {
+        id: "i6",
+        code: "FP-TROLLEY",
+        name: "Fabric Roll Trolley",
+        kind: "ACCESSORY",
+        form: "FP_TROLLEY",
+        specs: {},
+        spec: {},
+        options: [],
+        optionCodes: [],
+        optionAttributes: {},
+        optionQtys: [],
+      },
+    } as unknown as FormContext,
+  },
+  {
+    form: "LNS",
+    ctx: {
+      ...base,
+      software: [],
+      softwareCodes: [],
+      itemIndex: 1,
+      itemCount: 1,
+      documentNumber: "Q-AU-2026-042",
+      item: {
+        id: "i7",
+        code: "LNS-2420",
+        name: "Leather Nesting System 2420",
+        kind: "SYSTEM",
+        form: "LNS",
+        specs: {},
+        spec: {},
+        options: [],
+        optionCodes: [],
+        optionAttributes: {},
+        optionQtys: [],
+      },
+    } as unknown as FormContext,
+  },
 ];
 
 for (const { form, ctx } of CASES) {
@@ -311,4 +362,32 @@ for (const { form, ctx } of CASES) {
   const file = path.join(OUT, `${form.toLowerCase()}.html`);
   writeFileSync(file, `<!doctype html><html><head><meta charSet="utf-8"></head><body>${body}</body></html>`);
   console.log(`${form}: ${file}`);
+}
+
+// The Software Order Form is not one of the CASES above: it belongs to the
+// whole quote rather than to an item, so it takes its own context.
+{
+  const body = renderToStaticMarkup(
+    FormDocument({
+      children: SoftwareForm({
+        ctx: {
+          distributorName: base.distributorName,
+          authorName: base.authorName,
+          company: base.company,
+          contact: base.contact,
+          documentNumber: "Q-AU-2026-043",
+          generatedAt: base.generatedAt,
+          logo: null,
+          items: [
+            { code: "PTW-S", name: "PathWorks Standalone", qty: 2 },
+            { code: "ANT-V6", name: "Automatic Nester V6", qty: 1 },
+            { code: "PDG", name: "PhotoDigitiser", qty: 1 },
+          ],
+        },
+      }),
+    })
+  );
+  const file = path.join(OUT, "software.html");
+  writeFileSync(file, `<!doctype html><html><head><meta charSet="utf-8"></head><body>${body}</body></html>`);
+  console.log(`SOFTWARE: ${file}`);
 }
