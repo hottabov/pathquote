@@ -241,6 +241,13 @@ export function ItemsList({
         const collapsed = isCollapsed(item.id);
         const optionCount = item.lines.filter((line) => line.kind === "OPTION").length;
         const compatibleOptions = compatKey ? (compatibleOptionsByItemKey[compatKey] ?? []) : [];
+        // An OPTION line carries no image of its own -- only a custom extra
+        // line does -- so the breakdown's icons come from the compatible
+        // options this card already holds, keyed by the id the line points
+        // at.
+        const optionImageByRefId = Object.fromEntries(
+          compatibleOptions.map((option) => [option.id, option.imageUrl])
+        );
         const panelId = `item-panel-${item.id}`;
         // The same per-item check finalizeDocument enforces, so the badge on
         // the card and the refusal at finalize can never disagree.
@@ -252,6 +259,73 @@ export function ItemsList({
             .filter((line) => line.kind === "OPTION")
             .map((line) => ({ role: line.role, attributes: line.attributes })),
         });
+
+        const optionsTab: ItemTab = {
+          key: "options",
+          label: "Options",
+          badge: optionCount > 0 ? <CountBadge>{optionCount}</CountBadge> : null,
+          content: (
+            <div className="flex flex-col gap-3">
+              <ItemBreakdownEditor
+                item={item}
+                currency={currency}
+                currencySymbol={currencySymbol}
+                optionImageByRefId={optionImageByRefId}
+                showOptionIcons={showOptionIcons}
+                readOnly={readOnly}
+              />
+              <ItemOptionsEditor
+                itemId={item.id}
+                itemName={item.name}
+                itemCode={item.code}
+                currentLines={item.lines
+                  .filter((line) => line.kind === "OPTION")
+                  .map((line) => ({
+                    refId: line.refId,
+                    code: line.code,
+                    qty: line.qty,
+                    attributes: line.attributes,
+                    role: line.role,
+                  }))}
+                compatibleOptions={compatibleOptions}
+                currency={currency}
+                currencySymbol={currencySymbol}
+                showOptionIcons={showOptionIcons}
+                readOnly={readOnly}
+                lockedRoles={isEasyLoader ? EASYLOADER_LOCKED_ROLES : DERIVED_ROLES}
+              />
+            </div>
+          ),
+        };
+
+        /** Null for a product with no order form at all -- a software or
+         * service row, which has nothing to specify. */
+        const specTab: ItemTab | null = item.form
+          ? {
+              key: "spec",
+              label: isEasyLoader ? "Builder" : "Spec",
+              badge:
+                missingSpec.length > 0 ? (
+                  <StatusBadge tone="amber">{missingSpec.length}</StatusBadge>
+                ) : null,
+              content: (
+                <ProductionSpecEditor
+                  itemId={item.id}
+                  form={item.form}
+                  productSpecs={readProductSpecs(item.specs)}
+                  spec={(item.productionSpec ?? {}) as Record<string, unknown>}
+                  hasOtherMachines={machineCount > 1}
+                  derivedRailLengthM={railsByItemId.get(item.id)?.lengthM ?? null}
+                  rollFeedQty={item.lines
+                    .filter((line) => line.kind === "OPTION" && line.role === "EL_ROLL_FEED")
+                    .reduce((sum, line) => sum + line.qty, 0)}
+                  screenSideImages={screenSideImages}
+                  readOnly={readOnly}
+                  asPanel
+                />
+              ),
+            }
+          : null;
 
         return (
           <div
@@ -282,28 +356,12 @@ export function ItemsList({
                 answered no key. Making it a button means the grip, the
                 reorder arrows and remove all have to sit OUTSIDE it, since a
                 button cannot contain buttons, which is also why the old
-                version needed a stopPropagation on each of them. */}
-            <div className="flex items-start gap-1">
-              {!readOnly && (
-                <div className="flex shrink-0 items-center pt-1">
-                <button
-                  type="button"
-                  {...reorder.handleProps(item, index)}
-                  aria-label={`Reorder ${item.name}`}
-                  aria-describedby={reorderHintId}
-                  className={cn(
-                    "focus-ring flex size-11 cursor-grab touch-none items-center justify-center rounded-lg text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 active:cursor-grabbing",
-                    // Picked up by the keyboard: the handle has to look
-                    // different from every other handle on the page, or
-                    // "which one am I carrying" is unanswerable.
-                    grabbed && "bg-brand/10 text-brand ring-2 ring-brand"
-                  )}
-                >
-                  <GripVertical className="size-4" aria-hidden="true" />
-                </button>
-                </div>
-              )}
+                version needed a stopPropagation on each of them.
 
+                Reading order is thumbnail, name, price, then the two
+                reorder arrows and the grip -- what the line *is* first, then
+                the controls that move it. */}
+            <div className="flex items-start gap-1">
               <button
                 type="button"
                 aria-expanded={!collapsed}
@@ -405,7 +463,28 @@ export function ItemsList({
                       >
                         <ChevronDown className="size-4" aria-hidden="true" />
                       </button>
-                                      </div>
+                  </div>
+
+                  {/* Last on the row, after the arrows. The grip is the
+                      least-used control on a card and the one a mis-tap
+                      hurts most, so it sits at the outside edge rather than
+                      between the thumbnail and the machine's name, where it
+                      was the first thing a finger met. */}
+                  <button
+                    type="button"
+                    {...reorder.handleProps(item, index)}
+                    aria-label={`Reorder ${item.name}`}
+                    aria-describedby={reorderHintId}
+                    className={cn(
+                      "focus-ring flex size-11 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 active:cursor-grabbing",
+                      // Picked up by the keyboard: the handle has to look
+                      // different from every other handle on the page, or
+                      // "which one am I carrying" is unanswerable.
+                      grabbed && "bg-brand/10 text-brand ring-2 ring-brand"
+                    )}
+                  >
+                    <GripVertical className="size-4" aria-hidden="true" />
+                  </button>
                 </div>
               )}
             </div>
@@ -434,88 +513,21 @@ export function ItemsList({
                     />
                   ) : null}
 
+{/* Options is the whole commercial picture of the line
+                      now: the priced list of what it is made of, and the
+                      button that changes it. There is no separate Price tab
+                      -- that list *was* the Price tab, and holding the same
+                      rows behind two labels meant reading the options in one
+                      place and their prices in another.
+
+                      An EasyLoader leads with its Builder instead. The
+                      machine itself costs nothing and the table drawn there
+                      is what puts money on the line, so it is the first
+                      thing to do, not the second. */}
                   <ItemTabs
-                    // An EasyLoader opens on Spec because Spec is where an
-                    // EasyLoader is *built*: the machine itself costs
-                    // nothing and the table drawn there is what puts money
-                    // on the line. Every other machine opens on Options,
-                    // which is the job.
-                    defaultTab={isEasyLoader ? "spec" : "options"}
-                    tabs={([
-                      compatibleOptions.length > 0
-                        ? {
-                            key: "options",
-                            label: "Options",
-                            badge:
-                              optionCount > 0 ? <CountBadge>{optionCount}</CountBadge> : null,
-                            content: (
-                              <ItemOptionsEditor
-                                itemId={item.id}
-                                itemName={item.name}
-                                itemCode={item.code}
-                                currentLines={item.lines
-                                  .filter((line) => line.kind === "OPTION")
-                                  .map((line) => ({
-                                    refId: line.refId,
-                                    code: line.code,
-                                    qty: line.qty,
-                                    attributes: line.attributes,
-                                    role: line.role,
-                                  }))}
-                                compatibleOptions={compatibleOptions}
-                                currency={currency}
-                                currencySymbol={currencySymbol}
-                                showOptionIcons={showOptionIcons}
-                                readOnly={readOnly}
-                                lockedRoles={
-                                  isEasyLoader ? EASYLOADER_LOCKED_ROLES : DERIVED_ROLES
-                                }
-                              />
-                            ),
-                          }
-                        : null,
-                      item.form
-                        ? {
-                            key: "spec",
-                            label: isEasyLoader ? "Builder" : "Spec",
-                            badge:
-                              missingSpec.length > 0 ? (
-                                <StatusBadge tone="amber">{missingSpec.length}</StatusBadge>
-                              ) : null,
-                            content: (
-                              <ProductionSpecEditor
-                                itemId={item.id}
-                                form={item.form}
-                                productSpecs={readProductSpecs(item.specs)}
-                                spec={(item.productionSpec ?? {}) as Record<string, unknown>}
-                                hasOtherMachines={machineCount > 1}
-                                derivedRailLengthM={railsByItemId.get(item.id)?.lengthM ?? null}
-                                rollFeedQty={item.lines
-                                  .filter(
-                                    (line) =>
-                                      line.kind === "OPTION" && line.role === "EL_ROLL_FEED"
-                                  )
-                                  .reduce((sum, line) => sum + line.qty, 0)}
-                                screenSideImages={screenSideImages}
-                                readOnly={readOnly}
-                                asPanel
-                              />
-                            ),
-                          }
-                        : null,
-                      {
-                        key: "price",
-                        label: "Price",
-                        content: (
-                          <ItemBreakdownEditor
-                            item={item}
-                            currency={currency}
-                            currencySymbol={currencySymbol}
-                            readOnly={readOnly}
-                          />
-                        ),
-                      },
-                    ] satisfies (ItemTab | null)[]).filter((tab) => tab !== null)}
+                    tabs={(isEasyLoader ? [specTab, optionsTab] : [optionsTab, specTab]).filter(
+                      (tab) => tab !== null
+                    )}
                   />
 
                   {/* Global to the machine, so it sits under the strip

@@ -82,9 +82,8 @@ type CurrentLine = SelectionLine & {
 };
 
 /**
- * Per-item options editor: a row of "code ×qty" chips summarizing the
- * item's current OPTION lines, plus an "Edit options" toggle that opens a
- * panel listing every option compatible with the item (series- and/or
+ * Per-item options editor: an "Edit options" button that opens a side sheet
+ * listing every option compatible with the item (series- and/or
  * product-level `OptionCompatibility` — preloaded via
  * `listCompatibleOptions`). Checking an option reveals its qty stepper and
  * (when it carries an `attributeSchema`) its attribute inputs; an unpriced
@@ -237,8 +236,8 @@ export function ItemOptionsEditor({
   /** "ui.showOptionIcons" app setting (see `getShowOptionIcons`,
    * src/lib/queries/settings.ts), read server-side and threaded down through
    * ItemsList/ItemsSection. Gates only the small per-option icon in this
-   * editor's list — the summary chips on the item card stay text-only either
-   * way. Defaults to `true` so a caller that forgets to pass it (e.g. a
+   * editor's list; the priced breakdown above it reads the same setting
+   * through its own prop. Defaults to `true` so a caller that forgets to pass it (e.g. a
    * future test) doesn't silently hide icons. */
   showOptionIcons?: boolean;
   readOnly?: boolean;
@@ -254,7 +253,11 @@ export function ItemOptionsEditor({
   const router = useRouter();
   const [search, setSearch] = useState("");
 
-  const chips = currentLines.filter((line): line is CurrentLine & { code: string } => Boolean(line.code));
+  // Only the count survives -- it rides on the button. The chips this used
+  // to draw ("WPN ×1  LSC ×1  …") said the same thing as the priced list
+  // above it, in less detail and a second visual language, so they were two
+  // answers to one question sitting one above the other.
+  const optionCount = currentLines.filter((line) => Boolean(line.code)).length;
 
   // Selection state is keyed by option id (that is what `setItemOptions`
   // takes), so locking resolves an id back to its role through the two
@@ -393,8 +396,8 @@ export function ItemOptionsEditor({
 
   function closePanel() {
     setOpen(false);
-    // Pull the card's chips, its breakdown and the quote total back in line
-    // with what was just written.
+    // Pull the card's breakdown and the quote total back in line with what
+    // was just written.
     router.refresh();
   }
 
@@ -406,22 +409,8 @@ export function ItemOptionsEditor({
 
   return (
     <div className="mt-3">
-      <div className="flex flex-wrap items-center gap-1.5">
-        {chips.map((line, index) => (
-          <span
-            key={`${line.code}-${index}`}
-            className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600"
-          >
-            {line.code} ×{line.qty}
-          </span>
-        ))}
-        {chips.length === 0 && readOnly ? (
-          <span className="text-xs text-slate-500">No options</span>
-        ) : null}
-      </div>
-
       {!readOnly && (
-        <div className="mt-2">
+        <div>
           {/* A real secondary button, not a link-styled trigger — bordered,
               44px-tall tap target, full-width on mobile so it's easy to hit
               on the phone this builder primarily targets. The option count
@@ -436,9 +425,9 @@ export function ItemOptionsEditor({
           >
             <SlidersHorizontal className="size-4 text-slate-500" aria-hidden="true" />
             <span>Edit options</span>
-            {chips.length > 0 ? (
+            {optionCount > 0 ? (
               <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-brand/10 px-1.5 py-0.5 text-xs font-semibold text-brand">
-                {chips.length}
+                {optionCount}
               </span>
             ) : null}
             <ChevronRight className="size-4 text-slate-400" aria-hidden="true" />

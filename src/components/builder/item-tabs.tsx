@@ -32,11 +32,12 @@ export type ItemTab = {
   content: React.ReactNode;
 };
 
-export function ItemTabs({ tabs, defaultTab }: { tabs: ItemTab[]; defaultTab?: string }) {
+export function ItemTabs({ tabs }: { tabs: ItemTab[] }) {
   const baseId = useId();
-  const [active, setActive] = useState(
-    () => tabs.find((tab) => tab.key === defaultTab)?.key ?? tabs[0]?.key ?? ""
-  );
+  // The first tab is the one that opens. There is no `defaultTab` prop:
+  // which tab should lead is a property of the order the caller passes, and
+  // having both invited the two to disagree.
+  const [active, setActive] = useState(() => tabs[0]?.key ?? "");
 
   if (tabs.length === 0) return null;
   // One tab is not a choice. A strip of exactly one button would read as a
