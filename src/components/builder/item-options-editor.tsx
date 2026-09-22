@@ -293,10 +293,18 @@ export function ItemOptionsEditor({
       )
     : compatibleOptions;
 
-  // Always rendered in the original catalog order — no selected-first
-  // sorting, so the list never reshuffles as the user checks/unchecks
-  // options.
-  const displayOptions = filteredOptions;
+  // By code, A to Z. The catalogue's own order is meaningful to whoever
+  // maintains it and meaningless to someone hunting for ANT-V6 in a list of
+  // twenty-one: there was no way to guess where to look, which is the whole
+  // reason the search box above was carrying the list.
+  //
+  // `numeric` so ANT-V5 sorts before ANT-V6 and not, as a plain string
+  // compare would have it, before ANT-V10. Sorted by code alone and never by
+  // selection, so checking an option never reshuffles the list under the
+  // pointer.
+  const displayOptions = [...filteredOptions].sort((a, b) =>
+    a.code.localeCompare(b.code, undefined, { numeric: true, sensitivity: "base" })
+  );
 
   function selectAllFiltered() {
     setSelected((prev) => {

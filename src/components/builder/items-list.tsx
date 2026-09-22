@@ -338,13 +338,21 @@ export function ItemsList({
             {...reorder.cardProps(item.id)}
             className={cn(
               "rounded-(--radius-card) border border-line bg-white p-3 transition-[opacity,box-shadow,border-color] duration-(--duration-micro) motion-reduce:transition-none sm:p-4",
-              // A line the salesperson earns nothing on carries a faint amber
+              // A line the salesperson earns nothing on is set apart by a
               // wash (owner's request). Deliberately barely-there: it is a
               // standing fact about the product, not a problem to fix, so it
-              // must not read as a warning — but without it the only way to
+              // must not read as a warning -- but without it the only way to
               // discover a line pays no commission is to notice the figure at
               // the bottom failing to move.
-              item.noCommission && "bg-amber-50/60",
+              //
+              // Slate, not the amber it used to be. Amber is this app's
+              // warning colour and said the wrong thing; and every card sits
+              // on a cool grey page carrying cool grey type, so a yellow
+              // card put light grey text on a warm ground -- the one
+              // combination on this screen that looks broken rather than
+              // deliberate. A cool tint sets the card apart just as well
+              // without claiming anything is wrong.
+              item.noCommission && "border-slate-300 bg-slate-100/70",
               isDragging && "opacity-50",
               isDropTarget && "ring-2 ring-brand"
             )}
@@ -437,46 +445,34 @@ export function ItemsList({
               </button>
 
               {!readOnly && (
-                <div className="flex shrink-0 items-center gap-1 pt-1">
-                  {/* Not md+ only any more. These were the keyboard's only
-                      way to reorder and they were hidden below 768px, so on
-                      a phone a keyboard user could not reorder at all. The
-                      grip now answers the keyboard too, but these stay
-                      visible everywhere: they are the discoverable path,
-                      and the grip is not. */}
-                  <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => reorder.moveBy(index, -1)}
-                        disabled={index === 0}
-                        aria-label={`Move ${item.name} up`}
-                        className="focus-ring flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-30 sm:size-9"
-                      >
-                        <ChevronUp className="size-4" aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => reorder.moveBy(index, 1)}
-                        disabled={index === optimisticItems.length - 1}
-                        aria-label={`Move ${item.name} down`}
-                        className="focus-ring flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-30 sm:size-9"
-                      >
-                        <ChevronDown className="size-4" aria-hidden="true" />
-                      </button>
-                  </div>
+                /* One column, not a row: up, grip, down, in the order the
+                   three of them actually mean. Side by side they took three
+                   controls' worth of width off a header that already has a
+                   thumbnail, a name, a code, a badge and a price to fit,
+                   and read as an arbitrary trio. Stacked, the arrows point
+                   the way they move the card and the grip sits between them
+                   where the card itself is. */
+                <div className="flex shrink-0 flex-col items-center">
+                  <button
+                    type="button"
+                    onClick={() => reorder.moveBy(index, -1)}
+                    disabled={index === 0}
+                    aria-label={`Move ${item.name} up`}
+                    className="focus-ring flex h-7 w-9 items-center justify-center rounded-t-lg text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-30"
+                  >
+                    <ChevronUp className="size-4" aria-hidden="true" />
+                  </button>
 
-                  {/* Last on the row, after the arrows. The grip is the
-                      least-used control on a card and the one a mis-tap
-                      hurts most, so it sits at the outside edge rather than
-                      between the thumbnail and the machine's name, where it
-                      was the first thing a finger met. */}
+                  {/* The grip in the middle, and the only one of the three
+                      with a full-size target: it is the touch path, and the
+                      arrows are the pointer and keyboard one. */}
                   <button
                     type="button"
                     {...reorder.handleProps(item, index)}
                     aria-label={`Reorder ${item.name}`}
                     aria-describedby={reorderHintId}
                     className={cn(
-                      "focus-ring flex size-11 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 active:cursor-grabbing",
+                      "focus-ring flex h-9 w-9 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 active:cursor-grabbing",
                       // Picked up by the keyboard: the handle has to look
                       // different from every other handle on the page, or
                       // "which one am I carrying" is unanswerable.
@@ -484,6 +480,16 @@ export function ItemsList({
                     )}
                   >
                     <GripVertical className="size-4" aria-hidden="true" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => reorder.moveBy(index, 1)}
+                    disabled={index === optimisticItems.length - 1}
+                    aria-label={`Move ${item.name} down`}
+                    className="focus-ring flex h-7 w-9 items-center justify-center rounded-b-lg text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-30"
+                  >
+                    <ChevronDown className="size-4" aria-hidden="true" />
                   </button>
                 </div>
               )}
