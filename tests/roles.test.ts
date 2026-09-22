@@ -5,6 +5,7 @@ import {
   isRegionalManagerRole,
   canSeeSalesperson,
   roleLabel,
+  scopeDescription,
 } from "../src/lib/roles";
 
 describe("isAdminRole", () => {
@@ -84,5 +85,26 @@ describe("roleLabel", () => {
     expect(roleLabel("SUPERADMIN")).toBe("SUPERADMIN");
     expect(roleLabel(null)).toBe("");
     expect(roleLabel(undefined)).toBe("");
+  });
+});
+
+describe("scopeDescription", () => {
+  const copy = { everything: "all", region: "region", own: "mine" };
+
+  it("gives an admin and a developer the everything line", () => {
+    expect(scopeDescription("ADMIN", copy)).toBe("all");
+    expect(scopeDescription("DEVELOPER", copy)).toBe("all");
+  });
+
+  it("gives a regional manager the region line", () => {
+    expect(scopeDescription("REGIONAL_MANAGER", copy)).toBe("region");
+  });
+
+  // Same fail-narrow default as the scoping functions: an unrecognised role
+  // is described as seeing only its own rows, which is what it will see.
+  it("gives a manager, an unknown role and no role the own line", () => {
+    expect(scopeDescription("MANAGER", copy)).toBe("mine");
+    expect(scopeDescription("SUPERADMIN", copy)).toBe("mine");
+    expect(scopeDescription(null, copy)).toBe("mine");
   });
 });

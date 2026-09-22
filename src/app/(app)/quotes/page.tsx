@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Plus } from "lucide-react";
 import { auth } from "@/auth";
-import { canSeeSalesperson, isAdminRole, isDeveloperRole } from "@/lib/roles";
+import { canSeeSalesperson, isAdminRole, isDeveloperRole, scopeDescription } from "@/lib/roles";
 import { listDocuments, type DocumentListItem } from "@/lib/queries/documents";
 import { createDraft, deleteDocument } from "@/lib/actions/documents";
 import { signingStatusLabel } from "@/lib/signing/state";
@@ -56,9 +56,11 @@ export default async function DocumentsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Quotes"
-        description={
-          isAdminRole(session.user.role) ? "Every quote across the business." : "Quotes you've created."
-        }
+        description={scopeDescription(session.user.role, {
+          everything: "Every quote across the business.",
+          region: "Every quote in your region.",
+          own: "Quotes you've created.",
+        })}
         actions={
           <form action={createDraft}>
             <Button type="submit" className="h-11 w-full bg-brand text-white hover:bg-brand/90 sm:w-auto">

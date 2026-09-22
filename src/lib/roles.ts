@@ -115,3 +115,24 @@ export function roleLabel(role: string | null | undefined): string {
   if (role == null) return "";
   return ROLE_LABELS[role] ?? role;
 }
+
+/**
+ * The one-line description a list page puts under its title, chosen by what
+ * the viewer's list actually contains. Three pages (/quotes, /clients, the
+ * dashboard) asked this question with their own `isAdminRole` ternary, which
+ * told a regional manager they were looking at their own rows while showing
+ * them the region's.
+ *
+ * Takes the three sentences rather than owning them: the wording is the
+ * page's business ("Every quote across the business." vs "Every company
+ * across the business."), the choice is this file's.
+ */
+export function scopeDescription(
+  role: string | null | undefined,
+  copy: { everything: string; region: string; own: string }
+): string {
+  if (isAdminRole(role)) return copy.everything;
+  if (isRegionalManagerRole(role)) return copy.region;
+  return copy.own;
+}
+

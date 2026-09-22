@@ -10,7 +10,7 @@ import { getUser } from "@/lib/queries/users";
 import { createDraft } from "@/lib/actions/documents";
 import { formatMoney, relativeDate } from "@/lib/format";
 import { firstNameFrom } from "@/lib/avatar";
-import { isAdminRole } from "@/lib/roles";
+import { scopeDescription } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { PageHeader, SectionCard, StatusBadge, STATUS_TONE, EmptyState, Avatar } from "@/components/ui-kit";
 
@@ -58,11 +58,11 @@ export default async function DashboardPage() {
             {`Hi, ${firstName}`}
           </span>
         }
-        description={
-          isAdminRole(session.user.role)
-            ? "An overview of every quote across the business."
-            : "An overview of your quotes and clients."
-        }
+        description={scopeDescription(session.user.role, {
+          everything: "An overview of every quote across the business.",
+          region: "An overview of your region's quotes and clients.",
+          own: "An overview of your quotes and clients.",
+        })}
       />
 
       <div className="grid grid-cols-1 gap-3 sm:max-w-xs">

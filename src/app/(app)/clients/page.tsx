@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Plus } from "lucide-react";
 import { auth } from "@/auth";
-import { isAdminRole } from "@/lib/roles";
+import { scopeDescription } from "@/lib/roles";
 import { listCompanies } from "@/lib/queries/clients";
 import { displayCountry } from "@/lib/countries";
 import { buttonVariants } from "@/components/ui/button";
@@ -38,11 +38,11 @@ export default async function ClientsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Clients"
-        description={
-          isAdminRole(session.user.role)
-            ? "Every company across the business."
-            : "Companies you've added."
-        }
+        description={scopeDescription(session.user.role, {
+          everything: "Every company across the business.",
+          region: "Every company your region's managers look after.",
+          own: "Companies you've added.",
+        })}
         actions={
           <Link
             href="/clients/new"
