@@ -56,7 +56,12 @@ export function AppShell({ user, children }: AppShellProps) {
           </Link>
         </div>
 
-        <div className="flex-1 overflow-y-auto py-3">
+        {/* `scroll-region` is not styling: it is how globals.css finds the
+            scroll containers that have to freeze while a modal sheet is
+            open. A modal <dialog> makes the rest of the page inert, which
+            stops clicks and focus but not a wheel over a scroller -- the
+            sidebar went on scrolling behind the options sheet. */}
+        <div className="scroll-region flex-1 overflow-y-auto py-3">
           <AppNav variant="sidebar" />
         </div>
 

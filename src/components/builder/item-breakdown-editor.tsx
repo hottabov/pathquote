@@ -252,11 +252,11 @@ function BreakdownRow({
  *   a customer-facing sheet).
  * - Viewing (the default when editable): the plain figure, with the struck-
  *   through list price + "Reset to list" whenever there's a concession, and
- *   a pencil button revealed on hover *or focus* — copied from
- *   `avatar-editor.tsx`'s `opacity-0 group-hover:opacity-100
- *   focus-visible:opacity-100` pattern, so the affordance is keyboard-
- *   reachable (Tab lands on the real `<button>` below) and not just a
- *   pointer-hover trick.
+ *   a pencil button. The pencil is always drawn, at 60% opacity, going to
+ *   full on hover or focus. It used to be `opacity-0
+ *   group-hover:opacity-100` after `avatar-editor.tsx`, which was not a
+ *   styling choice with a touch caveat: on a tablet there is no hover, so
+ *   the affordance did not exist and the price read as plain text.
  * - Editing (after the pencil is clicked): a focused, fully-selected number
  *   input. Blurring or Enter saves through `setAction` (only when the value
  *   actually changed) exactly like `unit-price-field.tsx`'s autosave did,
@@ -410,10 +410,13 @@ function EditablePrice({
         onClick={openEditor}
         aria-label={`Edit ${label} price`}
         className={cn(
-          "focus-ring absolute -right-1 -top-1.5 flex size-5 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200 transition-opacity hover:text-brand",
-          // Hidden until wanted, but never hidden from the keyboard — same
-          // hover-or-focus reveal as avatar-editor.tsx's overlay.
-          "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+          "focus-ring absolute -right-1 -top-1.5 flex size-5 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200 transition-[opacity,color] duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:text-brand",
+          // Always there, faint until wanted. This used to be
+          // `opacity-0 group-hover:opacity-100`, which on a tablet -- where
+          // there is no hover -- meant the affordance did not exist at all:
+          // the price simply looked like text. 60% is enough to read as a
+          // control without competing with the figure it sits on.
+          "opacity-60 group-hover:opacity-100 focus-visible:opacity-100"
         )}
       >
         <Pencil className="size-3" aria-hidden="true" />

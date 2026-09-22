@@ -324,12 +324,22 @@
     }
   }
 
-  /* The page must not scroll behind an open sheet. A `:has()` rule keeps
-     that here, next to the sheet, instead of as a body style an effect has
-     to set and unset -- and it cannot leak if a sheet unmounts abruptly. */
-  body:has(.side-sheet[open]) {
+  /* Nothing behind an open sheet may scroll. `:has()` rules keep that here,
+     next to the sheet, instead of as styles an effect has to set and unset
+     -- and they cannot leak if a sheet unmounts abruptly.
+
+     On the root, not on `body`: body's `overflow` only propagates to the
+     viewport while the root's own is `visible`, and this app's root carries
+     `overflow-x: clip`, so a lock on body locked nothing and the page went
+     on scrolling behind the sheet.
+
+     The sidebar needs its own rule because it is a separate scroll
+     container. A modal <dialog> makes the rest of the page inert, which
+     stops clicks and focus but not a wheel over a scroller. */
+  html:has(.side-sheet[open]) {
     overflow: hidden;
   }
+
 }
 
 @layer utilities {
@@ -345,6 +355,14 @@
   .focus-ring-dark {
     @apply outline-none transition-shadow duration-150 motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-2 focus-visible:ring-offset-brand-dark;
   }
+  /* Freezes a nested scroll container while a modal sheet is open -- the
+     sidebar, today. Here in the utilities layer rather than beside the
+     sheet's own rules in components, because the element it has to outrank
+     carries Tailwind's `overflow-y-auto`, and a layer beats specificity. */
+  html:has(.side-sheet[open]) .scroll-region {
+    overflow: hidden;
+  }
+
   /* Safe-area padding for elements pinned to a mobile viewport edge (bottom
      nav, sticky action bars) so they clear the home-indicator/notch. */
   .pb-safe {
