@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FieldRow, fieldInputClass } from "@/components/ui-kit";
 import type { ActionResult } from "@/lib/actions/users";
@@ -35,13 +35,16 @@ const BLANK_USER: UserFormValues = {
  * two-column grid; the password field spans full-width with its
  * magic-link-only note directly beneath it.
  *
- * Controlled throughout, for the reason `CompanyForm` spells out: React
- * empties an uncontrolled form as soon as its action returns, error or not.
- * "That email is already in use" is the likeliest thing this form ever says,
- * and it used to take the name, phone, role, region and password down with it
- * — every one of which the server was perfectly happy with. The password is
- * held the same way as the rest: an admin who has to retype it is an admin who
- * types a different one, and then has to go and tell the new user twice.
+ * Controlled throughout AND submitted through `onSubmit`, for the reason
+ * `CompanyForm` spells out at length: both halves are needed, and this form
+ * had only the first. "That email is already in use" is the likeliest thing
+ * this form ever says, and with `<form action>` the two selects (Role,
+ * Region) would come back reverted in the DOM on that error while state
+ * still showed the admin's picks — so the name, phone, role, region and
+ * password all used to go down with it, and a second submit would have
+ * posted the reverted role/region rather than what was visible. The password
+ * is held the same way as the rest: an admin who has to retype it is an admin
+ * who types a different one, and then has to go and tell the new user twice.
  */
 export function UserForm({
   action,
@@ -60,8 +63,22 @@ export function UserForm({
     setValues((current) => ({ ...current, [field]: value }));
   }
 
+  // Submitted through `onSubmit` rather than `<form action>` -- see
+  // `CompanyForm` (src/components/clients/company-form.tsx) for why. Here it
+  // is both selects: "That email is already in use" is the likeliest error
+  // this form ever shows, and with `<form action>` it would come back with
+  // Role and Region silently reverted in the DOM while state (and the rest
+  // of the visible form) still showed what the admin picked -- and the next
+  // submit would have posted the reverted role. Browser validation still
+  // runs before this fires.
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    startTransition(() => formAction(formData));
+  }
+
   return (
-    <form action={formAction} autoComplete="off" className="flex flex-col gap-4">
+    <form onSubmit={handleSubmit} autoComplete="off" className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <FieldRow label="Email" htmlFor="user-email" required>
           <input

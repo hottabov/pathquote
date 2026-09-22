@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FieldRow, fieldInputClass } from "@/components/ui-kit";
 import { cn } from "@/lib/utils";
@@ -64,8 +64,22 @@ export function OptionForm({
     setValues((current) => ({ ...current, [field]: value }));
   }
 
+  // Submitted through `onSubmit` rather than `<form action>` -- see
+  // `CompanyForm` (src/components/clients/company-form.tsx). `<form action>`
+  // still resets every field's DOM value once the action settles regardless
+  // of state, so a malformed attribute schema -- the one field on this form
+  // nobody wants to retype -- would come back visibly blank while `values`
+  // still held what was typed, and the next save would have posted that
+  // blank DOM value instead. Browser validation still runs before this
+  // fires.
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    startTransition(() => formAction(formData));
+  }
+
   return (
-    <form action={formAction} className="flex flex-col gap-4">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <FieldRow label="Code" htmlFor="option-code" required>
           <input

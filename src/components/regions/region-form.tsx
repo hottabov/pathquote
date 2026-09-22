@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FieldRow, fieldInputClass } from "@/components/ui-kit";
 import { cn } from "@/lib/utils";
@@ -74,8 +74,22 @@ export function RegionForm({
     setValues((current) => ({ ...current, [field]: value }));
   }
 
+  // Submitted through `onSubmit` rather than `<form action>` -- see
+  // `CompanyForm` (src/components/clients/company-form.tsx). Controlled state
+  // alone isn't enough: `<form action>` still lets React 19 reset every field
+  // in the DOM once the action settles, so a rejected tax rate or a
+  // deactivation blocked server-side would have wiped the entity address and
+  // footer text right back to their pre-edit values, and the next save would
+  // have posted those wiped values rather than what was on screen. Browser
+  // validation still runs before this fires.
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    startTransition(() => formAction(formData));
+  }
+
   return (
-    <form action={formAction} className="flex flex-col gap-6">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-6">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <FieldRow
           label="Code"

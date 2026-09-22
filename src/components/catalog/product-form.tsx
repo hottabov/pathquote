@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { startTransition, useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FieldRow, fieldInputClass } from "@/components/ui-kit";
 import { RichTextEditor } from "@/components/ui-kit/rich-text-editor-lazy";
@@ -51,8 +51,23 @@ export function ProductForm({
   // component doesn't need to.
   const [description, setDescription] = useState(() => toEditorHtml(defaultValues.description));
 
+  // Submitted through `onSubmit` rather than `<form action>` -- see
+  // `CompanyForm` (src/components/clients/company-form.tsx). The hidden
+  // `description` input below is controlled by `description` state, fed by
+  // the rich-text editor -- exactly the shape `<form action>` breaks: on any
+  // settle React 19 resets that hidden input's DOM value back to what it was
+  // at mount, while `description` state (and the editor still showing it)
+  // does not change, so the next save would post the pre-edit description
+  // instead of what's visibly in the editor. Browser validation still runs
+  // before this fires.
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    startTransition(() => formAction(formData));
+  }
+
   return (
-    <form action={formAction} className="flex flex-col gap-4">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <FieldRow label="Code" htmlFor="product-code" required>
           <input

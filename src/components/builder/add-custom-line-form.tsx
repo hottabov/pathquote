@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState, type ChangeEvent } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState, type ChangeEvent } from "react";
 import { ImageIcon, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FieldRow, fieldInputClass } from "@/components/ui-kit";
@@ -33,7 +33,9 @@ const PREVIEW_BOX_PX = 48;
  * custom line doesn't exist yet to attach the image to. Resets itself
  * (fields and photo both) after a successful add (mirrors ContactForm's
  * onDone pattern in components/clients/contact-form.tsx) so it's ready for
- * the next line without the manager clearing fields by hand.
+ * the next line without the manager clearing fields by hand. Submitted
+ * through `onSubmit` rather than `<form action>` precisely because of that
+ * hidden field -- see the note on `handleSubmit` below.
  */
 export function AddCustomLineForm({ documentId }: { documentId: string }) {
   const [state, formAction, pending] = useActionState(
@@ -86,10 +88,28 @@ export function AddCustomLineForm({ documentId }: { documentId: string }) {
     }
   }
 
+  // Submitted through `onSubmit` rather than `<form action>` -- see
+  // `CompanyForm` (src/components/clients/company-form.tsx). The hidden
+  // `imageUrl` input below is controlled by `imageUrl` state, set once the
+  // upload finishes -- the same shape `<form action>` breaks: on any settle
+  // React 19 resets that hidden input's DOM value back to "" (its value at
+  // mount) while `imageUrl` state -- and the preview still showing the photo
+  // -- does not change, so a rejected line (a malformed unit price, say)
+  // would silently drop the photo from the next submit even though the
+  // preview still shows it. It also stops the settle-triggered reset from
+  // wiping the plain name/qty/description inputs on an error, which
+  // `formRef.current?.reset()` below now handles deliberately, only on
+  // success. Browser validation still runs before this fires.
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    startTransition(() => formAction(formData));
+  }
+
   return (
     <form
       ref={formRef}
-      action={formAction}
+      onSubmit={handleSubmit}
       className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4"
     >
       <input type="hidden" name="imageUrl" value={imageUrl ?? ""} />
