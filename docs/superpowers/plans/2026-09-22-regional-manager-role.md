@@ -2600,3 +2600,21 @@ Run against the request before handing over.
 **Placeholders:** none. Every code step carries the code, every command carries its expected output, and the two steps that cannot run in the sandbox (`prisma generate`, the browser walk) say so and say who runs them.
 
 **Type consistency:** `salespersonName` (query) → `salespersonLabel` (row view model) and `ownerName` → `ownerLabel` are deliberate renames at the server/client boundary, matching the existing `companyName`/`companyLabel` pair. `showSalesperson` and `showOwner` are the prop names throughout their own components. `regionalScopeId`, `CompanyScopeWhere`, `DocumentScopeWhere`, `isRegionalManagerRole`, `canSeeSalesperson`, `roleLabel` and `scopeDescription` are each defined once and referenced under exactly those names. The `cache()` memos take `(userId, role, regionId, id)` in that order in all three signatures.
+
+---
+
+## Open decisions raised during execution
+
+- **`acceptQuote` (2026-09-22, review of Task 2).** `acceptQuote`
+  (`src/lib/actions/finalize.ts`, ~line 666) is scoped by `documentWhereForUser`
+  like everything else, so a REGIONAL_MANAGER can now accept a colleague's
+  CLIENT_SIGNED quote into production — it sets `acceptedAt`/`acceptedById` and
+  commits the deal. That is one step further downstream than the
+  "Known consequence, accepted" paragraph above enumerates (edit, finalize,
+  unfinalize, send, sign, delete a draft). **Vadym to decide:** either extend
+  that paragraph to name `acceptQuote`, or add a follow-up task giving it an
+  author-or-admin guard of its own. No code change was made either way.
+- **Sequencing (2026-09-22, review of Task 2).** Task 2 alone leaves a regional
+  manager able to *list* quotes and clients but unable to *open* any of them,
+  because the two `cache()` memos still drop `regionId` until Task 3 lands. Tasks
+  2 and 3 must reach production together; do not deploy a commit between them.
