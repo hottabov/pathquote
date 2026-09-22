@@ -19,13 +19,18 @@
 // field -- all of those satisfy `string` with no import needed, and this
 // file stays dependency-free (no `@/lib/db`, no `@prisma/client`) so it's
 // safely importable from pure validation modules and their unit tests.
-/** Every value of Prisma's `Role` enum, in the order `prisma/schema.prisma`
- * declares them. Hand-maintained rather than imported from `@prisma/client`,
- * for the same reason everything else in this file is typed against a bare
- * `string`: this module must stay importable from pure validation modules and
- * from the no-database test suite. The parity that matters — that this list
- * and the enum agree — is what `tests/status-tone.test.ts` and
- * `tests/users-validation.test.ts` exist to catch. */
+/** Every value of Prisma's `Role` enum. Hand-maintained rather than imported
+ * from `@prisma/client`, for the same reason everything else in this file is
+ * typed against a bare `string`: this module must stay importable from pure
+ * validation modules and from the no-database test suite.
+ *
+ * Hand-maintained means it can drift, so `tests/role-parity.test.ts` reads the
+ * enum out of `prisma/schema.prisma` and fails if this list, that enum and
+ * `userRoleSchema` (src/lib/validation/users.ts) stop agreeing. Adding a role
+ * to any one of the three and not the others is a test failure, not a
+ * surprise in production. The set is compared unordered: this list and the
+ * schema deliberately differ in order from the database's own (see the `Role`
+ * enum's comment in prisma/schema.prisma). */
 export const ROLE_VALUES = ["ADMIN", "MANAGER", "REGIONAL_MANAGER", "DEVELOPER"] as const;
 
 const ADMIN_ROLES: ReadonlySet<string> = new Set(["ADMIN", "DEVELOPER"]);
