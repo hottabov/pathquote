@@ -24,7 +24,7 @@ function input(over: Partial<ReadinessInput> = {}): ReadinessInput {
     hasCompany: true,
     hasContact: true,
     items: [item()],
-    deliveryTermsSet: true,
+    deliveryTerms: "DELIVERED",
     printedDocumentCount: 3,
     capExceeded: false,
     exceedsMarkupCap: false,
@@ -109,11 +109,18 @@ describe("quoteReadiness", () => {
     expect(row?.detail).toBe("2 machines incomplete, starting with M-3220");
   });
 
-  it("fails the delivery row and sends it to the terms tab", () => {
-    const row = quoteReadiness(input({ deliveryTermsSet: false })).find((r) => r.key === "delivery");
-    expect(row?.met).toBe(false);
-    expect(row?.targetTab).toBe("terms");
-    expect(row?.targetItemId).toBeNull();
+  // `Document.deliveryTerms` is an enum that can never be empty, so a
+  // "delivery chosen" blocker would always pass and mean nothing. The row
+  // earns its place by saying which terms, because Ex Works zeroes the tax.
+  it("reports the delivery terms rather than blocking on them", () => {
+    const delivered = quoteReadiness(input()).find((r) => r.key === "delivery");
+    expect(delivered?.met).toBe(true);
+    expect(delivered?.blocking).toBe(false);
+    expect(delivered?.detail).toBe("Delivered, GST applies");
+
+    const exWorks = quoteReadiness(input({ deliveryTerms: "EX_WORKS" })).find((r) => r.key === "delivery");
+    expect(exWorks?.detail).toBe("Ex Works, no GST charged");
+    expect(exWorks?.targetTab).toBe("terms");
   });
 
   // A quote with no legal documents attached is unusual but not refused by
