@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type ChangeEvent } from "react";
+import { useState, useTransition, type ChangeEvent, type DragEvent } from "react";
 import { ImageIcon, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui-kit/client";
@@ -30,9 +30,11 @@ const DEFAULT_ACCEPT = `${RASTER_TYPES},image/svg+xml`;
  * `/api/files/<name>` URL), then the bound `onSave` server action
  * (`updateProductImage`/`updateOptionImage`) persists that URL onto the
  * product/option row. "Remove image" calls the same action with `null`.
- * The dashed border reads as a dropzone even though the only interaction
- * is the file picker button below it (no drag-and-drop wiring — presentation
- * only, per phase 5b scope).
+ * The dashed border is a real dropzone: a file dragged onto it takes the
+ * same path as one chosen through the picker below. It looked like one long
+ * before it was one, which is its own kind of lie -- a salesperson with the
+ * SketchUp render already in a folder had to open a file dialog to find a
+ * file they were holding.
  */
 export function ImageUpload({
   currentUrl,
@@ -72,6 +74,7 @@ export function ImageUpload({
   const [uploading, setUploading] = useState(false);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   const toast = useToast();
 
   const busy = uploading || pending;
@@ -80,8 +83,12 @@ export function ImageUpload({
     const file = event.target.files?.[0];
     // Reset so selecting the same file again still fires onChange.
     event.target.value = "";
-    if (!file) return;
+    if (file) await upload(file);
+  }
 
+  /** What the dropzone and the picker both end in. A dropped file and a
+   * chosen one are the same file; only the way it arrived differs. */
+  async function upload(file: File) {
     setError(null);
     setUploading(true);
     let uploadedUrl: string;
@@ -121,6 +128,42 @@ export function ImageUpload({
     });
   }
 
+  /** Whether the drag is carrying something this control can take. A drag of
+   * selected text or a link reports no files, and highlighting the zone for
+   * it promises an upload that would never happen. */
+  function carriesFile(event: DragEvent<HTMLDivElement>): boolean {
+    return Array.from(event.dataTransfer.types).includes("Files");
+  }
+
+  function handleDragOver(event: DragEvent<HTMLDivElement>) {
+    if (readOnly || busy || !carriesFile(event)) return;
+    // Both of these are load-bearing: without preventDefault the browser
+    // navigates away to the dropped file, which loses whatever the quote
+    // had unsaved.
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    if (!dragging) setDragging(true);
+  }
+
+  function handleDragLeave(event: DragEvent<HTMLDivElement>) {
+    // `relatedTarget` inside the zone means the pointer only crossed from
+    // the zone onto one of its own children, which is not a leave. Without
+    // this the highlight flickers as the pointer passes over the preview.
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setDragging(false);
+  }
+
+  async function handleDrop(event: DragEvent<HTMLDivElement>) {
+    if (readOnly || busy) return;
+    event.preventDefault();
+    setDragging(false);
+    const file = event.dataTransfer.files?.[0];
+    // Type and size are the server's call either way (/api/uploads re-checks
+    // the real bytes), so a wrong file dropped here fails with the same
+    // message a wrong file picked here would.
+    if (file) await upload(file);
+  }
+
   function handleRemove() {
     setError(null);
     startTransition(async () => {
@@ -138,8 +181,13 @@ export function ImageUpload({
   return (
     <div className="flex flex-col gap-3">
       <div
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
         className={cn(
-          "flex min-h-32 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 p-4 text-center",
+          "flex min-h-32 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-4 text-center transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none",
+          dragging ? "border-brand bg-brand/5" : "border-slate-200 bg-slate-50",
           url ? "py-3" : "py-6"
         )}
       >
@@ -159,7 +207,9 @@ export function ImageUpload({
             <div className="flex size-10 items-center justify-center rounded-full bg-slate-100">
               <ImageIcon className="size-5 text-slate-400" aria-hidden="true" />
             </div>
-            <p className="text-sm text-slate-500">No image yet.</p>
+            <p className="text-sm text-slate-500">
+              {readOnly ? "No image yet." : "Drop an image here, or choose one below."}
+            </p>
           </>
         )}
       </div>

@@ -1,5 +1,12 @@
 import { Download, History, Mail } from "lucide-react";
-import { SectionCard, StatusBadge, tableClassName, tableHeadRowClassName, tableRowClassName } from "@/components/ui-kit";
+import {
+  EmptyState,
+  SectionCard,
+  StatusBadge,
+  tableClassName,
+  tableHeadRowClassName,
+  tableRowClassName,
+} from "@/components/ui-kit";
 import { formatDateAU, formatMoney } from "@/lib/format";
 import type { QuoteRevisionRow, QuoteEmailRow } from "@/lib/queries/quote-revisions";
 
@@ -26,7 +33,23 @@ export function RevisionsSection({
   currency: string;
   currencySymbol: string | null;
 }) {
-  if (revisions.length === 0) return null;
+  // The card stays even with nothing in it. It used to return null, and on
+  // a quote that had never been finalised that left the whole History tab
+  // blank -- which does not read as "nothing has happened yet", it reads as
+  // a page that failed to load.
+  if (revisions.length === 0) {
+    return (
+      <SectionCard title="Revisions" icon={<History className="size-5" />}>
+        <EmptyState
+          icon={History}
+          title="No revisions yet"
+          description="Each time this quote is finalised, the version sent to the client is kept here as a PDF."
+          bordered={false}
+          compact
+        />
+      </SectionCard>
+    );
+  }
 
   const pdfHref = (id: string) => `/api/quotes/${documentId}/revisions/${id}/pdf`;
   const money = (total: string) => formatMoney(total, currency, currencySymbol);

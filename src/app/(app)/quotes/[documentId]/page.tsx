@@ -409,6 +409,22 @@ export default async function DocumentBuilderPage({
             className="flex flex-col gap-4"
           >
 
+          {/* First on the tab. It is the one thing here that is a piece of
+              work rather than a setting -- a photo to find and drop in --
+              and it prints on the quotation's first page, so it leads the
+              tab that decides what the quotation says. */}
+          <SectionCard
+            title="Setup image"
+            description="A photo of the finished configuration, shown full width on the quotation's first page."
+            icon={<Camera className="size-5" />}
+          >
+            <HeroImageSection
+              documentId={document.id}
+              heroImageUrl={document.heroImageUrl}
+              readOnly={!isDraft}
+            />
+          </SectionCard>
+
           {/* Three small document-level fields, side by side on md+ (they each
               hold a single control, so a full-width card apiece wasted the
               row); they stack on mobile. */}
@@ -483,22 +499,6 @@ export default async function DocumentBuilderPage({
               }}
               documents={panelDocuments}
               excludedKeys={document.excludedDocumentKeys}
-              readOnly={!isDraft}
-            />
-          </SectionCard>
-
-          {/* The setup image: one photo of the whole configuration together
-              (usually already drawn up in SketchUp and shown to the
-              customer), printed full-width on the quotation's first page —
-              see HeroImageSection's own doc comment. */}
-          <SectionCard
-            title="Setup image"
-            description="A photo of the finished configuration, shown full width on the quotation's first page."
-            icon={<Camera className="size-5" />}
-          >
-            <HeroImageSection
-              documentId={document.id}
-              heroImageUrl={document.heroImageUrl}
               readOnly={!isDraft}
             />
           </SectionCard>
