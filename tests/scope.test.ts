@@ -98,3 +98,30 @@ describe("documentWhereForUser", () => {
     expect(documentWhereForUser(user)).toEqual({ regionId: "r-au" });
   });
 });
+
+// The rules in docs/reference/client-ownership-and-regional-scope.md, stated
+// as assertions so a future edit to `companyWhereForUser` cannot quietly
+// break them. These are about the SHAPE of the filter, which is what makes
+// each rule true — no database needed.
+describe("what a regional manager's client filter implies", () => {
+  const rm = { id: "rm", role: "REGIONAL_MANAGER", regionId: "r-au" };
+
+  // Rule 1: visibility is computed from the owner's CURRENT region, so a
+  // deactivated leaver's clients stay visible as long as that column does.
+  // Nothing in the filter references `active`.
+  it("does not filter on whether the owner can still sign in", () => {
+    expect(companyWhereForUser(rm).owner).toEqual({ regionId: "r-au" });
+    expect(JSON.stringify(companyWhereForUser(rm))).not.toContain("active");
+  });
+
+  // Rule 2: an owner-less company matches no regional manager. A relation
+  // filter on `owner` cannot match a null relation, so this holds by
+  // construction — the assertion is that the filter keeps going through the
+  // relation rather than being flattened to an `ownerId in (...)` list, which
+  // is where a "helpful" optimisation would start matching nulls.
+  it("filters through the owner relation, so an owner-less company never matches", () => {
+    const where = companyWhereForUser(rm);
+    expect(where).toHaveProperty("owner");
+    expect(where).not.toHaveProperty("ownerId");
+  });
+});

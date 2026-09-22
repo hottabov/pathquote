@@ -227,6 +227,15 @@ export async function setUserActive(userId: string, active: boolean): Promise<Ac
  *
  * Idempotent and safe to run on a user with no companies: it moves whatever is
  * there and reports how many.
+ *
+ * Since REGIONAL_MANAGER arrived (2026-09-22) this also decides which regional
+ * manager sees the clients: their scope is `{ owner: { regionId } }`
+ * (`companyWhereForUser`, src/lib/scope.ts), so moving a company between owners
+ * moves it between regional views. Two consequences, both written up in
+ * docs/reference/client-ownership-and-regional-scope.md: handing clients to a
+ * manager in another region transfers them out of this region's list, and a
+ * leaver whose `regionId` is blanked takes every client still owned by them out
+ * of their own region's list. Deactivate the account; leave its region alone.
  */
 export async function reassignUserCompanies(
   fromUserId: string,
