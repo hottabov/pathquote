@@ -81,12 +81,12 @@ describe("quoteReadiness", () => {
     expect(isFinalizable(input({ items: [], extraLineCount: 1 }))).toBe(true);
   });
 
-  it("counts the machines in the row label, and the extras in its detail", () => {
-    expect(quoteReadiness(input()).find((r) => r.key === "items")?.label).toBe("1 machine");
+  it("counts the items in the row label, and the extras in its detail", () => {
+    expect(quoteReadiness(input()).find((r) => r.key === "items")?.label).toBe("1 item");
     expect(
       quoteReadiness(input({ items: [item(), item({ id: "i2" })] })).find((r) => r.key === "items")
         ?.label
-    ).toBe("2 machines");
+    ).toBe("2 items");
     expect(
       quoteReadiness(input({ extraLineCount: 2 })).find((r) => r.key === "items")?.detail
     ).toBe("plus 2 extra lines");
@@ -123,7 +123,7 @@ describe("quoteReadiness", () => {
     );
     const row = rows.find((r) => r.key === "spec");
     expect(row?.targetItemId).toBe("i2");
-    expect(row?.detail).toBe("2 machines incomplete, starting with M-3220");
+    expect(row?.detail).toBe("2 items incomplete, starting with M-3220");
   });
 
   // `Document.deliveryTerms` is an enum that can never be empty, so a

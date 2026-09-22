@@ -54,7 +54,7 @@ export function BuilderTabs({ counts }: { counts: Partial<Record<BuilderTab, num
     <div
       role="tablist"
       aria-label="Quote sections"
-      className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line px-4 [scrollbar-width:none] md:px-6 lg:px-8 [&::-webkit-scrollbar]:hidden"
+      className="flex gap-1 overflow-x-auto overflow-y-hidden px-4 [scrollbar-width:none] md:px-6 lg:px-8 [&::-webkit-scrollbar]:hidden"
     >
       {TABS.map(({ id, label, Icon }) => {
         const selected = id === active;
@@ -73,12 +73,19 @@ export function BuilderTabs({ counts }: { counts: Partial<Record<BuilderTab, num
               // padding: that pair left more room above the label than below
               // it, and made a strip of secondary navigation as tall as a
               // primary control. 40px still clears a fingertip.
-              "focus-ring -mb-px flex h-10 shrink-0 items-center gap-2 rounded-t-(--radius-control) border border-b-0 px-3.5 text-sm whitespace-nowrap transition-colors duration-(--duration-micro) motion-reduce:transition-none",
+              "focus-ring relative flex h-10 shrink-0 items-center gap-2 rounded-t-(--radius-control) border border-b-0 px-3.5 text-sm whitespace-nowrap transition-colors duration-(--duration-micro) motion-reduce:transition-none",
               selected
-                ? // bg-slate-50 is the page background the panel below sits
-                  // on, not a token of its own: the tab has to be exactly
-                  // that colour for the two to read as one surface.
-                  "border-line bg-slate-50 font-semibold text-brand"
+                ? // Two things at once. bg-slate-50 is the page background the
+                  // panel below sits on, not a token of its own: the open tab
+                  // has to be exactly that colour for the two to read as one
+                  // surface. The ::after then paints a 1px strip of the same
+                  // colour over the header's own full-width hairline, which
+                  // is what makes the line run along, step around this tab
+                  // and carry on. Doing it with a pseudo-element rather than
+                  // -mb-px because the line lives two elements up, on the
+                  // only box that is full bleed, and a negative margin here
+                  // cannot reach it.
+                  "border-line bg-slate-50 font-semibold text-brand after:absolute after:inset-x-0 after:-bottom-px after:h-px after:bg-slate-50 after:content-['']"
                 : "border-transparent font-medium text-slate-500 md:hover:bg-slate-50/70 md:hover:text-brand-dark"
             )}
           >

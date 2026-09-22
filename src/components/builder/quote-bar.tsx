@@ -57,7 +57,7 @@ export function QuoteBar({
     // so the white and the hairline under the tabs run edge to edge while
     // the text still lines up with the cards below. The overflow that
     // creates is contained by `overflow-x-clip` on <main>.
-    <div className="sticky top-0 z-20 -mt-6 mx-[calc(50%-50vw)] bg-white px-[calc(50vw-50%)]">
+    <div className="sticky top-0 z-20 -mt-6 mx-[calc(50%-50vw)] border-b border-line bg-white px-[calc(50vw-50%)]">
       <div className="px-4 pt-3 md:px-6 lg:px-8">
         <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
           <div className="min-w-0 flex-1">
@@ -100,10 +100,10 @@ export function QuoteBar({
 
       {/* The gap between the identity block and the tabs is the point: they
           are two different things, and touching they read as one crowded
-          block. The hairline under them belongs to the tab row itself, not to
-          this wrapper: on the wrapper the open tab's -mb-px could not reach
-          it, so the line ran straight under the open tab instead of around
-          it. */}
+          block. The hairline belongs to this wrapper, because only the
+          wrapper is full bleed: on the tab row it stopped where the content
+          column stops. The open tab paints over its own slice of it, see
+          BuilderTabs. */}
       <div className="mt-4">
         <BuilderTabs counts={tabCounts} />
       </div>

@@ -100,16 +100,15 @@ function itemsRow(input: ReadinessInput): ReadinessRow {
   // Mirrors `items.length === 0 && !hasDocumentLevelLines`. Deliberately no
   // price check: an EasyLoader carries its whole price in its options and
   // has none of its own, and a SERVICE line is sometimes free on purpose.
-  const machines = input.items.length;
-  const hasAnything = machines > 0 || input.extraLineCount > 0;
+  // "items", not "machines": a quote carries software, accessories, service
+  // and spare parts alongside the cutters, and calling the lot machines is
+  // wrong on most real quotes.
+  const count = input.items.length;
+  const hasAnything = count > 0 || input.extraLineCount > 0;
   return {
     key: "items",
     label:
-      machines === 0
-        ? "Something to quote"
-        : machines === 1
-          ? "1 machine"
-          : `${machines} machines`,
+      count === 0 ? "Something to quote" : count === 1 ? "1 item" : `${count} items`,
     met: hasAnything,
     detail: hasAnything
       ? input.extraLineCount > 0
@@ -135,7 +134,7 @@ function specRow(input: ReadinessInput): ReadinessRow {
       ? null
       : incomplete.length === 1
         ? `${incomplete[0].item.code}: ${describeMissing(incomplete[0].missing)}`
-        : `${incomplete.length} machines incomplete, starting with ${incomplete[0].item.code}`;
+        : `${incomplete.length} items incomplete, starting with ${incomplete[0].item.code}`;
 
   return {
     key: "spec",

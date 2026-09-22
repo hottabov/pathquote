@@ -21,12 +21,11 @@ function heading(count: number) {
   return (
     <>
       <Package className="size-4 shrink-0 text-slate-400" aria-hidden="true" />
-      <h2 className="text-xs font-semibold tracking-wider text-slate-500 uppercase">Machines</h2>
-      {count > 0 ? (
-        <span className="text-xs text-slate-400">
-          {count} {count === 1 ? "item" : "items"}
-        </span>
-      ) : null}
+      {/* Not "Machines": a quote carries software, accessories, service and
+          spare parts too, and most real ones are not all cutters. */}
+      <h2 className="text-xs font-semibold tracking-wider text-slate-500 uppercase">
+        {count === 0 ? "Items" : `${count} ${count === 1 ? "item" : "items"}`}
+      </h2>
     </>
   );
 }
@@ -67,8 +66,8 @@ export function ItemsSection({
           <div className="flex min-h-9 items-center gap-2 px-1">{heading(0)}</div>
           <EmptyState
             icon={PackageSearch}
-            title="No machines yet"
-            description="Add one below to start building this quote."
+            title="Nothing on this quote yet"
+            description="Add a machine, a software licence or an accessory below."
           />
         </>
       ) : (
