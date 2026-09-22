@@ -30,7 +30,7 @@ type AppShellProps = {
  */
 export function AppShell({ user, children }: AppShellProps) {
   const isAdmin = isAdminRole(user.role);
-  const roleTone = STATUS_TONE[user.role] ?? "slate";
+  const roleTone = STATUS_TONE[user.role];
 
   return (
     <div className="flex min-h-dvh flex-col bg-slate-50 md:flex-row">

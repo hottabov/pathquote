@@ -19,6 +19,15 @@
 // field -- all of those satisfy `string` with no import needed, and this
 // file stays dependency-free (no `@/lib/db`, no `@prisma/client`) so it's
 // safely importable from pure validation modules and their unit tests.
+/** Every value of Prisma's `Role` enum, in the order `prisma/schema.prisma`
+ * declares them. Hand-maintained rather than imported from `@prisma/client`,
+ * for the same reason everything else in this file is typed against a bare
+ * `string`: this module must stay importable from pure validation modules and
+ * from the no-database test suite. The parity that matters — that this list
+ * and the enum agree — is what `tests/status-tone.test.ts` and
+ * `tests/users-validation.test.ts` exist to catch. */
+export const ROLE_VALUES = ["ADMIN", "MANAGER", "REGIONAL_MANAGER", "DEVELOPER"] as const;
+
 const ADMIN_ROLES: ReadonlySet<string> = new Set(["ADMIN", "DEVELOPER"]);
 
 /** True for ADMIN and DEVELOPER, false for MANAGER (or anything else). */

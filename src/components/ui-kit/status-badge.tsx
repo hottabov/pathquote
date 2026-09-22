@@ -50,7 +50,14 @@ export const STATUS_TONE: Record<string, StatusTone> = {
 };
 
 type StatusBadgeProps = {
-  tone: StatusTone;
+  // `STATUS_TONE` is a `Record<string, StatusTone>` -- deliberately partial,
+  // and indexed with a plain `string`, so a caller doing `STATUS_TONE[key]`
+  // for a key the map doesn't have gets `undefined` at runtime with no
+  // compile-time signal at all. Accepting that here, rather than requiring
+  // callers to guess a fallback for themselves, fixes every such call site
+  // at once -- including ones not yet written -- instead of requiring each
+  // to remember its own `?? "slate"`.
+  tone: StatusTone | undefined;
   children: React.ReactNode;
   className?: string;
 };
@@ -61,11 +68,14 @@ type StatusBadgeProps = {
  * (checked against their own background, not the page background).
  */
 export function StatusBadge({ tone, children, className }: StatusBadgeProps) {
+  // See the `tone` prop's comment: a missing tone renders as the neutral
+  // "slate" pill rather than an unstyled one.
+  const resolvedTone = tone ?? "slate";
   return (
     <span
       className={cn(
         "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap",
-        TONE_CLASSES[tone],
+        TONE_CLASSES[resolvedTone],
         className
       )}
     >
