@@ -83,12 +83,14 @@ slugs, nav labels and form field names are fixed.
 |---|---|
 | D1 | The builder splits into three tabs: **Build** (client, machines, extra lines), **Quote terms** (discount, delivery, validity, notes, documents, setup image, pricing display), **History** (revisions, emails, production forms). |
 | D2 | Tab state lives in the URL as `?tab=terms` / `?tab=history`. Absent or unknown values fall back to Build. The route itself does not change. |
-| D3 | A sticky **quote bar** carries back link, company, quote number, save state, status badge, grand total and the primary action, at every breakpoint. The duplicated desktop/mobile status blocks are deleted. |
+| D3 | A sticky **quote bar** carries back link, company, quote number, contact, region, status badge, grand total and the primary action, at every breakpoint. The duplicated desktop/mobile status blocks are deleted. It carries **no save indicator**: every autosaving field already shows its own next to itself, which is where the feedback belongs, and a permanent "Saved" that is true almost all of the time carries no information while occupying a slot in the busiest row on the page. |
 | D4 | The right rail gains a **readiness panel**: one row per finalize precondition, each unmet row linking to the thing that is missing. `FinalizeButton` keeps its own server-side guard; the panel is an additional, earlier signal, derived from the same predicate. |
 | D5 | Each machine becomes its **own card** at the page level with a 16px gap. The Items `SectionCard` wrapper is removed and replaced by a lightweight section header. One level of nesting disappears. |
 | D6 | Inside an expanded machine, the two drawers collapse into **one sub-tab strip: Options / Spec / Price**. One panel is visible at a time. |
-| D7 | Sub-tabs contain only what their label names. **Global per-item actions live in a row below the sub-tabs**: discount inline on the left, a `…` menu on the right holding "Show image in PDF", "Duplicate machine" and "Delete machine". |
-| D8 | Option selection moves out of the inline pseudo-modal into a **side sheet** (full-screen below `sm`) built on Base UI `Dialog`, giving it the focus trap, Escape handling and scroll lock it currently lacks. |
+| D7 | Sub-tabs contain only what their label names. **Global per-item actions live in one flat row below the sub-tabs**, nothing hidden behind a menu: discount input plus its %/A$ toggle on the left, then three icon buttons on the right (show image in PDF, duplicate machine, delete machine). No overflow menu: a popover would have to escape the disclosure's `overflow-hidden` wrapper, and the point of the row is that every action is visible without a guess. Labels are carried by `aria-label` plus a delayed tooltip. |
+| D8 | Option selection moves out of the inline pseudo-modal into a **side sheet** (full-screen below `sm`) built on Base UI `Dialog`, giving it the focus trap, Escape handling and scroll lock it currently lacks. The sheet is `position: fixed` and viewport-height: header and footer never scroll, only the option list does, at any list length and at any scroll position of the page behind. |
+| D16 | The sheet **autosaves**. Staging plus Save/Cancel is gone. A checkbox toggle commits immediately, optimistically, with revert plus `toast.error` on failure, the same pattern `terms-documents-panel.tsx` already uses for its document tickboxes. Quantity and attribute inputs go through the existing `use-autosave` hook at its 800ms debounce, and autosave is gated `enabled: !readOnly && !hasError` so an invalid MTS length never reaches the server, exactly as `terms-documents-panel.tsx:58-61` gates its own. The footer is no longer a button bar: it is a live strip showing the selected count and the running options subtotal, plus one **Done** control that only dismisses. Dismissing is never a decision, so Escape, the backdrop and the header close all do the same thing and nothing is ever lost by using them. |
+| D17 | With no Save step, **conflicts resolve at toggle time**. An option excluded by a current selection renders disabled with the reason inline ("Unavailable: V6 selected"), which is what the conflict-group data already supports; it is never silently accepted and rejected later. |
 | D9 | The **collapse control is one button** that toggles between "Collapse all" and "Expand all" with a flipping chevron icon, replacing the two text buttons separated by a literal `|`. |
 | D10 | On load, all machines are collapsed **except** those failing a readiness check. Expansion state is not persisted between visits. |
 | D11 | The price pencil becomes **always visible** at 38% opacity inside a button-shaped target, so the affordance exists without hover. |
@@ -120,6 +122,7 @@ used everywhere; no component invents its own timing.
 | Option chip added | `--t-ui` | `--e-out` | Confirms the option actually attached |
 | Grand total changed | `--t-ui` | `--e-out` | Draws the eye to the figure that moved |
 | Readiness meter | `--t-overlay` | `--e-move` | Shows the increment rather than blinking |
+| Icon-button tooltip | 500ms delay, `--t-micro` in | `--e-out` | Names the action without adding a visible label to the row |
 
 Every one of these is wrapped in `motion-reduce:` variants, and a global
 `@media (prefers-reduced-motion: reduce)` block zeroes transitions and
@@ -149,6 +152,7 @@ Landed first, as its own commit, visually near-invisible.
 | Geist loaded, Segoe rendered | Geist enabled as `body` font; `tabular-nums` on every money figure |
 | 8 bare "nothing here" sentences | `EmptyState` everywhere |
 | 6 read-only shapes | one `ReadOnlyValue` primitive |
+| no tooltip primitive (native `title` used in 3 places) | `ui-kit/tooltip.tsx` on Base UI, 500ms delay, replaces every `title=` in the builder |
 | 3 error channels, sometimes two at once | inline `role="alert"` under the control; toast reserved for optimistic-update rollback |
 
 ## Accessibility work
@@ -183,8 +187,8 @@ past the point where they can be reasoned about: `production-spec-editor.tsx`
 | `builder/item-panel-options.tsx` | Chips summary plus the button that opens the sheet | |
 | `builder/item-panel-spec.tsx` | Production spec fields for one machine | split from `production-spec-editor` |
 | `builder/item-panel-price.tsx` | Breakdown rows and editable prices | split from `item-breakdown-editor` |
-| `builder/item-action-bar.tsx` | Discount plus the `…` menu | |
-| `builder/options-sheet.tsx` | The side sheet: search, list, conflicts, footer | Base UI `Dialog` |
+| `builder/item-action-bar.tsx` | Discount plus three labelled icon buttons, one flat row | `ui-kit/tooltip` |
+| `builder/options-sheet.tsx` | The side sheet: search, list, conflicts, autosave, live footer | Base UI `Dialog`, `lib/use-autosave` |
 | `builder/use-item-reorder.ts` | Pointer drag plus the keyboard path, one hook | |
 
 `lib/quote-readiness.ts` is the important one: it is a pure function, testable
