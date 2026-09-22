@@ -221,12 +221,15 @@
   }
   html {
     @apply font-sans;
-    /* The quote builder's header breaks out of the centred content column to
-       run edge to edge. Its overflow is clipped here, at the root, where
-       `overflow` is propagated to the viewport instead of making some
-       wrapper a containing block for its fixed-position descendants. `clip`
-       rather than `hidden` because hidden makes a scroll container, and that
-       would stop every `position: sticky` inside from sticking. */
+    /* A backstop, not a load-bearing fix. The quote builder's header breaks
+       out of the centred content column to run edge to edge, and it now
+       measures that column with `cqw` so it overhangs nothing (see
+       quote-bar.tsx). This stays because an element that overflows
+       horizontally by a few pixels is otherwise invisible until something
+       makes the root scrollable -- which is exactly how the header's own
+       overhang went unnoticed. `clip` rather than `hidden`: hidden makes a
+       scroll container, and that would stop every `position: sticky` inside
+       from sticking. */
     overflow-x: clip;
     /* The options side sheet takes the page's scrollbar away while it is
        open (see `.side-sheet` below). Reserving the gutter permanently is

@@ -11,11 +11,9 @@ import {
   GripVertical,
 } from "lucide-react";
 import { formatMoney } from "@/lib/format";
-import { RemoveItemButton } from "@/components/builder/remove-item-button";
 import { ItemOptionsEditor } from "@/components/builder/item-options-editor";
-import { ItemDiscountField } from "@/components/builder/item-discount-field";
+import { ItemActionBar } from "@/components/builder/item-action-bar";
 import { ItemBreakdownEditor } from "@/components/builder/item-breakdown-editor";
-import { ItemShowImageToggle } from "@/components/builder/item-show-image-toggle";
 import { ProductionSpecEditor } from "@/components/builder/production-spec-editor";
 import { ItemTabs, type ItemTab } from "@/components/builder/item-tabs";
 import { Chip, CountBadge, StatusBadge } from "@/components/ui-kit";
@@ -27,7 +25,7 @@ import { assignRails, type RailSource } from "@/lib/production-forms/rails";
 import { EL_MODULE_ROLES } from "@/lib/production-forms/table-sections";
 import type { OptionRole } from "@prisma/client";
 import { readProductSpecs } from "@/lib/validation/product-specs";
-import { removeItem, reorderItems, setItemSerialNumber } from "@/lib/actions/documents";
+import { reorderItems, setItemSerialNumber } from "@/lib/actions/documents";
 import { pickDerivativeWidth } from "@/lib/image-derivative-width";
 import type { BuilderItem, CompatibleOption } from "@/lib/queries/documents";
 
@@ -496,7 +494,6 @@ export function ItemsList({
                         <ChevronDown className="size-4" aria-hidden="true" />
                       </button>
                                       </div>
-                  <RemoveItemButton action={removeItem.bind(null, item.id)} itemName={item.name} />
                 </div>
               )}
             </div>
@@ -611,33 +608,20 @@ export function ItemsList({
 
                   {/* Global to the machine, so it sits under the strip
                       rather than inside one of the tabs. A tab holds what
-                      its label names, and a discount is not a price and not
-                      a spec.
-
-                      A credit item (item.isCredit -- the TRADE-IN product)
-                      is already a negative line; a discount on it is
-                      meaningless and, entered by accident, silently wrong,
-                      so the control does not exist for it at all rather
-                      than being disabled. See `setItemDiscount`'s own guard
-                      for the server-side half of this. */}
-                  {!item.isCredit || (!readOnly && item.productHasImage) ? (
-                    <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-divider pt-3">
-                      {!item.isCredit ? (
-                        <ItemDiscountField
-                          itemId={item.id}
-                          discountMode={item.discountMode}
-                          discountValue={item.discountValue}
-                          maxDiscountPct={item.maxDiscountPct}
-                          currency={currency}
-                          currencySymbol={currencySymbol}
-                          readOnly={readOnly}
-                        />
-                      ) : null}
-                      {!readOnly && item.productHasImage ? (
-                        <ItemShowImageToggle itemId={item.id} showImage={item.showImage} />
-                      ) : null}
-                    </div>
-                  ) : null}
+                      its label names, and neither a discount nor a delete
+                      is a price or a spec. */}
+                  <ItemActionBar
+                    itemId={item.id}
+                    itemName={item.name}
+                    isCredit={item.isCredit}
+                    productHasImage={item.productHasImage}
+                    showImage={item.showImage}
+                    discountMode={item.discountMode}
+                    discountValue={item.discountValue}
+                    currency={currency}
+                    currencySymbol={currencySymbol}
+                    readOnly={readOnly}
+                  />
                 </div>
               </div>
             </div>

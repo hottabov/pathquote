@@ -90,7 +90,16 @@ export function AppShell({ user, children }: AppShellProps) {
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* `@container` (container-type: inline-size) is load-bearing, not
+          decoration: the quote builder's header breaks out of the centred
+          content column to run the full width of this region, and `cqw`
+          units are the only ones that measure *this* column. `vw` measured
+          the whole window, which is wider than this column by the sidebar,
+          so the header hung half a sidebar past the right edge -- invisible
+          until something (Base UI's scroll lock on a confirm dialog) made
+          the root scrollable for a moment and the whole page slid sideways
+          and stayed there. */}
+      <div className="@container flex min-w-0 flex-1 flex-col">
         {/* Mobile top bar */}
         <header className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:hidden">
           <Link

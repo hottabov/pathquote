@@ -52,12 +52,20 @@ export function QuoteBar({
   const meta = [number, contactName, regionName].filter(Boolean) as string[];
 
   return (
-    // Full bleed. `mx-[calc(50%-50vw)]` widens this to the viewport and the
-    // matching padding puts its contents back on the content column's grid,
-    // so the white and the hairline under the tabs run edge to edge while
-    // the text still lines up with the cards below. The overflow that
-    // creates is contained by `overflow-x-clip` on <main>.
-    <div className="sticky top-0 z-20 -mt-6 mx-[calc(50%-50vw)] border-b border-line bg-white px-[calc(50vw-50%)]">
+    // Full bleed. `mx-[calc(50%-50cqw)]` widens this to the full width of
+    // the app's content region and the matching padding puts its contents
+    // back on the content column's grid, so the white and the hairline
+    // under the tabs run edge to edge while the text still lines up with
+    // the cards below.
+    //
+    // `cqw`, not `vw`. `vw` measures the window, which is wider than this
+    // region by the width of the sidebar, so the bar overhung the right
+    // edge by half a sidebar. Nothing showed it while the root refused to
+    // scroll horizontally -- and then a confirm dialog's scroll lock made
+    // the root scrollable for a moment, the page slid sideways by exactly
+    // that much, and stayed there. The container is declared on the content
+    // region in app-shell.tsx.
+    <div className="sticky top-0 z-20 -mt-6 mx-[calc(50%-50cqw)] border-b border-line bg-white px-[calc(50cqw-50%)]">
       <div className="px-4 pt-3 md:px-6 lg:px-8">
         <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
           <div className="min-w-0 flex-1">
