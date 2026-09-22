@@ -19,9 +19,23 @@ datasource db {
 // not a business capability) where ADMIN may not -- see `canDeleteDocument`,
 // src/lib/signing/state.ts, and `isDeveloperRole`, src/lib/roles.ts. This is
 // the first right DEVELOPER has that ADMIN does not.
+//
+// REGIONAL_MANAGER is a MANAGER whose scope is their region rather than their
+// own rows: every quote with this `regionId`, and every client owned by a user
+// of this region. It is NOT an admin -- see `isRegionalManagerRole`,
+// src/lib/roles.ts, for why it is deliberately absent from `isAdminRole`.
+//
+// Listed between MANAGER and DEVELOPER for readability only. Postgres orders
+// enum values by the order they were added, not by their position in this
+// block, and `ALTER TYPE ... ADD VALUE` appends -- so the database's own
+// ordering is ADMIN, MANAGER, DEVELOPER, REGIONAL_MANAGER. Nothing in this app
+// sorts or compares roles ordinally (every check is a set membership test in
+// src/lib/roles.ts), so the divergence is cosmetic. Do not introduce a
+// `role >` comparison anywhere without reading this paragraph first.
 enum Role {
   ADMIN
   MANAGER
+  REGIONAL_MANAGER
   DEVELOPER
 }
 
@@ -270,6 +284,15 @@ model User {
   catalogVisibility CatalogVisibility[]
   supportMessages   SupportMessage[]
   catalogImports    CatalogImport[]
+
+  // A regional manager's client list filters companies through their owner's
+  // region (`companyWhereForUser`, src/lib/scope.ts: `{ owner: { regionId } }`),
+  // which is the first query in this app to select users BY region. Company is
+  // small and `ownerId` is indexed, so this is not today's bottleneck -- it is
+  // here because the join exists at all now, and an unindexed relation filter
+  // on a table that grows with headcount is the kind of thing nobody notices
+  // until it is a support ticket.
+  @@index([regionId])
 }
 
 model Account {

@@ -45,3 +45,73 @@ export function isAdminRole(role: string | null | undefined): boolean {
 export function isDeveloperRole(role: string | null | undefined): boolean {
   return role === "DEVELOPER";
 }
+
+/**
+ * True for REGIONAL_MANAGER only.
+ *
+ * A REGIONAL_MANAGER has every MANAGER right, plus a read AND write scope
+ * widened from "my own rows" to "my region's rows" -- every quote whose
+ * `Document.regionId` is their region, and every client owned by a user of
+ * their region. That widening lives entirely in `companyWhereForUser` and
+ * `documentWhereForUser` (src/lib/scope.ts), which every query and every
+ * mutating action already routes through, so this predicate has exactly two
+ * callers there and needs none elsewhere.
+ *
+ * Deliberately NOT folded into `isAdminRole`. The rights gated on that
+ * predicate are cross-region and structural -- editing the catalogue,
+ * creating regions and industries, administering users, importing/exporting,
+ * uploading files, deleting a signed quote -- and a regional manager has none
+ * of them. Adding this role to `isAdminRole` would hand over all of them at
+ * once, silently, at some thirty call sites.
+ *
+ * Same dependency-free, bare-`string` style as its two siblings above, for
+ * the same reason: importable from pure validation modules and their tests
+ * with no Prisma import.
+ */
+export function isRegionalManagerRole(role: string | null | undefined): boolean {
+  return role === "REGIONAL_MANAGER";
+}
+
+/** Roles whose /quotes list can contain quotes written by more than one
+ * person, and which therefore need the Salesperson column to tell them
+ * apart. An allow-set rather than "everyone except MANAGER" so an
+ * unrecognised role gets the narrow list, not a column of other people's
+ * names. */
+const SALESPERSON_COLUMN_ROLES: ReadonlySet<string> = new Set([
+  "ADMIN",
+  "DEVELOPER",
+  "REGIONAL_MANAGER",
+]);
+
+/**
+ * Whether the /quotes list should render its `Salesperson` column for this
+ * role. True for ADMIN, DEVELOPER and REGIONAL_MANAGER; false for MANAGER,
+ * whose list is their own quotes and nothing else, so the column would be
+ * one name repeated down the page.
+ *
+ * This is a presentation rule, not an authorization one -- the rows a viewer
+ * gets are decided by `documentWhereForUser` (src/lib/scope.ts), and a
+ * MANAGER's rows are all their own whether or not this returns true. It
+ * lives here rather than in the page so the same question has one answer if
+ * the clients list ever asks it too.
+ */
+export function canSeeSalesperson(role: string | null | undefined): boolean {
+  return role != null && SALESPERSON_COLUMN_ROLES.has(role);
+}
+
+/** Role names as a person should read them, for the badges in the app shell
+ * and the users list. Raw enum values leaked into the UI acceptably while
+ * every one of them was a single word; `REGIONAL_MANAGER` is where that
+ * stops. An unknown value prints itself rather than nothing, so a badge is
+ * never blank. */
+const ROLE_LABELS: Readonly<Record<string, string>> = {
+  ADMIN: "Admin",
+  MANAGER: "Manager",
+  REGIONAL_MANAGER: "Regional manager",
+  DEVELOPER: "Developer",
+};
+
+export function roleLabel(role: string | null | undefined): string {
+  if (role == null) return "";
+  return ROLE_LABELS[role] ?? role;
+}
