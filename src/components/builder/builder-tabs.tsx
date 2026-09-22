@@ -1,18 +1,19 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Hammer, ScrollText, History } from "lucide-react";
+import { Hammer, ScrollText, Factory, History } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CountBadge } from "@/components/ui-kit";
 import { parseTab, type BuilderTab } from "@/lib/builder-tabs";
 
 export type { BuilderTab };
 
-const TABS = [
-  { id: "build", label: "Build", Icon: Hammer },
-  { id: "terms", label: "Quote terms", Icon: ScrollText },
-  { id: "history", label: "History", Icon: History },
-] as const;
+const TAB_META: Record<BuilderTab, { label: string; Icon: typeof Hammer }> = {
+  build: { label: "Build", Icon: Hammer },
+  terms: { label: "Quote terms", Icon: ScrollText },
+  forms: { label: "Order forms", Icon: Factory },
+  history: { label: "History", Icon: History },
+};
 
 /**
  * The builder's three tabs, with the active one carried in the URL as `?tab=`.
@@ -32,11 +33,21 @@ const TABS = [
  * panels server-side; this only decides which one is visible, so switching is
  * instant and no data is refetched.
  */
-export function BuilderTabs({ counts }: { counts: Partial<Record<BuilderTab, number>> }) {
+export function BuilderTabs({
+  tabs,
+  counts,
+}: {
+  /** Which tabs this quote has, in order -- see `builderTabsFor`. Passed in
+   * rather than derived here because the page already knows the status and
+   * has to resolve `?tab=` against the same list to decide which panel to
+   * mark hidden. */
+  tabs: BuilderTab[];
+  counts: Partial<Record<BuilderTab, number>>;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-  const active = parseTab(params.get("tab"));
+  const active = parseTab(params.get("tab"), tabs);
 
   function select(tab: BuilderTab) {
     const next = new URLSearchParams(params.toString());
@@ -64,7 +75,8 @@ export function BuilderTabs({ counts }: { counts: Partial<Record<BuilderTab, num
       // left of these tabs.
       className="flex gap-1"
     >
-      {TABS.map(({ id, label, Icon }) => {
+      {tabs.map((id) => {
+        const { label, Icon } = TAB_META[id];
         const selected = id === active;
         const count = counts[id];
         return (

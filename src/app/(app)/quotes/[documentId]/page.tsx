@@ -54,7 +54,7 @@ import { ProductionFormsSection } from "@/components/documents/production-forms-
 import { DocumentTotals } from "@/components/builder/sticky-footer";
 import { FinalizeButton } from "@/components/builder/finalize-button";
 import { QuoteBar } from "@/components/builder/quote-bar";
-import { parseTab } from "@/lib/builder-tabs";
+import { builderTabsFor, parseTab } from "@/lib/builder-tabs";
 import { ReadinessPanel } from "@/components/builder/readiness-panel";
 import { UnfinalizeButton } from "@/components/builder/unfinalize-button";
 import { AcceptButton } from "@/components/builder/accept-button";
@@ -100,11 +100,13 @@ export default async function DocumentBuilderPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { documentId } = await params;
-  // Which of the three panels is showing. In the URL so the browser's back
-  // button steps between them instead of leaving the quote, and so a link to
-  // a quote's terms can be sent to someone. Unknown values fall back to Build
-  // rather than erroring: a hand-edited URL should not 500.
-  const tab = parseTab((await searchParams).tab);
+  // Which panel is showing. In the URL so the browser's back button steps
+  // between them instead of leaving the quote, and so a link to a quote's
+  // terms can be sent to someone. Resolved below, once the status is known:
+  // which tabs a quote has depends on it, and `?tab=forms` on a draft is a
+  // URL that has to land on Build rather than on a panel that renders
+  // nothing.
+  const tabParam = (await searchParams).tab;
   // AppLayout (src/app/(app)/layout.tsx) already calls requireSession and
   // redirects unauthenticated requests, so a session is always present here.
   // `requireRegion` rather than a bare `auth()`: the builder prices items, and
@@ -120,6 +122,8 @@ export default async function DocumentBuilderPage({
   if (!document) notFound();
 
   const isDraft = document.status === "DRAFT";
+  const builderTabs = builderTabsFor({ isFinal: !isDraft });
+  const tab = parseTab(tabParam, builderTabs);
   const isAdmin = isAdminRole(session.user.role);
 
   // Only fetched for a FINAL document — a DRAFT never renders SignButton, so
@@ -320,6 +324,7 @@ export default async function DocumentBuilderPage({
         total={document.total}
         currency={document.currency}
         currencySymbol={document.currencySymbol}
+        tabs={builderTabs}
         tabCounts={{ build: document.items.length, history: historyCount }}
       >
         {isDraft ? (
@@ -521,8 +526,10 @@ export default async function DocumentBuilderPage({
             hidden={tab !== "history"}
             className="flex flex-col gap-4"
           >
-          {/* Revisions first, the production forms to download right under
-              them, then the email log. */}
+          {/* Revisions, then the email log. The order forms used to sit
+              between them, which is how a manager came to find the one
+              thing the workshop needs filed under "History" -- a word that
+              promises a record of what happened, not a job to do. */}
           {history ? (
             <RevisionsSection
               revisions={history.revisions}
@@ -532,10 +539,23 @@ export default async function DocumentBuilderPage({
             />
           ) : null}
 
-          {formsDocument ? <ProductionFormsSection document={formsDocument} /> : null}
-
           {history ? <EmailHistorySection emails={history.emails} /> : null}
           </div>
+
+          {/* Order forms: what the workshop builds from, and only a FINAL
+              quote has any. The tab itself only exists then -- see
+              `builderTabsFor` -- so this panel is never rendered empty. */}
+          {builderTabs.includes("forms") ? (
+            <div
+              role="tabpanel"
+              id="builder-panel-forms"
+              aria-labelledby="builder-tab-forms"
+              hidden={tab !== "forms"}
+              className="flex flex-col gap-4"
+            >
+              {formsDocument ? <ProductionFormsSection document={formsDocument} /> : null}
+            </div>
+          ) : null}
         </div>
 
         {/* Right column: readiness, then the money, then signing. Every card

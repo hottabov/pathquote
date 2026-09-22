@@ -70,7 +70,7 @@ export function ProductionFormsSection({ document }: { document: DocumentForForm
   const software = softwareItemsOnDocument(document);
 
   return (
-    <SectionCard title="Production forms" icon={<Factory className="size-5" />}>
+    <SectionCard title="Order forms" icon={<Factory className="size-5" />}>
       {contexts.length === 0 ? (
         software.length > 0 || document.lines.length > 0 ? (
           // No machine forms, but the quote still has software to order or
@@ -82,7 +82,7 @@ export function ProductionFormsSection({ document }: { document: DocumentForForm
             ) : null}
           </ul>
         ) : (
-          <p className="text-sm text-slate-500">No production forms apply to this quote.</p>
+          <p className="text-sm text-slate-500">No order forms apply to this quote.</p>
         )
       ) : (
         <ProductionFormsBody document={document} contexts={contexts} software={software} />

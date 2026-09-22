@@ -31,6 +31,7 @@ export function QuoteBar({
   total,
   currency,
   currencySymbol,
+  tabs,
   tabCounts,
   children,
 }: {
@@ -44,6 +45,8 @@ export function QuoteBar({
   total: string;
   currency: string;
   currencySymbol: string | null;
+  /** Which tabs this quote has, in order -- see `builderTabsFor`. */
+  tabs: BuilderTab[];
   tabCounts: Partial<Record<BuilderTab, number>>;
   /** The primary action for the current status. A draft's Finalize lives here
    *  rather than in the rail's action stack, so it is reachable without
@@ -122,7 +125,7 @@ export function QuoteBar({
             <ChevronLeft className="size-4" aria-hidden="true" />
           </Link>
         </Tooltip>
-        <BuilderTabs counts={tabCounts} />
+        <BuilderTabs tabs={tabs} counts={tabCounts} />
       </div>
     </div>
   );

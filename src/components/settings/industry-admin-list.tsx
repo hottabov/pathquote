@@ -130,7 +130,7 @@ export function IndustryAdminList({ industries }: { industries: IndustryAdminLis
         : `${industry.companyCount} ${industry.companyCount === 1 ? "company uses" : "companies use"} it, and all of them will show the new name.`;
     const ok = await confirm({
       title: `Rename "${industry.name}" to "${name}"?`,
-      description: `${reach} Production forms print this name too.`,
+      description: `${reach} Order forms print this name too.`,
       confirmLabel: "Rename",
     });
     if (!ok) return;
