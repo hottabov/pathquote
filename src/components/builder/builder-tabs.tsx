@@ -47,7 +47,17 @@ export function BuilderTabs({ counts }: { counts: Partial<Record<BuilderTab, num
   }
 
   return (
-    <div role="tablist" aria-label="Quote sections" className="flex gap-1 overflow-x-auto px-4 md:px-6 lg:px-8">
+    // `overflow-y-hidden` is not redundant: setting `overflow-x` to anything
+    // other than `visible` makes the computed `overflow-y` `auto` too, which
+    // put a vertical scrollbar on this row over a couple of pixels of button
+    // padding. The scrollbar itself is hidden because the row scrolls only in
+    // the last 40px of phone width and a permanent gutter there costs more
+    // than the affordance is worth.
+    <div
+      role="tablist"
+      aria-label="Quote sections"
+      className="flex gap-1 overflow-x-auto overflow-y-hidden px-4 [scrollbar-width:none] md:px-6 lg:px-8 [&::-webkit-scrollbar]:hidden"
+    >
       {TABS.map(({ id, label, Icon }) => {
         const selected = id === active;
         const count = counts[id];

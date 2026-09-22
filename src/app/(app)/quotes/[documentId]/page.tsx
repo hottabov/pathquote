@@ -36,7 +36,7 @@ import { SCREEN_SIDE_FIELD } from "@/lib/production-forms/spec-images";
 import { getUser } from "@/lib/queries/users";
 import { listIndustries } from "@/lib/queries/industries";
 import { canAuthorSign, canRevoke, canSendToClient, signingStatusLabel } from "@/lib/signing/state";
-import { concessionCapMessage, markupCapMessage, toCents } from "@/lib/pricing";
+import { concessionCapMessage, markupCapMessage } from "@/lib/pricing";
 import { formatDateAU } from "@/lib/format";
 import { renderStoredRichText } from "@/lib/rich-text";
 import { SectionCard, StatusBadge, STATUS_TONE } from "@/components/ui-kit";
@@ -270,8 +270,8 @@ export default async function DocumentBuilderPage({
       options: item.lines
         .filter((line) => line.kind === "OPTION")
         .map((line) => ({ role: line.role, attributes: line.attributes })),
-      unitPriceCents: toCents(item.unitPrice),
     })),
+    extraLineCount: document.extraLines.length,
     deliveryTerms: document.deliveryTerms,
     printedDocumentCount: panelDocuments.filter(
       (row) => row.includedByDefault && !document.excludedDocumentKeys.includes(row.key)

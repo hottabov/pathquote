@@ -19,6 +19,15 @@ import {
  * of the question (see its own doc comment); this is the same idea widened to
  * the whole quote, and it calls into that function rather than repeating it.
  *
+ * Every BLOCKING row mirrors a rule `validateFinalizable` actually enforces,
+ * one for one. That constraint is the whole value of the panel: a row that
+ * blocks something the server would have allowed is just as wrong as a row
+ * that passes something the server refuses, and it is worse in practice,
+ * because the user has no way to satisfy it. The first draft of this file
+ * invented an "every item must have a price" rule and promptly reported a
+ * real EasyLoader, which is built entirely out of options and has no base
+ * price, and then a deliberately free SERVICE line, as blockers.
+ *
  * Pure on purpose: no React, no Prisma client, no money formatting. The caller
  * passes a summary of what it already has in hand and gets rows back.
  */
@@ -44,8 +53,15 @@ export type ReadinessRow = {
 
 export type ReadinessInput = {
   hasCompany: boolean;
+  /** Whether a contact is selected. Not a finalize rule -- `validateFinalizable`
+   *  never looks at it -- but a quote with no contact cannot be emailed, so
+   *  the client row says so without blocking. */
   hasContact: boolean;
-  items: Array<ReadinessItem & { id: string; unitPriceCents: number }>;
+  items: Array<ReadinessItem & { id: string }>;
+  /** Document-level extra lines (delivery, install, training). A quote with
+   *  no machines but an extra line is finalizable -- see
+   *  `validateFinalizable`'s `hasDocumentLevelLines`. */
+  extraLineCount: number;
   /** The chosen terms. Never absent, which is why its row is informational
    *  rather than a blocker: see `deliveryRow`. */
   deliveryTerms: "DELIVERED" | "EX_WORKS";
@@ -62,16 +78,18 @@ export function quoteReadiness(input: ReadinessInput): ReadinessRow[] {
 }
 
 function clientRow(input: ReadinessInput): ReadinessRow {
-  const detail = !input.hasCompany
-    ? "No company selected"
-    : !input.hasContact
-      ? "No contact selected"
-      : null;
+  // `validateFinalizable` checks `companyId` and nothing else here, so the
+  // company is what blocks. A missing contact is reported in the same row
+  // because it stops the quote being sent later, not finalized now.
   return {
     key: "client",
-    label: "Client and contact",
-    met: detail === null,
-    detail,
+    label: "Client",
+    met: input.hasCompany,
+    detail: !input.hasCompany
+      ? "No company selected"
+      : input.hasContact
+        ? null
+        : "No contact yet. One is needed to send the quote.",
     targetTab: "build",
     targetItemId: null,
     blocking: true,
@@ -79,25 +97,27 @@ function clientRow(input: ReadinessInput): ReadinessRow {
 }
 
 function itemsRow(input: ReadinessInput): ReadinessRow {
-  const unpriced = input.items.find((item) => item.unitPriceCents <= 0);
-  const detail =
-    input.items.length === 0
-      ? "No machines yet"
-      : unpriced
-        ? `${unpriced.code} has no price`
-        : null;
+  // Mirrors `items.length === 0 && !hasDocumentLevelLines`. Deliberately no
+  // price check: an EasyLoader carries its whole price in its options and
+  // has none of its own, and a SERVICE line is sometimes free on purpose.
+  const machines = input.items.length;
+  const hasAnything = machines > 0 || input.extraLineCount > 0;
   return {
     key: "items",
     label:
-      input.items.length === 0
-        ? "Machines priced"
-        : input.items.length === 1
-          ? "1 machine priced"
-          : `${input.items.length} machines priced`,
-    met: detail === null,
-    detail,
+      machines === 0
+        ? "Something to quote"
+        : machines === 1
+          ? "1 machine"
+          : `${machines} machines`,
+    met: hasAnything,
+    detail: hasAnything
+      ? input.extraLineCount > 0
+        ? `plus ${input.extraLineCount} extra ${input.extraLineCount === 1 ? "line" : "lines"}`
+        : null
+      : "Nothing on this quote yet",
     targetTab: "build",
-    targetItemId: unpriced?.id ?? null,
+    targetItemId: null,
     blocking: true,
   };
 }

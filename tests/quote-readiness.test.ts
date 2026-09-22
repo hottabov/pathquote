@@ -14,7 +14,6 @@ function item(over: Partial<ReadinessInput["items"][number]> = {}): ReadinessInp
     form: "M_SERIES",
     productionSpec: COMPLETE_SPEC,
     options: [],
-    unitPriceCents: 18_800_000,
     ...over,
   };
 }
@@ -24,6 +23,7 @@ function input(over: Partial<ReadinessInput> = {}): ReadinessInput {
     hasCompany: true,
     hasContact: true,
     items: [item()],
+    extraLineCount: 0,
     deliveryTerms: "DELIVERED",
     printedDocumentCount: 3,
     capExceeded: false,
@@ -48,42 +48,59 @@ describe("quoteReadiness", () => {
     expect(keys(input({ items: [] }))).toEqual(keys(input()));
   });
 
-  it("fails the client row when the company is set but the contact is not", () => {
+  // validateFinalizable checks companyId and nothing else about the client,
+  // so a missing contact is reported without blocking: it stops the quote
+  // being sent later, not finalized now.
+  it("reports a missing contact without blocking on it", () => {
     const row = quoteReadiness(input({ hasContact: false })).find((r) => r.key === "client");
-    expect(row?.met).toBe(false);
-    expect(row?.detail).toBe("No contact selected");
+    expect(row?.met).toBe(true);
+    expect(row?.detail).toBe("No contact yet. One is needed to send the quote.");
+    expect(isFinalizable(input({ hasContact: false }))).toBe(true);
   });
 
-  it("names the company as the problem when neither is set", () => {
+  it("blocks on a missing company", () => {
     const row = quoteReadiness(input({ hasCompany: false, hasContact: false })).find(
       (r) => r.key === "client"
     );
+    expect(row?.met).toBe(false);
     expect(row?.detail).toBe("No company selected");
   });
 
-  it("fails the items row on an empty quote", () => {
+  it("fails the items row on a quote with nothing on it at all", () => {
     const row = quoteReadiness(input({ items: [] })).find((r) => r.key === "items");
     expect(row?.met).toBe(false);
-    expect(row?.detail).toBe("No machines yet");
-    expect(row?.label).toBe("Machines priced");
+    expect(row?.detail).toBe("Nothing on this quote yet");
+    expect(row?.label).toBe("Something to quote");
   });
 
-  it("counts the machines in the row label", () => {
-    expect(quoteReadiness(input()).find((r) => r.key === "items")?.label).toBe("1 machine priced");
+  // validateFinalizable accepts items OR document-level lines, so a quote
+  // that is only delivery and training is finalizable.
+  it("accepts a quote with no machines but an extra line", () => {
+    const rows = quoteReadiness(input({ items: [], extraLineCount: 1 }));
+    expect(rows.find((r) => r.key === "items")?.met).toBe(true);
+    expect(isFinalizable(input({ items: [], extraLineCount: 1 }))).toBe(true);
+  });
+
+  it("counts the machines in the row label, and the extras in its detail", () => {
+    expect(quoteReadiness(input()).find((r) => r.key === "items")?.label).toBe("1 machine");
     expect(
       quoteReadiness(input({ items: [item(), item({ id: "i2" })] })).find((r) => r.key === "items")
         ?.label
-    ).toBe("2 machines priced");
+    ).toBe("2 machines");
+    expect(
+      quoteReadiness(input({ extraLineCount: 2 })).find((r) => r.key === "items")?.detail
+    ).toBe("plus 2 extra lines");
   });
 
-  it("fails the items row when a machine has no price, and points at it", () => {
-    const rows = quoteReadiness(
-      input({ items: [item(), item({ id: "i2", code: "L-220", unitPriceCents: 0 })] })
-    );
-    const row = rows.find((r) => r.key === "items");
-    expect(row?.met).toBe(false);
-    expect(row?.detail).toBe("L-220 has no price");
-    expect(row?.targetItemId).toBe("i2");
+  // There is deliberately no "every item must have a price" rule. An
+  // EasyLoader is built entirely out of options and carries no base price of
+  // its own, and a SERVICE line is sometimes free on purpose. An earlier
+  // version of this module invented that rule and flagged both, live, on a
+  // quote the server would have finalized without complaint.
+  it("does not invent a price requirement the server does not enforce", () => {
+    const easyLoader = item({ id: "el", code: "EL-3220" });
+    const freeService = item({ id: "svc", code: "SERVICE", form: null });
+    expect(isFinalizable(input({ items: [easyLoader, freeService] }))).toBe(true);
   });
 
   it("names the machine and the missing fields on an incomplete production spec", () => {
@@ -143,7 +160,6 @@ describe("isFinalizable", () => {
 
   it("is false while a blocking row is unmet", () => {
     expect(isFinalizable(input({ items: [] }))).toBe(false);
-    expect(isFinalizable(input({ hasContact: false }))).toBe(false);
     expect(isFinalizable(input({ items: [item({ productionSpec: {} })] }))).toBe(false);
   });
 

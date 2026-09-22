@@ -233,6 +233,29 @@
   textarea {
     font-size: 1rem;
   }
+  /* Tailwind v4 dropped the preflight rule that gave buttons a pointer
+     cursor, following the CSS spec, which says a button is not a link. The
+     practical effect in this app was that only `<Button>` looked clickable,
+     because its own CVA class sets `cursor-pointer`, while every
+     hand-rolled control -- the Options and Production spec disclosures, the
+     discount %/A$ toggle, the reorder handles, the tab strip -- did not, and
+     a control that does not answer the pointer reads as disabled.
+
+     `:disabled` and `[aria-disabled]` are excluded: those should keep the
+     default arrow, which is the one case where the spec behaviour is the
+     one we want. */
+  button:not(:disabled):not([aria-disabled="true"]),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"]:not([aria-disabled="true"]),
+  summary,
+  label:has(> input[type="checkbox"]:not(:disabled)),
+  label:has(> input[type="radio"]:not(:disabled)),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  select:not(:disabled) {
+    cursor: pointer;
+  }
+
   ::selection {
     background-color: var(--color-brand);
     color: white;
