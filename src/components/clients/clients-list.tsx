@@ -36,11 +36,26 @@ export type ClientListRow = {
   contactCount: number;
   contactsLabel: string;
   website: string | null;
+  /** Which manager looks after this client, already rendered by the server
+   * page — "Unassigned" for a company with no owner, so the column never has
+   * a blank cell to explain, and an empty string when the column is not
+   * rendered at all (see `showOwner`). */
+  ownerLabel: string;
 };
 
-type SortKey = "name" | "location" | "contacts";
+type SortKey = "name" | "location" | "contacts" | "owner";
 
-export function ClientsList({ rows }: { rows: ClientListRow[] }) {
+export function ClientsList({
+  rows,
+  showOwner,
+}: {
+  rows: ClientListRow[];
+  /** Whether to render the trailing `Owner` column — `canSeeSalesperson`
+   * (src/lib/roles.ts), resolved on the server page. False for a MANAGER,
+   * every one of whose clients is their own. Also gates whether the name
+   * joins the search text, so a search matches only what is on screen. */
+  showOwner: boolean;
+}) {
   const { query, setQuery, sort, toggleSort, visible, isFiltered } = useListTable<
     ClientListRow,
     SortKey
@@ -53,9 +68,16 @@ export function ClientsList({ rows }: { rows: ClientListRow[] }) {
       name: row.name,
       location: row.location,
       contacts: row.contactCount,
+      owner: row.ownerLabel,
     }),
     searchText: (row) =>
-      [row.name, row.location, row.contactsLabel, row.website ?? ""].join(" "),
+      [
+        row.name,
+        row.location,
+        row.contactsLabel,
+        row.website ?? "",
+        showOwner ? row.ownerLabel : "",
+      ].join(" "),
   });
 
   return (
@@ -87,6 +109,9 @@ export function ClientsList({ rows }: { rows: ClientListRow[] }) {
                   <SortableTh label="Name" sortKey="name" sort={sort} onSort={toggleSort} />
                   <SortableTh label="Location" sortKey="location" sort={sort} onSort={toggleSort} />
                   <SortableTh label="Contacts" sortKey="contacts" sort={sort} onSort={toggleSort} />
+                  {showOwner ? (
+                    <SortableTh label="Owner" sortKey="owner" sort={sort} onSort={toggleSort} />
+                  ) : null}
                   <th scope="col" className="px-4 py-3">
                     <span className="sr-only">Website</span>
                   </th>
@@ -94,13 +119,13 @@ export function ClientsList({ rows }: { rows: ClientListRow[] }) {
               </thead>
               <tbody>
                 {visible.map((row) => (
-                  <CompanyRow key={row.id} row={row} />
+                  <CompanyRow key={row.id} row={row} showOwner={showOwner} />
                 ))}
               </tbody>
             </table>
           }
           cards={visible.map((row) => (
-            <CompanyCard key={row.id} row={row} />
+            <CompanyCard key={row.id} row={row} showOwner={showOwner} />
           ))}
         />
       )}
@@ -108,7 +133,7 @@ export function ClientsList({ rows }: { rows: ClientListRow[] }) {
   );
 }
 
-function CompanyRow({ row }: { row: ClientListRow }) {
+function CompanyRow({ row, showOwner }: { row: ClientListRow; showOwner: boolean }) {
   const href = `/clients/${row.id}`;
 
   return (
@@ -124,6 +149,11 @@ function CompanyRow({ row }: { row: ClientListRow }) {
       <RowCell href={href}>
         <span className="text-sm text-slate-500">{row.contactsLabel}</span>
       </RowCell>
+      {showOwner ? (
+        <RowCell href={href}>
+          <span className="text-sm text-slate-600">{row.ownerLabel}</span>
+        </RowCell>
+      ) : null}
       {/* Deliberately its own plain `<td>` (no `RowCell`/row link) — the
           external website link must stay independently clickable, and
           nesting an `<a>` inside a `RowCell`'s own `<Link>` would be invalid
@@ -147,7 +177,7 @@ function CompanyRow({ row }: { row: ClientListRow }) {
   );
 }
 
-function CompanyCard({ row }: { row: ClientListRow }) {
+function CompanyCard({ row, showOwner }: { row: ClientListRow; showOwner: boolean }) {
   return (
     <div className="relative flex min-h-12 flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 transition-colors active:bg-slate-100">
       <Link
@@ -166,6 +196,12 @@ function CompanyCard({ row }: { row: ClientListRow }) {
         <span className="truncate">{row.location}</span>
         <span className="shrink-0">{row.contactsLabel}</span>
       </div>
+      {/* Prefixed, like the Salesperson line on a quote card: unprefixed, a
+          bare name under the location reads as more metadata rather than as
+          the person who looks after this client. */}
+      {showOwner ? (
+        <p className="relative truncate text-xs text-slate-500">Owner: {row.ownerLabel}</p>
+      ) : null}
       {row.website ? (
         <a
           href={row.website}

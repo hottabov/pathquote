@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Plus } from "lucide-react";
 import { auth } from "@/auth";
-import { scopeDescription } from "@/lib/roles";
+import { canSeeSalesperson, scopeDescription } from "@/lib/roles";
 import { listCompanies } from "@/lib/queries/clients";
 import { displayCountry } from "@/lib/countries";
 import { buttonVariants } from "@/components/ui/button";
@@ -23,6 +23,15 @@ export default async function ClientsPage() {
   // browser, across the location and website columns too, not just name.
   const companies = await listCompanies(session.user);
 
+  // Computed before the rows are built, for the reason the /quotes page
+  // spells out: `rows` is a prop of a client component, so every row object is
+  // serialized into the RSC payload the browser receives, and a name left on a
+  // row whose column is not rendered would be shipped to a viewer who never
+  // sees it. Same predicate as the Salesperson column -- a MANAGER's list is
+  // one person's clients, so the column would be one name repeated down the
+  // page.
+  const showOwner = canSeeSalesperson(session.user.role);
+
   const rows = companies.map<ClientListRow>((c) => ({
     id: c.id,
     name: c.name,
@@ -32,6 +41,12 @@ export default async function ClientsPage() {
     contactCount: c.contactCount,
     contactsLabel: `${c.contactCount} ${c.contactCount === 1 ? "contact" : "contacts"}`,
     website: c.website,
+    // "Unassigned" rather than an empty cell: a company with no owner is a
+    // real state (`Company.ownerId` is nullable, and an ACT import that
+    // cannot resolve an owner leaves it null), and a blank cell reads as a
+    // rendering bug. An empty string when the column is not rendered, so the
+    // name is not serialized to a browser that will never show it.
+    ownerLabel: showOwner ? (c.ownerName ?? "Unassigned") : "",
   }));
 
   return (
@@ -57,7 +72,7 @@ export default async function ClientsPage() {
         }
       />
 
-      <ClientsList rows={rows} />
+      <ClientsList rows={rows} showOwner={showOwner} />
     </div>
   );
 }

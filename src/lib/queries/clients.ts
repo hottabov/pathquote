@@ -12,12 +12,24 @@ export type CompanyListItem = {
   country: string | null;
   website: string | null;
   contactCount: number;
+  /** Which manager looks after this client — `User.name`, falling back to
+   * `User.email`, and `null` for a company with no owner at all (possible:
+   * `Company.ownerId` is nullable). Feeds the list's `Owner` column, shown to
+   * the roles whose list can hold more than one manager's clients
+   * (`canSeeSalesperson`, src/lib/roles.ts) — a regional manager's list is
+   * several managers' clients merged, and unlabelled it is unusable.
+   *
+   * Always selected, never conditionally, for the reason
+   * `DocumentListItem.salespersonName` gives: the role decides what is
+   * displayed, not what is fetched. */
+  ownerName: string | null;
 };
 
 /**
- * Companies visible to `user` (all for ADMIN, own-only for MANAGER),
- * optionally filtered by a case-insensitive name search, ordered by name.
- * Each row carries its contact count for the list cards.
+ * Companies visible to `user` — all for ADMIN, this region's managers' for a
+ * REGIONAL_MANAGER, own-only for MANAGER — optionally filtered by a
+ * case-insensitive name search, ordered by name. Each row carries its contact
+ * count for the list cards and its owner's name for the `Owner` column.
  */
 export async function listCompanies(
   user: ScopeUser,
@@ -38,6 +50,9 @@ export async function listCompanies(
     orderBy: { name: "asc" },
     include: {
       _count: { select: { contacts: true } },
+      // Nullable relation: `Company.ownerId` is optional (see the schema), so
+      // a company imported or created without a resolvable owner has none.
+      owner: { select: { name: true, email: true } },
     },
   });
 
@@ -48,6 +63,7 @@ export async function listCompanies(
     country: c.country,
     website: c.website,
     contactCount: c._count.contacts,
+    ownerName: c.owner ? (c.owner.name ?? c.owner.email) : null,
   }));
 }
 
