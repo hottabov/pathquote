@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import type { OptionRole } from "@prisma/client";
-import { ChevronDown, Minus, Plus, SlidersHorizontal } from "lucide-react";
+import { ChevronRight, Minus, Plus, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { fieldInputClass } from "@/components/ui-kit";
 import { formatMoney } from "@/lib/format";
@@ -23,6 +24,8 @@ import {
   type SelectionState,
 } from "@/lib/option-selections";
 import { cn } from "@/lib/utils";
+import { useAutosave } from "@/lib/use-autosave";
+import { AutosaveIndicator } from "@/components/builder/autosave-indicator";
 import { setItemOptions } from "@/lib/actions/documents";
 import { pickDerivativeWidth } from "@/lib/image-derivative-width";
 import type { CompatibleOption } from "@/lib/queries/documents";
@@ -162,6 +165,43 @@ function MtsLengthField({
   );
 }
 
+/**
+ * The item's whole option set in the shape `setItemOptions` takes. That action
+ * replaces every option on the item in one call, so there is never a partial
+ * update to assemble: whatever is selected on screen is what gets sent.
+ */
+function buildSelections(
+  compatibleOptions: CompatibleOption[],
+  effective: Map<string, SelectionState>
+): OptionSelectionInput[] {
+  return compatibleOptions
+    .filter((option) => effective.has(option.id))
+    .map((option) => {
+      const state = effective.get(option.id)!;
+      const fields = attributeFieldsFor(option.attributeSchema, option.role);
+      const attributes: Record<string, string | number> = {};
+      for (const field of fields) {
+        const raw = state.attributes[field.key];
+        if (raw === undefined || raw === "") continue;
+        if (field.type === "number") {
+          const num = Number(raw);
+          attributes[field.key] = Number.isFinite(num) ? num : raw;
+        } else {
+          attributes[field.key] = raw;
+        }
+      }
+      return {
+        optionId: option.id,
+        // One MTS, whatever its length: the length is the attribute and the
+        // extra metres are their own line. The server forces this too; it is
+        // here so the number sent matches the row on screen, which offers no
+        // quantity at all.
+        qty: option.role === "MTS" ? 1 : state.qty,
+        attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
+      };
+    });
+}
+
 export function ItemOptionsEditor({
   itemId,
   currentLines,
@@ -171,7 +211,6 @@ export function ItemOptionsEditor({
   showOptionIcons = true,
   readOnly = false,
   lockedRoles,
-  startClosed = false,
 }: {
   itemId: string;
   currentLines: CurrentLine[];
@@ -187,11 +226,6 @@ export function ItemOptionsEditor({
    * are inert -- and `save` re-submits them untouched, so opening this panel
    * and saving can never drop them. */
   lockedRoles?: ReadonlySet<OptionRole>;
-  /** Keep the panel closed even for an item with no options yet. Set for an
-   * EasyLoader: its modules come from the builder above, so an open list of
-   * pickable options is an invitation to do the wrong thing -- what is left
-   * in here is accessories, which are looked for deliberately. */
-  startClosed?: boolean;
   /** "ui.showOptionIcons" app setting (see `getShowOptionIcons`,
    * src/lib/queries/settings.ts), read server-side and threaded down through
    * ItemsList/ItemsSection. Gates only the small per-option icon in this
@@ -201,17 +235,16 @@ export function ItemOptionsEditor({
   showOptionIcons?: boolean;
   readOnly?: boolean;
 }) {
-  // A machine is almost never sold bare, so an item that has no options yet
-  // is one the salesperson is about to configure — the panel opens itself
-  // rather than costing a click. An item that already has options stays
-  // closed, so reopening a built-up quote isn't a wall of open editors.
-  const [open, setOpen] = useState(currentLines.length === 0 && !readOnly && !startClosed);
+  // Always closed to begin with. This used to open itself for an item with
+  // no options yet, which was defensible while it was an inline panel and
+  // indefensible now that it is a modal: a quote with thirteen unconfigured
+  // items would have tried to open thirteen dialogs on load.
+  const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Map<string, SelectionState>>(() =>
     selectionsFromLines(currentLines)
   );
+  const router = useRouter();
   const [search, setSearch] = useState("");
-  const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
 
   const chips = currentLines.filter((line): line is CurrentLine & { code: string } => Boolean(line.code));
 
@@ -238,7 +271,6 @@ export function ItemOptionsEditor({
   function openPanel() {
     setSelected(selectionsFromLines(currentLines));
     setSearch("");
-    setError(null);
     setOpen(true);
   }
 
@@ -311,54 +343,53 @@ export function ItemOptionsEditor({
     });
   }
 
-  function save() {
-    setError(null);
-    const mtsWithoutLength = compatibleOptions.some(
-      (option) =>
-        option.role === "MTS" &&
-        effective.has(option.id) &&
-        !mtsMetresValid(effective.get(option.id)!.attributes)
-    );
-    if (mtsWithoutLength) {
-      setError(MTS_METRES_REQUIRED);
-      return;
-    }
-    const selections: OptionSelectionInput[] = compatibleOptions
-      .filter((option) => effective.has(option.id))
-      .map((option) => {
-        const state = effective.get(option.id)!;
-        const fields = attributeFieldsFor(option.attributeSchema, option.role);
-        const attributes: Record<string, string | number> = {};
-        for (const field of fields) {
-          const raw = state.attributes[field.key];
-          if (raw === undefined || raw === "") continue;
-          if (field.type === "number") {
-            const num = Number(raw);
-            attributes[field.key] = Number.isFinite(num) ? num : raw;
-          } else {
-            attributes[field.key] = raw;
-          }
-        }
-        return {
-          optionId: option.id,
-          // One MTS, whatever its length -- the length is the attribute, and
-          // the extra metres are their own line. The server forces this too;
-          // it is here so the number sent matches the row on screen, which
-          // no longer offers a quantity at all.
-          qty: option.role === "MTS" ? 1 : state.qty,
-          attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
-        };
-      });
+  // The full selection set, in the shape the action takes. `setItemOptions`
+  // replaces every option on the item in one call, so there is no partial
+  // update to build: whatever is on screen is what gets sent.
+  const selections = buildSelections(compatibleOptions, effective);
 
-    startTransition(async () => {
+  // An MTS with no travel distance is the one thing this panel can produce
+  // that the server will refuse, so autosave stays off until it is fixed,
+  // exactly as TermsDocumentsPanel gates its own on a live Zod check. The
+  // user sees the message immediately either way.
+  const mtsWithoutLength = compatibleOptions.some(
+    (option) =>
+      option.role === "MTS" &&
+      effective.has(option.id) &&
+      !mtsMetresValid(effective.get(option.id)!.attributes)
+  );
+
+  // Every change commits on its own. There is no Save and no Cancel: with
+  // nothing staged, Save would be a lie and Cancel a promise this panel
+  // cannot keep, so closing it is never a decision and Escape, the backdrop
+  // and Done all do the same harmless thing.
+  //
+  // Keyed by a stable serialisation rather than the array, because the array
+  // is rebuilt on every render and would retrigger the hook forever.
+  const autosaveKey = JSON.stringify(selections);
+  const autosave = useAutosave({
+    value: autosaveKey,
+    enabled: open && !readOnly && !mtsWithoutLength,
+    // Deliberately no router.refresh() here. Nothing in this app's document
+    // actions calls revalidatePath, so the refresh has to happen somewhere,
+    // but doing it per save would re-render the page on every checkbox and,
+    // worse, could not terminate: the server normalises a selection set (it
+    // derives the MTS travel line and the EasyLoader's modules), the new
+    // lines come back as props, the effective set changes, and that is
+    // another save. The refresh happens once, when the sheet closes.
+    onSave: async () => {
       const result = await setItemOptions(itemId, selections);
-      if (result?.error) {
-        setError(result.error);
-        return;
-      }
-      setOpen(false);
-    });
+      if (result?.error) return { error: result.error };
+    },
+  });
+
+  function closePanel() {
+    setOpen(false);
+    // Pull the card's chips, its breakdown and the quote total back in line
+    // with what was just written.
+    router.refresh();
   }
+
 
   // No compatible options for this product at all — there's nothing to add
   // and nothing useful to say about that, so the whole block (heading,
@@ -390,28 +421,33 @@ export function ItemOptionsEditor({
               label swaps to "Close options") to reflect panel state. */}
           <button
             type="button"
-            onClick={() => (open ? setOpen(false) : openPanel())}
+            onClick={openPanel}
+            aria-haspopup="dialog"
             aria-expanded={open}
             className="focus-ring inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:border-brand/40 hover:bg-slate-50 active:bg-slate-100 sm:w-auto"
           >
             <SlidersHorizontal className="size-4 text-slate-500" aria-hidden="true" />
-            <span>{open ? "Close options" : "Edit options"}</span>
+            <span>Edit options</span>
             {chips.length > 0 ? (
               <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-brand/10 px-1.5 py-0.5 text-xs font-semibold text-brand">
                 {chips.length}
               </span>
             ) : null}
-            <ChevronDown
-              className={cn("size-4 text-slate-400 transition-transform", open && "rotate-180")}
-              aria-hidden="true"
-            />
+            <ChevronRight className="size-4 text-slate-400" aria-hidden="true" />
           </button>
         </div>
       )}
 
+      {/* Still an inline panel rather than a side sheet. A Dialog was tried
+          and reverted: its popup would not take the viewport as its
+          containing block in this tree, so the sheet sat a few hundred
+          pixels off to the right with part of it past the edge of the
+          screen. The staging is what mattered and that is gone either way,
+          so the panel stays where it is until the positioning is understood
+          rather than guessed at. */}
       {open && !readOnly ? (
-        <div className="mt-2 flex max-h-[70dvh] flex-col overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-          <div className="flex-1 overflow-y-auto p-3">
+        <div className="mt-2 flex max-h-[70dvh] flex-col overflow-hidden rounded-(--radius-card) border border-line bg-slate-50">
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
             <div className="flex flex-wrap items-center gap-2">
               <input
                 type="search"
@@ -618,26 +654,22 @@ export function ItemOptionsEditor({
                 )}
           </div>
 
-          <div className="sticky bottom-0 flex flex-col gap-2 border-t border-slate-200 bg-white p-3">
-            {error ? (
-              <p role="alert" className="text-sm text-destructive">
-                {error}
-              </p>
-            ) : null}
-            <div className="flex items-center gap-2">
-              <Button type="button" onClick={save} disabled={pending} variant="brand" className="h-10">
-                {pending ? "Saving…" : "Save options"}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setOpen(false)}
-                disabled={pending}
-                className="h-10"
-              >
-                Cancel
-              </Button>
-            </div>
+          <div className="flex items-center gap-3 border-t border-line bg-white p-3">
+            <p className="min-w-0 flex-1 text-sm text-slate-600">
+              <span className="font-medium text-brand-dark">{effective.size} selected</span>
+              {mtsWithoutLength ? (
+                <span role="alert" className="block text-xs text-destructive">
+                  {MTS_METRES_REQUIRED}
+                </span>
+              ) : null}
+            </p>
+            {/* Only speaks up while a save is in flight or has failed. There
+                is no resting "Saved", for the same reason the quote bar
+                carries no save indicator. */}
+            <AutosaveIndicator status={autosave.status} error={autosave.error} />
+            <Button type="button" variant="outline" onClick={closePanel}>
+              Done
+            </Button>
           </div>
         </div>
       ) : null}

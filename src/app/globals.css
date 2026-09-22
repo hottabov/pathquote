@@ -221,6 +221,13 @@
   }
   html {
     @apply font-sans;
+    /* The quote builder's header breaks out of the centred content column to
+       run edge to edge. Its overflow is clipped here, at the root, where
+       `overflow` is propagated to the viewport instead of making some
+       wrapper a containing block for its fixed-position descendants. `clip`
+       rather than `hidden` because hidden makes a scroll container, and that
+       would stop every `position: sticky` inside from sticking. */
+    overflow-x: clip;
     /* Explicitly off — Phase 5b design direction calls for no scroll-linked
        motion beyond the standard micro-transitions on interactive elements. */
     scroll-behavior: auto;

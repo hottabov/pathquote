@@ -566,7 +566,6 @@ export function ItemsList({
                   showOptionIcons={showOptionIcons}
                   readOnly={readOnly}
                   lockedRoles={isEasyLoader ? EASYLOADER_LOCKED_ROLES : DERIVED_ROLES}
-                  startClosed={isEasyLoader}
                 />
 
                 {/* A credit item (item.isCredit — the TRADE-IN product) is
