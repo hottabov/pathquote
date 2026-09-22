@@ -6,7 +6,14 @@ import { cn } from "@/lib/utils";
 import type { ReadinessRow } from "@/lib/quote-readiness";
 
 /**
- * What is still missing, shown before Finalize is pressed rather than after.
+ * What is still missing, unusual or incompatible -- shown before Finalize is
+ * pressed rather than after.
+ *
+ * Only rows that ask for attention are drawn, and the caller drops the whole
+ * card when none do (see `readinessNeedsAttention`). A finished quote used
+ * to show five green ticks at the top of the narrowest column to report that
+ * there was nothing to do; the Finalize button going live says that, and it
+ * says it where the decision is made.
  *
  * `FinalizeButton` reported its blockers only once it had been pressed and
  * refused, which made "why can I not finalize this" the last question the
@@ -23,9 +30,17 @@ export function ReadinessPanel({ rows }: { rows: ReadinessRow[] }) {
   const blocking = rows.filter((row) => row.blocking);
   const met = blocking.filter((row) => row.met).length;
   const total = blocking.length;
+  const shown = rows.filter((row) => row.needsAttention);
+  // The meter measures the road to Finalize, so it belongs on screen only
+  // while something is still in the way. Beside a lone advisory remark it
+  // would read "3 of 3" under a warning, which is a contradiction.
+  const blocked = met < total;
+
+  if (shown.length === 0) return null;
 
   return (
     <div>
+      {blocked ? (
       <div
         role="progressbar"
         aria-valuemin={0}
@@ -39,9 +54,10 @@ export function ReadinessPanel({ rows }: { rows: ReadinessRow[] }) {
           style={{ width: total > 0 ? `${(met / total) * 100}%` : "0%" }}
         />
       </div>
+      ) : null}
 
       <ul className="flex flex-col">
-        {rows.map((row) => (
+        {shown.map((row) => (
           <li key={row.key} className="flex items-start gap-2.5 border-b border-divider py-2 last:border-b-0">
             <RowIcon met={row.met} blocking={row.blocking} />
             <div className="min-w-0 flex-1">

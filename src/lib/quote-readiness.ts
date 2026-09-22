@@ -45,10 +45,24 @@ export type ReadinessRow = {
   /** The machine to expand and scroll to, when the fix is inside one. */
   targetItemId: string | null;
   /**
-   * False for an advisory row: shown, counted nowhere, never blocks Finalize.
-   * The documents and PathWorks rows are advisory.
+   * False for an advisory row: counted nowhere, never blocks Finalize. The
+   * delivery, documents and PathWorks rows are advisory.
    */
   blocking: boolean;
+  /**
+   * Whether this row is worth the reader's attention right now -- which is
+   * what decides whether it is drawn at all, and whether the panel exists.
+   *
+   * Deliberately not the same thing as `!met`. `met` mirrors
+   * `validateFinalizable` and drives the count, so it has to stay exactly as
+   * strict as the server: the client row is met once a company is chosen,
+   * because that is all finalising requires. But a quote with a company and
+   * no contact cannot be *sent*, and that is worth saying, so the row still
+   * asks to be seen. The reverse happens too: the delivery row is always
+   * met, and only asks to be seen on Ex Works, where it is reporting that
+   * the tax on the whole quote just went to zero.
+   */
+  needsAttention: boolean;
 };
 
 export type ReadinessInput = {
@@ -77,6 +91,20 @@ export type ReadinessInput = {
   pathWorksModulesWithoutHost: boolean;
 };
 
+/**
+ * Whether the panel has anything to say -- and so whether it is drawn at
+ * all.
+ *
+ * The panel used to be permanent, and on a finished quote that meant five
+ * green ticks holding the top of the narrowest, most valuable column to
+ * report that there was nothing to do. Its absence now carries that: the
+ * card exists only when something is missing, unusual or incompatible, and
+ * the Finalize button going live is what says the rest is fine.
+ */
+export function readinessNeedsAttention(rows: ReadinessRow[]): boolean {
+  return rows.some((row) => row.needsAttention);
+}
+
 export function quoteReadiness(input: ReadinessInput): ReadinessRow[] {
   return [
     clientRow(input),
@@ -104,6 +132,7 @@ function pathWorksRow(): ReadinessRow {
     key: "pathworks",
     label: "PathWorks licence",
     met: false,
+    needsAttention: true,
     detail: "Modules on this quote with no licence to host them — fine if the client already owns one",
     targetTab: "build",
     targetItemId: null,
@@ -119,6 +148,9 @@ function clientRow(input: ReadinessInput): ReadinessRow {
     key: "client",
     label: "Client",
     met: input.hasCompany,
+    // A missing contact does not block Finalize but is still worth a look:
+    // the quote cannot be emailed without one.
+    needsAttention: !input.hasCompany || !input.hasContact,
     detail: !input.hasCompany
       ? "No company selected"
       : input.hasContact
@@ -144,6 +176,7 @@ function itemsRow(input: ReadinessInput): ReadinessRow {
     label:
       count === 0 ? "Something to quote" : count === 1 ? "1 item" : `${count} items`,
     met: hasAnything,
+    needsAttention: !hasAnything,
     detail: hasAnything
       ? input.extraLineCount > 0
         ? `plus ${input.extraLineCount} extra ${input.extraLineCount === 1 ? "line" : "lines"}`
@@ -174,6 +207,7 @@ function specRow(input: ReadinessInput): ReadinessRow {
     key: "spec",
     label: "Production spec",
     met: incomplete.length === 0,
+    needsAttention: incomplete.length > 0,
     detail,
     targetTab: "build",
     targetItemId: incomplete[0]?.item.id ?? null,
@@ -192,7 +226,14 @@ function deliveryRow(input: ReadinessInput): ReadinessRow {
     // zeroes the tax on the whole quote and that is worth stating in the one
     // place someone checks before finalizing.
     met: true,
-    detail: exWorks ? "Ex Works, no GST charged" : "Delivered, GST applies",
+    // Only the Ex Works branch asks to be seen. "Delivered, GST applies" is
+    // the default and says nothing; Ex Works has quietly zeroed the tax on
+    // the whole quote, which is exactly the kind of thing nobody notices
+    // until the customer does.
+    needsAttention: exWorks,
+    detail: exWorks
+      ? "Ex Works — no GST on this quote"
+      : "Delivered, GST applies",
     targetTab: "terms",
     targetItemId: null,
     blocking: false,
@@ -205,6 +246,7 @@ function documentsRow(input: ReadinessInput): ReadinessRow {
     key: "documents",
     label: "Legal documents",
     met: count > 0,
+    needsAttention: count === 0,
     detail: count > 0 ? `${count} will print` : "None will print",
     targetTab: "terms",
     targetItemId: null,

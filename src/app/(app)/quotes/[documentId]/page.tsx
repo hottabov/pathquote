@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
 import {
-  CheckCircle2,
+  CircleAlert,
   Download,
   Eye,
   Percent,
@@ -68,7 +68,7 @@ import { RevokeSigningLinkButton } from "@/components/builder/revoke-signing-lin
 import { DeleteDraftButton } from "@/components/builder/delete-draft-button";
 import { ConcessionCapBadge } from "@/components/builder/concession-cap-badge";
 import { ConcessionCapToast } from "@/components/builder/concession-cap-toast";
-import { quoteReadiness } from "@/lib/quote-readiness";
+import { quoteReadiness, readinessNeedsAttention } from "@/lib/quote-readiness";
 import { Tooltip } from "@/components/ui-kit/client";
 import { pathWorksModulesWithoutHost } from "@/lib/production-forms/pathworks";
 import { readProductSpecs } from "@/lib/validation/product-specs";
@@ -301,8 +301,16 @@ export default async function DocumentBuilderPage({
   // same scope.
   const history = await getQuoteHistory(session.user, document.id);
 
+  // The card is drawn only when it has something to say -- see
+  // `readinessNeedsAttention`. Its description counts the way to Finalize,
+  // so it appears only while something is actually in the way; a card
+  // carrying one advisory remark would otherwise be headed "3 of 3 ready to
+  // finalize", which reads as a contradiction of the remark under it.
   const blockingRows = readinessRows.filter((row) => row.blocking);
-  const readinessDescription = `${blockingRows.filter((row) => row.met).length} of ${blockingRows.length} ready to finalize`;
+  const metCount = blockingRows.filter((row) => row.met).length;
+  const showReadiness = readinessNeedsAttention(readinessRows);
+  const readinessDescription =
+    metCount < blockingRows.length ? `${metCount} of ${blockingRows.length} ready to finalize` : undefined;
 
   const contactFullName = document.contact
     ? [document.contact.firstName, document.contact.lastName].filter(Boolean).join(" ")
@@ -564,13 +572,15 @@ export default async function DocumentBuilderPage({
             below the grid for smaller screens, which is how a tablet ended up
             with neither the totals nor the rail. Sticky on lg. */}
         <aside className="flex flex-col gap-4 lg:sticky lg:top-24 lg:col-span-1">
-          <SectionCard
-            title="Readiness"
-            description={readinessDescription}
-            icon={<CheckCircle2 className="size-5" />}
-          >
-            <ReadinessPanel rows={readinessRows} />
-          </SectionCard>
+          {showReadiness ? (
+            <SectionCard
+              title="Needs a look"
+              description={readinessDescription}
+              icon={<CircleAlert className="size-5" />}
+            >
+              <ReadinessPanel rows={readinessRows} />
+            </SectionCard>
+          ) : null}
 
           <div>
             <SectionCard title="Summary" icon={<Receipt className="size-5" />}>

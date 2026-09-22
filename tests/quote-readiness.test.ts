@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { isFinalizable, quoteReadiness, type ReadinessInput } from "../src/lib/quote-readiness";
+import {
+  isFinalizable,
+  quoteReadiness,
+  readinessNeedsAttention,
+  type ReadinessInput,
+} from "../src/lib/quote-readiness";
 
 // Pure module: no Prisma client, no DATABASE_URL, same discipline as
 // tests/production-readiness.test.ts, which covers the per-item check this
@@ -28,6 +33,7 @@ function input(over: Partial<ReadinessInput> = {}): ReadinessInput {
     printedDocumentCount: 3,
     capExceeded: false,
     exceedsMarkupCap: false,
+    pathWorksModulesWithoutHost: false,
     ...over,
   };
 }
@@ -37,6 +43,9 @@ describe("quoteReadiness", () => {
     const rows = quoteReadiness(input());
     expect(rows.map((r) => r.key)).toEqual(["client", "items", "spec", "delivery", "documents"]);
     expect(rows.every((r) => r.met)).toBe(true);
+    // Returned, but none of them asking to be drawn -- the panel's own
+    // visibility is a separate question from what the rules say.
+    expect(rows.every((r) => !r.needsAttention)).toBe(true);
   });
 
   // The rail renders these in order. If the order moved as rows were
@@ -136,8 +145,73 @@ describe("quoteReadiness", () => {
     expect(delivered?.detail).toBe("Delivered, GST applies");
 
     const exWorks = quoteReadiness(input({ deliveryTerms: "EX_WORKS" })).find((r) => r.key === "delivery");
-    expect(exWorks?.detail).toBe("Ex Works, no GST charged");
+    expect(exWorks?.detail).toBe("Ex Works — no GST on this quote");
     expect(exWorks?.targetTab).toBe("terms");
+  });
+
+  it("asks to be seen on Ex Works and stays quiet on Delivered", () => {
+    // The row is always met either way -- deliveryTerms is an enum that
+    // cannot be empty -- so `met` cannot decide whether to draw it. Ex Works
+    // has quietly zeroed the tax on the whole quote; Delivered is the
+    // default and says nothing.
+    const delivered = quoteReadiness(input({ deliveryTerms: "DELIVERED" })).find(
+      (row) => row.key === "delivery"
+    );
+    const exWorks = quoteReadiness(input({ deliveryTerms: "EX_WORKS" })).find(
+      (row) => row.key === "delivery"
+    );
+    expect(delivered?.met).toBe(true);
+    expect(delivered?.needsAttention).toBe(false);
+    expect(exWorks?.met).toBe(true);
+    expect(exWorks?.needsAttention).toBe(true);
+  });
+
+  it("keeps the client row visible when a company is set but no contact is", () => {
+    // `validateFinalizable` checks the company and nothing else, so the row
+    // is met and the count says so -- but the quote cannot be emailed
+    // without a contact, which is worth saying.
+    const row = quoteReadiness(input({ hasCompany: true, hasContact: false })).find(
+      (r) => r.key === "client"
+    );
+    expect(row?.met).toBe(true);
+    expect(row?.needsAttention).toBe(true);
+    expect(row?.detail).toContain("No contact");
+  });
+
+  it("raises the PathWorks row only when there is something to say", () => {
+    expect(
+      quoteReadiness(input({ pathWorksModulesWithoutHost: false })).some(
+        (row) => row.key === "pathworks"
+      )
+    ).toBe(false);
+
+    const row = quoteReadiness(input({ pathWorksModulesWithoutHost: true })).find(
+      (r) => r.key === "pathworks"
+    );
+    // Advisory: a customer who already owns PathWorks buys modules for it
+    // and nothing is wrong, so it must never stand between them and
+    // Finalize.
+    expect(row?.blocking).toBe(false);
+    expect(row?.needsAttention).toBe(true);
+    expect(isFinalizable(input({ pathWorksModulesWithoutHost: true }))).toBe(true);
+  });
+});
+
+describe("readinessNeedsAttention", () => {
+  it("is false for a quote with nothing missing, unusual or incompatible", () => {
+    expect(readinessNeedsAttention(quoteReadiness(input()))).toBe(false);
+  });
+
+  it("is true while a blocking row is unmet", () => {
+    expect(readinessNeedsAttention(quoteReadiness(input({ hasCompany: false })))).toBe(true);
+  });
+
+  it("is true for an advisory row alone, with every blocking row met", () => {
+    // The case the panel exists for once a quote is otherwise finished:
+    // nothing is wrong, something is unusual.
+    const rows = quoteReadiness(input({ printedDocumentCount: 0 }));
+    expect(rows.every((row) => !row.blocking || row.met)).toBe(true);
+    expect(readinessNeedsAttention(rows)).toBe(true);
   });
 
   // A quote with no legal documents attached is unusual but not refused by
