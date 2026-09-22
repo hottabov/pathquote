@@ -36,6 +36,56 @@
      state. #146c43 clears WCAG AA for text on white (5.1:1), same
      accessibility bar brand-accent-ink was darkened to meet. */
   --color-commission: #146c43;
+
+  /* ── Surfaces ────────────────────────────────────────────────────────────
+     Three levels, and nesting depth picks the level: the page is surface-0,
+     a card is surface-1, a panel inside a card is surface-2. Before these,
+     the builder screen alone carried nine different wrapper treatments,
+     because every author picked background + border + radius + padding by
+     hand at each nesting depth and none of the choices agreed. */
+  --color-surface-0: oklch(0.977 0.002 247);
+  --color-surface-1: #ffffff;
+  --color-surface-2: oklch(0.974 0.003 247);
+
+  /* ── Lines ───────────────────────────────────────────────────────────────
+     One border colour, one divider colour. The builder used slate-100 and
+     slate-200 interchangeably for hairlines inside a card, and slate-200 and
+     slate-300 interchangeably for control borders: fieldInputClass said 200
+     while every input written outside it said 300. */
+  --color-line: oklch(0.917 0.005 247);
+  --color-divider: oklch(0.944 0.004 247);
+
+  /* ── Control heights ─────────────────────────────────────────────────────
+     Two, not six. 44px is the touch target this app committed to and is the
+     default everywhere; 36px is allowed only from `sm:` up, and only where a
+     control sits in a dense row of its own kind. One builder screen managed
+     h-7, h-8, h-9, h-10, h-11 and a local `compactControlClass`. */
+  --size-control: 2.75rem;
+  --size-control-dense: 2.25rem;
+
+  /* ── Radii ───────────────────────────────────────────────────────────────
+     Named by what they are for. The generic --radius-sm..4xl scale below
+     stays because existing `rounded-lg`/`rounded-xl` utilities are generated
+     from it and removing them would restyle every screen at once; new code
+     uses these three, and callers migrate as they are touched.
+
+     One builder screen carried five: rounded-lg x35, rounded-xl x10,
+     rounded-full x9, rounded-md x7, bare rounded x2. */
+  --radius-control: 0.5rem;
+  --radius-card: 0.75rem;
+  --radius-pill: 9999px;
+
+  /* ── Motion ──────────────────────────────────────────────────────────────
+     Feedback only. This screen is opened dozens of times a day, so nothing
+     animates on load, nothing loops, and nothing moves that the user did not
+     just act on. Easing follows the usual split: ease-out for anything
+     entering or leaving, ease-in-out for something already on screen that
+     moves to a new place. */
+  --duration-micro: 120ms;
+  --duration-ui: 180ms;
+  --duration-overlay: 220ms;
+  --ease-out-soft: cubic-bezier(0.215, 0.61, 0.355, 1);
+  --ease-move: cubic-bezier(0.645, 0.045, 0.355, 1);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -153,7 +203,14 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: "Segoe UI", "Source Sans 3", system-ui, sans-serif;
+    /* Geist has been loaded by next/font in layout.tsx since the scaffold and
+       thrown away right here, so the app paid for a webfont on every page
+       load and then rendered in Segoe UI. It is now what renders. It is also
+       the better fit for a screen that is mostly figures: its digits are the
+       same width by default, so a price column lines up without anyone
+       remembering to ask for tabular-nums. The system stack stays as the
+       fallback for the moment before the font file arrives. */
+    font-family: var(--font-geist-sans), "Segoe UI", "Source Sans 3", system-ui, sans-serif;
   }
   html {
     @apply font-sans;
@@ -195,5 +252,29 @@
   }
   .pt-safe {
     padding-top: env(safe-area-inset-top);
+  }
+}
+
+/* Every animated thing in this app also carries its own `motion-reduce:`
+   variant, which is the real mechanism. This is the backstop: someone who has
+   asked their OS for reduced motion gets none, including from a component
+   written later that forgets the variant.
+
+   `!important` is load-bearing here and not a shortcut: a media query adds no
+   specificity, so without it a utility class setting `transition-duration`
+   later in the cascade simply wins and the backstop does nothing.
+
+   Near-zero rather than `animation: none`, because a zero-length animation
+   still fires `animationend` and `transitionend`. Base UI unmounts its popups
+   on that event, so `none` would leave a dialog mounted forever for exactly
+   the users this block is meant to help. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
