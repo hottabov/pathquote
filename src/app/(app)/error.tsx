@@ -36,7 +36,7 @@ export default function AppError({
       description="This page couldn't be loaded. Trying again often clears it — if it doesn't, the error has been logged."
       action={
         <div className="flex flex-col items-center gap-2">
-          <Button type="button" onClick={reset} className="h-11 px-4 bg-brand text-white hover:bg-brand/90">
+          <Button variant="brand" type="button" onClick={reset} className="h-11 px-4">
             Try again
           </Button>
           {/* The digest is the only handle support has on the server-side

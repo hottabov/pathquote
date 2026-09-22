@@ -37,7 +37,7 @@ export default async function ConflictGroupsPage() {
         actions={
           <Link
             href="/settings/option-conflict-groups/new"
-            className={cn(buttonVariants(), "h-11 w-full bg-brand text-white hover:bg-brand/90 sm:w-auto")}
+            className={cn(buttonVariants({ variant: "brand" }), "h-11 w-full sm:w-auto")}
           >
             <Plus className="size-4" data-icon="inline-start" aria-hidden="true" />
             New group

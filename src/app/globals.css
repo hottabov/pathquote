@@ -81,6 +81,13 @@
      just act on. Easing follows the usual split: ease-out for anything
      entering or leaving, ease-in-out for something already on screen that
      moves to a new place. */
+  /* Tailwind has no `--duration-*` namespace, so these do not become
+     `duration-micro` utilities; reference them as `duration-(--duration-ui)`.
+     They live here rather than in a bare `:root` block so the whole design
+     vocabulary reads in one place. `--ease-*` and `--size-*` ARE namespaces,
+     so `ease-out-soft` and `size-control` are real utilities. Note `h-*`
+     reads the spacing scale, not `--size-*`, so a 44px height is
+     `h-(--size-control)`. */
   --duration-micro: 120ms;
   --duration-ui: 180ms;
   --duration-overlay: 220ms;

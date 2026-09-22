@@ -163,7 +163,7 @@ export default async function QuotationPreviewPage({ params }: { params: Promise
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <a
             href={`/api/quotes/${document.id}/quotation-pdf`}
-            className={cn(buttonVariants(), "h-11 flex-1 bg-brand text-white hover:bg-brand/90 sm:flex-none")}
+            className={cn(buttonVariants({ variant: "brand" }), "h-11 flex-1 sm:flex-none")}
           >
             <Download className="size-4" data-icon="inline-start" aria-hidden="true" />
             Download Quotation PDF

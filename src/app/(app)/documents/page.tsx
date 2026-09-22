@@ -61,7 +61,7 @@ export default async function QuoteDocumentsPage() {
           isAdmin ? (
             <Link
               href="/documents/new"
-              className={cn(buttonVariants(), "h-11 w-full bg-brand text-white hover:bg-brand/90 sm:w-auto")}
+              className={cn(buttonVariants({ variant: "brand" }), "h-11 w-full sm:w-auto")}
             >
               <Plus className="size-4" data-icon="inline-start" aria-hidden="true" />
               New document
@@ -83,7 +83,7 @@ export default async function QuoteDocumentsPage() {
             isAdmin ? (
               <Link
                 href="/documents/new"
-                className={cn(buttonVariants(), "h-11 bg-brand text-white hover:bg-brand/90")}
+                className={cn(buttonVariants({ variant: "brand" }), "h-11")}
               >
                 <Plus className="size-4" data-icon="inline-start" aria-hidden="true" />
                 New document

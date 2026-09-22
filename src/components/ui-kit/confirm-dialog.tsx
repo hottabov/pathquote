@@ -79,14 +79,19 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                     {pending.cancelLabel ?? "Cancel"}
                   </Button>
                   <Button
+                    variant="brand"
                     type="button"
                     autoFocus
                     onClick={() => settle(true)}
                     className={cn(
                       "h-11 sm:h-9",
-                      pending.tone === "danger"
-                        ? "bg-destructive text-white hover:bg-destructive/90"
-                        : "bg-brand text-white hover:bg-brand/90"
+                      // The shared `destructive` Button variant is tinted
+                      // (bg-destructive/10), which is right for a delete
+                      // button sitting inside a form but far too quiet for
+                      // the confirm step of a destructive dialog, where this
+                      // is the action the dialog exists to make explicit.
+                      pending.tone === "danger" &&
+                        "bg-destructive text-white hover:bg-destructive/90"
                     )}
                   >
                     {pending.confirmLabel ?? "Confirm"}

@@ -101,7 +101,7 @@ export function CatalogImportPanel({
             className={cn(fieldInputClass, "py-2 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1 file:text-sm file:font-medium file:text-brand-dark")}
           />
         </label>
-        <Button type="submit" disabled={pending || !fileName} className="h-11 w-full bg-brand text-white hover:bg-brand/90 sm:w-auto">
+        <Button variant="brand" type="submit" disabled={pending || !fileName} className="h-11 w-full sm:w-auto">
           <Upload className="size-4" data-icon="inline-start" aria-hidden="true" />
           {pending && !result ? "Reading…" : "Preview changes"}
         </Button>
@@ -278,8 +278,8 @@ function Preview({
           type="button"
           onClick={onApply}
           disabled={pending || nothing}
-          variant={deletes > 0 ? "destructive" : "default"}
-          className={cn("h-11 w-full sm:w-auto", deletes === 0 && "bg-brand text-white hover:bg-brand/90")}
+          variant={deletes > 0 ? "destructive" : "brand"}
+          className="h-11 w-full sm:w-auto"
         >
           {pending ? "Applying…" : deletes > 0 ? `Apply and delete ${deletes} row${deletes === 1 ? "" : "s"}` : "Apply import"}
         </Button>

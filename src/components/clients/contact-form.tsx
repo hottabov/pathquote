@@ -103,9 +103,10 @@ export function ContactForm({
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <Button
+          variant="brand"
           type="submit"
           disabled={pending}
-          className="h-11 w-full bg-brand text-white hover:bg-brand/90 sm:h-9 sm:w-auto"
+          className="h-11 w-full sm:h-9 sm:w-auto"
         >
           {pending ? "Saving…" : submitLabel}
         </Button>
