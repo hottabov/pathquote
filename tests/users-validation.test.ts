@@ -56,13 +56,38 @@ describe("userRoleSchema", () => {
   accepts(userRoleSchema, [
     ["ADMIN", "ADMIN"],
     ["MANAGER", "MANAGER"],
+    ["REGIONAL_MANAGER", "REGIONAL_MANAGER"],
     ["DEVELOPER", "DEVELOPER"],
   ]);
 
   rejects(userRoleSchema, [
     ["a role that isn't one of the known ones", "SUPERADMIN"],
+    ["the role name as a person reads it, not the enum value", "Regional manager"],
     ["a blank role", ""],
   ]);
+});
+
+// `canModifyUser` protects the last account with admin rights. REGIONAL_MANAGER
+// is not one of those (`isAdminRole` is false for it), so demoting the last
+// admin to it must be refused exactly like a demotion to MANAGER -- otherwise
+// the new role is a back door to an admin-less system.
+describe("canModifyUser and the new role", () => {
+  it("refuses demoting the last active admin to REGIONAL_MANAGER", () => {
+    const target = { id: "user-admin", role: "ADMIN" as const, active: true };
+    const result = canModifyUser("some-other-admin", target, { role: "REGIONAL_MANAGER" }, 1);
+    expect(result).toBe("Can't demote the last active admin");
+  });
+
+  it("refuses an admin stripping their own rights by becoming a REGIONAL_MANAGER", () => {
+    const target = { id: "user-admin", role: "ADMIN" as const, active: true };
+    const result = canModifyUser(target.id, target, { role: "REGIONAL_MANAGER" }, 5);
+    expect(result).toBe("You can't remove your own admin role");
+  });
+
+  it("allows promoting a MANAGER to REGIONAL_MANAGER", () => {
+    const target = { id: "user-manager", role: "MANAGER" as const, active: true };
+    expect(canModifyUser("some-admin", target, { role: "REGIONAL_MANAGER" }, 3)).toBeNull();
+  });
 });
 
 describe("userRegionCodeSchema", () => {

@@ -26,7 +26,7 @@ export type FinalizableDocument = {
  * this file (the enum itself has no runtime/env dependency, but there's no
  * need to couple this pure module to `@prisma/client` either). DEVELOPER
  * carries the same finalize rights as ADMIN — see `isAdminRole`. */
-export type FinalizerRole = "ADMIN" | "MANAGER" | "DEVELOPER";
+export type FinalizerRole = "ADMIN" | "MANAGER" | "REGIONAL_MANAGER" | "DEVELOPER";
 
 /**
  * Returns a human-readable reason the document can't be finalized, or

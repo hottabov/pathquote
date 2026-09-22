@@ -49,7 +49,7 @@ export const userPhoneSchema = z.preprocess(
 
 /** Mirrors Prisma's `Role` enum (prisma/schema.prisma) without importing
  * `@prisma/client` here — see the file header for why. */
-export const userRoleSchema = z.enum(["ADMIN", "MANAGER", "DEVELOPER"]);
+export const userRoleSchema = z.enum(["ADMIN", "MANAGER", "REGIONAL_MANAGER", "DEVELOPER"]);
 export type UserRoleInput = z.infer<typeof userRoleSchema>;
 
 /** A region code, or `null` for "no region assigned" — the nullable variant

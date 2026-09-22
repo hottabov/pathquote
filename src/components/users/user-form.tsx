@@ -110,6 +110,7 @@ export function UserForm({
             className={fieldInputClass}
           >
             <option value="MANAGER">Manager</option>
+            <option value="REGIONAL_MANAGER">Regional manager</option>
             <option value="ADMIN">Admin</option>
             <option value="DEVELOPER">Developer</option>
           </select>

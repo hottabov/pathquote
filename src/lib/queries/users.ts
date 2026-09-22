@@ -5,7 +5,7 @@ export type UserListItem = {
   id: string;
   email: string;
   name: string | null;
-  role: "ADMIN" | "MANAGER" | "DEVELOPER";
+  role: "ADMIN" | "MANAGER" | "REGIONAL_MANAGER" | "DEVELOPER";
   active: boolean;
   regionCode: string | null;
   /** True when the user has no `passwordHash` — they can only sign in via
@@ -46,7 +46,7 @@ export type UserDetail = {
   email: string;
   name: string | null;
   phone: string | null;
-  role: "ADMIN" | "MANAGER" | "DEVELOPER";
+  role: "ADMIN" | "MANAGER" | "REGIONAL_MANAGER" | "DEVELOPER";
   active: boolean;
   regionCode: string | null;
   /** `User.regionId` — read fresh so the Account page reflects an admin's
