@@ -92,7 +92,11 @@ export default async function DashboardPage() {
 
       <SectionCard
         title="Recent quotes"
-        description="Your last 5 quotes"
+        description={scopeDescription(session.user.role, {
+          everything: `The last ${RECENT_LIMIT} quotes across the business`,
+          region: `The last ${RECENT_LIMIT} quotes in your region`,
+          own: `Your last ${RECENT_LIMIT} quotes`,
+        })}
         actions={
           <Link href="/quotes" className="focus-ring rounded-md text-sm font-medium text-brand hover:underline">
             View all
