@@ -228,6 +228,12 @@
        rather than `hidden` because hidden makes a scroll container, and that
        would stop every `position: sticky` inside from sticking. */
     overflow-x: clip;
+    /* The options side sheet takes the page's scrollbar away while it is
+       open (see `.side-sheet` below). Reserving the gutter permanently is
+       what stops the whole layout jumping sideways at that moment; the cost
+       is a strip of empty track on the rare page short enough not to
+       scroll. */
+    scrollbar-gutter: stable;
     /* Explicitly off — Phase 5b design direction calls for no scroll-linked
        motion beyond the standard micro-transitions on interactive elements. */
     scroll-behavior: auto;
@@ -266,6 +272,60 @@
   ::selection {
     background-color: var(--color-brand);
     color: white;
+  }
+}
+
+@layer components {
+  /* The per-item options side sheet (src/components/builder/side-sheet.tsx).
+     Both directions are animated here rather than in React: `@starting-style`
+     supplies the state to enter from, and `transition-behavior: allow-discrete`
+     on `display` and `overlay` holds the dialog in the top layer long enough
+     to leave. Nothing in the component tracks "closing". */
+  .side-sheet {
+    transform: translateX(100%);
+    opacity: 0;
+    transition:
+      transform var(--duration-overlay) var(--ease-out-soft),
+      opacity var(--duration-overlay) var(--ease-out-soft),
+      display var(--duration-overlay) allow-discrete,
+      overlay var(--duration-overlay) allow-discrete;
+  }
+  .side-sheet[open] {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  @starting-style {
+    .side-sheet[open] {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+
+  .side-sheet::backdrop {
+    /* slate-900 at 32%. Written out rather than referenced through a token
+       because ::backdrop is not in the document tree and cannot inherit
+       custom properties from :root in every engine. */
+    background-color: rgb(15 23 42 / 0.32);
+    opacity: 0;
+    transition:
+      opacity var(--duration-overlay) var(--ease-out-soft),
+      display var(--duration-overlay) allow-discrete,
+      overlay var(--duration-overlay) allow-discrete;
+  }
+  .side-sheet[open]::backdrop {
+    opacity: 1;
+  }
+  @starting-style {
+    .side-sheet[open]::backdrop {
+      opacity: 0;
+    }
+  }
+
+  /* The page must not scroll behind an open sheet. A `:has()` rule keeps
+     that here, next to the sheet, instead of as a body style an effect has
+     to set and unset -- and it cannot leak if a sheet unmounts abruptly. */
+  body:has(.side-sheet[open]) {
+    overflow: hidden;
   }
 }
 

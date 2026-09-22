@@ -26,6 +26,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAutosave } from "@/lib/use-autosave";
 import { AutosaveIndicator } from "@/components/builder/autosave-indicator";
+import { SideSheet } from "@/components/builder/side-sheet";
 import { setItemOptions } from "@/lib/actions/documents";
 import { pickDerivativeWidth } from "@/lib/image-derivative-width";
 import type { CompatibleOption } from "@/lib/queries/documents";
@@ -204,6 +205,8 @@ function buildSelections(
 
 export function ItemOptionsEditor({
   itemId,
+  itemName,
+  itemCode,
   currentLines,
   compatibleOptions,
   currency,
@@ -213,6 +216,11 @@ export function ItemOptionsEditor({
   lockedRoles,
 }: {
   itemId: string;
+  /** Titles the sheet. Once the options live in a panel of their own rather
+   * than under the card that names the machine, the sheet has to say which
+   * machine it is configuring. */
+  itemName: string;
+  itemCode: string | null;
   currentLines: CurrentLine[];
   compatibleOptions: CompatibleOption[];
   currency: string;
@@ -438,223 +446,24 @@ export function ItemOptionsEditor({
         </div>
       )}
 
-      {/* Still an inline panel rather than a side sheet. A Dialog was tried
-          and reverted: its popup would not take the viewport as its
-          containing block in this tree, so the sheet sat a few hundred
-          pixels off to the right with part of it past the edge of the
-          screen. The staging is what mattered and that is gone either way,
-          so the panel stays where it is until the positioning is understood
-          rather than guessed at. */}
-      {open && !readOnly ? (
-        <div className="mt-2 flex max-h-[70dvh] flex-col overflow-hidden rounded-(--radius-card) border border-line bg-slate-50">
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                type="search"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search options…"
-                aria-label="Search options"
-                className={cn(fieldInputClass, "h-11 min-w-[10rem] flex-1 sm:h-9")}
-              />
-              <Button type="button" variant="ghost" size="sm" onClick={selectAllFiltered}>
-                Select all
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={clearAll}>
-                Clear
-              </Button>
-              <span className="text-xs text-slate-500">
-                {effective.size} of {compatibleOptions.length} selected
-              </span>
-            </div>
+      {/* A side sheet, not an inline panel. Options are the longest job in
+          the builder and the item card is the worst place to do it: the
+          list pushed every machine below it down the page, and the footer
+          that carries the save state and the count scrolled away with it.
+          In a sheet the list gets the full height of the window, the footer
+          cannot be scrolled out of reach, and the card underneath keeps its
+          shape while the options change.
 
-            {displayOptions.length === 0 ? (
-                  <p className="mt-2 text-sm text-slate-500">No options match &ldquo;{search}&rdquo;.</p>
-                ) : (
-                  <div className="mt-2 flex flex-col gap-2">
-                    {displayOptions.map((option) => {
-                      const state = effective.get(option.id);
-                      const checked = Boolean(state);
-                      // Never treat an already-checked option as conflicting
-                      // with itself: the options that get disabled are the
-                      // *other* ones this one conflicts with, not this one.
-                      // That's what lets the user immediately deselect the
-                      // option that caused a conflict — its own checkbox
-                      // stays clickable the whole time — instead of both
-                      // sides of the pair locking each other out.
-                      const conflictingWith = checked
-                        ? null
-                        : (option.conflictsWith.find((c) => effective.has(c.id)) ?? null);
-                      const locked = isLocked(option.id);
-                      const disabledReason = isOptionDisabled(option.price, conflictingWith);
-                      const priced = disabledReason === null || disabledReason.type !== "unpriced";
-                      const isMts = option.role === "MTS";
-                      // The MTS length has its own control above; leaving it in
-                      // the generic attribute list too would draw it twice.
-                      const attributeFields = attributeFieldsFor(option.attributeSchema, option.role).filter(
-                        (field) => !(isMts && field.key === MTS_METRES_KEY)
-                      );
-                      const unitLength = option.unitLengthM;
-
-                      return (
-                        <div
-                          key={option.id}
-                          className="rounded-lg border border-slate-200 bg-white p-2.5"
-                        >
-                          <label className="flex min-h-12 items-start gap-2.5">
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              disabled={locked || disabledReason !== null}
-                              onChange={() => toggle(option.id)}
-                              className="mt-0.5 size-5 shrink-0 rounded border-slate-300 accent-brand"
-                            />
-                            {showOptionIcons && option.imageUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={
-                                  option.imageUrl.endsWith(".svg")
-                                    ? option.imageUrl
-                                    : `${option.imageUrl}?w=${pickDerivativeWidth(OPTION_ICON_BOX_PX * 2)}`
-                                }
-                                alt=""
-                                className="mt-0.5 size-6 shrink-0 rounded object-contain"
-                              />
-                            ) : null}
-                            <span className="flex min-w-0 flex-1 flex-col justify-center">
-                              <span className="flex flex-wrap items-baseline gap-2">
-                                <span className="font-mono text-xs text-brand-dark">{option.code}</span>
-                                <span className="text-sm text-slate-700">{option.name}</span>
-                              </span>
-                              {disabledReason?.type === "conflict" ? (
-                                <span className="mt-0.5 w-fit rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700">
-                                  Conflicts with {disabledReason.conflictingOptionCode} —{" "}
-                                  {disabledReason.conflictingGroupName}
-                                </span>
-                              ) : priced ? (
-                                <span className="text-xs text-slate-500">
-                                  {formatMoney(option.price!.amount, currency, currencySymbol)}
-                                </span>
-                              ) : (
-                                <span className="mt-0.5 w-fit rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
-                                  price required
-                                </span>
-                              )}
-                            </span>
-                          </label>
-
-                          {checked && locked ? (
-                            <div className="mt-2 pl-[1.875rem] text-xs text-slate-500">
-                              Qty {state!.qty} — set by the table layout above
-                            </div>
-                          ) : null}
-
-                          {/* An MTS is one system of whatever length, so it has
-                              no quantity worth showing: what the salesperson
-                              sets is how far it travels, and the price follows
-                              from that (MTS up to 9 m, MTS-M per metre after).
-                              A "Qty" stepper beside a "Travel (m)" box invited
-                              exactly the wrong number to be typed. */}
-                          {checked && !locked && isMts ? (
-                            <div className="mt-2 flex flex-wrap items-center gap-3 pl-[1.875rem]">
-                              <MtsLengthField
-                                id={`${option.id}-mts-metres`}
-                                value={state!.attributes[MTS_METRES_KEY] ?? ""}
-                                onChange={(value) => setAttribute(option.id, MTS_METRES_KEY, value)}
-                              />
-                            </div>
-                          ) : null}
-
-                          {checked && !locked && !isMts ? (
-                            <div className="mt-2 flex flex-wrap items-center gap-3 pl-[1.875rem]">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs text-slate-500">Qty</span>
-                                {/* Visual stepper stays a compact 36px square (dense per-option
-                                    row); the real tap target is the full 44px button around it —
-                                    an invisible hit-area expansion, same idea as the toast close
-                                    button's negative-margin trick elsewhere in this codebase. */}
-                                <button
-                                  type="button"
-                                  aria-label={`Decrease ${option.name} quantity`}
-                                  disabled={state!.qty <= 1}
-                                  onClick={() => setQty(option.id, Math.max(1, state!.qty - 1))}
-                                  className="group focus-ring flex size-11 shrink-0 items-center justify-center rounded-lg disabled:cursor-not-allowed disabled:opacity-40"
-                                >
-                                  <span
-                                    aria-hidden="true"
-                                    className="flex size-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition-colors md:group-hover:bg-slate-50"
-                                  >
-                                    <Minus className="size-3.5" />
-                                  </span>
-                                </button>
-                                {/* Wrapping <label> (native click-forwarding to the nested
-                                    control, no JS needed) expands the tap target to 44px tall
-                                    without growing the visible 36px input box. */}
-                                <label className="flex size-11 shrink-0 items-center justify-center">
-                                  <input
-                                    type="number"
-                                    inputMode="numeric"
-                                    min={1}
-                                    max={999}
-                                    aria-label={`${option.name} quantity`}
-                                    value={state!.qty}
-                                    onChange={(e) =>
-                                      setQty(option.id, Math.max(1, Number(e.target.value) || 1))
-                                    }
-                                    className={cn(fieldInputClass, "h-9 w-14 text-center")}
-                                  />
-                                </label>
-                                <button
-                                  type="button"
-                                  aria-label={`Increase ${option.name} quantity`}
-                                  onClick={() => setQty(option.id, Math.min(999, state!.qty + 1))}
-                                  className="group focus-ring flex size-11 shrink-0 items-center justify-center rounded-lg"
-                                >
-                                  <span
-                                    aria-hidden="true"
-                                    className="flex size-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition-colors md:group-hover:bg-slate-50"
-                                  >
-                                    <Plus className="size-3.5" />
-                                  </span>
-                                </button>
-                                {/* An option sold by the section (the
-                                    EasyLoader's 1.2 m lengths -- see
-                                    `Option.unitLengthM`) is really a
-                                    length: four sections is 4.8 m of table,
-                                    and that is the figure the customer
-                                    asks about. See src/lib/option-length.ts. */}
-                                {unitLength !== null ? (
-                                  <span className="text-xs font-medium text-slate-600 tabular-nums">
-                                    = {formatMetres(unitLength * state!.qty)}
-                                  </span>
-                                ) : null}
-                              </div>
-                              {attributeFields.map((field) => (
-                                <label
-                                  key={field.key}
-                                  className="flex items-center gap-2 text-xs text-slate-500"
-                                >
-                                  {field.label}
-                                  <input
-                                    type={field.type === "number" ? "number" : "text"}
-                                    inputMode={field.type === "number" ? "decimal" : undefined}
-                                    value={state!.attributes[field.key] ?? ""}
-                                    onChange={(e) => setAttribute(option.id, field.key, e.target.value)}
-                                    className={cn(fieldInputClass, "h-11 w-28 sm:h-9")}
-                                  />
-                                </label>
-                              ))}
-
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-          </div>
-
-          <div className="flex items-center gap-3 border-t border-line bg-white p-3">
+          The first attempt at this was Base UI's Dialog, whose popup would
+          not take the viewport as its containing block in this tree. This
+          one is a native <dialog> in the top layer; see side-sheet.tsx. */}
+      <SideSheet
+        open={open && !readOnly}
+        onClose={closePanel}
+        title={itemName}
+        description={itemCode ?? undefined}
+        footer={
+          <div className="flex items-center gap-3">
             <p className="min-w-0 flex-1 text-sm text-slate-600">
               <span className="font-medium text-brand-dark">{effective.size} selected</span>
               {mtsWithoutLength ? (
@@ -667,12 +476,217 @@ export function ItemOptionsEditor({
                 is no resting "Saved", for the same reason the quote bar
                 carries no save indicator. */}
             <AutosaveIndicator status={autosave.status} error={autosave.error} />
-            <Button type="button" variant="outline" onClick={closePanel}>
+            <Button type="button" variant="brand" onClick={closePanel}>
               Done
             </Button>
           </div>
+        }
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search options…"
+            aria-label="Search options"
+            className={cn(fieldInputClass, "h-11 min-w-[10rem] flex-1 sm:h-9")}
+          />
+          <Button type="button" variant="ghost" size="sm" onClick={selectAllFiltered}>
+            Select all
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={clearAll}>
+            Clear
+          </Button>
+          <span className="text-xs text-slate-500">
+            {effective.size} of {compatibleOptions.length} selected
+          </span>
         </div>
-      ) : null}
+
+        {displayOptions.length === 0 ? (
+              <p className="mt-2 text-sm text-slate-500">No options match &ldquo;{search}&rdquo;.</p>
+            ) : (
+              <div className="mt-2 flex flex-col gap-2">
+                {displayOptions.map((option) => {
+                  const state = effective.get(option.id);
+                  const checked = Boolean(state);
+                  // Never treat an already-checked option as conflicting
+                  // with itself: the options that get disabled are the
+                  // *other* ones this one conflicts with, not this one.
+                  // That's what lets the user immediately deselect the
+                  // option that caused a conflict — its own checkbox
+                  // stays clickable the whole time — instead of both
+                  // sides of the pair locking each other out.
+                  const conflictingWith = checked
+                    ? null
+                    : (option.conflictsWith.find((c) => effective.has(c.id)) ?? null);
+                  const locked = isLocked(option.id);
+                  const disabledReason = isOptionDisabled(option.price, conflictingWith);
+                  const priced = disabledReason === null || disabledReason.type !== "unpriced";
+                  const isMts = option.role === "MTS";
+                  // The MTS length has its own control above; leaving it in
+                  // the generic attribute list too would draw it twice.
+                  const attributeFields = attributeFieldsFor(option.attributeSchema, option.role).filter(
+                    (field) => !(isMts && field.key === MTS_METRES_KEY)
+                  );
+                  const unitLength = option.unitLengthM;
+
+                  return (
+                    <div
+                      key={option.id}
+                      className="rounded-lg border border-slate-200 bg-white p-2.5"
+                    >
+                      <label className="flex min-h-12 items-start gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={locked || disabledReason !== null}
+                          onChange={() => toggle(option.id)}
+                          className="mt-0.5 size-5 shrink-0 rounded border-slate-300 accent-brand"
+                        />
+                        {showOptionIcons && option.imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={
+                              option.imageUrl.endsWith(".svg")
+                                ? option.imageUrl
+                                : `${option.imageUrl}?w=${pickDerivativeWidth(OPTION_ICON_BOX_PX * 2)}`
+                            }
+                            alt=""
+                            className="mt-0.5 size-6 shrink-0 rounded object-contain"
+                          />
+                        ) : null}
+                        <span className="flex min-w-0 flex-1 flex-col justify-center">
+                          <span className="flex flex-wrap items-baseline gap-2">
+                            <span className="font-mono text-xs text-brand-dark">{option.code}</span>
+                            <span className="text-sm text-slate-700">{option.name}</span>
+                          </span>
+                          {disabledReason?.type === "conflict" ? (
+                            <span className="mt-0.5 w-fit rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700">
+                              Conflicts with {disabledReason.conflictingOptionCode} —{" "}
+                              {disabledReason.conflictingGroupName}
+                            </span>
+                          ) : priced ? (
+                            <span className="text-xs text-slate-500">
+                              {formatMoney(option.price!.amount, currency, currencySymbol)}
+                            </span>
+                          ) : (
+                            <span className="mt-0.5 w-fit rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                              price required
+                            </span>
+                          )}
+                        </span>
+                      </label>
+
+                      {checked && locked ? (
+                        <div className="mt-2 pl-[1.875rem] text-xs text-slate-500">
+                          Qty {state!.qty} — set by the table layout above
+                        </div>
+                      ) : null}
+
+                      {/* An MTS is one system of whatever length, so it has
+                          no quantity worth showing: what the salesperson
+                          sets is how far it travels, and the price follows
+                          from that (MTS up to 9 m, MTS-M per metre after).
+                          A "Qty" stepper beside a "Travel (m)" box invited
+                          exactly the wrong number to be typed. */}
+                      {checked && !locked && isMts ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-3 pl-[1.875rem]">
+                          <MtsLengthField
+                            id={`${option.id}-mts-metres`}
+                            value={state!.attributes[MTS_METRES_KEY] ?? ""}
+                            onChange={(value) => setAttribute(option.id, MTS_METRES_KEY, value)}
+                          />
+                        </div>
+                      ) : null}
+
+                      {checked && !locked && !isMts ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-3 pl-[1.875rem]">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-slate-500">Qty</span>
+                            {/* Visual stepper stays a compact 36px square (dense per-option
+                                row); the real tap target is the full 44px button around it —
+                                an invisible hit-area expansion, same idea as the toast close
+                                button's negative-margin trick elsewhere in this codebase. */}
+                            <button
+                              type="button"
+                              aria-label={`Decrease ${option.name} quantity`}
+                              disabled={state!.qty <= 1}
+                              onClick={() => setQty(option.id, Math.max(1, state!.qty - 1))}
+                              className="group focus-ring flex size-11 shrink-0 items-center justify-center rounded-lg disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <span
+                                aria-hidden="true"
+                                className="flex size-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition-colors md:group-hover:bg-slate-50"
+                              >
+                                <Minus className="size-3.5" />
+                              </span>
+                            </button>
+                            {/* Wrapping <label> (native click-forwarding to the nested
+                                control, no JS needed) expands the tap target to 44px tall
+                                without growing the visible 36px input box. */}
+                            <label className="flex size-11 shrink-0 items-center justify-center">
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min={1}
+                                max={999}
+                                aria-label={`${option.name} quantity`}
+                                value={state!.qty}
+                                onChange={(e) =>
+                                  setQty(option.id, Math.max(1, Number(e.target.value) || 1))
+                                }
+                                className={cn(fieldInputClass, "h-9 w-14 text-center")}
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              aria-label={`Increase ${option.name} quantity`}
+                              onClick={() => setQty(option.id, Math.min(999, state!.qty + 1))}
+                              className="group focus-ring flex size-11 shrink-0 items-center justify-center rounded-lg"
+                            >
+                              <span
+                                aria-hidden="true"
+                                className="flex size-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition-colors md:group-hover:bg-slate-50"
+                              >
+                                <Plus className="size-3.5" />
+                              </span>
+                            </button>
+                            {/* An option sold by the section (the
+                                EasyLoader's 1.2 m lengths -- see
+                                `Option.unitLengthM`) is really a
+                                length: four sections is 4.8 m of table,
+                                and that is the figure the customer
+                                asks about. See src/lib/option-length.ts. */}
+                            {unitLength !== null ? (
+                              <span className="text-xs font-medium text-slate-600 tabular-nums">
+                                = {formatMetres(unitLength * state!.qty)}
+                              </span>
+                            ) : null}
+                          </div>
+                          {attributeFields.map((field) => (
+                            <label
+                              key={field.key}
+                              className="flex items-center gap-2 text-xs text-slate-500"
+                            >
+                              {field.label}
+                              <input
+                                type={field.type === "number" ? "number" : "text"}
+                                inputMode={field.type === "number" ? "decimal" : undefined}
+                                value={state!.attributes[field.key] ?? ""}
+                                onChange={(e) => setAttribute(option.id, field.key, e.target.value)}
+                                className={cn(fieldInputClass, "h-11 w-28 sm:h-9")}
+                              />
+                            </label>
+                          ))}
+
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+      </SideSheet>
     </div>
   );
 }
