@@ -103,20 +103,26 @@ export function getCompanyDetail(
   user: ScopeUser,
   companyId: string
 ): Promise<CompanyDetail | null> {
-  return getCompanyDetailInScope(user.id, user.role, companyId);
+  return getCompanyDetailInScope(user.id, user.role, user.regionId ?? null, companyId);
 }
 
-/** Takes the scope as its two primitive parts rather than the `ScopeUser`
+/** Takes the scope as its three primitive parts rather than the `ScopeUser`
  * itself, for the reason `getDocumentForBuilderInScope`
  * (src/lib/queries/documents.ts) spells out: React's `cache` matches object
  * arguments by identity, and every `auth()` call hands back a fresh
- * `session.user`, so a memo keyed on that object would never hit. */
+ * `session.user`, so a memo keyed on that object would never hit.
+ *
+ * `regionId` is one of them because it shapes the query: a REGIONAL_MANAGER
+ * is scoped by their region rather than their own id
+ * (`companyWhereForUser`). Dropping it here would resolve every colleague's
+ * client to `null` — a 404 on a company the list had just linked to. */
 const getCompanyDetailInScope = cache(async function getCompanyDetailInScope(
   userId: string,
   role: string,
+  regionId: string | null,
   companyId: string
 ): Promise<CompanyDetail | null> {
-  const user: ScopeUser = { id: userId, role };
+  const user: ScopeUser = { id: userId, role, regionId };
   const company = await db.company.findFirst({
     where: { id: companyId, ...companyWhereForUser(user) },
     include: {

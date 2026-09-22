@@ -579,22 +579,28 @@ export function getDocumentForBuilder(
   id: string,
   tx?: Prisma.TransactionClient
 ): Promise<DocumentForBuilder | null> {
-  return tx ? loadDocumentForBuilder(user.id, user.role, id, tx) : getDocumentForBuilderInScope(user.id, user.role, id);
+  const regionId = user.regionId ?? null;
+  return tx
+    ? loadDocumentForBuilder(user.id, user.role, regionId, id, tx)
+    : getDocumentForBuilderInScope(user.id, user.role, regionId, id);
 }
 
 /** Memoization boundary for `getDocumentForBuilder` above, taking the scope
- * as its two primitive parts rather than the `ScopeUser` itself: React's
+ * as its three primitive parts rather than the `ScopeUser` itself: React's
  * `cache` matches object arguments by identity, and each `auth()` call
  * deserializes a fresh `session.user`, so a `ScopeUser` parameter would miss
- * on every call and quietly memoize nothing. Both parts are part of the key
- * because both shape the query — `documentWhereForUser` reads the role to
- * decide whether the id restricts anything at all. */
+ * on every call and quietly memoize nothing. All three parts are part of the
+ * key because all three shape the query — `documentWhereForUser` reads the
+ * role to decide WHICH column restricts the read (`authorId` for a manager,
+ * `regionId` for a regional manager, neither for an admin) and then reads
+ * that column's value. */
 const getDocumentForBuilderInScope = cache(function getDocumentForBuilderInScope(
   userId: string,
   role: string,
+  regionId: string | null,
   id: string
 ): Promise<DocumentForBuilder | null> {
-  return loadDocumentForBuilder(userId, role, id);
+  return loadDocumentForBuilder(userId, role, regionId, id);
 });
 
 /** The read itself, against `tx` when the caller has one and the `db`
@@ -604,11 +610,12 @@ const getDocumentForBuilderInScope = cache(function getDocumentForBuilderInScope
 async function loadDocumentForBuilder(
   userId: string,
   role: string,
+  regionId: string | null,
   id: string,
   tx?: Prisma.TransactionClient
 ): Promise<DocumentForBuilder | null> {
   const client = tx ?? db;
-  const user: ScopeUser = { id: userId, role };
+  const user: ScopeUser = { id: userId, role, regionId };
   const document = await client.document.findFirst({
     where: { id, ...documentWhereForUser(user) },
     include: {
