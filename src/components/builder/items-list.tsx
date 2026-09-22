@@ -102,6 +102,7 @@ export function ItemsList({
   compatibleOptionsByItemKey,
   showOptionIcons = true,
   screenSideImages,
+  heading,
   readOnly = false,
 }: {
   documentId: string;
@@ -115,6 +116,10 @@ export function ItemsList({
    * Fetched once per page load (src/lib/queries/spec-images.ts) and passed
    * straight through to every item card, same as `showOptionIcons`. */
   screenSideImages: Record<string, string>;
+  /** The section's own heading, rendered by the caller and passed in so that
+   *  it can share a row with the collapse control, which reads this
+   *  component's state and so cannot be lifted above it. */
+  heading?: React.ReactNode;
   readOnly?: boolean;
 }) {
   const router = useRouter();
@@ -248,16 +253,20 @@ export function ItemsList({
 
   return (
     <div className="flex flex-col gap-4">
-      {optimisticItems.length > 1 ? (
-        <div className="flex justify-end">
-          {/* One control that flips, rather than two text buttons separated
-              by a literal "|": only one of the two was ever the useful one,
-              and which one that is can be read off the list. */}
+      {/* Heading and collapse control on one row. They were two stacked rows,
+          which put a whole line of whitespace between the section's title and
+          its first machine for no reason. */}
+      <div className="flex min-h-9 items-center gap-2 px-1">
+        {heading}
+        {optimisticItems.length > 1 ? (
+          // One control that flips, rather than two text buttons separated by
+          // a literal "|": only one of the two is ever the useful one, and
+          // which one that is can be read off the list.
           <button
             type="button"
             aria-expanded={anyExpanded}
             onClick={() => (anyExpanded ? collapseAll() : expandAll())}
-            className="focus-ring inline-flex min-h-11 items-center gap-1.5 rounded-(--radius-control) px-2.5 text-sm font-medium text-slate-600 transition-colors duration-(--duration-micro) motion-reduce:transition-none md:hover:bg-slate-100 md:hover:text-brand-dark"
+            className="focus-ring ml-auto inline-flex h-9 items-center gap-1.5 rounded-(--radius-control) px-2.5 text-sm font-medium text-slate-600 transition-colors duration-(--duration-micro) motion-reduce:transition-none md:hover:bg-slate-100 md:hover:text-brand-dark"
           >
             {anyExpanded ? (
               <ChevronsDownUp className="size-4" aria-hidden="true" />
@@ -266,8 +275,8 @@ export function ItemsList({
             )}
             {anyExpanded ? "Collapse all" : "Expand all"}
           </button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
       {optimisticItems.map((item, index) => {
         const compatKey = item.productId ?? (item.seriesId ? `series:${item.seriesId}` : null);

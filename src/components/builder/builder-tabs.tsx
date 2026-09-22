@@ -54,7 +54,7 @@ export function BuilderTabs({ counts }: { counts: Partial<Record<BuilderTab, num
     <div
       role="tablist"
       aria-label="Quote sections"
-      className="flex gap-1 overflow-x-auto overflow-y-hidden px-4 [scrollbar-width:none] md:px-6 lg:px-8 [&::-webkit-scrollbar]:hidden"
+      className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line px-4 [scrollbar-width:none] md:px-6 lg:px-8 [&::-webkit-scrollbar]:hidden"
     >
       {TABS.map(({ id, label, Icon }) => {
         const selected = id === active;
@@ -69,7 +69,11 @@ export function BuilderTabs({ counts }: { counts: Partial<Record<BuilderTab, num
             aria-controls={`builder-panel-${id}`}
             onClick={() => select(id)}
             className={cn(
-              "focus-ring -mb-px flex min-h-11 shrink-0 items-center gap-2 rounded-t-(--radius-card) border border-b-0 px-3.5 pb-2.5 text-sm whitespace-nowrap transition-colors duration-(--duration-micro) motion-reduce:transition-none",
+              // h-10 with items-center rather than min-h-11 plus a bottom
+              // padding: that pair left more room above the label than below
+              // it, and made a strip of secondary navigation as tall as a
+              // primary control. 40px still clears a fingertip.
+              "focus-ring -mb-px flex h-10 shrink-0 items-center gap-2 rounded-t-(--radius-control) border border-b-0 px-3.5 text-sm whitespace-nowrap transition-colors duration-(--duration-micro) motion-reduce:transition-none",
               selected
                 ? // bg-slate-50 is the page background the panel below sits
                   // on, not a token of its own: the tab has to be exactly

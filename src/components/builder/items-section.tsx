@@ -14,6 +14,23 @@ import type { BuilderItem, CompatibleOption, ItemPickerSeries } from "@/lib/quer
  * case of an item with no resolvable product — see `BuilderItem`) rather
  * than re-fetched per card.
  */
+/** The section's title row, shared by the empty state and the list. The list
+ *  renders it inline with its own collapse control, which reads the list's
+ *  state, so this cannot simply sit above both. */
+function heading(count: number) {
+  return (
+    <>
+      <Package className="size-4 shrink-0 text-slate-400" aria-hidden="true" />
+      <h2 className="text-xs font-semibold tracking-wider text-slate-500 uppercase">Machines</h2>
+      {count > 0 ? (
+        <span className="text-xs text-slate-400">
+          {count} {count === 1 ? "item" : "items"}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 export function ItemsSection({
   documentId,
   items,
@@ -45,24 +62,18 @@ export function ItemsSection({
     // three of them expanded inside one wrapper, separated by a 12px gap and
     // sharing a background, it took a moment to work out where one ended.
     <section className="flex flex-col gap-3">
-      <div className="flex items-center gap-2 px-1">
-        <Package className="size-4 shrink-0 text-slate-400" aria-hidden="true" />
-        <h2 className="text-xs font-semibold tracking-wider text-slate-500 uppercase">Machines</h2>
-        {items.length > 0 ? (
-          <span className="text-xs text-slate-400">
-            {items.length} {items.length === 1 ? "item" : "items"}
-          </span>
-        ) : null}
-      </div>
-
       {items.length === 0 ? (
-        <EmptyState
-          icon={PackageSearch}
-          title="No machines yet"
-          description="Add one below to start building this quote."
-        />
+        <>
+          <div className="flex min-h-9 items-center gap-2 px-1">{heading(0)}</div>
+          <EmptyState
+            icon={PackageSearch}
+            title="No machines yet"
+            description="Add one below to start building this quote."
+          />
+        </>
       ) : (
         <ItemsList
+          heading={heading(items.length)}
           documentId={documentId}
           items={items}
           currency={currency}
