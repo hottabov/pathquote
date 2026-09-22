@@ -90,7 +90,13 @@ export function AppShell({ user, children }: AppShellProps) {
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* `overflow-x-clip`, not `hidden`: a page may break out of the
+          centred <main> column to run something edge to edge (the quote
+          builder's header does), and this is the box it should fill. Clip
+          contains the overflow without creating a scroll container, which
+          `hidden` would, and which would stop every `position: sticky`
+          inside from sticking to the viewport. */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-x-clip">
         {/* Mobile top bar */}
         <header className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:hidden">
           <Link

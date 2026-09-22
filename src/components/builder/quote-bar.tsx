@@ -52,47 +52,58 @@ export function QuoteBar({
   const meta = [number, contactName, regionName].filter(Boolean) as string[];
 
   return (
-    // Negative margins cancel the <main> padding so the bar spans the content
-    // column edge to edge, which is what makes it read as chrome rather than
-    // as the first card in the list.
-    <div className="sticky top-0 z-20 -mx-4 -mt-6 border-b border-line bg-white md:-mx-6 lg:-mx-8">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3 md:px-6 lg:px-8">
-        <div className="min-w-0 flex-1">
-          <Link
-            href="/quotes"
-            className="focus-ring inline-flex items-center gap-1 rounded-(--radius-control) text-xs font-medium text-slate-500 transition-colors duration-(--duration-micro) motion-reduce:transition-none md:hover:text-brand-dark"
-          >
-            <ChevronLeft className="size-3.5" aria-hidden="true" />
-            Quotes
-          </Link>
-          <h1 className="truncate text-base font-semibold text-brand-dark">{companyName}</h1>
-          {meta.length > 0 ? (
-            <p className="truncate text-xs text-slate-500">
-              {meta.map((part, index) => (
-                <span key={part}>
-                  {index > 0 ? <span className="px-1.5 text-slate-300">/</span> : null}
-                  <span className={index === 0 ? "font-mono" : undefined}>{part}</span>
-                </span>
-              ))}
-            </p>
-          ) : null}
+    // Full bleed. `mx-[calc(50%-50vw)]` widens this to the viewport and the
+    // matching padding puts its contents back on the content column's grid,
+    // so the white and the hairline under the tabs run edge to edge while
+    // the text still lines up with the cards below. The overflow that
+    // creates is contained by `overflow-x-clip` on <main>.
+    <div className="sticky top-0 z-20 -mt-6 mx-[calc(50%-50vw)] border-b border-line bg-white px-[calc(50vw-50%)]">
+      <div className="px-4 pt-3 md:px-6 lg:px-8">
+        <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
+          <div className="min-w-0 flex-1">
+            <Link
+              href="/quotes"
+              className="focus-ring inline-flex items-center gap-1 rounded-(--radius-control) text-xs font-medium text-slate-500 transition-colors duration-(--duration-micro) motion-reduce:transition-none md:hover:text-brand-dark"
+            >
+              <ChevronLeft className="size-3.5" aria-hidden="true" />
+              Quotes
+            </Link>
+            <h1 className="truncate text-base font-semibold text-brand-dark">{companyName}</h1>
+            {meta.length > 0 ? (
+              <p className="truncate text-xs text-slate-500">
+                {meta.map((part, index) => (
+                  <span key={part}>
+                    {index > 0 ? <span className="px-1.5 text-slate-300">/</span> : null}
+                    <span className={index === 0 ? "font-mono" : undefined}>{part}</span>
+                  </span>
+                ))}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="flex items-center gap-4">
+            <StatusBadge tone={STATUS_TONE[status]}>{status === "DRAFT" ? "Draft" : "Final"}</StatusBadge>
+
+            <div className="text-right">
+              <p className="text-[0.625rem] font-semibold tracking-wider text-slate-500 uppercase">
+                Total
+              </p>
+              <p className="text-lg font-semibold tabular-nums text-brand-dark">
+                {formatMoney(total, currency, currencySymbol)}
+              </p>
+            </div>
+
+            {children}
+          </div>
         </div>
-
-        <StatusBadge tone={STATUS_TONE[status]}>{status === "DRAFT" ? "Draft" : "Final"}</StatusBadge>
-
-        <div className="text-right">
-          <p className="text-[0.625rem] font-semibold tracking-wider text-slate-500 uppercase">
-            Total
-          </p>
-          <p className="text-lg font-semibold tabular-nums text-brand-dark">
-            {formatMoney(total, currency, currencySymbol)}
-          </p>
-        </div>
-
-        {children}
       </div>
 
-      <BuilderTabs counts={tabCounts} />
+      {/* The gap between the identity block and the tabs is the point: they
+          are two different things, and at pt-3/pb-0 they read as one crowded
+          block. */}
+      <div className="mt-4">
+        <BuilderTabs counts={tabCounts} />
+      </div>
     </div>
   );
 }

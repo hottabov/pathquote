@@ -47,12 +47,10 @@ export function BuilderTabs({ counts }: { counts: Partial<Record<BuilderTab, num
   }
 
   return (
-    // `overflow-y-hidden` is not redundant: setting `overflow-x` to anything
-    // other than `visible` makes the computed `overflow-y` `auto` too, which
-    // put a vertical scrollbar on this row over a couple of pixels of button
-    // padding. The scrollbar itself is hidden because the row scrolls only in
-    // the last 40px of phone width and a permanent gutter there costs more
-    // than the affordance is worth.
+    // The hairline lives on this row and the active tab covers its own slice
+    // of it with `-mb-px` plus a matching background, so the line runs along,
+    // steps around the open tab and carries on. That break is the whole
+    // signal that the panel below belongs to this tab.
     <div
       role="tablist"
       aria-label="Quote sections"
@@ -71,10 +69,13 @@ export function BuilderTabs({ counts }: { counts: Partial<Record<BuilderTab, num
             aria-controls={`builder-panel-${id}`}
             onClick={() => select(id)}
             className={cn(
-              "focus-ring -mb-px flex min-h-11 shrink-0 items-center gap-2 border-b-2 px-3 pb-2.5 text-sm whitespace-nowrap transition-colors duration-(--duration-micro) motion-reduce:transition-none",
+              "focus-ring -mb-px flex min-h-11 shrink-0 items-center gap-2 rounded-t-(--radius-card) border border-b-0 px-3.5 pb-2.5 text-sm whitespace-nowrap transition-colors duration-(--duration-micro) motion-reduce:transition-none",
               selected
-                ? "border-brand font-semibold text-brand"
-                : "border-transparent font-medium text-slate-500 md:hover:text-brand-dark"
+                ? // bg-slate-50 is the page background the panel below sits
+                  // on, not a token of its own: the tab has to be exactly
+                  // that colour for the two to read as one surface.
+                  "border-line bg-slate-50 font-semibold text-brand"
+                : "border-transparent font-medium text-slate-500 md:hover:bg-slate-50/70 md:hover:text-brand-dark"
             )}
           >
             <Icon className="size-4" aria-hidden="true" />
