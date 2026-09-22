@@ -23,6 +23,11 @@ export const STATUS_TONE: Record<string, StatusTone> = {
   FINAL: "green",
   ADMIN: "brand",
   MANAGER: "brand-outline",
+  // A wider-scoped manager, not a lesser admin (see isRegionalManagerRole) —
+  // so it reads as a manager variant rather than borrowing ADMIN's filled
+  // brand pill, which is the badge a person scans for "can change the
+  // catalogue".
+  REGIONAL_MANAGER: "brand-outline",
   // Same admin rights as ADMIN (see isAdminRole) but its own tone so a
   // glance at a badge still tells the two apart — the support form (Settings
   // → PathQuote Support) addresses its message to whoever holds this role.

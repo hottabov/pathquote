@@ -5,6 +5,7 @@ import { listActiveDevelopers } from "@/lib/queries/users";
 import { resolveSupportRecipients } from "@/lib/support";
 import { getAppVersion } from "@/lib/app-version";
 import { submitSupportMessage } from "@/lib/actions/support";
+import { roleLabel } from "@/lib/roles";
 import { SupportMessageForm } from "@/components/settings/support-message-form";
 import { PageHeader, SectionCard, StatusBadge, STATUS_TONE } from "@/components/ui-kit";
 
@@ -50,7 +51,7 @@ export default async function SupportSettingsPage() {
           </span>
           <span className="inline-flex items-center gap-1.5">
             <StatusBadge tone={STATUS_TONE[session.user.role]} className="text-[10px]">
-              {session.user.role}
+              {roleLabel(session.user.role)}
             </StatusBadge>
             {region ? `${region.name} (${region.code})` : "No region set"}
           </span>

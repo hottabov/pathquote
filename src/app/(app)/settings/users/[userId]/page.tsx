@@ -13,7 +13,7 @@ import { SetPasswordForm } from "@/components/users/set-password-form";
 import { CatalogVisibilityEditor } from "@/components/settings/catalog-visibility-editor";
 import { PageHeader, SectionCard, StatusBadge, STATUS_TONE, Avatar } from "@/components/ui-kit";
 import { ImageUpload } from "@/components/catalog/image-upload";
-import { isAdminRole } from "@/lib/roles";
+import { isAdminRole, roleLabel } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -70,7 +70,7 @@ export default async function EditUserPage({ params }: { params: Promise<Params>
       />
 
       <div className="flex flex-wrap items-center gap-2">
-        <StatusBadge tone={STATUS_TONE[user.role]}>{user.role}</StatusBadge>
+        <StatusBadge tone={STATUS_TONE[user.role]}>{roleLabel(user.role)}</StatusBadge>
         <StatusBadge tone={user.active ? "green" : "slate"}>{user.active ? "Active" : "Inactive"}</StatusBadge>
         {user.magicLinkOnly ? <StatusBadge tone="brand-outline">Magic link only</StatusBadge> : null}
         {isSelf ? <StatusBadge tone="slate">This is you</StatusBadge> : null}

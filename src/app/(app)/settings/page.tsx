@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { getRegionDocumentEntity } from "@/lib/queries/regions";
 import { getUser } from "@/lib/queries/users";
 import { setUserAvatar, changeOwnPassword, saveMySignature, clearMySignature } from "@/lib/actions/users";
+import { roleLabel } from "@/lib/roles";
 import { AvatarEditor } from "@/components/users/avatar-editor";
 import { SignatureEditor } from "@/components/users/signature-editor";
 import { ChangeOwnPasswordForm } from "@/components/users/change-own-password-form";
@@ -47,7 +48,7 @@ export default async function AccountSettingsPage() {
               <div className="flex min-w-0 flex-1 flex-col gap-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-lg font-semibold text-brand-dark">{name ?? <NotSet />}</h2>
-                  <StatusBadge tone={STATUS_TONE[session.user.role]}>{session.user.role}</StatusBadge>
+                  <StatusBadge tone={STATUS_TONE[session.user.role]}>{roleLabel(session.user.role)}</StatusBadge>
                 </div>
                 <dl className="divide-y divide-slate-100">
                   <DetailRow label="Email">{email}</DetailRow>

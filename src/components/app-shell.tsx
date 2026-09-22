@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge, STATUS_TONE } from "@/components/ui-kit";
 import { AppNav } from "@/components/app-nav";
 import { cn } from "@/lib/utils";
-import { isAdminRole } from "@/lib/roles";
+import { isAdminRole, roleLabel } from "@/lib/roles";
 
 type AppShellProps = {
   user: {
@@ -72,7 +72,7 @@ export function AppShell({ user, children }: AppShellProps) {
                 isAdmin ? "border-transparent" : "border-white/30 text-white"
               )}
             >
-              {user.role}
+              {roleLabel(user.role)}
             </StatusBadge>
             <form action={logout}>
               <Button
@@ -108,7 +108,7 @@ export function AppShell({ user, children }: AppShellProps) {
             PathQuote
           </Link>
           <div className="flex items-center gap-2">
-            <StatusBadge tone={roleTone}>{user.role}</StatusBadge>
+            <StatusBadge tone={roleTone}>{roleLabel(user.role)}</StatusBadge>
             <form action={logout}>
               <Button
                 type="submit"

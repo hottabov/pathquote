@@ -18,7 +18,7 @@ import {
   Avatar,
 } from "@/components/ui-kit";
 import { cn } from "@/lib/utils";
-import { isAdminRole } from "@/lib/roles";
+import { isAdminRole, roleLabel } from "@/lib/roles";
 
 export const metadata: Metadata = { title: "Users" };
 export const dynamic = "force-dynamic";
@@ -111,7 +111,7 @@ function UserRow({ user: u }: { user: UserListItem }) {
         <span className="text-sm text-slate-600">{u.name ? u.email : "—"}</span>
       </RowCell>
       <RowCell href={href}>
-        <StatusBadge tone={STATUS_TONE[u.role]}>{u.role}</StatusBadge>
+        <StatusBadge tone={STATUS_TONE[u.role]}>{roleLabel(u.role)}</StatusBadge>
       </RowCell>
       <RowCell href={href}>
         <span className="text-sm text-slate-600">{u.regionCode ?? "—"}</span>
@@ -146,7 +146,7 @@ function UserCard({ user: u }: { user: UserListItem }) {
       </div>
       <div className="relative flex items-center justify-between gap-3 text-sm text-slate-500">
         <div className="flex items-center gap-2">
-          <StatusBadge tone={STATUS_TONE[u.role]}>{u.role}</StatusBadge>
+          <StatusBadge tone={STATUS_TONE[u.role]}>{roleLabel(u.role)}</StatusBadge>
           <span>{u.regionCode ?? "No region"}</span>
         </div>
         {u.magicLinkOnly ? <span className="shrink-0 text-xs">Magic link only</span> : null}
