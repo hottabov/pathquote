@@ -17,7 +17,8 @@ import { ItemDiscountField } from "@/components/builder/item-discount-field";
 import { ItemBreakdownEditor } from "@/components/builder/item-breakdown-editor";
 import { ItemShowImageToggle } from "@/components/builder/item-show-image-toggle";
 import { ProductionSpecEditor } from "@/components/builder/production-spec-editor";
-import { Chip, StatusBadge } from "@/components/ui-kit";
+import { ItemTabs, type ItemTab } from "@/components/builder/item-tabs";
+import { Chip, CountBadge, StatusBadge } from "@/components/ui-kit";
 import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 import { formHasScreenSide } from "@/lib/production-forms/resolve";
@@ -285,6 +286,7 @@ export function ItemsList({
         const isDropTarget = dropTargetId === item.id && draggingId !== item.id;
         const collapsed = isCollapsed(item.id);
         const optionCount = item.lines.filter((line) => line.kind === "OPTION").length;
+        const compatibleOptions = compatKey ? (compatibleOptionsByItemKey[compatKey] ?? []) : [];
         const panelId = `item-panel-${item.id}`;
         // The same per-item check finalizeDocument enforces, so the badge on
         // the card and the refusal at finalize can never disagree.
@@ -507,93 +509,136 @@ export function ItemsList({
               )}
             >
               <div className="overflow-hidden">
-                {/* Base price / options / item discount / per-item subtotal,
-                    each price editable in place (pencil-on-hover-or-focus,
-                    same reveal pattern as avatar-editor.tsx) — see
-                    item-breakdown-editor.tsx for why this is the builder's
-                    own copy of the layout rather than a reuse of the shared
-                    (non-interactive) sheet presenter. Replaces what used to
-                    be two separate blocks: a read-only compact breakdown
-                    here, and a second list of `UnitPriceField` rows
-                    repeating the same lines below it with a "Price" input
-                    each. */}
-                <div className="mb-3">
-                  <ItemBreakdownEditor item={item} currency={currency} currencySymbol={currencySymbol} readOnly={readOnly} />
-                </div>
+                {/* One panel at a time. Each machine used to stack a
+                    breakdown that was always open, a production-spec
+                    disclosure and an options disclosure whose trigger
+                    buttons were byte-identical apart from their label --
+                    so opening a machine meant choosing between two
+                    identical buttons, and a machine with both open was
+                    taller than the screen. */}
+                <div className="mt-3 border-t border-divider pt-3">
+                  {item.isCredit ? (
+                    <CreditItemSerialNumber
+                      itemId={item.id}
+                      serialNumber={item.serialNumber}
+                      readOnly={readOnly}
+                    />
+                  ) : null}
 
-                {item.isCredit ? (
-                  <CreditItemSerialNumber
-                    itemId={item.id}
-                    serialNumber={item.serialNumber}
-                    readOnly={readOnly}
+                  <ItemTabs
+                    // An EasyLoader opens on Spec because Spec is where an
+                    // EasyLoader is *built*: the machine itself costs
+                    // nothing and the table drawn there is what puts money
+                    // on the line. Every other machine opens on Options,
+                    // which is the job.
+                    defaultTab={isEasyLoader ? "spec" : "options"}
+                    tabs={([
+                      compatibleOptions.length > 0
+                        ? {
+                            key: "options",
+                            label: "Options",
+                            badge:
+                              optionCount > 0 ? <CountBadge>{optionCount}</CountBadge> : null,
+                            content: (
+                              <ItemOptionsEditor
+                                itemId={item.id}
+                                itemName={item.name}
+                                itemCode={item.code}
+                                currentLines={item.lines
+                                  .filter((line) => line.kind === "OPTION")
+                                  .map((line) => ({
+                                    refId: line.refId,
+                                    code: line.code,
+                                    qty: line.qty,
+                                    attributes: line.attributes,
+                                    role: line.role,
+                                  }))}
+                                compatibleOptions={compatibleOptions}
+                                currency={currency}
+                                currencySymbol={currencySymbol}
+                                showOptionIcons={showOptionIcons}
+                                readOnly={readOnly}
+                                lockedRoles={
+                                  isEasyLoader ? EASYLOADER_LOCKED_ROLES : DERIVED_ROLES
+                                }
+                              />
+                            ),
+                          }
+                        : null,
+                      item.form
+                        ? {
+                            key: "spec",
+                            label: isEasyLoader ? "Builder" : "Spec",
+                            badge:
+                              missingSpec.length > 0 ? (
+                                <StatusBadge tone="amber">{missingSpec.length}</StatusBadge>
+                              ) : null,
+                            content: (
+                              <ProductionSpecEditor
+                                itemId={item.id}
+                                form={item.form}
+                                productSpecs={readProductSpecs(item.specs)}
+                                spec={(item.productionSpec ?? {}) as Record<string, unknown>}
+                                hasOtherMachines={machineCount > 1}
+                                derivedRailLengthM={railsByItemId.get(item.id)?.lengthM ?? null}
+                                rollFeedQty={item.lines
+                                  .filter(
+                                    (line) =>
+                                      line.kind === "OPTION" && line.role === "EL_ROLL_FEED"
+                                  )
+                                  .reduce((sum, line) => sum + line.qty, 0)}
+                                screenSideImages={screenSideImages}
+                                readOnly={readOnly}
+                                asPanel
+                              />
+                            ),
+                          }
+                        : null,
+                      {
+                        key: "price",
+                        label: "Price",
+                        content: (
+                          <ItemBreakdownEditor
+                            item={item}
+                            currency={currency}
+                            currencySymbol={currencySymbol}
+                            readOnly={readOnly}
+                          />
+                        ),
+                      },
+                    ] satisfies (ItemTab | null)[]).filter((tab) => tab !== null)}
                   />
-                ) : null}
 
-                {/* On an EasyLoader these two swap places. Its builder is
-                    where the machine is assembled and priced, so it comes
-                    first and opens itself; the options panel holds only the
-                    accessories by then, and starts closed rather than
-                    inviting a manager to pick modules the builder owns. */}
-                <ProductionSpecEditor
-                  itemId={item.id}
-                  form={item.form}
-                  productSpecs={readProductSpecs(item.specs)}
-                  spec={(item.productionSpec ?? {}) as Record<string, unknown>}
-                  hasOtherMachines={machineCount > 1}
-                  derivedRailLengthM={railsByItemId.get(item.id)?.lengthM ?? null}
-                  rollFeedQty={item.lines
-                    .filter((line) => line.kind === "OPTION" && line.role === "EL_ROLL_FEED")
-                    .reduce((sum, line) => sum + line.qty, 0)}
-                  screenSideImages={screenSideImages}
-                  readOnly={readOnly}
-                  defaultOpen={isEasyLoader && !readOnly}
-                />
+                  {/* Global to the machine, so it sits under the strip
+                      rather than inside one of the tabs. A tab holds what
+                      its label names, and a discount is not a price and not
+                      a spec.
 
-                <ItemOptionsEditor
-                  itemId={item.id}
-                  itemName={item.name}
-                  itemCode={item.code}
-                  currentLines={item.lines
-                    .filter((line) => line.kind === "OPTION")
-                    .map((line) => ({
-                      refId: line.refId,
-                      code: line.code,
-                      qty: line.qty,
-                      attributes: line.attributes,
-                      role: line.role,
-                    }))}
-                  compatibleOptions={compatKey ? (compatibleOptionsByItemKey[compatKey] ?? []) : []}
-                  currency={currency}
-                  currencySymbol={currencySymbol}
-                  showOptionIcons={showOptionIcons}
-                  readOnly={readOnly}
-                  lockedRoles={isEasyLoader ? EASYLOADER_LOCKED_ROLES : DERIVED_ROLES}
-                />
-
-                {/* A credit item (item.isCredit — the TRADE-IN product) is
-                    already a negative line; a discount on it is meaningless
-                    and, entered by accident, silently wrong — so the control
-                    doesn't exist for it at all, not merely disabled. See
-                    `setItemDiscount`'s own guard for the server-side half of
-                    this. */}
-                {!item.isCredit || (!readOnly && item.productHasImage) ? (
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
-                    {!item.isCredit ? (
-                      <ItemDiscountField
-                        itemId={item.id}
-                        discountMode={item.discountMode}
-                        discountValue={item.discountValue}
-                        maxDiscountPct={item.maxDiscountPct}
-                        currency={currency}
-                        currencySymbol={currencySymbol}
-                        readOnly={readOnly}
-                      />
-                    ) : null}
-                    {!readOnly && item.productHasImage ? (
-                      <ItemShowImageToggle itemId={item.id} showImage={item.showImage} />
-                    ) : null}
-                  </div>
-                ) : null}
+                      A credit item (item.isCredit -- the TRADE-IN product)
+                      is already a negative line; a discount on it is
+                      meaningless and, entered by accident, silently wrong,
+                      so the control does not exist for it at all rather
+                      than being disabled. See `setItemDiscount`'s own guard
+                      for the server-side half of this. */}
+                  {!item.isCredit || (!readOnly && item.productHasImage) ? (
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-divider pt-3">
+                      {!item.isCredit ? (
+                        <ItemDiscountField
+                          itemId={item.id}
+                          discountMode={item.discountMode}
+                          discountValue={item.discountValue}
+                          maxDiscountPct={item.maxDiscountPct}
+                          currency={currency}
+                          currencySymbol={currencySymbol}
+                          readOnly={readOnly}
+                        />
+                      ) : null}
+                      {!readOnly && item.productHasImage ? (
+                        <ItemShowImageToggle itemId={item.id} showImage={item.showImage} />
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>
