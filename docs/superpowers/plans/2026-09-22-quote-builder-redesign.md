@@ -1,6 +1,6 @@
 # Quote Builder Redesign Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Rebuild `/quotes/[documentId]` so assembling a quote is the whole screen, not one card among eleven, and collapse the token sprawl underneath it.
 
@@ -83,12 +83,58 @@ After every task: `npm run typecheck && npm run lint && npm run test`.
 
 ---
 
+## Status — 2026-09-22, complete
+
+Every task above is done and on `redesign/quote-builder-ux`. Four things
+landed differently from the plan, each for a reason found while building:
+
+- **Task 8, the options sheet.** The plan assumed Base UI's `Dialog`. Its
+  popup would not take the viewport as its containing block in this tree --
+  a `fixed inset-0` diagnostic painted a box a few hundred pixels to the
+  right -- so the first attempt was reverted and the sheet rebuilt on a
+  native `<dialog>` opened with `showModal()`, which is painted in the top
+  layer, outside every ancestor's stacking context. Escape, the focus trap,
+  focus restoration and inerting the page come with it; both transitions are
+  CSS (`@starting-style` + `allow-discrete`) with no "closing" state in
+  React. `item-options-editor.tsx` was not deleted and replaced by
+  `options-sheet.tsx`; it kept its name and grew a `SideSheet` around its
+  existing list.
+- **Task 7, the sub-tabs.** Options is a tab whose panel holds the item's
+  option chips and the button that opens the sheet, rather than the option
+  list itself. An EasyLoader opens on its Builder tab instead of Options,
+  because that is where an EasyLoader is assembled and priced.
+- **Task 9, Escape.** Cancelling a keyboard reorder commits the order
+  remembered at pick-up rather than discarding an uncommitted draft: a move
+  held only in local state is reverted by the next server render the moment
+  anything else on the page saves.
+- **Task 11, step 2.** The screenshots were not saved to
+  `docs/redesign/after/`. The browser in use could not be resized, so each
+  width was rendered in an iframe of that width instead and checked for
+  horizontal overflow programmatically -- /quotes, /clients, /catalog,
+  /documents, /settings, /settings/users, the builder on all three tabs and
+  the quotation preview, all clean at 390, 768, 1024 and 1440.
+
+Two fixes were found along the way that the plan did not anticipate:
+
+- The full-bleed quote bar measured `50vw`, which is wider than the content
+  region by the whole sidebar. Nothing showed the overhang while the root
+  refused to scroll horizontally -- and then a confirm dialog's scroll lock
+  made it scrollable for a moment and the page slid sideways and stayed
+  there. It measures `cqw` now.
+- The scroll lock behind the sheet was on `body`, whose `overflow` only
+  propagates to the viewport while the root's own is `visible` -- and this
+  app's root carries `overflow-x: clip`. It moved to the root, and the
+  sidebar, a scroll container of its own that a modal dialog does not
+  freeze, got a rule of its own.
+
+---
+
 ## Task 1: Design tokens
 
 **Files:**
 - Modify: `src/app/globals.css:15-75` (the `@theme inline` block) and `src/app/globals.css:150-160` (the `@layer base` body rule)
 
-- [ ] **Step 1: Add shape, surface, divider and motion tokens**
+- [x] **Step 1: Add shape, surface, divider and motion tokens**
 
 In `src/app/globals.css`, inside `@theme inline`, after the existing
 `--color-commission` line, add:
@@ -130,7 +176,7 @@ In `src/app/globals.css`, inside `@theme inline`, after the existing
   --ease-move: cubic-bezier(0.645, 0.045, 0.355, 1);
 ```
 
-- [ ] **Step 2: Collapse the radius scale to three**
+- [x] **Step 2: Collapse the radius scale to three**
 
 Replace the existing radius block in `@theme inline` (the
 `--radius-sm` … `--radius-4xl` run) with:
@@ -150,7 +196,7 @@ Replace the existing radius block in `@theme inline` (the
   --radius-md: calc(var(--radius) * 0.8);
 ```
 
-- [ ] **Step 3: Turn on the font that is already being downloaded**
+- [x] **Step 3: Turn on the font that is already being downloaded**
 
 `layout.tsx` already loads Geist and Geist Mono through `next/font/google`
 and puts `--font-geist-sans` on `<html>`. `globals.css` then overrides
@@ -183,7 +229,7 @@ with:
   }
 ```
 
-- [ ] **Step 4: Add the global reduced-motion escape hatch**
+- [x] **Step 4: Add the global reduced-motion escape hatch**
 
 At the end of `src/app/globals.css`, after the `@layer utilities` block:
 
@@ -205,14 +251,14 @@ At the end of `src/app/globals.css`, after the `@layer utilities` block:
 }
 ```
 
-- [ ] **Step 5: Verify nothing moved**
+- [x] **Step 5: Verify nothing moved**
 
 Run: `npm run typecheck && npm run lint && npm run build`
 Expected: all pass. A CSS-only change cannot fail typecheck, so this is
 really checking that Tailwind v4 accepts the new `@theme` entries; a
 malformed token makes `build` fail at the PostCSS step.
 
-- [ ] **Step 6: Walk every screen at two widths**
+- [x] **Step 6: Walk every screen at two widths**
 
 With the Chrome tools, at 1440px and then 390px, load and screenshot:
 `/quotes`, `/quotes/cmubyqmdr004cft9kg60mbmfp`, `/clients`, `/catalog`,
@@ -221,7 +267,7 @@ Expected: identical layout to before; the only visible difference is the
 typeface. If any screen shifts, a token name collided with one Tailwind was
 already generating utilities from. Rename it rather than removing it.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/app/globals.css
@@ -254,7 +300,7 @@ every builder call site overrides it with `className="h-11 …"`. There is no
 hand in `finalize-button.tsx:71`, `client-section.tsx:397`,
 `client-section.tsx:470` and `item-options-editor.tsx` (the drawer footer).
 
-- [ ] **Step 1: Add the touch sizes**
+- [x] **Step 1: Add the touch sizes**
 
 In `buttonVariants`, inside `size`, add two entries after `lg`:
 
@@ -266,7 +312,7 @@ In `buttonVariants`, inside `size`, add two entries after `lg`:
         "icon-touch": "size-11",
 ```
 
-- [ ] **Step 2: Add the brand variant**
+- [x] **Step 2: Add the brand variant**
 
 In `buttonVariants`, inside `variant`, after `success`:
 
@@ -280,7 +326,7 @@ In `buttonVariants`, inside `variant`, after `success`:
           "bg-brand text-white hover:bg-[color-mix(in_oklch,var(--color-brand),black_12%)] focus-visible:border-brand focus-visible:ring-brand/30",
 ```
 
-- [ ] **Step 3: Add press feedback to the base class**
+- [x] **Step 3: Add press feedback to the base class**
 
 In the `cva` base string, replace `transition-all` with:
 
@@ -298,7 +344,7 @@ A 1px nudge is below the threshold most people notice; a 3% squash reads as
 the button taking the press. `not-aria-[haspopup]` stays so a menu trigger
 does not squash while its popup opens.
 
-- [ ] **Step 4: Sweep the call sites**
+- [x] **Step 4: Sweep the call sites**
 
 Run: `rg -n 'className="h-11|className=\{cn\("h-11|bg-brand text-white' src/components src/app`
 
@@ -307,7 +353,7 @@ For every hit, replace the inline override with the variant or size prop:
 `size="touch" variant="brand" className="w-full"`. Leave `h-11` on raw
 `<input>`/`<label>` elements alone; this step is only about `<Button>`.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run: `npm run typecheck && npm run lint && npm run test`
 Expected: all pass.
@@ -316,7 +362,7 @@ Then in the browser at 1440px and 390px, press Finalize on
 `/quotes/cmubyqmdr004cft9kg60mbmfp` (cancel the confirm dialog) and confirm
 the squash reads as a press and the confirm dialog's own buttons are 44px.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/components/ui/button.tsx src/components src/app
@@ -340,7 +386,7 @@ to a 3% squash that reads as the button taking the press."
 - Create: `src/components/ui-kit/tooltip.tsx`, `src/components/ui-kit/chip.tsx`, `src/components/ui-kit/read-only-value.tsx`
 - Modify: `src/components/ui-kit/field-row.tsx`, `src/components/ui-kit/index.ts`, `src/components/ui-kit/client.ts`
 
-- [ ] **Step 1: Tooltip**
+- [x] **Step 1: Tooltip**
 
 Create `src/components/ui-kit/tooltip.tsx`:
 
@@ -396,7 +442,7 @@ export function Tooltip({
 export const TooltipProvider = TooltipPrimitive.Provider;
 ```
 
-- [ ] **Step 2: Chip and CountBadge**
+- [x] **Step 2: Chip and CountBadge**
 
 Create `src/components/ui-kit/chip.tsx`:
 
@@ -450,7 +496,7 @@ export function CountBadge({ children, tone = "neutral" }: { children: React.Rea
 }
 ```
 
-- [ ] **Step 3: ReadOnlyValue**
+- [x] **Step 3: ReadOnlyValue**
 
 Create `src/components/ui-kit/read-only-value.tsx`:
 
@@ -491,7 +537,7 @@ export function ReadOnlyValue({
 }
 ```
 
-- [ ] **Step 4: FieldRow gains an inline layout**
+- [x] **Step 4: FieldRow gains an inline layout**
 
 In `src/components/ui-kit/field-row.tsx`, add `layout` to the props type and
 to the destructure, defaulting to `"stacked"`, then replace the returned
@@ -520,7 +566,7 @@ This replaces three hand-rolled label-left layouts:
 label-wraps-input rows in `item-discount-field.tsx` and
 `price-display-toggles.tsx`.
 
-- [ ] **Step 5: Point fieldInputClass at the tokens**
+- [x] **Step 5: Point fieldInputClass at the tokens**
 
 In the same file, replace the `fieldInputClass` constant with:
 
@@ -532,7 +578,7 @@ export const fieldInputClass =
 Then sweep the inputs that were never using it:
 `rg -n 'border-slate-300' src/components` and replace each with `border-line`.
 
-- [ ] **Step 6: Export**
+- [x] **Step 6: Export**
 
 In `src/components/ui-kit/index.ts` add:
 
@@ -551,13 +597,13 @@ export { Tooltip, TooltipProvider } from "./tooltip";
 barrel's header already documents: it carries `"use client"` and its own
 module graph, and a server component pulling `FieldRow` must not drag it in.
 
-- [ ] **Step 7: Verify**
+- [x] **Step 7: Verify**
 
 Run: `npm run typecheck && npm run lint && npm run test`
 Expected: all pass. If `@base-ui/react/tooltip` does not resolve, check the
 installed version exports it: `rg '"exports"' -A40 node_modules/@base-ui/react/package.json | rg tooltip`.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/components/ui-kit
@@ -590,7 +636,7 @@ re-derives its own answer in `src/lib/actions/finalize.ts`. The panel adding
 a third derivation would guarantee the three disagree. One pure function,
 two consumers.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/quote-readiness.test.ts`:
 
@@ -710,12 +756,12 @@ describe("isFinalizable", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `npx vitest run tests/quote-readiness.test.ts`
 Expected: FAIL, `Cannot find module '../src/lib/quote-readiness'`.
 
-- [ ] **Step 3: Write the module**
+- [x] **Step 3: Write the module**
 
 Create `src/lib/quote-readiness.ts`:
 
@@ -866,7 +912,7 @@ export function isFinalizable(input: ReadinessInput): boolean {
 }
 ```
 
-- [ ] **Step 4: Run the test again**
+- [x] **Step 4: Run the test again**
 
 Run: `npx vitest run tests/quote-readiness.test.ts`
 Expected: PASS, 10 tests.
@@ -874,13 +920,13 @@ Expected: PASS, 10 tests.
 If the `detail` strings do not match, fix the module, not the test. The
 strings are what the user reads and the test is where they are specified.
 
-- [ ] **Step 5: Type-check the tests**
+- [x] **Step 5: Type-check the tests**
 
 Run: `npx tsc -p tests --noEmit`
 Expected: no output. (`vitest.config.ts` documents that test types are
 checked here, not by vitest's own `typecheck`.)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/lib/quote-readiness.ts tests/quote-readiness.test.ts
@@ -907,7 +953,7 @@ customer does."
 - Create: `src/components/builder/quote-bar.tsx`, `src/components/builder/builder-tabs.tsx`
 - Modify: `src/app/(app)/quotes/[documentId]/page.tsx`
 
-- [ ] **Step 1: Build the tab strip**
+- [x] **Step 1: Build the tab strip**
 
 Create `src/components/builder/builder-tabs.tsx`:
 
@@ -986,7 +1032,7 @@ export function BuilderTabs({ counts }: { counts: Partial<Record<BuilderTab, num
 }
 ```
 
-- [ ] **Step 2: Build the quote bar**
+- [x] **Step 2: Build the quote bar**
 
 Create `src/components/builder/quote-bar.tsx`. It renders, in one sticky
 row: back link, company name, quote number plus contact plus region, the
@@ -1066,7 +1112,7 @@ export function QuoteBar({
 }
 ```
 
-- [ ] **Step 3: Restructure the page**
+- [x] **Step 3: Restructure the page**
 
 In `src/app/(app)/quotes/[documentId]/page.tsx`:
 
@@ -1087,7 +1133,7 @@ In `src/app/(app)/quotes/[documentId]/page.tsx`:
    here (the data is already fetched in the single `Promise.all` at
    `page.tsx:177-213`) and it keeps the tab switch instant.
 
-- [ ] **Step 4: Fix the skeleton to match**
+- [x] **Step 4: Fix the skeleton to match**
 
 In `src/app/(app)/quotes/[documentId]/loading.tsx`, change the card class
 from `rounded-xl border border-slate-200 bg-white p-4` to
@@ -1096,7 +1142,7 @@ bar at the top standing in for the quote bar. The skeleton was already
 missing `sm:p-6`, so it did not match the real cards above the `sm`
 breakpoint.
 
-- [ ] **Step 5: Verify in the browser**
+- [x] **Step 5: Verify in the browser**
 
 At 1440px, 1024px, 768px and 390px on
 `/quotes/cmubyqmdr004cft9kg60mbmfp`:
@@ -1106,7 +1152,7 @@ At 1440px, 1024px, 768px and 390px on
 - reloading on `?tab=history` lands on History
 - `?tab=nonsense` falls back to Build without an error
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/components/builder/quote-bar.tsx src/components/builder/builder-tabs.tsx "src/app/(app)/quotes/[documentId]"
@@ -1136,7 +1182,7 @@ unchanged."
 - Create: `src/components/builder/readiness-panel.tsx`
 - Modify: `src/app/(app)/quotes/[documentId]/page.tsx`, `src/components/builder/finalize-button.tsx`
 
-- [ ] **Step 1: Build the panel**
+- [x] **Step 1: Build the panel**
 
 Create `src/components/builder/readiness-panel.tsx`. It takes
 `rows: ReadinessRow[]`, renders a meter of met-over-blocking and one row
@@ -1239,7 +1285,7 @@ function RevealLink({ row }: { row: ReadinessRow }) {
 }
 ```
 
-- [ ] **Step 2: Rewire FinalizeButton**
+- [x] **Step 2: Rewire FinalizeButton**
 
 In `src/components/builder/finalize-button.tsx`, replace the `blocker` and
 `capBlocker` props with `rows: ReadinessRow[]` and `capBlocker: string | null`.
@@ -1266,14 +1312,14 @@ and the amber `role="status"` paragraph becomes:
 Delete the inline `productionIssues(...)` IIFE at `page.tsx:665-679` and
 pass the rows computed once near the top of the page component instead.
 
-- [ ] **Step 3: Mount the panel**
+- [x] **Step 3: Mount the panel**
 
 In `page.tsx`, add the panel as the first card in the right rail, above
 Summary, inside a `SectionCard` titled "Readiness" with a
 `{met} of {blocking.length}` description. The rail is `lg:` only, so on
 mobile it also renders once inside the Build panel above the items.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: `npm run typecheck && npm run lint && npm run test`
 
@@ -1282,7 +1328,7 @@ incomplete production spec: the panel shows 4 of 5, the spec row names the
 machine, and pressing "Go and fill it in" expands that machine and scrolls
 it into view. Finalize is disabled with the amber line naming what is left.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/components/builder/readiness-panel.tsx src/components/builder/finalize-button.tsx "src/app/(app)/quotes/[documentId]/page.tsx"
@@ -1306,7 +1352,7 @@ productionIssues IIFE in the page is gone with them."
 - Create: `src/components/builder/item-card.tsx`, `item-panel-options.tsx`, `item-panel-spec.tsx`, `item-panel-price.tsx`, `item-action-bar.tsx`
 - Modify: `src/components/builder/items-list.tsx`, `src/components/builder/items-section.tsx`, `src/components/builder/item-breakdown-editor.tsx`, `src/components/builder/production-spec-editor.tsx`
 
-- [ ] **Step 1: Section header with one collapse control**
+- [x] **Step 1: Section header with one collapse control**
 
 In `items-section.tsx`, drop the `SectionCard` wrapper. Render a header row
 (title, count, the collapse toggle, Add machine) followed by `<ItemsList>`.
@@ -1327,7 +1373,7 @@ The toggle is one button whose label and icon both flip:
 This replaces the pair of text buttons separated by a literal `|` in a
 `<span aria-hidden>` at `items-list.tsx:238-253`.
 
-- [ ] **Step 2: The card**
+- [x] **Step 2: The card**
 
 Create `item-card.tsx`. The header is a real button, not a clickable div:
 
@@ -1403,7 +1449,7 @@ Keep the `grid-template-rows` disclosure: it is the only technique that
 handles content of unknown height. The opacity and translate on the inner
 element are what the eye reads as motion, and those are GPU-composited.
 
-- [ ] **Step 3: Sub-tabs**
+- [x] **Step 3: Sub-tabs**
 
 Inside `item-card.tsx`, a `role="tablist"` of three buttons (Options, Spec,
 Price) driving three panels. Local `useState`, not URL: which sub-tab of
@@ -1414,7 +1460,7 @@ This replaces two sibling disclosures whose trigger buttons shared a
 byte-identical class string (`item-options-editor.tsx:391-407` and
 `production-spec-editor.tsx:421-444`) and were told apart only by label.
 
-- [ ] **Step 4: The action row**
+- [x] **Step 4: The action row**
 
 Create `item-action-bar.tsx`: one flat row under the sub-tabs, no overflow
 menu.
@@ -1461,7 +1507,7 @@ Delete keeps its `useConfirm({ tone: "danger" })` from
 `duplicateItem(documentId, itemId)`, copying the item with its lines and
 production spec and inserting it directly after the source.
 
-- [ ] **Step 5: Always-visible price pencil**
+- [x] **Step 5: Always-visible price pencil**
 
 In `item-panel-price.tsx`, the `EditablePrice` trigger loses
 `opacity-0 group-hover:opacity-100` (was `item-breakdown-editor.tsx:413`) and
@@ -1482,7 +1528,7 @@ becomes:
 Hover-only was not a styling choice with a touch caveat; on a tablet the
 affordance did not exist at all.
 
-- [ ] **Step 6: Verify**
+- [x] **Step 6: Verify**
 
 Run: `npm run typecheck && npm run lint && npm run test`
 
@@ -1492,7 +1538,7 @@ machine; confirm the three icon buttons show a tooltip after a pause and read
 correctly with `aria-label`; confirm the price pencil is visible without a
 pointer by loading at 390px.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/components/builder
@@ -1528,7 +1574,7 @@ affordance did not exist. It is always visible at 40%."
 - Create: `src/components/builder/options-sheet.tsx`
 - Delete: `src/components/builder/item-options-editor.tsx`
 
-- [ ] **Step 1: The sheet shell**
+- [x] **Step 1: The sheet shell**
 
 Create `options-sheet.tsx` on Base UI `Dialog`. Three regions in a fixed,
 viewport-height flex column: header, scrolling list, footer.
@@ -1561,7 +1607,7 @@ This replaces an inline `max-h-[70dvh]` panel rendered inside the item card,
 which had no focus trap, no Escape handling and no scroll lock, and which on
 a phone was a full-screen sheet with the page still scrolling behind it.
 
-- [ ] **Step 2: Autosave the checkboxes**
+- [x] **Step 2: Autosave the checkboxes**
 
 Each row commits on toggle, optimistically, with revert and a toast on
 failure, the pattern `terms-documents-panel.tsx` already uses for its
@@ -1580,7 +1626,7 @@ function toggle(optionId: string, next: boolean) {
 }
 ```
 
-- [ ] **Step 3: Autosave the quantity and attribute fields**
+- [x] **Step 3: Autosave the quantity and attribute fields**
 
 Quantity steppers and the MTS length field go through the existing
 `useAutosave` hook at its 800ms default, gated exactly the way
@@ -1597,7 +1643,7 @@ const state = useAutosave({
 `enabled: !hasError` is what stops an invalid MTS length reaching the server.
 The field keeps its `aria-invalid` and its hint.
 
-- [ ] **Step 4: The footer is a status strip, not a button bar**
+- [x] **Step 4: The footer is a status strip, not a button bar**
 
 ```tsx
 <footer className="flex items-center gap-3 border-t border-line p-4">
@@ -1616,14 +1662,14 @@ a lie and Cancel would be a promise the sheet cannot keep. Done only
 dismisses, which is why Escape, the backdrop and the header close can all do
 the same thing without the user losing anything.
 
-- [ ] **Step 5: Conflicts resolve at toggle time**
+- [x] **Step 5: Conflicts resolve at toggle time**
 
 An option excluded by a current selection renders `disabled` with the reason
 inline, e.g. `Unavailable: Automatic Nester V6 selected`, using the existing
 option-conflict-group data. Without a Save step there is no later moment at
 which to reject a selection, so it is never accepted in the first place.
 
-- [ ] **Step 6: Delete the old editor**
+- [x] **Step 6: Delete the old editor**
 
 ```bash
 git rm src/components/builder/item-options-editor.tsx
@@ -1631,7 +1677,7 @@ rg -n 'item-options-editor' src
 ```
 Expected: no remaining references.
 
-- [ ] **Step 7: Verify**
+- [x] **Step 7: Verify**
 
 Run: `npm run typecheck && npm run lint && npm run test`
 
@@ -1645,7 +1691,7 @@ In the browser at 1440px and 390px:
 - tab into the sheet and confirm focus is trapped, Escape closes it, and
   focus returns to the button that opened it
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/components/builder
@@ -1678,7 +1724,7 @@ became a live count and subtotal and Done only dismisses."
 - Create: `src/components/builder/use-item-reorder.ts`
 - Modify: `src/components/builder/items-list.tsx`, `src/components/builder/item-card.tsx`
 
-- [ ] **Step 1: One hook, one state machine**
+- [x] **Step 1: One hook, one state machine**
 
 Move the HTML5 drag path and the pointer-event path out of
 `items-list.tsx` into `use-item-reorder.ts`, and add a keyboard path to the
@@ -1705,20 +1751,20 @@ arrow keys to move, Space to drop, Escape to cancel." and an
 `aria-live="polite"` region announcing each move as
 `"${item.name}, position ${index + 1} of ${count}"`.
 
-- [ ] **Step 2: Make the arrow buttons universal**
+- [x] **Step 2: Make the arrow buttons universal**
 
 In `item-card.tsx`, the up/down buttons lose `hidden … md:flex` (was
 `items-list.tsx:434`). They were the keyboard substitute for drag, hidden
 below 768px, so on a phone a keyboard user had no way to reorder at all.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 In the browser at 390px and 1440px: tab to a handle, press Space, press
 ArrowDown, press Space, and confirm the order persisted after a reload.
 Confirm the live region announces each move (check with the accessibility
 tree via `read_page`).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add src/components/builder
@@ -1740,7 +1786,7 @@ two parallel ones plus a gap."
 **Files:**
 - Modify: every file listed in the sweep below
 
-- [ ] **Step 1: One empty state**
+- [x] **Step 1: One empty state**
 
 Run: `rg -n '"No |>No |None' src/components/builder`
 
@@ -1755,21 +1801,21 @@ render a dashed border inside a solid one. Give `EmptyState` a
 `bordered?: boolean` prop defaulting to `true`, and pass `bordered={false}`
 when it is the sole child of a card.
 
-- [ ] **Step 2: One error rule**
+- [x] **Step 2: One error rule**
 
 Inline `role="alert"` under the control for anything the user can fix.
 `toast.error` only for an optimistic update that had to be rolled back.
 Never both for one failure. `add-custom-line-form.tsx:75-77` currently sets
 `uploadError` and toasts the same thing.
 
-- [ ] **Step 3: One read-only shape**
+- [x] **Step 3: One read-only shape**
 
 Replace the six ad-hoc read-only renderings with `ReadOnlyValue`:
 `price-display-toggles.tsx`, `delivery-terms-field.tsx`,
 `validity-days-field.tsx`, `notes-section.tsx`, `terms-documents-panel.tsx`,
 `client-section.tsx`.
 
-- [ ] **Step 4: Finish the label coverage**
+- [x] **Step 4: Finish the label coverage**
 
 Run: `rg -c 'htmlFor' src/components/builder/*.tsx`
 
@@ -1778,7 +1824,7 @@ Run: `rg -c 'htmlFor' src/components/builder/*.tsx`
 its input the pair is redundant and can stay as it is; where the control
 relies on `aria-label` alone, prefer a real label.
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run: `npm run typecheck && npm run lint && npm run test`
 
@@ -1786,7 +1832,7 @@ In the browser, open `Q-AU-2026-009`, finalize nothing, but check a FINAL
 quote if one exists in the seed data; otherwise finalize a copy and confirm
 every read-only section renders through the same shape.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/components
@@ -1806,12 +1852,12 @@ inside a bordered card and drew a dashed border inside a solid one."
 
 ## Task 11: Verification pass
 
-- [ ] **Step 1: Full suite**
+- [x] **Step 1: Full suite**
 
 Run: `npm run typecheck && npm run lint && npm run test && npm run build`
 Expected: all pass, build completes.
 
-- [ ] **Step 2: Every screen, four widths**
+- [x] **Step 2: Every screen, four widths**
 
 At 390px, 768px, 1024px and 1440px, load and screenshot `/quotes`,
 `/quotes/cmubyqmdr004cft9kg60mbmfp` on all three tabs, `/clients`,
@@ -1821,20 +1867,20 @@ preview. Save each as `docs/redesign/after/<screen>-<width>.png`.
 Expected: no horizontal scroll at any width; the total visible at every
 width on the builder; no control under 44px on a touch width.
 
-- [ ] **Step 3: Keyboard pass**
+- [x] **Step 3: Keyboard pass**
 
 Tab from the top of the builder to the bottom without a mouse: reach every
 tab, every machine header, every sub-tab, every field, the action row's three
 icon buttons, the options sheet and back out of it. Confirm focus is never
 lost and never invisible.
 
-- [ ] **Step 4: Reduced motion**
+- [x] **Step 4: Reduced motion**
 
 In Chrome DevTools, emulate `prefers-reduced-motion: reduce`. Confirm the
 disclosure, the sheet, the tooltip and the meter all change state instantly
 and nothing animates.
 
-- [ ] **Step 5: Round-trip the data**
+- [x] **Step 5: Round-trip the data**
 
 On a draft: add a machine, add three options, edit a price, set a discount,
 duplicate the machine, delete the duplicate, reorder, switch to Quote terms,
@@ -1842,7 +1888,7 @@ change delivery weeks, switch back, reload. Confirm every change persisted
 and the total matches the sum of the machine rows plus extras minus
 discounts.
 
-- [ ] **Step 6: Commit the screenshots and close out**
+- [x] **Step 6: Commit the screenshots and close out**
 
 ```bash
 git add docs/redesign/after
