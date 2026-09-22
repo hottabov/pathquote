@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { startTransition, useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FieldRow, fieldInputClass } from "@/components/ui-kit";
 import type { ActionResult } from "@/lib/actions/users";
@@ -23,6 +23,28 @@ const initialState: ActionResult = {};
  * saving here never navigates away (mirrors `CompanyForm` on the company
  * edit page), so a successful submit just quietly revalidates — only the
  * error path needs rendering.
+ *
+ * Controlled throughout AND submitted through `onSubmit`, for the reason
+ * `CompanyForm` (src/components/clients/company-form.tsx) spells out at
+ * length: both halves are needed, and this form had neither.
+ *
+ * Reported by Vadym 2026-09-22: changing Role and saving left the select
+ * showing the PREVIOUS role, and only a page reload showed the new one. The
+ * save itself was always fine -- the header badge beside it updated on the
+ * spot. What happened is that `<form action>` makes React 19 reset the form
+ * once the action settles, and that reset is imperative: it puts the
+ * `<select>` back to its DOM default without changing any React state, so
+ * there is no re-render to put the chosen value back. Holding the value in
+ * state is therefore not enough on its own -- state stayed correct while the
+ * DOM did not, which is exactly what an admin saw.
+ *
+ * So the values live in state (seeded once from `defaultValues` and
+ * deliberately not re-synced, as `CompanyForm` does it -- what is on screen
+ * is the admin's own edits) and the form posts a FormData built in
+ * `handleSubmit` instead of handing React the action. The second half also
+ * closes the worse follow-on: with `<form action>` the browser builds
+ * FormData from the DOM, so after one reset the NEXT save would have posted
+ * the reset select rather than the visible state.
  *
  * `isSelf`/`isLastActiveAdmin` don't disable any control: the actual
  * safeguard lives server-side in `canModifyUser`
@@ -48,9 +70,23 @@ export function EditUserForm({
     (_prevState: ActionResult, formData: FormData) => action(formData),
     initialState
   );
+  const [values, setValues] = useState<EditUserFormValues>(defaultValues);
+
+  function set<K extends keyof EditUserFormValues>(field: K, value: EditUserFormValues[K]) {
+    setValues((current) => ({ ...current, [field]: value }));
+  }
+
+  // See the doc comment above: `<form action>` would make React reset this
+  // form after every save, silently reverting both selects in the DOM.
+  // Browser validation still runs before this fires.
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formData = new FormData(event.currentTarget);
+    startTransition(() => formAction(formData));
+  }
 
   return (
-    <form action={formAction} autoComplete="off" className="flex flex-col gap-4">
+    <form onSubmit={handleSubmit} autoComplete="off" className="flex flex-col gap-4">
       {isSelf ? (
         <p className="rounded-lg border border-brand-accent-ink/30 bg-brand-accent-ink/5 px-3 py-2 text-sm text-brand-accent-ink">
           This is your own account — you can&apos;t remove your own admin role.
@@ -67,7 +103,8 @@ export function EditUserForm({
           <input
             id="edit-user-name"
             name="name"
-            defaultValue={defaultValues.name}
+            value={values.name}
+            onChange={(e) => set("name", e.target.value)}
             maxLength={120}
             className={fieldInputClass}
           />
@@ -78,7 +115,8 @@ export function EditUserForm({
             id="edit-user-phone"
             name="phone"
             type="tel"
-            defaultValue={defaultValues.phone}
+            value={values.phone}
+            onChange={(e) => set("phone", e.target.value)}
             maxLength={40}
             className={fieldInputClass}
           />
@@ -88,7 +126,8 @@ export function EditUserForm({
           <select
             id="edit-user-role"
             name="role"
-            defaultValue={defaultValues.role}
+            value={values.role}
+            onChange={(e) => set("role", e.target.value as EditUserFormValues["role"])}
             required
             className={fieldInputClass}
           >
@@ -103,7 +142,8 @@ export function EditUserForm({
           <select
             id="edit-user-region"
             name="regionCode"
-            defaultValue={defaultValues.regionCode}
+            value={values.regionCode}
+            onChange={(e) => set("regionCode", e.target.value)}
             autoComplete="off"
             className={fieldInputClass}
           >
