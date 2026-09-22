@@ -291,9 +291,12 @@ function DocumentCard({
               {row.numberLabel} · {row.updatedLabel}
             </p>
             {/* On a card the author goes under the company rather than in its
-                own column — same information, one line, no horizontal scroll. */}
+                own column — same information, one line, no horizontal scroll.
+                Prefixed with "by": without it this is a third small grey line
+                under the mono "number · updated" one, distinguished only by
+                font family, and a name reads as more metadata. */}
             {showSalesperson ? (
-              <p className="truncate text-xs text-slate-500">{row.salespersonLabel}</p>
+              <p className="truncate text-xs text-slate-500">by {row.salespersonLabel}</p>
             ) : null}
           </div>
           <span className="shrink-0 text-sm font-medium tabular-nums text-brand-dark">

@@ -25,6 +25,17 @@ export default async function DocumentsPage() {
   // just the company name the old SQL `contains` could reach.
   const documents = await listDocuments(session.user);
 
+  // Computed before the rows are built, not after: `rows` is a prop of a
+  // client component, so every row object is serialized into the RSC payload
+  // the browser receives. Leaving the name on a row whose column is not
+  // rendered would ship colleagues' names to a viewer who never sees them --
+  // harmless for today's roles (a viewer without this column is scoped to
+  // their own quotes by `documentWhereForUser`, so the only name on their rows
+  // is their own) but only because two hand-maintained lists happen to agree.
+  // Gating it here makes the payload match the column instead of relying on
+  // that.
+  const showSalesperson = canSeeSalesperson(session.user.role);
+
   const rows = documents.map<QuoteListRow>((d) => ({
     id: d.id,
     numberLabel: d.number ?? "Quote draft",
@@ -38,13 +49,8 @@ export default async function DocumentsPage() {
     updatedLabel: relativeDate(d.updatedAt),
     updatedAtMs: d.updatedAt.getTime(),
     canDelete: canDeleteFromList(d, session.user.role),
-    salespersonLabel: d.salespersonName,
+    salespersonLabel: showSalesperson ? d.salespersonName : "",
   }));
-
-  // Decided here, on the server, rather than inside the client component:
-  // the role never reaches the browser this way, and the component stays a
-  // renderer with no opinion about who is looking.
-  const showSalesperson = canSeeSalesperson(session.user.role);
 
   return (
     <div className="flex flex-col gap-6">
