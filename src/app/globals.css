@@ -384,12 +384,18 @@
 
    Near-zero rather than `animation: none`, because a zero-length animation
    still fires `animationend` and `transitionend`. Base UI unmounts its popups
-   on that event, so `none` would leave a dialog mounted forever for exactly
-   the users this block is meant to help. */
+   on that event, and the options side sheet drops its children on it, so
+   `none` would leave a dialog mounted forever for exactly the users this
+   block is meant to help.
+
+   `::backdrop` is listed by hand: it is not in the document tree, so `*` and
+   `*::before`/`*::after` never reach it, and the sheet's dimming would go on
+   fading in. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
-  *::after {
+  *::after,
+  *::backdrop {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;

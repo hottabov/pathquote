@@ -320,7 +320,12 @@ export function ItemsList({
                         : `${item.imageUrl}?w=${pickDerivativeWidth(ITEM_THUMB_BOX_PX * 2)}`
                     }
                     alt=""
-                    className="size-12 shrink-0 rounded-(--radius-control) border border-line object-contain"
+                    // Hidden on a phone. The row has to hold a grip, a
+                    // name, a price, two reorder arrows and a chevron in
+                    // 390px, and a 48px photo is the one thing on it that
+                    // does not say which machine this is any better than
+                    // the name does.
+                    className="hidden size-12 shrink-0 rounded-(--radius-control) border border-line object-contain sm:block"
                   />
                 ) : null}
 
@@ -331,6 +336,14 @@ export function ItemsList({
                   <h3 className="truncate text-sm font-semibold text-brand-dark">{item.name}</h3>
                   <span className="mt-1 flex flex-wrap items-center gap-1.5">
                     <span className="font-mono text-xs text-slate-500">{item.code}</span>
+                    {/* On a phone the price moves down here rather than
+                        taking a column of its own: with the grip, the two
+                        reorder arrows and the chevron all on the same row,
+                        a column for it left the machine's name about eight
+                        characters wide. */}
+                    <span className="text-xs font-semibold tabular-nums text-brand-dark sm:hidden">
+                      {formatMoney(item.total, currency, currencySymbol)}
+                    </span>
                     {optionCount > 0 ? (
                       <Chip>
                         {optionCount} option{optionCount === 1 ? "" : "s"}
@@ -352,7 +365,7 @@ export function ItemsList({
                   </span>
                 </span>
 
-                <span className="shrink-0 text-sm font-semibold tabular-nums text-brand-dark">
+                <span className="hidden shrink-0 text-sm font-semibold tabular-nums text-brand-dark sm:block">
                   {formatMoney(item.total, currency, currencySymbol)}
                 </span>
 
@@ -379,7 +392,7 @@ export function ItemsList({
                         onClick={() => reorder.moveBy(index, -1)}
                         disabled={index === 0}
                         aria-label={`Move ${item.name} up`}
-                        className="focus-ring flex size-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-30 -m-1 p-1"
+                        className="focus-ring flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-30 sm:size-9"
                       >
                         <ChevronUp className="size-4" aria-hidden="true" />
                       </button>
@@ -388,7 +401,7 @@ export function ItemsList({
                         onClick={() => reorder.moveBy(index, 1)}
                         disabled={index === optimisticItems.length - 1}
                         aria-label={`Move ${item.name} down`}
-                        className="focus-ring flex size-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-30 -m-1 p-1"
+                        className="focus-ring flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-30 sm:size-9"
                       >
                         <ChevronDown className="size-4" aria-hidden="true" />
                       </button>
