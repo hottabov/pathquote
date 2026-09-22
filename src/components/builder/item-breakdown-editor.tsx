@@ -61,7 +61,7 @@ import type { BuilderItem } from "@/lib/queries/documents";
 /** The icon box on a breakdown row, in CSS pixels -- what decides which
  * `?w=` derivative to ask for rather than shrinking a print-resolution
  * original with CSS. */
-const ROW_ICON_BOX_PX = 20;
+const ROW_ICON_BOX_PX = 24;
 
 export function ItemBreakdownEditor({
   item,
@@ -102,7 +102,7 @@ export function ItemBreakdownEditor({
     // from line to line and the figures never lined up vertically. `auto` on
     // the two right columns means they're as wide as their widest row and no
     // wider, so the labels still get everything that's left.
-    <div className="mt-2 grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1.5 rounded-lg bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
+    <div className="mt-2 grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1.5 rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-600">
       {/* Dropped for a product assembled from its own options (see
           `ItemBreakdown.assembledFromOptions`) — an EasyLoader, today. The
           row would read "$0" against a machine, and there is nothing here to
@@ -258,13 +258,13 @@ function BreakdownRow({
         <img
           src={icon.endsWith(".svg") ? icon : `${icon}?w=${pickDerivativeWidth(ROW_ICON_BOX_PX * 2)}`}
           alt=""
-          className="size-5 shrink-0 rounded object-contain"
+          className="size-6 shrink-0 rounded object-contain"
         />
       ) : (
-        <span className="size-5 shrink-0 rounded bg-slate-200/70" aria-hidden="true" />
+        <span className="size-6 shrink-0 rounded bg-slate-200/70" aria-hidden="true" />
       )}
       <span className="flex min-w-0 items-baseline gap-2">
-        {code ? <span className="shrink-0 font-mono text-[11px] text-brand-dark">{code}</span> : null}
+        {code ? <span className="shrink-0 font-mono text-xs text-brand-dark">{code}</span> : null}
         <span className="truncate">{label}</span>
       </span>
       <span className="text-right tabular-nums text-slate-400">{qty}</span>

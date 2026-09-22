@@ -31,7 +31,7 @@ import {
  * Pure on purpose: no React, no Prisma client, no money formatting. The caller
  * passes a summary of what it already has in hand and gets rows back.
  */
-export type ReadinessKey = "client" | "items" | "spec" | "delivery" | "documents";
+export type ReadinessKey = "client" | "items" | "spec" | "delivery" | "documents" | "pathworks";
 
 export type ReadinessRow = {
   key: ReadinessKey;
@@ -46,7 +46,7 @@ export type ReadinessRow = {
   targetItemId: string | null;
   /**
    * False for an advisory row: shown, counted nowhere, never blocks Finalize.
-   * Only the documents row is advisory today.
+   * The documents and PathWorks rows are advisory.
    */
   blocking: boolean;
 };
@@ -71,10 +71,44 @@ export type ReadinessInput = {
   capExceeded: boolean;
   /** Over the region's markup ceiling. Same. */
   exceedsMarkupCap: boolean;
+  /** PathWorks modules on the quote with no licence to host them -- see
+   *  `pathWorksModulesWithoutHost`. Computed by the caller, which has the
+   *  product specs; this module stays free of that dependency. */
+  pathWorksModulesWithoutHost: boolean;
 };
 
 export function quoteReadiness(input: ReadinessInput): ReadinessRow[] {
-  return [clientRow(input), itemsRow(input), specRow(input), deliveryRow(input), documentsRow(input)];
+  return [
+    clientRow(input),
+    itemsRow(input),
+    specRow(input),
+    deliveryRow(input),
+    documentsRow(input),
+    // Last, and only when there is something to say. Every other row is
+    // always present because its absence would itself be information ("is
+    // the client set? the panel does not say"); this one is a remark about
+    // an unusual combination, and a permanent "PathWorks — fine" line would
+    // be noise on the great majority of quotes that carry no modules at all.
+    ...(input.pathWorksModulesWithoutHost ? [pathWorksRow()] : []),
+  ];
+}
+
+/**
+ * Modules with no licence to run in. Advisory, not a blocker: the customer
+ * may already own PathWorks, in which case nothing is wrong. It exists here
+ * because the only place this was ever said was the order forms, which
+ * appear after finalisation -- the one moment it is too late to ask.
+ */
+function pathWorksRow(): ReadinessRow {
+  return {
+    key: "pathworks",
+    label: "PathWorks licence",
+    met: false,
+    detail: "Modules on this quote with no licence to host them — fine if the client already owns one",
+    targetTab: "build",
+    targetItemId: null,
+    blocking: false,
+  };
 }
 
 function clientRow(input: ReadinessInput): ReadinessRow {

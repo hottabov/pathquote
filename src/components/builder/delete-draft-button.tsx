@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { useConfirm } from "@/components/ui-kit/client";
+import { Tooltip, useConfirm } from "@/components/ui-kit/client";
+import { cn } from "@/lib/utils";
 import { deleteDraft } from "@/lib/actions/documents";
 
 /**
@@ -15,7 +15,17 @@ import { deleteDraft } from "@/lib/actions/documents";
  * itself, same as the catalog version, so there is no post-delete state to
  * handle here beyond the error branch.
  */
-export function DeleteDraftButton({ documentId }: { documentId: string }) {
+export function DeleteDraftButton({
+  documentId,
+  className,
+}: {
+  documentId: string;
+  /** Lets the caller size it to match whatever row it sits in -- today the
+   * Preview / Download / Delete row in the Summary card, where all three
+   * have to be the same shape or the row reads as two buttons and an
+   * afterthought. */
+  className?: string;
+}) {
   const confirm = useConfirm();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -37,18 +47,18 @@ export function DeleteDraftButton({ documentId }: { documentId: string }) {
   }
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <Button
-        type="button"
-        variant="destructive"
-        onClick={handleClick}
-        disabled={pending}
-        size="touch"
-        className="w-fit"
-      >
-        <Trash2 className="size-4" data-icon="inline-start" aria-hidden="true" />
-        {pending ? "Deleting…" : "Delete draft"}
-      </Button>
+    <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
+      <Tooltip label="Delete this draft">
+        <button
+          type="button"
+          onClick={handleClick}
+          disabled={pending}
+          aria-label="Delete this draft"
+          className="focus-ring flex h-11 w-full items-center justify-center rounded-lg border border-rose-200 bg-white text-rose-600 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none disabled:opacity-60 md:hover:bg-rose-50"
+        >
+          <Trash2 className="size-4" aria-hidden="true" />
+        </button>
+      </Tooltip>
       {error ? (
         <p role="alert" className="text-sm text-destructive">
           {error}

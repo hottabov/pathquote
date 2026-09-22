@@ -69,6 +69,9 @@ import { DeleteDraftButton } from "@/components/builder/delete-draft-button";
 import { ConcessionCapBadge } from "@/components/builder/concession-cap-badge";
 import { ConcessionCapToast } from "@/components/builder/concession-cap-toast";
 import { quoteReadiness } from "@/lib/quote-readiness";
+import { Tooltip } from "@/components/ui-kit/client";
+import { pathWorksModulesWithoutHost } from "@/lib/production-forms/pathworks";
+import { readProductSpecs } from "@/lib/validation/product-specs";
 
 export const dynamic = "force-dynamic";
 
@@ -278,6 +281,14 @@ export default async function DocumentBuilderPage({
     ).length,
     capExceeded,
     exceedsMarkupCap: document.documentConcession.exceedsMarkupCap,
+    // The same test the order forms apply, run here so the remark reaches
+    // the manager while the quote is still a draft rather than after
+    // finalisation, on a page they only open once the decision is made.
+    pathWorksModulesWithoutHost: pathWorksModulesWithoutHost(
+      document.items
+        .filter((item) => item.kind === "SOFTWARE")
+        .map((item) => ({ specs: readProductSpecs(item.specs) }))
+    ),
   });
 
   // Revision + send history: the History tab's content, and its count in
@@ -570,11 +581,6 @@ export default async function DocumentBuilderPage({
                     mySignatureUrl={mySignatureUrl}
                   />
                 </div>
-                {isDraft ? (
-                  <div className="border-t border-divider pt-4">
-                    <DeleteDraftButton documentId={document.id} />
-                  </div>
-                ) : null}
               </div>
             </SectionCard>
           </div>
@@ -694,8 +700,12 @@ function SigningPanel({ document }: { document: DocumentForBuilder }) {
   );
 }
 
-const actionLinkClass =
-  "focus-ring flex h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white text-sm font-medium text-brand-dark transition-colors md:hover:bg-slate-50";
+/** The Preview / Download / Delete row: three of these side by side, each
+ * taking a third of the card. Icon only -- the words were saying what card
+ * they are already in -- with the label in a tooltip and an aria-label, so
+ * nothing is lost to a screen reader or to a pointer that pauses. */
+const actionIconClass =
+  "focus-ring flex h-11 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-brand-dark transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none md:hover:bg-slate-50";
 
 function DocumentActions({
   document,
@@ -790,15 +800,37 @@ function DocumentActions({
         <VoidSignatureButton documentId={document.id} />
       ) : null}
 
-      <Link href={`/quotes/${document.id}/quotation`} className={actionLinkClass}>
-        <Eye className="size-4" aria-hidden="true" />
-        Quotation preview
-      </Link>
+      {/* Three on one row rather than three stacked full-width buttons.
+          Every word in "Quotation preview" and "Quotation PDF" beyond the
+          verb was saying what card they are already in, and the stack cost
+          three rows of a column that is the tallest thing on the page. */}
+      <div className="grid grid-cols-3 gap-2">
+        <Tooltip label="Preview the quotation">
+          <Link
+            href={`/quotes/${document.id}/quotation`}
+            aria-label="Preview the quotation"
+            className={actionIconClass}
+          >
+            <Eye className="size-4" aria-hidden="true" />
+          </Link>
+        </Tooltip>
 
-      <a href={`/api/quotes/${document.id}/quotation-pdf`} className={actionLinkClass}>
-        <Download className="size-4" aria-hidden="true" />
-        Quotation PDF
-      </a>
+        <Tooltip label="Download the quotation PDF">
+          <a
+            href={`/api/quotes/${document.id}/quotation-pdf`}
+            aria-label="Download the quotation PDF"
+            className={actionIconClass}
+          >
+            <Download className="size-4" aria-hidden="true" />
+          </a>
+        </Tooltip>
+
+        {/* Only a draft can be deleted. A FINAL quote leaves the row a
+            column short rather than shifting the other two: the two that
+            are always there keep the same place and the same width
+            whichever state the quote is in. */}
+        {isDraft ? <DeleteDraftButton documentId={document.id} /> : <span aria-hidden="true" />}
+      </div>
     </div>
   );
 }

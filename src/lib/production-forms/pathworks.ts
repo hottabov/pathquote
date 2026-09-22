@@ -41,6 +41,34 @@ export const PATHWORKS_BOXES: PathWorksBox[] = [
 /** Every role the PathWorks section prints a box for -- part of each cutter spec's `covers`. */
 export const PATHWORKS_ROLES: OptionRole[] = PATHWORKS_BOXES.map((box) => box.role);
 
+/**
+ * PathWorks modules sold on this quote with no PathWorks licence to run
+ * them in.
+ *
+ * Not an error -- a customer who already owns PathWorks buys modules for it
+ * and nothing is wrong -- which is why it reads as a remark rather than a
+ * refusal wherever it is shown. It only became visible after finalisation,
+ * on the order forms, which is the one moment it is too late to ask.
+ *
+ * Deliberately one function with two callers (the readiness rail and the
+ * order-forms section) rather than the same two lines written out in each:
+ * the builder saying nothing while the forms warn, or the reverse, is the
+ * failure this is meant to prevent.
+ *
+ * Only SOFTWARE *products* count, on both sides of the test -- a module
+ * bought as an option on a machine is not looked at here, because that is
+ * the rule the order forms have always applied and widening it silently
+ * would change which quotes warn.
+ */
+export function pathWorksModulesWithoutHost(
+  software: ReadonlyArray<{ specs: ProductSpecs }>
+): boolean {
+  return (
+    software.some((s) => s.specs.pathworksModule !== undefined) &&
+    !software.some((s) => s.specs.softwareMode !== undefined)
+  );
+}
+
 /** Whether the quote carries the integrated PathWorks as a SOFTWARE product. */
 function integratedProductOnQuote(ctx: FormContext): boolean {
   return ctx.software.some((s) => s.specs.softwareMode === "integrated");
