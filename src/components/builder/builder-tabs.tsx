@@ -59,7 +59,10 @@ export function BuilderTabs({ counts }: { counts: Partial<Record<BuilderTab, num
       // any overflow other than visible clips exactly the pixel the whole
       // effect depends on. The three tabs fit inside a 390px phone with
       // room to spare, so there was nothing to scroll for anyway.
-      className="flex gap-1 px-4 md:px-6 lg:px-8"
+      // The row's own horizontal padding lives on the wrapper in
+      // quote-bar.tsx, which also holds the back button that sits to the
+      // left of these tabs.
+      className="flex gap-1"
     >
       {TABS.map(({ id, label, Icon }) => {
         const selected = id === active;

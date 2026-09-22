@@ -3,6 +3,7 @@ import { ChevronLeft } from "lucide-react";
 import type { DocumentStatus } from "@prisma/client";
 import { formatMoney } from "@/lib/format";
 import { StatusBadge, STATUS_TONE } from "@/components/ui-kit";
+import { Tooltip } from "@/components/ui-kit/client";
 import { BuilderTabs } from "./builder-tabs";
 import type { BuilderTab } from "@/lib/builder-tabs";
 
@@ -69,13 +70,6 @@ export function QuoteBar({
       <div className="px-4 pt-3 md:px-6 lg:px-8">
         <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
           <div className="min-w-0 flex-1">
-            <Link
-              href="/quotes"
-              className="focus-ring inline-flex items-center gap-1 rounded-(--radius-control) text-xs font-medium text-slate-500 transition-colors duration-(--duration-micro) motion-reduce:transition-none md:hover:text-brand-dark"
-            >
-              <ChevronLeft className="size-3.5" aria-hidden="true" />
-              Quotes
-            </Link>
             <h1 className="truncate text-base font-semibold text-brand-dark">{companyName}</h1>
             {meta.length > 0 ? (
               <p className="truncate text-xs text-slate-500">
@@ -112,7 +106,22 @@ export function QuoteBar({
           wrapper is full bleed: on the tab row it stopped where the content
           column stops. The open tab paints over its own slice of it, see
           BuilderTabs. */}
-      <div className="mt-4">
+      <div className="mt-4 flex items-end gap-1.5 px-4 md:px-6 lg:px-8">
+        {/* The way out, on the tab row rather than above the company name.
+            As a text link it took a line of its own at the top of the
+            busiest block on the page to say one word; as an icon beside the
+            tabs it costs nothing and sits where the eye already goes to
+            change view. The label lives in the tooltip and the aria-label,
+            not in the row. */}
+        <Tooltip label="All quotes">
+          <Link
+            href="/quotes"
+            aria-label="All quotes"
+            className="focus-ring mb-1 flex size-9 shrink-0 items-center justify-center rounded-(--radius-control) text-slate-500 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none md:hover:bg-slate-100 md:hover:text-brand-dark"
+          >
+            <ChevronLeft className="size-4" aria-hidden="true" />
+          </Link>
+        </Tooltip>
         <BuilderTabs counts={tabCounts} />
       </div>
     </div>
