@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
 import {
+  CheckCircle2,
   Download,
   Eye,
   Percent,
@@ -35,10 +36,10 @@ import { SCREEN_SIDE_FIELD } from "@/lib/production-forms/spec-images";
 import { getUser } from "@/lib/queries/users";
 import { listIndustries } from "@/lib/queries/industries";
 import { canAuthorSign, canRevoke, canSendToClient, signingStatusLabel } from "@/lib/signing/state";
-import { concessionCapMessage, markupCapMessage } from "@/lib/pricing";
+import { concessionCapMessage, markupCapMessage, toCents } from "@/lib/pricing";
 import { formatDateAU } from "@/lib/format";
 import { renderStoredRichText } from "@/lib/rich-text";
-import { PageHeader, SectionCard, StatusBadge, STATUS_TONE } from "@/components/ui-kit";
+import { SectionCard, StatusBadge, STATUS_TONE } from "@/components/ui-kit";
 import { ClientSection } from "@/components/builder/client-section";
 import { HeroImageSection } from "@/components/builder/hero-image-section";
 import { ItemsSection } from "@/components/builder/items-section";
@@ -50,8 +51,11 @@ import { TermsDocumentsPanel } from "@/components/builder/terms-documents-panel"
 import { ValidityDaysField } from "@/components/builder/validity-days-field";
 import { DeliveryTermsField } from "@/components/builder/delivery-terms-field";
 import { ProductionFormsSection } from "@/components/documents/production-forms-section";
-import { DocumentTotals, StickyFooter } from "@/components/builder/sticky-footer";
+import { DocumentTotals } from "@/components/builder/sticky-footer";
 import { FinalizeButton } from "@/components/builder/finalize-button";
+import { QuoteBar } from "@/components/builder/quote-bar";
+import { parseTab } from "@/lib/builder-tabs";
+import { ReadinessPanel } from "@/components/builder/readiness-panel";
 import { UnfinalizeButton } from "@/components/builder/unfinalize-button";
 import { AcceptButton } from "@/components/builder/accept-button";
 import { VoidSignatureButton } from "@/components/builder/void-signature-button";
@@ -64,7 +68,7 @@ import { RevokeSigningLinkButton } from "@/components/builder/revoke-signing-lin
 import { DeleteDraftButton } from "@/components/builder/delete-draft-button";
 import { ConcessionCapBadge } from "@/components/builder/concession-cap-badge";
 import { ConcessionCapToast } from "@/components/builder/concession-cap-toast";
-import { describeIssues, productionIssues } from "@/lib/production-forms/readiness";
+import { quoteReadiness } from "@/lib/quote-readiness";
 
 export const dynamic = "force-dynamic";
 
@@ -85,8 +89,19 @@ export async function generateMetadata({
   return { title: document.number ?? "New quote" };
 }
 
-export default async function DocumentBuilderPage({ params }: { params: Promise<Params> }) {
+export default async function DocumentBuilderPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<Params>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { documentId } = await params;
+  // Which of the three panels is showing. In the URL so the browser's back
+  // button steps between them instead of leaving the quote, and so a link to
+  // a quote's terms can be sent to someone. Unknown values fall back to Build
+  // rather than erroring: a hand-edited URL should not 500.
+  const tab = parseTab((await searchParams).tab);
   // AppLayout (src/app/(app)/layout.tsx) already calls requireSession and
   // redirects unauthenticated requests, so a session is always present here.
   // `requireRegion` rather than a bare `auth()`: the builder prices items, and
@@ -240,17 +255,79 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
   // why only the read-only branch needs this and the editor branch does not.
   const notesHtml = document.notes ? renderStoredRichText(document.notes) : null;
 
-  const title = document.company?.name ?? "New quote";
-  const description = `Quote · ${document.number ?? "draft"}${!isDraft ? " — final and read-only" : ""}`;
+  // One derivation of "is this quote ready", read by both the rail's panel
+  // and the Finalize button, so the two can never disagree about it. The
+  // page used to compute a version of this inline, further down, purely to
+  // hand FinalizeButton a string.
+  const readinessRows = quoteReadiness({
+    hasCompany: document.company !== null,
+    hasContact: document.contactId !== null,
+    items: document.items.map((item) => ({
+      id: item.id,
+      code: item.code,
+      form: item.form,
+      productionSpec: item.productionSpec,
+      options: item.lines
+        .filter((line) => line.kind === "OPTION")
+        .map((line) => ({ role: line.role, attributes: line.attributes })),
+      unitPriceCents: toCents(item.unitPrice),
+    })),
+    deliveryTerms: document.deliveryTerms,
+    printedDocumentCount: panelDocuments.filter(
+      (row) => row.includedByDefault && !document.excludedDocumentKeys.includes(row.key)
+    ).length,
+    capExceeded,
+    exceedsMarkupCap: document.documentConcession.exceedsMarkupCap,
+  });
 
-  // Revision + send history for the sections below the signing panel. Scoped
-  // to the same user; null only for a foreign/missing id, which can't happen
-  // here since `document` already loaded under the same scope.
+  // Revision + send history: the History tab's content, and its count in
+  // the tab strip. Scoped to the same user; null only for a foreign/missing
+  // id, which cannot happen here since `document` already loaded under the
+  // same scope.
   const history = await getQuoteHistory(session.user, document.id);
+
+  const blockingRows = readinessRows.filter((row) => row.blocking);
+  const readinessDescription = `${blockingRows.filter((row) => row.met).length} of ${blockingRows.length} ready to finalize`;
+
+  const contactFullName = document.contact
+    ? [document.contact.firstName, document.contact.lastName].filter(Boolean).join(" ")
+    : null;
+  // Only the two tabs where a count says something. "Quote terms" has a
+  // fixed number of cards, so a badge there would be decoration.
+  const historyCount = (history?.revisions.length ?? 0) + (history?.emails.length ?? 0);
+
+  const title = document.company?.name ?? "New quote";
 
   return (
     <div className="flex flex-col gap-6 pb-4">
-      <PageHeader backHref="/quotes" title={title} description={description} />
+      <QuoteBar
+        companyName={title}
+        number={document.number}
+        contactName={contactFullName}
+        regionName={document.regionName}
+        status={document.status}
+        total={document.total}
+        currency={document.currency}
+        currencySymbol={document.currencySymbol}
+        tabCounts={{ build: document.items.length, history: historyCount }}
+      >
+        {isDraft ? (
+          <FinalizeButton
+            documentId={document.id}
+            // Over the region's discount cap or markup ceiling: a hard stop
+            // at finalize for every role (validateFinalizable), shown up
+            // front rather than on refusal.
+            capBlocker={
+              capExceeded
+                ? document.documentConcession.exceedsMarkupCap
+                  ? "the price is above the region\u2019s markup ceiling."
+                  : "the discount is above the region\u2019s limit."
+                : null
+            }
+            rows={readinessRows}
+          />
+        ) : null}
+      </QuoteBar>
 
       {/* Never while the client has already signed — a signed quote has, by
           definition, no changes waiting to be sent (and clears any stale flag
@@ -263,6 +340,17 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
         <div className="flex flex-col gap-4 lg:col-span-2">
+          {/* All three panels are rendered server-side and two are hidden,
+              rather than one being conditionally rendered: the data for all
+              of them is already in hand from the single Promise.all above,
+              so hiding costs nothing and switching tabs stays instant. */}
+          <div
+            role="tabpanel"
+            id="builder-panel-build"
+            aria-labelledby="builder-tab-build"
+            hidden={tab !== "build"}
+            className="flex flex-col gap-4"
+          >
           <ClientSection
             documentId={document.id}
             companies={companies}
@@ -291,6 +379,22 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
             currencySymbol={document.currencySymbol}
             readOnly={!isDraft}
           />
+
+          </div>
+
+          {/* Quote terms: everything that is set once per quote rather than
+              touched while assembling it. These seven cards used to sit in
+              the same single column as the machines, in the same visual
+              register, so "Setup image" and "Items" looked equally
+              important and a salesperson scrolled past five of them on
+              every quote. */}
+          <div
+            role="tabpanel"
+            id="builder-panel-terms"
+            aria-labelledby="builder-tab-terms"
+            hidden={tab !== "terms"}
+            className="flex flex-col gap-4"
+          >
 
           {/* Three small document-level fields, side by side on md+ (they each
               hold a single control, so a full-width card apiece wasted the
@@ -395,8 +499,18 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
             />
           </SectionCard>
 
-          {/* History and the forms sit at the bottom of the working column:
-              revisions first, the production forms to download right under
+          </div>
+
+          {/* History: read-only, and nothing anyone edits. It had no business
+              sharing a column with the machines. */}
+          <div
+            role="tabpanel"
+            id="builder-panel-history"
+            aria-labelledby="builder-tab-history"
+            hidden={tab !== "history"}
+            className="flex flex-col gap-4"
+          >
+          {/* Revisions first, the production forms to download right under
               them, then the email log. */}
           {history ? (
             <RevisionsSection
@@ -410,20 +524,32 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
           {formsDocument ? <ProductionFormsSection document={formsDocument} /> : null}
 
           {history ? <EmailHistorySection emails={history.emails} /> : null}
+          </div>
         </div>
 
-        {/* Right column: Summary, then the signing status. Kept short so it
-            never needs an inner scrollbar. Visible on every breakpoint so
-            signing shows on mobile too; only the Summary card is desktop-only
-            (its totals live in the sticky footer on mobile, never twice on one
-            screen). Sticky on lg. */}
-        <aside className="flex flex-col gap-4 lg:sticky lg:top-6 lg:col-span-1">
-          <div className="hidden lg:block">
+        {/* Right column: readiness, then the money, then signing. Every card
+            renders at every breakpoint and exactly once; the old arrangement
+            had Summary as desktop-only with a second status/actions block
+            below the grid for smaller screens, which is how a tablet ended up
+            with neither the totals nor the rail. Sticky on lg. */}
+        <aside className="flex flex-col gap-4 lg:sticky lg:top-24 lg:col-span-1">
+          <SectionCard
+            title="Readiness"
+            description={readinessDescription}
+            icon={<CheckCircle2 className="size-5" />}
+          >
+            <ReadinessPanel rows={readinessRows} />
+          </SectionCard>
+
+          <div>
             <SectionCard title="Summary" icon={<Receipt className="size-5" />}>
               <div className="flex flex-col gap-4">
-                <DocumentSummaryHeader document={document} />
+                {/* No status badge or quote number here any more: the quote
+                    bar at the top of the screen carries both, at every
+                    width, and this card repeating them was half of the
+                    duplication this layout set out to remove. */}
                 {capMessageText ? <ConcessionCapBadge message={capMessageText} /> : null}
-                <div className="border-t border-slate-100 pt-4">
+                <div className="border-t border-divider pt-4">
                   <DocumentTotals
                     taxName={document.taxName}
                     taxRate={document.taxRate}
@@ -436,17 +562,16 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
                     commission={document.commission}
                   />
                 </div>
-                <div className="flex flex-col gap-2 border-t border-slate-100 pt-4">
+                <div className="flex flex-col gap-2 border-t border-divider pt-4">
                   <DocumentActions
                     document={document}
                     isDraft={isDraft}
-                    capExceeded={capExceeded}
                     isAdmin={isAdmin}
                     mySignatureUrl={mySignatureUrl}
                   />
                 </div>
                 {isDraft ? (
-                  <div className="border-t border-slate-100 pt-4">
+                  <div className="border-t border-divider pt-4">
                     <DeleteDraftButton documentId={document.id} />
                   </div>
                 ) : null}
@@ -458,44 +583,15 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
         </aside>
       </div>
 
-      {/* Mobile/tablet: status, number and the same action stack as a plain
-          block (totals stay exclusively in the sticky bar below so they're
-          never shown twice on the same screen). */}
-      <div className="lg:hidden">
-        <SectionCard title="Status & actions" icon={<Receipt className="size-5" />}>
-          <div className="flex flex-col gap-4">
-            <DocumentSummaryHeader document={document} />
-            {capMessageText ? <ConcessionCapBadge message={capMessageText} /> : null}
-            <DocumentActions
-              document={document}
-              isDraft={isDraft}
-              capExceeded={capExceeded}
-              isAdmin={isAdmin}
-              mySignatureUrl={mySignatureUrl}
-            />
-          </div>
-        </SectionCard>
-      </div>
-
 
       {/* Mounted once, renders nothing visible — see its own doc comment.
           Every role: an over-cap save is kept as a draft with a warning, and
           Finalize is what refuses it. */}
       <ConcessionCapToast exceedsCap={capExceeded} message={capMessageText} />
 
-      <StickyFooter
-        documentId={document.id}
-        status={document.status}
-        taxName={document.taxName}
-        taxRate={document.taxRate}
-        subtotal={document.summarySubtotal}
-        discountAmount={document.summaryDiscountAmount}
-        taxAmount={document.taxAmount}
-        total={document.total}
-        currency={document.currency}
-        currencySymbol={document.currencySymbol}
-        commission={document.commission}
-      />
+      {/* The mobile sticky totals bar is gone: the quote bar at the top of
+          the screen carries the total at every width now, so the figure is
+          never shown twice on one screen and never missing on a tablet. */}
     </div>
   );
 }
@@ -598,20 +694,6 @@ function SigningPanel({ document }: { document: DocumentForBuilder }) {
   );
 }
 
-function DocumentSummaryHeader({ document }: { document: DocumentForBuilder }) {
-  const isDraft = document.status === "DRAFT";
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2">
-        <StatusBadge tone={STATUS_TONE[document.status]}>{isDraft ? "Draft" : "Final"}</StatusBadge>
-        {document.number ? (
-          <span className="font-mono text-sm text-slate-600">{document.number}</span>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 const actionLinkClass =
   "focus-ring flex h-11 w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white text-sm font-medium text-brand-dark transition-colors md:hover:bg-slate-50";
 
@@ -620,14 +702,10 @@ function DocumentActions({
   isDraft,
   isAdmin,
   mySignatureUrl,
-  capExceeded,
 }: {
   document: DocumentForBuilder;
   isDraft: boolean;
   isAdmin: boolean;
-  /** Over the region's discount cap or markup ceiling — Finalize is refused
-   * for every role (validateFinalizable); the badge above says by how much. */
-  capExceeded: boolean;
   /** The signed-in viewer's own saved signature (`User.signatureUrl`), or
    * `null` on a DRAFT where it was never fetched — see the page body's own
    * comment. Feeds SignButton's "Use this" shortcut. */
@@ -650,35 +728,11 @@ function DocumentActions({
   });
   return (
     <div className="flex flex-col gap-2">
-      {isDraft ? (
-        <FinalizeButton
-          documentId={document.id}
-          // Over the region's discount cap or markup ceiling: a hard stop at
-          // finalize for every role (validateFinalizable), shown up front.
-          capBlocker={
-            capExceeded
-              ? document.documentConcession.exceedsMarkupCap
-                ? "the price is above the region’s markup ceiling."
-                : "the discount is above the region’s limit."
-              : null
-          }
-          // The same readiness check finalizeDocument enforces, shown before
-          // the click so the manager knows what to complete.
-          blocker={(() => {
-            const issues = productionIssues(
-              document.items.map((item) => ({
-                code: item.code,
-                form: item.form,
-                productionSpec: item.productionSpec,
-                options: item.lines
-                  .filter((line) => line.kind === "OPTION")
-                  .map((line) => ({ role: line.role, attributes: line.attributes })),
-              }))
-            );
-            return issues.length > 0 ? describeIssues(issues) : null;
-          })()}
-        />
-      ) : (
+      {/* Finalize is NOT here. It is the one action that moves a draft
+          forward, so it lives in the quote bar at the top of the screen
+          where it is reachable without scrolling past three machines; this
+          stack is the secondary actions. */}
+      {isDraft ? null : (
         <>
           {/* Signing is offered to whoever this page already scoped the
               document to (its author, or any admin — see

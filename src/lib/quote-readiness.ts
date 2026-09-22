@@ -46,7 +46,9 @@ export type ReadinessInput = {
   hasCompany: boolean;
   hasContact: boolean;
   items: Array<ReadinessItem & { id: string; unitPriceCents: number }>;
-  deliveryTermsSet: boolean;
+  /** The chosen terms. Never absent, which is why its row is informational
+   *  rather than a blocker: see `deliveryRow`. */
+  deliveryTerms: "DELIVERED" | "EX_WORKS";
   /** How many legal documents this quote will print. */
   printedDocumentCount: number;
   /** Over the region's discount cap. A hard stop, deliberately not a row. */
@@ -127,14 +129,20 @@ function specRow(input: ReadinessInput): ReadinessRow {
 }
 
 function deliveryRow(input: ReadinessInput): ReadinessRow {
+  const exWorks = input.deliveryTerms === "EX_WORKS";
   return {
     key: "delivery",
     label: "Delivery terms",
-    met: input.deliveryTermsSet,
-    detail: input.deliveryTermsSet ? null : "Not chosen",
+    // Always met, because `Document.deliveryTerms` is an enum that defaults
+    // to DELIVERED and can never be empty. It is a row anyway, and an
+    // informational one rather than a fake blocker, because Ex Works quietly
+    // zeroes the tax on the whole quote and that is worth stating in the one
+    // place someone checks before finalizing.
+    met: true,
+    detail: exWorks ? "Ex Works, no GST charged" : "Delivered, GST applies",
     targetTab: "terms",
     targetItemId: null,
-    blocking: true,
+    blocking: false,
   };
 }
 
