@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
  * consistent without duplicating the class list.
  */
 export const fieldInputClass =
-  "h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-base text-brand-dark outline-none transition-colors placeholder:text-slate-500 focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-60";
+  "h-(--size-control) w-full rounded-(--radius-control) border border-line bg-white px-3 text-base text-brand-dark outline-none transition-colors duration-(--duration-micro) motion-reduce:transition-none placeholder:text-slate-500 focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:bg-slate-50 disabled:opacity-60";
 
 type FieldRowProps = {
   label: string;
@@ -18,6 +18,18 @@ type FieldRowProps = {
   hint?: string;
   required?: boolean;
   className?: string;
+  /**
+   * "stacked" (the default) puts the label above the control, which is right
+   * for a form the user reads top to bottom. "inline" puts it to the left
+   * from `sm` up, for a dense settings list where the labels are short and
+   * the eye is scanning a column of values rather than filling a form.
+   *
+   * The inline variant replaces three separate hand-rolled implementations:
+   * production-spec-editor's own `CompactField` (a `w-44` label), the terms
+   * panel's `sm:grid-cols-[8rem_1fr]` grid, and the label-wraps-input rows in
+   * the two discount fields.
+   */
+  layout?: "stacked" | "inline";
   children: React.ReactNode;
 };
 
@@ -34,7 +46,16 @@ type FieldRowProps = {
  * the error not just at submit time (the `role="alert"` below) but also
  * whenever the field regains focus later.
  */
-export function FieldRow({ label, htmlFor, error, hint, required, className, children }: FieldRowProps) {
+export function FieldRow({
+  label,
+  htmlFor,
+  error,
+  hint,
+  required,
+  className,
+  layout = "stacked",
+  children,
+}: FieldRowProps) {
   const errorId = error ? `${htmlFor}-error` : undefined;
 
   const control =
@@ -47,9 +68,21 @@ export function FieldRow({ label, htmlFor, error, hint, required, className, chi
         })
       : children;
 
+  const inline = layout === "inline";
+
   return (
-    <div className={cn("flex flex-col gap-1.5", className)}>
-      <label htmlFor={htmlFor} className="text-sm font-medium text-brand-dark">
+    <div
+      className={cn(
+        inline
+          ? "grid gap-1.5 sm:grid-cols-[11rem_minmax(0,1fr)] sm:items-center sm:gap-x-3"
+          : "flex flex-col gap-1.5",
+        className
+      )}
+    >
+      <label
+        htmlFor={htmlFor}
+        className={cn("text-sm font-medium text-brand-dark", inline && "sm:py-2")}
+      >
         {label}
         {required ? (
           <span className="ml-0.5 text-destructive" aria-hidden="true">
@@ -59,11 +92,11 @@ export function FieldRow({ label, htmlFor, error, hint, required, className, chi
       </label>
       {control}
       {error ? (
-        <p id={errorId} role="alert" className="text-sm text-destructive">
+        <p id={errorId} role="alert" className={cn("text-sm text-destructive", inline && "sm:col-start-2")}>
           {error}
         </p>
       ) : hint ? (
-        <p className="text-sm text-slate-500">{hint}</p>
+        <p className={cn("text-sm text-slate-500", inline && "sm:col-start-2")}>{hint}</p>
       ) : null}
     </div>
   );
