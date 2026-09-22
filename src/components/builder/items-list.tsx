@@ -1,6 +1,6 @@
 "use client";
 
-import { useOptimistic, useRef, useState, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronDown,
@@ -16,6 +16,7 @@ import { ItemActionBar } from "@/components/builder/item-action-bar";
 import { ItemBreakdownEditor } from "@/components/builder/item-breakdown-editor";
 import { ProductionSpecEditor } from "@/components/builder/production-spec-editor";
 import { ItemTabs, type ItemTab } from "@/components/builder/item-tabs";
+import { useItemReorder } from "@/components/builder/use-item-reorder";
 import { Chip, CountBadge, StatusBadge } from "@/components/ui-kit";
 import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
@@ -48,13 +49,6 @@ const EASYLOADER_LOCKED_ROLES: ReadonlySet<OptionRole> = new Set<OptionRole>([
   ...EL_MODULE_ROLES,
   ...DERIVED_ROLES,
 ]);
-
-function arrayMove<T>(list: T[], from: number, to: number): T[] {
-  const copy = list.slice();
-  const [moved] = copy.splice(from, 1);
-  copy.splice(to, 0, moved);
-  return copy;
-}
 
 /**
  * The builder's item cards, reorderable when the document is a DRAFT.
@@ -128,13 +122,6 @@ export function ItemsList({
     (_state: BuilderItem[], newOrder: BuilderItem[]) => newOrder
   );
   const [, startTransition] = useTransition();
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
-  const cardNodes = useRef(new Map<string, HTMLDivElement>());
-  /** The in-flight touch/pen drag, or `null`. Mouse drags don't come through
-   * here at all — they use the native HTML5 drag below, which gives a real
-   * drag image for free. See `startPointerDrag`. */
-  const pointerDrag = useRef<{ pointerId: number; itemId: string } | null>(null);
   const [collapsedByItemId, setCollapsedByItemId] = useState<Map<string, boolean>>(new Map());
 
   function isCollapsed(itemId: string) {
@@ -176,11 +163,11 @@ export function ItemsList({
     });
   }
 
-  function moveBy(index: number, delta: number) {
-    const targetIndex = index + delta;
-    if (targetIndex < 0 || targetIndex >= optimisticItems.length) return;
-    commitOrder(arrayMove(optimisticItems, index, targetIndex));
-  }
+  // Mouse drag, touch drag and keyboard, one state machine -- see
+  // use-item-reorder.ts for why the keyboard path could not simply sit
+  // beside the other two.
+  const reorder = useItemReorder({ items: optimisticItems, commitOrder });
+  const reorderHintId = `${documentId}-reorder-hint`;
 
   // The offer to apply a screen side to the rest of the quote is noise on a
   // single-machine one, so it only appears once the document holds two or
@@ -208,50 +195,17 @@ export function ItemsList({
     optimisticItems.filter((item) => item.form === "FABRICPRO").map((item) => item.id)
   );
 
-  /** The id of the item card under a viewport point, or `null` when the
-   * point is outside every card. Hit-testing the DOM is what stands in for
-   * `dragover`/`drop` during a pointer drag: those fire only for the native
-   * HTML5 drag, which touch browsers never start. */
-  function itemIdAtPoint(clientX: number, clientY: number): string | null {
-    const card = document
-      .elementFromPoint(clientX, clientY)
-      ?.closest<HTMLElement>("[data-builder-item-id]");
-    return card?.dataset.builderItemId ?? null;
-  }
-
-  function endPointerDrag(clientX: number, clientY: number) {
-    const drag = pointerDrag.current;
-    if (!drag) return;
-    pointerDrag.current = null;
-    const targetId = itemIdAtPoint(clientX, clientY);
-    if (targetId) {
-      handleDrop(targetId);
-      return;
-    }
-    // Dropped on empty space — leave the order alone.
-    setDraggingId(null);
-    setDropTargetId(null);
-  }
-
-  function cancelPointerDrag() {
-    pointerDrag.current = null;
-    setDraggingId(null);
-    setDropTargetId(null);
-  }
-
-  function handleDrop(targetId: string) {
-    setDropTargetId(null);
-    const sourceId = draggingId;
-    setDraggingId(null);
-    if (!sourceId || sourceId === targetId) return;
-    const fromIndex = optimisticItems.findIndex((item) => item.id === sourceId);
-    const toIndex = optimisticItems.findIndex((item) => item.id === targetId);
-    if (fromIndex === -1 || toIndex === -1) return;
-    commitOrder(arrayMove(optimisticItems, fromIndex, toIndex));
-  }
-
   return (
     <div className="flex flex-col gap-4">
+      {/* A reorder is invisible to a screen reader otherwise: focus stays on
+          the same grip and that grip's label never changes. */}
+      <p aria-live="polite" className="sr-only">
+        {reorder.announcement}
+      </p>
+      <p id={reorderHintId} className="sr-only">
+        Press Space to pick this item up, the arrow keys to move it, Space again to drop it, and
+        Escape to put it back.
+      </p>
       {/* Heading and collapse control on one row. They were two stacked rows,
           which put a whole line of whitespace between the section's title and
           its first machine for no reason. */}
@@ -280,8 +234,10 @@ export function ItemsList({
       {optimisticItems.map((item, index) => {
         const compatKey = item.productId ?? (item.seriesId ? `series:${item.seriesId}` : null);
         const isEasyLoader = item.form === "EASYLOADER";
-        const isDragging = draggingId === item.id;
-        const isDropTarget = dropTargetId === item.id && draggingId !== item.id;
+        const isDragging = reorder.draggingId === item.id;
+        const isDropTarget =
+          reorder.dropTargetId === item.id && reorder.draggingId !== item.id;
+        const grabbed = reorder.grabbedId === item.id;
         const collapsed = isCollapsed(item.id);
         const optionCount = item.lines.filter((line) => line.kind === "OPTION").length;
         const compatibleOptions = compatKey ? (compatibleOptionsByItemKey[compatKey] ?? []) : [];
@@ -304,22 +260,8 @@ export function ItemsList({
             // attribute rather than the `cardNodes` map because the lookup
             // starts from whatever element is under the finger and walks up.
             data-builder-item-id={item.id}
-            ref={(node) => {
-              if (node) cardNodes.current.set(item.id, node);
-              else cardNodes.current.delete(item.id);
-            }}
-            onDragOver={(event) => {
-              if (!draggingId) return;
-              event.preventDefault();
-              if (dropTargetId !== item.id) setDropTargetId(item.id);
-            }}
-            onDragLeave={() => {
-              setDropTargetId((current) => (current === item.id ? null : current));
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              handleDrop(item.id);
-            }}
+            ref={reorder.registerCard(item.id)}
+            {...reorder.cardProps(item.id)}
             className={cn(
               "rounded-(--radius-card) border border-line bg-white p-3 transition-[opacity,box-shadow,border-color] duration-(--duration-micro) motion-reduce:transition-none sm:p-4",
               // A line the salesperson earns nothing on carries a faint amber
@@ -346,61 +288,16 @@ export function ItemsList({
                 <div className="flex shrink-0 items-center pt-1">
                 <button
                   type="button"
-                  draggable
-                  onDragStart={(event) => {
-                    event.dataTransfer.effectAllowed = "move";
-                    event.dataTransfer.setData("text/plain", item.id);
-                    const node = cardNodes.current.get(item.id);
-                    if (node) event.dataTransfer.setDragImage(node, 20, 20);
-                    setDraggingId(item.id);
-                  }}
-                  onDragEnd={() => {
-                    setDraggingId(null);
-                    setDropTargetId(null);
-                  }}
-                  // Touch/pen path. Mobile browsers never fire the HTML5
-                  // drag events above, so on a phone — where the up/down
-                  // buttons are hidden — this is the only way to reorder.
-                  // Mouse is left to the native drag, which supplies a
-                  // drag image these handlers can't.
-                  onPointerDown={(event) => {
-                    if (event.pointerType === "mouse") return;
-                    // Suppresses the scroll/long-press gesture that would
-                    // otherwise steal the pointer mid-drag; `touch-none`
-                    // below is the same guarantee at the CSS level, which
-                    // is the one Safari actually honours.
-                    event.preventDefault();
-                    // Keeps `pointermove`/`pointerup` targeted at this
-                    // handle once the finger leaves it, which is the
-                    // entire drag. Not fatal if the browser refuses (the
-                    // pointer can already be gone by the time this runs):
-                    // the drag still starts, it just ends early if the
-                    // finger slides off — far better than throwing here
-                    // and never setting `draggingId` at all.
-                    try {
-                      event.currentTarget.setPointerCapture(event.pointerId);
-                    } catch {
-                      // Capture is an optimisation, not a precondition.
-                    }
-                    pointerDrag.current = { pointerId: event.pointerId, itemId: item.id };
-                    setDraggingId(item.id);
-                  }}
-                  onPointerMove={(event) => {
-                    const drag = pointerDrag.current;
-                    if (drag?.pointerId !== event.pointerId) return;
-                    const overId = itemIdAtPoint(event.clientX, event.clientY);
-                    setDropTargetId(overId === drag.itemId ? null : overId);
-                  }}
-                  onPointerUp={(event) => {
-                    if (pointerDrag.current?.pointerId !== event.pointerId) return;
-                    endPointerDrag(event.clientX, event.clientY);
-                  }}
-                  onPointerCancel={(event) => {
-                    if (pointerDrag.current?.pointerId !== event.pointerId) return;
-                    cancelPointerDrag();
-                  }}
+                  {...reorder.handleProps(item, index)}
                   aria-label={`Reorder ${item.name}`}
-                  className="focus-ring flex size-11 cursor-grab touch-none items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 active:cursor-grabbing"
+                  aria-describedby={reorderHintId}
+                  className={cn(
+                    "focus-ring flex size-11 cursor-grab touch-none items-center justify-center rounded-lg text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 active:cursor-grabbing",
+                    // Picked up by the keyboard: the handle has to look
+                    // different from every other handle on the page, or
+                    // "which one am I carrying" is unanswerable.
+                    grabbed && "bg-brand/10 text-brand ring-2 ring-brand"
+                  )}
                 >
                   <GripVertical className="size-4" aria-hidden="true" />
                 </button>
@@ -470,14 +367,16 @@ export function ItemsList({
 
               {!readOnly && (
                 <div className="flex shrink-0 items-center gap-1 pt-1">
-                  {/* md+ only: on a phone these two plus the grip, the
-                      thumbnail, the price and the chevron overflow the row.
-                      Touch reorders by dragging the grip, and the keyboard
-                      path lives on the grip too, so nothing is lost here. */}
-                  <div className="hidden items-center gap-1 md:flex">
+                  {/* Not md+ only any more. These were the keyboard's only
+                      way to reorder and they were hidden below 768px, so on
+                      a phone a keyboard user could not reorder at all. The
+                      grip now answers the keyboard too, but these stay
+                      visible everywhere: they are the discoverable path,
+                      and the grip is not. */}
+                  <div className="flex items-center gap-1">
                       <button
                         type="button"
-                        onClick={() => moveBy(index, -1)}
+                        onClick={() => reorder.moveBy(index, -1)}
                         disabled={index === 0}
                         aria-label={`Move ${item.name} up`}
                         className="focus-ring flex size-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-30 -m-1 p-1"
@@ -486,7 +385,7 @@ export function ItemsList({
                       </button>
                       <button
                         type="button"
-                        onClick={() => moveBy(index, 1)}
+                        onClick={() => reorder.moveBy(index, 1)}
                         disabled={index === optimisticItems.length - 1}
                         aria-label={`Move ${item.name} down`}
                         className="focus-ring flex size-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-30 -m-1 p-1"
