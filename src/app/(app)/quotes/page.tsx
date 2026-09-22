@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Plus } from "lucide-react";
 import { auth } from "@/auth";
-import { isAdminRole, isDeveloperRole } from "@/lib/roles";
+import { canSeeSalesperson, isAdminRole, isDeveloperRole } from "@/lib/roles";
 import { listDocuments, type DocumentListItem } from "@/lib/queries/documents";
 import { createDraft, deleteDocument } from "@/lib/actions/documents";
 import { signingStatusLabel } from "@/lib/signing/state";
@@ -38,7 +38,13 @@ export default async function DocumentsPage() {
     updatedLabel: relativeDate(d.updatedAt),
     updatedAtMs: d.updatedAt.getTime(),
     canDelete: canDeleteFromList(d, session.user.role),
+    salespersonLabel: d.salespersonName,
   }));
+
+  // Decided here, on the server, rather than inside the client component:
+  // the role never reaches the browser this way, and the component stays a
+  // renderer with no opinion about who is looking.
+  const showSalesperson = canSeeSalesperson(session.user.role);
 
   return (
     <div className="flex flex-col gap-6">
@@ -57,7 +63,7 @@ export default async function DocumentsPage() {
         }
       />
 
-      <QuotesList rows={rows} deleteAction={deleteDocument} />
+      <QuotesList rows={rows} deleteAction={deleteDocument} showSalesperson={showSalesperson} />
     </div>
   );
 }

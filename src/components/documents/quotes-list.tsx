@@ -53,13 +53,18 @@ export type QuoteListRow = {
   updatedLabel: string;
   updatedAtMs: number;
   canDelete: boolean;
+  /** Who wrote the quote (see `DocumentListItem.salespersonName`). Present on
+   * every row regardless of viewer — `showSalesperson` below decides whether
+   * it is rendered, and a MANAGER's rows are all their own anyway. */
+  salespersonLabel: string;
 };
 
-type SortKey = "number" | "type" | "company" | "total" | "status" | "updated";
+type SortKey = "number" | "type" | "company" | "total" | "status" | "updated" | "salesperson";
 
 export function QuotesList({
   rows,
   deleteAction,
+  showSalesperson,
 }: {
   rows: QuoteListRow[];
   /** `deleteDocument`, handed down from the server page — a server action
@@ -67,6 +72,15 @@ export function QuotesList({
    * every permission server-side regardless of which rows rendered a
    * button. */
   deleteAction: (documentId: string) => Promise<ActionResult>;
+  /** Whether to render the trailing `Salesperson` column — `canSeeSalesperson`
+   * (src/lib/roles.ts), resolved on the server page. False for a MANAGER,
+   * whose list is their own quotes and for whom the column would be one name
+   * repeated down the page.
+   *
+   * Also gates whether the name joins the search text, so a manager's search
+   * matches only what is on their screen — the rule this component's own
+   * header comment states about every other column. */
+  showSalesperson: boolean;
 }) {
   const { query, setQuery, sort, toggleSort, visible, isFiltered } = useListTable<
     QuoteListRow,
@@ -84,6 +98,7 @@ export function QuotesList({
       total: row.totalValue,
       status: `${row.statusLabel} ${row.signingLabel ?? ""}`,
       updated: row.updatedAtMs,
+      salesperson: row.salespersonLabel,
     }),
     searchText: (row) =>
       [
@@ -94,6 +109,7 @@ export function QuotesList({
         row.statusLabel,
         row.signingLabel ?? "",
         row.updatedLabel,
+        showSalesperson ? row.salespersonLabel : "",
       ].join(" "),
   });
 
@@ -129,6 +145,14 @@ export function QuotesList({
                   <SortableTh label="Total" sortKey="total" sort={sort} onSort={toggleSort} align="right" />
                   <SortableTh label="Status" sortKey="status" sort={sort} onSort={toggleSort} />
                   <SortableTh label="Updated" sortKey="updated" sort={sort} onSort={toggleSort} />
+                  {showSalesperson ? (
+                    <SortableTh
+                      label="Salesperson"
+                      sortKey="salesperson"
+                      sort={sort}
+                      onSort={toggleSort}
+                    />
+                  ) : null}
                   <th scope="col" className="px-4 py-3">
                     <span className="sr-only">Actions</span>
                   </th>
@@ -136,13 +160,23 @@ export function QuotesList({
               </thead>
               <tbody>
                 {visible.map((row) => (
-                  <DocumentRow key={row.id} row={row} deleteAction={deleteAction} />
+                  <DocumentRow
+                    key={row.id}
+                    row={row}
+                    deleteAction={deleteAction}
+                    showSalesperson={showSalesperson}
+                  />
                 ))}
               </tbody>
             </table>
           }
           cards={visible.map((row) => (
-            <DocumentCard key={row.id} row={row} deleteAction={deleteAction} />
+            <DocumentCard
+              key={row.id}
+              row={row}
+              deleteAction={deleteAction}
+              showSalesperson={showSalesperson}
+            />
           ))}
         />
       )}
@@ -161,9 +195,11 @@ function SigningBadge({ row }: { row: QuoteListRow }) {
 function DocumentRow({
   row,
   deleteAction,
+  showSalesperson,
 }: {
   row: QuoteListRow;
   deleteAction: (documentId: string) => Promise<ActionResult>;
+  showSalesperson: boolean;
 }) {
   const href = `/quotes/${row.id}`;
 
@@ -195,6 +231,11 @@ function DocumentRow({
       <RowCell href={href}>
         <span className="text-sm text-slate-500">{row.updatedLabel}</span>
       </RowCell>
+      {showSalesperson ? (
+        <RowCell href={href}>
+          <span className="text-sm text-slate-600">{row.salespersonLabel}</span>
+        </RowCell>
+      ) : null}
       {/* Deliberately its own plain `<td>` (no `RowCell`/`Link`) — a delete
           button nested inside an `<a>` would be invalid HTML and would fire
           both the button's click and the row's navigation. */}
@@ -218,9 +259,11 @@ function DocumentRow({
 function DocumentCard({
   row,
   deleteAction,
+  showSalesperson,
 }: {
   row: QuoteListRow;
   deleteAction: (documentId: string) => Promise<ActionResult>;
+  showSalesperson: boolean;
 }) {
   return (
     <div className="relative rounded-xl border border-slate-200 bg-white p-4">
@@ -247,6 +290,11 @@ function DocumentCard({
             <p className="font-mono text-xs text-slate-500">
               {row.numberLabel} · {row.updatedLabel}
             </p>
+            {/* On a card the author goes under the company rather than in its
+                own column — same information, one line, no horizontal scroll. */}
+            {showSalesperson ? (
+              <p className="truncate text-xs text-slate-500">{row.salespersonLabel}</p>
+            ) : null}
           </div>
           <span className="shrink-0 text-sm font-medium tabular-nums text-brand-dark">
             {row.totalLabel}
