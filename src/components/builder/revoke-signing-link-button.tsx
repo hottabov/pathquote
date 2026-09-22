@@ -53,7 +53,8 @@ export function RevokeSigningLinkButton({ documentId }: { documentId: string }) 
         variant="outline"
         onClick={handleClick}
         disabled={pending}
-        className="h-11 w-full"
+        size="touch"
+        className="w-full"
       >
         <Ban className="size-4" data-icon="inline-start" aria-hidden="true" />
         {pending ? "Revoking…" : "Revoke link"}

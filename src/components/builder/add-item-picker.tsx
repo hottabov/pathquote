@@ -61,7 +61,8 @@ export function AddItemPicker({
         type="button"
         variant="success"
         onClick={() => setOpen(true)}
-        className="h-11 w-full gap-2 px-5 text-[0.9375rem] sm:w-fit"
+        size="touch"
+        className="w-full px-5 text-[0.9375rem] sm:w-fit"
       >
         <Plus className="size-4" aria-hidden="true" />
         Add item

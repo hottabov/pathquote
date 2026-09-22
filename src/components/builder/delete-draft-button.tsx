@@ -43,7 +43,8 @@ export function DeleteDraftButton({ documentId }: { documentId: string }) {
         variant="destructive"
         onClick={handleClick}
         disabled={pending}
-        className="h-11 w-fit"
+        size="touch"
+        className="w-fit"
       >
         <Trash2 className="size-4" data-icon="inline-start" aria-hidden="true" />
         {pending ? "Deleting…" : "Delete draft"}

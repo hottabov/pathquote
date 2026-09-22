@@ -173,7 +173,8 @@ export function AddCustomLineForm({ documentId }: { documentId: string }) {
             type="button"
             variant="outline"
             disabled={uploading}
-            className="relative h-11 overflow-hidden"
+            size="touch"
+            className="relative overflow-hidden"
           >
             <Upload className="size-4" data-icon="inline-start" aria-hidden="true" />
             {imageUrl ? "Replace photo" : "Upload photo"}
@@ -188,7 +189,7 @@ export function AddCustomLineForm({ documentId }: { documentId: string }) {
             />
           </Button>
           {imageUrl ? (
-            <Button type="button" variant="outline" onClick={() => setImageUrl(null)} className="h-11">
+            <Button type="button" variant="outline" onClick={() => setImageUrl(null)} size="touch">
               Remove photo
             </Button>
           ) : null}
@@ -208,7 +209,7 @@ export function AddCustomLineForm({ documentId }: { documentId: string }) {
         </p>
       ) : null}
 
-      <Button type="submit" variant="outline" disabled={pending || uploading} className="h-11 w-fit">
+      <Button type="submit" variant="outline" disabled={pending || uploading} size="touch" className="w-fit">
         {pending ? "Adding…" : "Add line"}
       </Button>
     </form>

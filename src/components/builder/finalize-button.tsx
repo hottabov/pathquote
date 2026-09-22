@@ -68,7 +68,9 @@ export function FinalizeButton({
         type="button"
         onClick={handleClick}
         disabled={pending || blocker !== null || capBlocker !== null}
-        className="h-11 w-full bg-brand text-white hover:bg-brand/90"
+        variant="brand"
+        size="touch"
+        className="w-full"
       >
         <CheckCircle2 className="size-4" data-icon="inline-start" aria-hidden="true" />
         {pending ? "Finalizing…" : "Finalize"}

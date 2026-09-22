@@ -625,7 +625,7 @@ export function ItemOptionsEditor({
               </p>
             ) : null}
             <div className="flex items-center gap-2">
-              <Button type="button" onClick={save} disabled={pending} className="h-10 bg-brand text-white hover:bg-brand/90">
+              <Button type="button" onClick={save} disabled={pending} variant="brand" className="h-10">
                 {pending ? "Saving…" : "Save options"}
               </Button>
               <Button

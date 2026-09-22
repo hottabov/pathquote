@@ -394,7 +394,8 @@ export function ClientSection({
                   type="button"
                   onClick={handleCreateCompany}
                   disabled={companyFormPending || !companyForm.name.trim()}
-                  className="h-11 bg-brand text-white hover:bg-brand/90 sm:h-9"
+                  variant="brand"
+                  className="h-11 sm:h-9"
                 >
                   {companyFormPending ? "Creating…" : "Create company"}
                 </Button>
@@ -467,7 +468,8 @@ export function ClientSection({
                       type="button"
                       onClick={handleCreateContact}
                       disabled={contactFormPending || !contactForm.firstName.trim()}
-                      className="h-11 bg-brand text-white hover:bg-brand/90 sm:h-9"
+                      variant="brand"
+                  className="h-11 sm:h-9"
                     >
                       {contactFormPending ? "Creating…" : "Create contact"}
                     </Button>
