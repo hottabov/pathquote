@@ -12,10 +12,20 @@
 // importing the other, as long as `DocumentForBuilder`'s items carry the
 // extra fields (`kind`, `specs`, `seriesQuoteDescription`, `seriesName`,
 // `seriesId`, `serialNumber`) this module needs.
-import type { OptionRole, ProductKind } from "@prisma/client";
+import type { OptionRole, ProductionForm, ProductKind } from "@prisma/client";
 import { z } from "zod";
 import { formatDateAU, formatMoney } from "./format";
 import { machineSpecSentence, extraSpecVars } from "./machine-specs";
+// Which items are asked the +Y/-Y question and what each form calls it --
+// pure, no `@/lib/db`, so importing it here keeps this module's rule (see the
+// header comment) intact. The quotation prints the same answer the workshop
+// sheet does, under the same name.
+import { formHasScreenSide, screenSideLabel } from "./production-forms/resolve";
+import { formatScreenSide, readScreenSide } from "./validation/production-spec";
+// The diagram lookup for a discrete production-spec value -- the same
+// `value -> imageUrl` map the builder's panel uses, so the picture beside the
+// side on the quote is the picture the salesperson chose it from.
+import { resolveSpecImage, type SpecImageMap } from "./production-forms/spec-images";
 // The one formatter for a metre total ("4.8 m", "6 m") — see its doc comment;
 // it exists for exactly this, and the options editor already prints the same
 // running total beside a module's quantity stepper. Pure, no imports at all.
@@ -123,6 +133,18 @@ export type QuotationItemInput = ToSheetItemInput & {
    * category nobody has written copy for does. Replaces the per-product key
    * into the ContentBlock table that both went in z37_drop_content_block. */
   seriesQuoteDescription: string | null;
+  /** `Product.form` -- which production order form this item prints on, and
+   * so (via `formHasScreenSide`) whether it is built for a side at all. The
+   * quotation reads it for one thing only: whether to print the side line
+   * under this item's heading. `null` for software, services, accessories,
+   * and any machine whose form is not built yet -- none of which is placed
+   * on a production line, so none of which has a side to state. */
+  form: ProductionForm | null;
+  /** `DocumentItem.productionSpec` exactly as stored (opaque `Json?`, same
+   * defensive treatment as `specs` above). Read here for `ui` alone -- see
+   * `QuotationMachineSection.screenSide`; everything else in it is workshop
+   * detail the customer has no business reading off a quote. */
+  productionSpec: unknown;
   lines: QuotationLineInput[];
 };
 
@@ -583,10 +605,46 @@ export type QuotationMachineSection = {
    * misleading "$0" beside it. The table is never left empty by this, because
    * that flag is only ever set when there are option rows to carry it. */
   baseRow: QuotationBaseRow | null;
+  /** Which side the equipment is built for, `null` for an item that is not
+   * asked (`formHasScreenSide` — software, services, the Heavy Duty Roll
+   * Feeder, the Leather Nesting System).
+   *
+   * Customer-facing, and structural rather than a `{{token}}` the category's
+   * copy has to remember to carry (director, 2026-09-22): the side decides
+   * where the machine stands on the customer's floor and which way the
+   * material runs into it, so a quote that leaves it out is a quote somebody
+   * has to ring up about. A category author cannot forget it and nobody has
+   * to edit eight categories to turn it on.
+   *
+   * Always resolvable, never blank: an item whose production-spec panel
+   * nobody has opened reads as `-Y`, the standard the production form prints
+   * as `(STD)` — the quote and the workshop sheet therefore say the same
+   * thing about the same machine, which is the whole point of printing it.
+   */
+  screenSide: QuotationScreenSide | null;
   /** This item's own row from `DocSheetData.items` (name/price/lines/total)
    * — reused as-is for the investment-summary table rather than
    * recomputed. */
   lineSummary: DocSheetItem;
+};
+
+export type QuotationScreenSide = {
+  /** What this form calls the answer — "Operator screen side" on the
+   * cutters, "Control box side" on the EasyLoader/EasyFeeder, "Operator
+   * side" on the FabricPro. One shared function with the builder's panel and
+   * the production form (`screenSideLabel`), so the customer reads the same
+   * name the workshop does. */
+  label: string;
+  /** The side itself, written for a reader: a real minus sign and the
+   * standard marked as such — "−Y (standard)" / "+Y". */
+  value: string;
+  /** The admin-uploaded diagram for this exact side (Settings → Catalogue),
+   * already run through `ImageResolver`. `null` when nothing has been
+   * uploaded for it yet, and the sheet then prints the line alone rather
+   * than a broken image — the words are the answer, the picture is the part
+   * that survives a customer who reads no English (Ross: "rather than
+   * showing plus or minus, show that image"). */
+  diagram: string | null;
 };
 
 export type QuotationBaseRow = {
@@ -756,6 +814,14 @@ export type QuotationSignature = {
 
 export type BuildQuotationDataOpts = {
   resolveImage?: ImageResolver;
+  /** `getSpecImages("screenSide")` — the admin-uploaded `+Y`/`-Y` diagrams
+   * (src/lib/queries/spec-images.ts). Passed in rather than queried here
+   * because this module owns no database handle (see the header comment);
+   * omitted, every section's `screenSide.diagram` is simply `null` and the
+   * side prints as words, which is what a caller that has no reason to load
+   * them (the finalize snapshot, which stores category copy and nothing
+   * else) should get. */
+  screenSideImages?: SpecImageMap;
 };
 
 /** Flattens a line's `attributes` to a single small display line, e.g.
@@ -831,6 +897,11 @@ export function buildQuotationData(
   opts: BuildQuotationDataOpts = {}
 ): QuotationData {
   const resolveImage = opts.resolveImage ?? identityResolver;
+  const screenSideImages = opts.screenSideImages ?? {};
+  /** `resolveImage` over a value that may not be there at all — a side with
+   * no diagram uploaded yet is `null` here, never an empty `src`. */
+  const resolveDiagram = (url: string | null): string | null =>
+    url ? (resolveImage(url) ?? null) : null;
   const sheet: DocSheetData = toSheetData(doc, resolveImage);
 
   // What this quote froze when it went FINAL, or `null` for a DRAFT and for
@@ -1090,6 +1161,22 @@ export function buildQuotationData(
               : null,
         };
 
+    // Which side this machine is built for -- printed for every item whose
+    // form asks the question, whether or not anybody opened the panel (an
+    // untouched spec is the standard `-Y`, the same answer the production
+    // form prints). See `QuotationMachineSection.screenSide`.
+    const side = readScreenSide(item.productionSpec);
+    const screenSide: QuotationScreenSide | null = formHasScreenSide(item.form)
+      ? {
+          label: screenSideLabel(item.form),
+          value: formatScreenSide(side),
+          // Resolved the same way every other image on this sheet is, so the
+          // PDF and the client-facing page get inlined bytes rather than an
+          // auth-gated `/api/files/...` URL they cannot fetch.
+          diagram: resolveDiagram(resolveSpecImage(screenSideImages, side)),
+        }
+      : null;
+
     return {
       itemId: item.id,
       sectionTitle,
@@ -1099,6 +1186,7 @@ export function buildQuotationData(
       hasInlinePrice,
       optionRows,
       baseRow,
+      screenSide,
       lineSummary,
     };
   });

@@ -469,6 +469,37 @@ export const SHEET_CSS = `
     color: #243478;
     font-weight: 700;
   }
+  /* The side the machine is built for, printed under the heading beside its
+     diagram. Flex rather than an inline image so the picture sits level with
+     the words at any text length, and min-width: 0 on the text half for the
+     reason every other flex row on this sheet carries it (see
+     .pq-prepared-by-text). Kept with the heading: a side that lands alone at
+     the top of the next page reads as being about the machine printed there. */
+  .pq-screen-side {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 6px 0;
+    color: #333333;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .pq-screen-side-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .pq-screen-side strong {
+    color: #243478;
+    white-space: nowrap;
+  }
+  /* Height-bound, width-auto: the uploaded artwork is a square-ish sketch and
+     the row must not grow into a picture block. flex-shrink: 0 keeps it at
+     size when the label wraps. */
+  .pq-screen-side-fig {
+    height: 34px;
+    width: auto;
+    flex-shrink: 0;
+  }
   .pq-auto-summary-spec {
     margin-top: 4px;
     color: #444444;

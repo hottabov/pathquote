@@ -9,10 +9,11 @@ import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 import { applyScreenSideToQuote, setProductionSpec } from "@/lib/actions/production";
 import { setEasyLoaderLayout } from "@/lib/actions/documents";
-import { formHasScreenSide, missingRequirements, resolveForm } from "@/lib/production-forms/resolve";
+import { formHasScreenSide, missingRequirements, resolveForm, screenSideLabel } from "@/lib/production-forms/resolve";
 import { REQUIREMENT_LABELS } from "@/lib/production-forms/readiness";
 import { easyLoaderPrintedWidth } from "@/lib/production-forms/specs/easyloader";
 import type { ProductSpecs } from "@/lib/validation/product-specs";
+import { readScreenSide } from "@/lib/validation/production-spec";
 import {
   layoutTotals,
   modulesIn,
@@ -398,14 +399,16 @@ export function ProductionSpecEditor({
   // table somebody deliberately left unsynchronised.
   const syncWithCutter = (draft.syncWithCutter as boolean | undefined) ?? true;
   const totals = layoutTotals(sections);
-  // "Operator screen side" on the cutters; the EasyLoader has a control box
-  // rather than a screen, and its form calls the same +Y/-Y choice "Control
-  // Box Side". The Heavy Duty Roll Feeder, the Leather Nesting System and
-  // the EasyFeeder are not asked at all (see `formHasScreenSide`).
+  // "Operator screen side" on the cutters; the EasyLoader and the EasyFeeder
+  // have a control box rather than a screen, and the FabricPro's form says
+  // simply "Operator side". One label function shared with the production
+  // form and the quotation, so the panel, the workshop sheet and the
+  // customer all name the same answer the same way. The Heavy Duty Roll
+  // Feeder and the Leather Nesting System are not asked at all (see
+  // `formHasScreenSide`).
   const hasScreenSide = formHasScreenSide(form.form);
-  const screenSideLabel =
-    isEasyLoader ? "Control Box Side" : "Operator screen side";
-  const currentSide = (draft.ui as string) ?? "-Y";
+  const sideLabel = screenSideLabel(form.form);
+  const currentSide = readScreenSide(draft);
 
   const breakdown = [
     totals.driveModules > 0 ? `${totals.driveModules} × drive module` : null,
@@ -569,7 +572,7 @@ export function ProductionSpecEditor({
 
           {hasScreenSide ? (
             <>
-          <CompactField label={screenSideLabel} htmlFor={`${itemId}-ui`}>
+          <CompactField label={sideLabel} htmlFor={`${itemId}-ui`}>
             <select
               id={`${itemId}-ui`}
               // screenSideSchema defaults to "-Y" (material right to left,
@@ -595,7 +598,7 @@ export function ProductionSpecEditor({
                 real artwork for this value (Settings -> Catalogue). */}
             <SpecDiagram
               src={resolveSpecImage(screenSideImages, currentSide)}
-              alt={`${screenSideLabel}: ${currentSide}`}
+              alt={`${sideLabel}: ${currentSide}`}
             />
           </CompactField>
 

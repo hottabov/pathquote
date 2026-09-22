@@ -5,6 +5,8 @@ import { ChevronLeft, Download, TriangleAlert } from "lucide-react";
 import { auth } from "@/auth";
 import { getDocumentForBuilder } from "@/lib/queries/documents";
 import { getQuoteDocumentsForRegion } from "@/lib/queries/quote-documents";
+import { getSpecImages } from "@/lib/queries/spec-images";
+import { SCREEN_SIDE_FIELD } from "@/lib/production-forms/spec-images";
 import { buildQuotationData, type StrippedCopyToken, type StrippedDocumentToken } from "@/lib/quotation-data";
 import { QuotationSheet } from "@/components/sheet/quotation-sheet";
 import { buttonVariants } from "@/components/ui/button";
@@ -126,7 +128,12 @@ export default async function QuotationPreviewPage({ params }: { params: Promise
   // — both read this document's region's own QuoteDocument rows so the
   // preview and the PDF resolve Terms/Conditions/RSP identically.
   const documents = await getQuoteDocumentsForRegion(document.regionId);
-  const quotationData = buildQuotationData(document, documents);
+  // The +Y/-Y diagrams printed beside each machine's side — the same map the
+  // builder's production-spec panel reads, so the preview shows the picture
+  // the salesperson chose the side from. Stored `/api/files/...` URLs go
+  // straight through (this page is an already-authenticated browser tab).
+  const screenSideImages = await getSpecImages(SCREEN_SIDE_FIELD);
+  const quotationData = buildQuotationData(document, documents, { screenSideImages });
 
   const statusLabel = document.status === "DRAFT" ? "Draft" : "Final";
   const numberLabel = document.number ?? "Quote draft";

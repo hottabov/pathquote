@@ -31,6 +31,7 @@ import { catalogVisibilityUserId } from "@/lib/catalog-visibility";
 import { getHiddenCatalogIds } from "@/lib/queries/catalog-visibility";
 import { getQuoteValidityDays, getShowOptionIcons } from "@/lib/queries/settings";
 import { getSpecImages } from "@/lib/queries/spec-images";
+import { SCREEN_SIDE_FIELD } from "@/lib/production-forms/spec-images";
 import { getUser } from "@/lib/queries/users";
 import { listIndustries } from "@/lib/queries/industries";
 import { canAuthorSign, canRevoke, canSendToClient, signingStatusLabel } from "@/lib/signing/state";
@@ -197,7 +198,7 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
     // leaving it as bare text) — fetched once per page load, same as
     // `showOptionIcons`, and threaded down through ItemsSection/ItemsList
     // to every item's ProductionSpecEditor.
-    getSpecImages("screenSide"),
+    getSpecImages(SCREEN_SIDE_FIELD),
     // Every legal document visible to this quote's region — the same rows
     // the quotation renderer reads, reduced below by the same
     // `resolveQuoteDocuments`, so the tickboxes can never offer a document

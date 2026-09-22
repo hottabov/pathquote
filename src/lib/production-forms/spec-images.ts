@@ -20,6 +20,18 @@
 export const SCREEN_SIDES = ["+Y", "-Y"] as const;
 export type ScreenSide = (typeof SCREEN_SIDES)[number];
 
+/** The `SpecImage.field` key the two diagrams above are stored under. A
+ * string literal in four places until the quotation started printing the
+ * diagram too (2026-09-22) — a typo in any one of them is a silently missing
+ * picture, not an error, which is exactly the kind of bug a constant ends. */
+export const SCREEN_SIDE_FIELD = "screenSide";
+
+/** `value -> imageUrl` for one field's uploaded diagrams — structurally the
+ * same thing `getSpecImages` returns (src/lib/queries/spec-images.ts),
+ * declared here as well so a module with this file's purity rule can name
+ * the shape without importing one that opens a database connection. */
+export type SpecImageMap = Record<string, string>;
+
 export type SpecImageFieldConfig = {
   /** The `SpecImage.field` key — also the production-spec JSON key this
    * illustrates (`draft.ui` for "screenSide" — see
@@ -39,7 +51,7 @@ export type SpecImageFieldConfig = {
  * to extend the same treatment to another discrete spec choice; the model
  * and admin page both already support any `field`. */
 export const SPEC_IMAGE_FIELDS: SpecImageFieldConfig[] = [
-  { field: "screenSide", label: "Operator screen side / Control Box Side", values: SCREEN_SIDES },
+  { field: SCREEN_SIDE_FIELD, label: "Operator screen side / Control box side", values: SCREEN_SIDES },
 ];
 
 /**

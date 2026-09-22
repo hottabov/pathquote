@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { getDocumentForForms } from "@/lib/queries/documents";
 import { getSpecImages } from "@/lib/queries/spec-images";
+import { SCREEN_SIDE_FIELD } from "@/lib/production-forms/spec-images";
 import { fileImageResolver, htmlToPdf, inlineSheetImages } from "@/lib/pdf";
 import {
   buildFormContexts,
@@ -74,7 +75,7 @@ export async function GET(request: Request, { params }: { params: Promise<Params
   // the sheet is rendered. A value with no upload yet simply never reaches
   // the page (see `ScreenSideBlock`).
   const screenSideImages = Object.fromEntries(
-    Object.entries(await getSpecImages("screenSide")).flatMap(([value, url]) => {
+    Object.entries(await getSpecImages(SCREEN_SIDE_FIELD)).flatMap(([value, url]) => {
       const mark = fileImageResolver(url);
       return mark ? [[value, mark]] : [];
     }),

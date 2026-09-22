@@ -17,14 +17,46 @@ export function resolveForm(form: ProductionForm | null | undefined): FormSpec |
 
 /**
  * Whether a form asks for the +Y/-Y operator side. The Heavy Duty Roll Feeder
- * and the Leather Nesting System have no screen and no control box, so the
- * builder does not ask and "apply this side to the quote" skips them. The
- * EasyFeeder's form asks for the model only (Vadym, 2026-09-17).
+ * and the Leather Nesting System have no screen and no control box, and the
+ * Fabric Trolley is not a machine at all -- it is a trolley, with nothing an
+ * operator stands at and no side to be built for (Vadym, 2026-09-22). The
+ * builder does not ask any of them, "apply this side to the quote" skips
+ * them, and the quotation prints no side line for them.
+ *
+ * The EasyFeeder was in that set too ("the form asks for the model only",
+ * Vadym, 2026-09-17) and came back out on 2026-09-22: the side is now printed
+ * on the customer's quote (see `screenSideLabel`), because the director's
+ * point is that it decides where the equipment stands, and a side nobody can
+ * choose is a side the quote cannot state. Its control box is asked for the
+ * same way every other one is.
  */
-const NO_SCREEN_SIDE: ReadonlySet<ProductionForm> = new Set(["HDRF", "LNS", "EASYFEEDER"]);
+const NO_SCREEN_SIDE: ReadonlySet<ProductionForm> = new Set(["HDRF", "LNS", "FP_TROLLEY"]);
 
 export function formHasScreenSide(form: ProductionForm | null | undefined): boolean {
   return resolveForm(form) !== null && !NO_SCREEN_SIDE.has(form!);
+}
+
+/**
+ * What this form calls its +Y/-Y answer, in the customer's terms as well as
+ * the workshop's -- one answer, three names, because the thing the operator
+ * stands at differs: the cutters have a screen, the EasyLoader and the
+ * EasyFeeder a control box, and the FabricPro's form says simply "Operator
+ * side".
+ *
+ * One function rather than a ternary at each call site: the builder's panel,
+ * the production form and now the quotation all print this label, and a
+ * machine that is a "control box" on the workshop sheet and an "operator
+ * screen" on the customer's quote reads as two different questions.
+ *
+ * Sentence case, because it is printed mid-page on the quote as well as as a
+ * field label in the builder. Returns the cutter wording for a form with no
+ * side at all (`formHasScreenSide` is the gate; this never has to answer
+ * "none").
+ */
+export function screenSideLabel(form: ProductionForm | null | undefined): string {
+  if (form === "EASYLOADER" || form === "EASYFEEDER") return "Control box side";
+  if (form === "FABRICPRO") return "Operator side";
+  return "Operator screen side";
 }
 
 /** The productionSpec schema for an item, or null when it prints no form. */

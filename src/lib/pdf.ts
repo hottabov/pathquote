@@ -18,6 +18,7 @@ import { QuotationSheet } from "@/components/sheet/quotation-sheet";
 import { resolveUploadPath } from "@/lib/uploads";
 import { ensureDerivative, type DerivativeWidth } from "@/lib/image-derivatives";
 import type { ImageResolver } from "@/lib/sheet-data";
+import { SCREEN_SIDE_FIELD, type SpecImageMap } from "@/lib/production-forms/spec-images";
 import { buildQuotationData, type QuotationData, type QuotationDataDoc, type QuoteDocumentRow } from "@/lib/quotation-data";
 
 // --- HTML rendering -----------------------------------------------------
@@ -541,9 +542,33 @@ export async function renderQuotationPdfForDocument(
   doc: QuotationDataDoc,
   quoteDocuments: QuoteDocumentRow[]
 ): Promise<Buffer> {
-  const data = buildQuotationData(doc, quoteDocuments, { resolveImage: fileImageResolver });
+  const data = buildQuotationData(doc, quoteDocuments, {
+    resolveImage: fileImageResolver,
+    screenSideImages: await loadScreenSideImages(),
+  });
   const html = await renderQuotationHtml(data);
   return htmlToPdf(html, buildFooterHtml(doc.number));
+}
+
+/**
+ * The `+Y`/`-Y` diagrams, loaded here rather than asked of each caller.
+ *
+ * Six places render this PDF -- the authenticated download, the signing
+ * page's own download, the signature actions, the revision archive -- and a
+ * caller that forgot to pass the map would produce a quote with the side
+ * stated in words and no picture beside it, which is a silent half of the
+ * thing the director asked for. There is exactly one right answer to "which
+ * diagrams", so this function is where it lives.
+ *
+ * Imported dynamically for the same reason `react-dom/server` is (see this
+ * file's header): `@/lib/queries/spec-images` reaches `@/lib/db`, which
+ * constructs its client at module load and throws without `DATABASE_URL` --
+ * a static import here would make `tests/pdf.test.ts`, which renders HTML
+ * from hand-built data and touches no database, require one.
+ */
+async function loadScreenSideImages(): Promise<SpecImageMap> {
+  const { getSpecImages } = await import("@/lib/queries/spec-images");
+  return getSpecImages(SCREEN_SIDE_FIELD);
 }
 
 // --- filename ---------------------------------------------------------------

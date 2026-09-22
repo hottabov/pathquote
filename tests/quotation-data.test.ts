@@ -2100,3 +2100,76 @@ describe("quote documents", () => {
     });
   });
 });
+
+// The side is customer-facing from 2026-09-22 (director: it decides where the
+// equipment stands on the client's floor, so the client has to read it on the
+// quote rather than ring up for it). Structural, like the section price — a
+// category author cannot lose it by never writing a `{{token}}` for it.
+describe("buildQuotationData — screenSide", () => {
+  const sideOf = (item: Parameters<typeof quotationItem>[0], opts = {}) =>
+    buildQuotationData(quotationDoc({ items: [quotationItem(item)] }), [], opts).machineSections[0]
+      .screenSide;
+
+  it("prints the standard side for an item whose spec nobody has opened", () => {
+    // Not "unknown" and not blank: an untouched spec IS -Y, and the
+    // production form already prints it as (STD). The quote and the workshop
+    // sheet must not be able to say different things about one machine.
+    expect(sideOf({ productionSpec: null })).toEqual({
+      label: "Operator screen side",
+      value: "−Y (standard)",
+      diagram: null,
+    });
+  });
+
+  it("prints the side the manager chose, with a real minus sign and no standard marker on +Y", () => {
+    expect(sideOf({ productionSpec: { ui: "+Y" } })?.value).toBe("+Y");
+    expect(sideOf({ productionSpec: { ui: "-Y" } })?.value).toBe("−Y (standard)");
+  });
+
+  it("ignores a stored value that is not a side at all", () => {
+    // `productionSpec` is an opaque Json column; a quote must not print
+    // whatever happens to be sitting in it.
+    expect(sideOf({ productionSpec: { ui: "sideways" } })?.value).toBe("−Y (standard)");
+    expect(sideOf({ productionSpec: "not an object" })?.value).toBe("−Y (standard)");
+  });
+
+  it("names the answer the way this item's own form does", () => {
+    expect(sideOf({ form: "EASYLOADER" })?.label).toBe("Control box side");
+    expect(sideOf({ form: "EASYFEEDER" })?.label).toBe("Control box side");
+    expect(sideOf({ form: "FABRICPRO" })?.label).toBe("Operator side");
+    expect(sideOf({ form: "X_CALIBRE" })?.label).toBe("Operator screen side");
+    expect(sideOf({ form: "L_SERIES" })?.label).toBe("Operator screen side");
+  });
+
+  it("prints nothing for an item that is never asked", () => {
+    // Software, services and accessories carry no form; the Heavy Duty Roll
+    // Feeder, the Leather Nesting System and the Fabric Trolley have one but
+    // no screen and no control box (see `formHasScreenSide`).
+    expect(sideOf({ form: null })).toBeNull();
+    expect(sideOf({ form: "HDRF" })).toBeNull();
+    expect(sideOf({ form: "LNS" })).toBeNull();
+    // A trolley is not a machine: nothing to stand at, no side to build for.
+    expect(sideOf({ form: "FP_TROLLEY" })).toBeNull();
+  });
+
+  it("carries the diagram uploaded for that exact side, resolved like every other image", () => {
+    const opts = {
+      screenSideImages: { "+Y": "/api/files/plus.png", "-Y": "/api/files/minus.png" },
+      resolveImage: (url: string) => `resolved:${url}`,
+    };
+    expect(sideOf({ productionSpec: { ui: "+Y" } }, opts)?.diagram).toBe("resolved:/api/files/plus.png");
+    expect(sideOf({ productionSpec: { ui: "-Y" } }, opts)?.diagram).toBe("resolved:/api/files/minus.png");
+  });
+
+  it("prints the words alone when only the other side has a diagram", () => {
+    // Half-uploaded is a real state: the admin page renders one slot per
+    // value and they are filled one at a time. A missing picture must cost
+    // the picture, never the line.
+    const side = sideOf(
+      { productionSpec: { ui: "+Y" } },
+      { screenSideImages: { "-Y": "/api/files/minus.png" } }
+    );
+    expect(side?.diagram).toBeNull();
+    expect(side?.value).toBe("+Y");
+  });
+});

@@ -5,6 +5,8 @@ import { resolveLinkState } from "@/lib/signing/link";
 import { ViewBeacon } from "@/components/signing/view-beacon";
 import { buildQuotationData } from "@/lib/quotation-data";
 import { fileImageResolver, renderQuotationSheetHtml } from "@/lib/pdf";
+import { getSpecImages } from "@/lib/queries/spec-images";
+import { SCREEN_SIDE_FIELD } from "@/lib/production-forms/spec-images";
 import { formatMoney } from "@/lib/format";
 import { LinkProblem } from "@/components/signing/link-problem";
 import { ClientActionBar, DeclineLink } from "@/components/signing/client-action-bar";
@@ -68,7 +70,15 @@ export default async function SignPage({ params }: { params: Promise<{ token: st
   // person: <ViewBeacon> posts to ./viewed on the first real interaction. See
   // that route's doc comment for the trade being made.
   const quoteDocuments = await getQuoteDocumentsForRegion(request.document.regionId);
-  const data = buildQuotationData(request.document, quoteDocuments, { resolveImage: fileImageResolver });
+  // Same diagrams the PDF prints (see `loadScreenSideImages` in
+  // src/lib/pdf.ts) — resolved through `fileImageResolver` like every other
+  // image here, because this page is served to a client with no session and
+  // an `/api/files/...` URL would render as a broken image.
+  const screenSideImages = await getSpecImages(SCREEN_SIDE_FIELD);
+  const data = buildQuotationData(request.document, quoteDocuments, {
+    resolveImage: fileImageResolver,
+    screenSideImages,
+  });
   const sheetHtml = await renderQuotationSheetHtml(data);
 
   const completed = state.kind === "completed";

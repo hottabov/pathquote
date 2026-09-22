@@ -331,6 +331,62 @@ describe("renderQuotationHtml — structural section price", () => {
   });
 });
 
+// The side the machine is built for, printed for the customer from
+// 2026-09-22 — structural, right under the heading, so a category whose copy
+// never mentions a side still states one.
+describe("renderQuotationHtml — operator side", () => {
+  const withSide = (screenSide: unknown) =>
+    baseQuotationData({
+      machineSections: [
+        {
+          itemId: "item-1",
+          sectionTitle: "M5180 Cutting System",
+          titleBlockHtml: null,
+          specSentence: null,
+          sectionPrice: null,
+          hasInlinePrice: false,
+          baseRow: null,
+          optionRows: [],
+          screenSide,
+          lineSummary: baseDocSheetItem(),
+        },
+      ],
+    } as never);
+
+  it("prints the label and the side", async () => {
+    const html = await renderQuotationHtml(
+      withSide({ label: "Operator screen side", value: "\u2212Y (standard)", diagram: null })
+    );
+    expect(html).toContain("Operator screen side");
+    expect(html).toContain("\u2212Y (standard)");
+    // A real minus sign, not the hyphen the column stores.
+    expect(html).not.toContain("-Y (standard)");
+  });
+
+  it("prints the diagram beside it when one is uploaded", async () => {
+    const html = await renderQuotationHtml(
+      withSide({ label: "Control box side", value: "+Y", diagram: "data:image/png;base64,AAA" })
+    );
+    expect(html).toContain('class="pq-screen-side-fig"');
+    expect(html).toContain("data:image/png;base64,AAA");
+  });
+
+  it("prints the line without a picture when that side has no diagram yet", async () => {
+    const html = await renderQuotationHtml(
+      withSide({ label: "Operator side", value: "+Y", diagram: null })
+    );
+    expect(html).toContain('<div class="pq-screen-side">');
+    expect(html).not.toContain('class="pq-screen-side-fig"');
+  });
+
+  it("prints nothing at all for an item that is never asked for a side", async () => {
+    // `SHEET_CSS` itself names the class, so the assertion is about the
+    // element, not the string.
+    const html = await renderQuotationHtml(withSide(null));
+    expect(html).not.toContain('<div class="pq-screen-side">');
+  });
+});
+
 describe("renderQuotationHtml — investment summary: base price, options, subtotal, totals order", () => {
   it("shows the item's BASE unit price on the item row, not the lump-sum total", async () => {
     const data = baseQuotationData({

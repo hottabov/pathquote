@@ -60,6 +60,28 @@ export function EquipmentDetail({
             {section.sectionPrice && !section.hasInlinePrice ? (
               <div className="pq-section-price">Price: {section.sectionPrice}</div>
             ) : null}
+            {/* Which side the machine is built for (director, 2026-09-22:
+                the customer has to see it, because it decides where the
+                equipment stands) — structural, like the price above, so it
+                prints for every machine that has a side whether or not its
+                category copy mentions one. The diagram sits beside the words
+                when the admin has uploaded one for this exact side, the same
+                picture the salesperson picked it from in the builder. */}
+            {section.screenSide ? (
+              <div className="pq-screen-side">
+                <span className="pq-screen-side-text">
+                  {section.screenSide.label}: <strong>{section.screenSide.value}</strong>
+                </span>
+                {section.screenSide.diagram ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={section.screenSide.diagram}
+                    alt={`${section.screenSide.label}: ${section.screenSide.value}`}
+                    className="pq-screen-side-fig"
+                  />
+                ) : null}
+              </div>
+            ) : null}
             {section.titleBlockHtml ? (
               <div className="pq-block-body" dangerouslySetInnerHTML={{ __html: section.titleBlockHtml }} />
             ) : (

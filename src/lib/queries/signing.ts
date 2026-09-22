@@ -244,6 +244,11 @@ export async function getDocumentForSigning(tokenHash: string): Promise<Document
               discountMode: true,
               discountValue: true,
               serialNumber: true,
+              // Read for `ui` alone -- which side the machine is built for,
+              // printed on the customer's own copy of the quote (see
+              // `QuotationMachineSection.screenSide`). Nothing else in this
+              // column reaches a client-facing page.
+              productionSpec: true,
               imageUrl: true,
               showImage: true,
               lines: {
@@ -267,6 +272,9 @@ export async function getDocumentForSigning(tokenHash: string): Promise<Document
                 select: {
                   kind: true,
                   specs: true,
+                  // Which production form this item prints on -- and so
+                  // whether it is asked for a side at all (`formHasScreenSide`).
+                  form: true,
                   isCredit: true,
                   noCommission: true,
                   seriesId: true,
@@ -394,6 +402,8 @@ export async function getDocumentForSigning(tokenHash: string): Promise<Document
     seriesId: item.product?.seriesId ?? null,
     specs: item.product?.specs ?? null,
     seriesQuoteDescription: item.product?.series?.quoteDescription ?? null,
+    form: item.product?.form ?? null,
+    productionSpec: item.productionSpec,
     lines: item.lines.map((line) => toSigningLine(line, optionRowMap)),
   }));
 

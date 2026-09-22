@@ -13,6 +13,34 @@ import { MAX_SECTIONS } from "../production-forms/table-sections";
  */
 export const screenSideSchema = z.enum(["+Y", "-Y"]).default("-Y");
 
+export type ScreenSide = z.infer<typeof screenSideSchema>;
+
+/**
+ * The side a stored `productionSpec` actually means, defaults included --
+ * `-Y` for a spec that is null, unparseable, or simply has not been opened
+ * yet, which is the same standard the M-Series form prints as `(STD)`.
+ *
+ * Exists because three places now answer this question (the builder's panel,
+ * the production form, the quotation's own line) and each of them used to
+ * reach into the opaque JSON itself with `spec.ui ?? "-Y"`. A quote that
+ * printed a side the form did not would be worse than printing none.
+ */
+export function readScreenSide(productionSpec: unknown): ScreenSide {
+  const ui = (productionSpec as { ui?: unknown } | null | undefined)?.ui;
+  const parsed = screenSideSchema.safeParse(ui);
+  return parsed.success ? parsed.data : "-Y";
+}
+
+/**
+ * The side written for a reader rather than for a JSON column: a real minus
+ * sign (U+2212, the same glyph the forms print) instead of the hyphen the
+ * value is stored as, and the standard marked as such so a customer reading
+ * `-Y` knows nothing unusual was ordered.
+ */
+export function formatScreenSide(side: ScreenSide): string {
+  return side === "-Y" ? "\u2212Y (standard)" : "+Y";
+}
+
 /**
  * Drills. The printed form says `"TBC" is not acceptable`, so "required with
  * no detail" cannot be PRINTED -- but it is a legitimate state while the

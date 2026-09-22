@@ -1,11 +1,12 @@
 import type { FormContext } from "@/lib/production-forms/types";
 import { EndUserSection, FormSheet, provenance } from "./form-sheet";
-import { Footnote, OfficeUse, Section, Tick, TickGrid } from "./primitives";
+import { ScreenSideBlock } from "./m-series-form";
+import { Footnote, OfficeUse, Section, SectionRow, Tick, TickGrid } from "./primitives";
 
 /**
  * The EasyFeeder order form: the header every machine form carries, the
- * model, and the office block. See `easyFeederSpec` for why nothing else is
- * asked -- no voltage, no control box side, no freight.
+ * model, the control box side, and the office block. See `easyFeederSpec` for
+ * why nothing else is asked -- no voltage, no freight.
  *
  * The model is the table width the feeder is built for, the same four as
  * the EasyLoader. It comes from the product (`specs.tableWidthMm`), with the
@@ -23,20 +24,29 @@ function widthOf(ctx: FormContext): number | null {
 
 export function EasyFeederForm({ ctx }: { ctx: FormContext }) {
   const width = widthOf(ctx);
+  const spec = ctx.item.spec as { ui?: string };
+  const side = spec.ui ?? "-Y";
 
   return (
     <FormSheet ctx={ctx} title="EasyFeeder Order Form">
       <EndUserSection ctx={ctx} />
 
-      <Section title="Model">
-        <TickGrid variant="four">
-          {MODELS.map((model) => (
-            <Tick key={model} lead on={width === model}>
-              EF-<span className="pf-num">{model}</span>
-            </Tick>
-          ))}
-        </TickGrid>
-      </Section>
+      <SectionRow>
+        <Section title="Model">
+          <TickGrid variant="four">
+            {MODELS.map((model) => (
+              <Tick key={model} lead on={width === model}>
+                EF-<span className="pf-num">{model}</span>
+              </Tick>
+            ))}
+          </TickGrid>
+        </Section>
+        <Section title="Control box side">
+          {/* The same block every other machine form prints -- the section
+              band already names it, so no second label. */}
+          <ScreenSideBlock ctx={ctx} side={side} label={null} />
+        </Section>
+      </SectionRow>
 
       <OfficeUse
         fields={[

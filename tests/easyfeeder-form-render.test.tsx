@@ -5,14 +5,19 @@ import { formComponent } from "../src/components/forms/registry";
 import { formHasScreenSide, resolveForm, unmatchedOptions } from "../src/lib/production-forms/resolve";
 import { formContext, formItem } from "./helpers/fixtures";
 
-const ctx = (code: string, specs: Record<string, unknown>, options: never[] = []) =>
+const ctx = (
+  code: string,
+  specs: Record<string, unknown>,
+  options: never[] = [],
+  spec: Record<string, unknown> = {}
+) =>
   formContext({
     documentNumber: "Q-AU-2026-041",
     itemIndex: 1,
     itemCount: 1,
     generatedAt: new Date("2026-09-17T00:00:00Z"),
     logo: null,
-    item: formItem({ code, form: "EASYFEEDER", kind: "ACCESSORY", specs, spec: {}, options }),
+    item: formItem({ code, form: "EASYFEEDER", kind: "ACCESSORY", specs, spec, options }),
   });
 
 const render = (c: ReturnType<typeof ctx>) => renderToStaticMarkup(<EasyFeederForm ctx={c} />);
@@ -28,20 +33,40 @@ describe("EasyFeeder form", () => {
     expect(formComponent("EASYFEEDER")).toBe(EasyFeederForm);
   });
 
+  // The side is the second answer on the sheet and it is never blank: an
+  // untouched spec is the standard -Y, the same default every other machine
+  // form prints. So every ticked set below carries it beside the model.
+  const STD_SIDE = "\u2212Y (std)";
+
   it.each([2020, 2420, 3220, 4030])("ticks the EF-%i box and nothing else", (width) => {
-    expect(ticked(render(ctx(`EF-${width}`, { tableWidthMm: width })))).toEqual([`EF-${width}`]);
+    expect(ticked(render(ctx(`EF-${width}`, { tableWidthMm: width })))).toEqual([
+      `EF-${width}`,
+      STD_SIDE,
+    ]);
   });
 
   it("falls back to the product code when the width spec is missing", () => {
-    expect(ticked(render(ctx("EF-3220", {})))).toEqual(["EF-3220"]);
+    expect(ticked(render(ctx("EF-3220", {})))).toEqual(["EF-3220", STD_SIDE]);
   });
 
-  it("asks nothing but the model: no voltage, no side, no freight, no crate", () => {
+  it("asks the control box side, and ticks the one the spec carries", () => {
+    // Restored 2026-09-22: the quotation states which side the equipment is
+    // built for, so the feeder standing in the line with the cutter and the
+    // EasyLoader has to be asked the same question (see `formHasScreenSide`).
+    expect(formHasScreenSide("EASYFEEDER")).toBe(true);
     const html = render(ctx("EF-2420", { tableWidthMm: 2420 }));
-    for (const text of ["Voltage", "Hz", "Control box", "side", "Freight", "Ex-Works", "Crate", "Other"]) {
+    expect(html).toContain("Control box side");
+    expect(ticked(render(ctx("EF-2420", { tableWidthMm: 2420 }, [], { ui: "+Y" })))).toEqual([
+      "EF-2420",
+      "+Y",
+    ]);
+  });
+
+  it("asks nothing beyond the model and the side: no voltage, no freight, no crate", () => {
+    const html = render(ctx("EF-2420", { tableWidthMm: 2420 }));
+    for (const text of ["Voltage", "Hz", "Freight", "Ex-Works", "Crate", "Other"]) {
       expect(html).not.toContain(text);
     }
-    expect(formHasScreenSide("EASYFEEDER")).toBe(false);
   });
 
   it("keeps the header and the office block", () => {

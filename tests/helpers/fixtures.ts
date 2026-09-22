@@ -147,6 +147,12 @@ export function quotationItem(overrides: Partial<QuotationItemInput> = {}): Quot
     seriesId: "series-m",
     specs: { cutHeightCm: 18, cutWidthCm: 180 },
     seriesQuoteDescription: null,
+    // A machine that prints a form and so is built for a side. The spec is
+    // empty, which is the state of every item nobody has opened the
+    // production-spec panel on -- and which still resolves to the standard
+    // `-Y`, exactly as the workshop sheet does (see `readScreenSide`).
+    form: "M_SERIES",
+    productionSpec: null,
     lines: [],
     ...overrides,
   };
