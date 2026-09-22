@@ -1,4 +1,4 @@
-import { SectionCard, EmptyState } from "@/components/ui-kit";
+import { EmptyState } from "@/components/ui-kit";
 import { AddItemPicker } from "@/components/builder/add-item-picker";
 import { ItemsList } from "@/components/builder/items-list";
 import { Package, PackageSearch } from "lucide-react";
@@ -39,9 +39,28 @@ export function ItemsSection({
   readOnly?: boolean;
 }) {
   return (
-    <SectionCard title="Items" icon={<Package className="size-5" />}>
+    // Deliberately NOT a SectionCard. Each machine is its own card on the
+    // page background now, which removes a level of nesting (a card inside a
+    // card) and, more to the point, gives one machine a visible edge: with
+    // three of them expanded inside one wrapper, separated by a 12px gap and
+    // sharing a background, it took a moment to work out where one ended.
+    <section className="flex flex-col gap-3">
+      <div className="flex items-center gap-2 px-1">
+        <Package className="size-4 shrink-0 text-slate-400" aria-hidden="true" />
+        <h2 className="text-xs font-semibold tracking-wider text-slate-500 uppercase">Machines</h2>
+        {items.length > 0 ? (
+          <span className="text-xs text-slate-400">
+            {items.length} {items.length === 1 ? "item" : "items"}
+          </span>
+        ) : null}
+      </div>
+
       {items.length === 0 ? (
-        <EmptyState icon={PackageSearch} title="No items yet" description="Add one below to get started." />
+        <EmptyState
+          icon={PackageSearch}
+          title="No machines yet"
+          description="Add one below to start building this quote."
+        />
       ) : (
         <ItemsList
           documentId={documentId}
@@ -56,10 +75,10 @@ export function ItemsSection({
       )}
 
       {!readOnly && (
-        <div className="mt-4">
+        <div className="mt-1">
           <AddItemPicker documentId={documentId} catalog={catalog} />
         </div>
       )}
-    </SectionCard>
+    </section>
   );
 }

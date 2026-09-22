@@ -2,7 +2,14 @@
 
 import { useOptimistic, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronUp, GripVertical } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  CircleAlert,
+  GripVertical,
+} from "lucide-react";
 import { formatMoney } from "@/lib/format";
 import { RemoveItemButton } from "@/components/builder/remove-item-button";
 import { ItemOptionsEditor } from "@/components/builder/item-options-editor";
@@ -10,9 +17,11 @@ import { ItemDiscountField } from "@/components/builder/item-discount-field";
 import { ItemBreakdownEditor } from "@/components/builder/item-breakdown-editor";
 import { ItemShowImageToggle } from "@/components/builder/item-show-image-toggle";
 import { ProductionSpecEditor } from "@/components/builder/production-spec-editor";
+import { Chip, StatusBadge } from "@/components/ui-kit";
 import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 import { formHasScreenSide } from "@/lib/production-forms/resolve";
+import { itemMissing } from "@/lib/production-forms/readiness";
 import { assignRails, type RailSource } from "@/lib/production-forms/rails";
 import { EL_MODULE_ROLES } from "@/lib/production-forms/table-sections";
 import type { OptionRole } from "@prisma/client";
@@ -144,6 +153,11 @@ export function ItemsList({
     setCollapsedByItemId(new Map());
   }
 
+  // Drives the single Collapse/Expand control's label, icon and aria-expanded.
+  // "Any" rather than "all" so the control always does the thing the list is
+  // not already doing.
+  const anyExpanded = optimisticItems.some((item) => !isCollapsed(item.id));
+
   function commitOrder(newOrder: BuilderItem[]) {
     startTransition(async () => {
       setOptimisticItems(newOrder);
@@ -233,25 +247,24 @@ export function ItemsList({
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       {optimisticItems.length > 1 ? (
-        <div className="flex justify-end gap-3 text-xs font-medium text-slate-500">
+        <div className="flex justify-end">
+          {/* One control that flips, rather than two text buttons separated
+              by a literal "|": only one of the two was ever the useful one,
+              and which one that is can be read off the list. */}
           <button
             type="button"
-            onClick={collapseAll}
-            className="focus-ring rounded transition-colors hover:text-brand"
+            aria-expanded={anyExpanded}
+            onClick={() => (anyExpanded ? collapseAll() : expandAll())}
+            className="focus-ring inline-flex min-h-11 items-center gap-1.5 rounded-(--radius-control) px-2.5 text-sm font-medium text-slate-600 transition-colors duration-(--duration-micro) motion-reduce:transition-none md:hover:bg-slate-100 md:hover:text-brand-dark"
           >
-            Collapse all
-          </button>
-          <span aria-hidden="true" className="text-slate-300">
-            |
-          </span>
-          <button
-            type="button"
-            onClick={expandAll}
-            className="focus-ring rounded transition-colors hover:text-brand"
-          >
-            Expand all
+            {anyExpanded ? (
+              <ChevronsDownUp className="size-4" aria-hidden="true" />
+            ) : (
+              <ChevronsUpDown className="size-4" aria-hidden="true" />
+            )}
+            {anyExpanded ? "Collapse all" : "Expand all"}
           </button>
         </div>
       ) : null}
@@ -263,6 +276,17 @@ export function ItemsList({
         const isDropTarget = dropTargetId === item.id && draggingId !== item.id;
         const collapsed = isCollapsed(item.id);
         const optionCount = item.lines.filter((line) => line.kind === "OPTION").length;
+        const panelId = `item-panel-${item.id}`;
+        // The same per-item check finalizeDocument enforces, so the badge on
+        // the card and the refusal at finalize can never disagree.
+        const missingSpec = itemMissing({
+          code: item.code,
+          form: item.form,
+          productionSpec: item.productionSpec,
+          options: item.lines
+            .filter((line) => line.kind === "OPTION")
+            .map((line) => ({ role: line.role, attributes: line.attributes })),
+        });
 
         return (
           <div
@@ -288,7 +312,7 @@ export function ItemsList({
               handleDrop(item.id);
             }}
             className={cn(
-              "rounded-xl border border-slate-200 p-3 transition-[opacity,box-shadow] duration-150 motion-reduce:transition-none sm:p-4",
+              "rounded-(--radius-card) border border-line bg-white p-3 transition-[opacity,box-shadow,border-color] duration-(--duration-micro) motion-reduce:transition-none sm:p-4",
               // A line the salesperson earns nothing on carries a faint amber
               // wash (owner's request). Deliberately barely-there: it is a
               // standing fact about the product, not a problem to fix, so it
@@ -300,95 +324,87 @@ export function ItemsList({
               isDropTarget && "ring-2 ring-brand"
             )}
           >
-            {/* Header: always visible, clicking anywhere on it (other than
-                the drag/reorder controls and remove button, which stop
-                propagation) toggles the card's collapsed state. The chevron
-                button is the keyboard/screen-reader-accessible affordance —
-                it carries no handler of its own and relies on its native
-                click event bubbling up to this row. Reorder controls (up/down)
-                are inline on the right with compact 36px visual / 44px hit area. */}
-            <div
-              onClick={() => toggleCollapsed(item.id)}
-              className="flex cursor-pointer select-none flex-wrap items-start justify-between gap-x-2 gap-y-1 sm:flex-nowrap sm:gap-x-3"
-            >
-              {/* `flex-1` matters as much as `min-w-0` here: the controls to
-                  the right are `shrink-0`, so without it a narrow row hands
-                  them everything and collapses this column to zero width —
-                  at which point its children paint straight over the price,
-                  which is exactly what a phone used to render.
-                  `basis-full` then takes it further below `sm`: even once it
-                  stops overlapping, sharing one 327px line with the grip,
-                  the thumbnail and ~170px of controls leaves the name about
-                  35px — enough for "Co…". Wrapping the controls onto their
-                  own line buys the title the whole width instead. */}
-              <div className="flex min-w-0 basis-full items-start gap-2 sm:flex-1 sm:basis-auto">
-                {!readOnly && (
-                  <div
-                    onClick={(event) => event.stopPropagation()}
-                    className="flex shrink-0 items-center"
-                  >
-                    <button
-                      type="button"
-                      draggable
-                      onDragStart={(event) => {
-                        event.dataTransfer.effectAllowed = "move";
-                        event.dataTransfer.setData("text/plain", item.id);
-                        const node = cardNodes.current.get(item.id);
-                        if (node) event.dataTransfer.setDragImage(node, 20, 20);
-                        setDraggingId(item.id);
-                      }}
-                      onDragEnd={() => {
-                        setDraggingId(null);
-                        setDropTargetId(null);
-                      }}
-                      // Touch/pen path. Mobile browsers never fire the HTML5
-                      // drag events above, so on a phone — where the up/down
-                      // buttons are hidden — this is the only way to reorder.
-                      // Mouse is left to the native drag, which supplies a
-                      // drag image these handlers can't.
-                      onPointerDown={(event) => {
-                        if (event.pointerType === "mouse") return;
-                        // Suppresses the scroll/long-press gesture that would
-                        // otherwise steal the pointer mid-drag; `touch-none`
-                        // below is the same guarantee at the CSS level, which
-                        // is the one Safari actually honours.
-                        event.preventDefault();
-                        // Keeps `pointermove`/`pointerup` targeted at this
-                        // handle once the finger leaves it, which is the
-                        // entire drag. Not fatal if the browser refuses (the
-                        // pointer can already be gone by the time this runs):
-                        // the drag still starts, it just ends early if the
-                        // finger slides off — far better than throwing here
-                        // and never setting `draggingId` at all.
-                        try {
-                          event.currentTarget.setPointerCapture(event.pointerId);
-                        } catch {
-                          // Capture is an optimisation, not a precondition.
-                        }
-                        pointerDrag.current = { pointerId: event.pointerId, itemId: item.id };
-                        setDraggingId(item.id);
-                      }}
-                      onPointerMove={(event) => {
-                        const drag = pointerDrag.current;
-                        if (drag?.pointerId !== event.pointerId) return;
-                        const overId = itemIdAtPoint(event.clientX, event.clientY);
-                        setDropTargetId(overId === drag.itemId ? null : overId);
-                      }}
-                      onPointerUp={(event) => {
-                        if (pointerDrag.current?.pointerId !== event.pointerId) return;
-                        endPointerDrag(event.clientX, event.clientY);
-                      }}
-                      onPointerCancel={(event) => {
-                        if (pointerDrag.current?.pointerId !== event.pointerId) return;
-                        cancelPointerDrag();
-                      }}
-                      aria-label={`Reorder ${item.name}`}
-                      className="focus-ring flex size-11 cursor-grab touch-none items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 active:cursor-grabbing"
-                    >
-                      <GripVertical className="size-4" aria-hidden="true" />
-                    </button>
-                  </div>
-                )}
+            {/* The header is a real button now, not a div with an onClick.
+                It was operable by keyboard only because the chevron's native
+                click bubbled up to the div, which is a coincidence rather
+                than a design: the row announced nothing, took no focus and
+                answered no key. Making it a button means the grip, the
+                reorder arrows and remove all have to sit OUTSIDE it, since a
+                button cannot contain buttons, which is also why the old
+                version needed a stopPropagation on each of them. */}
+            <div className="flex items-start gap-1">
+              {!readOnly && (
+                <div className="flex shrink-0 items-center pt-1">
+                <button
+                  type="button"
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", item.id);
+                    const node = cardNodes.current.get(item.id);
+                    if (node) event.dataTransfer.setDragImage(node, 20, 20);
+                    setDraggingId(item.id);
+                  }}
+                  onDragEnd={() => {
+                    setDraggingId(null);
+                    setDropTargetId(null);
+                  }}
+                  // Touch/pen path. Mobile browsers never fire the HTML5
+                  // drag events above, so on a phone — where the up/down
+                  // buttons are hidden — this is the only way to reorder.
+                  // Mouse is left to the native drag, which supplies a
+                  // drag image these handlers can't.
+                  onPointerDown={(event) => {
+                    if (event.pointerType === "mouse") return;
+                    // Suppresses the scroll/long-press gesture that would
+                    // otherwise steal the pointer mid-drag; `touch-none`
+                    // below is the same guarantee at the CSS level, which
+                    // is the one Safari actually honours.
+                    event.preventDefault();
+                    // Keeps `pointermove`/`pointerup` targeted at this
+                    // handle once the finger leaves it, which is the
+                    // entire drag. Not fatal if the browser refuses (the
+                    // pointer can already be gone by the time this runs):
+                    // the drag still starts, it just ends early if the
+                    // finger slides off — far better than throwing here
+                    // and never setting `draggingId` at all.
+                    try {
+                      event.currentTarget.setPointerCapture(event.pointerId);
+                    } catch {
+                      // Capture is an optimisation, not a precondition.
+                    }
+                    pointerDrag.current = { pointerId: event.pointerId, itemId: item.id };
+                    setDraggingId(item.id);
+                  }}
+                  onPointerMove={(event) => {
+                    const drag = pointerDrag.current;
+                    if (drag?.pointerId !== event.pointerId) return;
+                    const overId = itemIdAtPoint(event.clientX, event.clientY);
+                    setDropTargetId(overId === drag.itemId ? null : overId);
+                  }}
+                  onPointerUp={(event) => {
+                    if (pointerDrag.current?.pointerId !== event.pointerId) return;
+                    endPointerDrag(event.clientX, event.clientY);
+                  }}
+                  onPointerCancel={(event) => {
+                    if (pointerDrag.current?.pointerId !== event.pointerId) return;
+                    cancelPointerDrag();
+                  }}
+                  aria-label={`Reorder ${item.name}`}
+                  className="focus-ring flex size-11 cursor-grab touch-none items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 active:cursor-grabbing"
+                >
+                  <GripVertical className="size-4" aria-hidden="true" />
+                </button>
+                </div>
+              )}
+
+              <button
+                type="button"
+                aria-expanded={!collapsed}
+                aria-controls={panelId}
+                onClick={() => toggleCollapsed(item.id)}
+                className="focus-ring flex min-w-0 flex-1 items-center gap-3 rounded-(--radius-control) p-1.5 text-left transition-colors duration-(--duration-micro) motion-reduce:transition-none md:hover:bg-slate-50"
+              >
                 {item.imageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -397,42 +413,59 @@ export function ItemsList({
                         ? item.imageUrl
                         : `${item.imageUrl}?w=${pickDerivativeWidth(ITEM_THUMB_BOX_PX * 2)}`
                     }
-                    alt={item.name}
-                    className="size-12 shrink-0 rounded-lg border border-slate-200 object-contain"
+                    alt=""
+                    className="size-12 shrink-0 rounded-(--radius-control) border border-line object-contain"
                   />
                 ) : null}
-                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                  <div className="flex min-w-0 flex-col">
-                    <span className="truncate text-sm font-medium text-brand-dark">{item.name}</span>
-                    {/* Truncates for the same reason the name does: a code is
-                        unbroken text, so without it a squeezed column lets it
-                        spill out over whatever sits to its right. */}
-                    <span className="truncate font-mono text-xs text-slate-500">{item.code}</span>
-                  </div>
-                  {optionCount > 0 ? (
-                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
-                      {optionCount} option{optionCount === 1 ? "" : "s"}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              {/* Below `sm` this sits on its own line under the title (the
-                  title block is `basis-full` there), so it stretches to the
-                  full width and keeps its controls right-aligned. */}
-              <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
-                <span className="text-sm font-medium tabular-nums text-brand-dark sm:pt-2">
+
+                <span className="min-w-0 flex-1">
+                  {/* An h3 at last: the whole items list was one flat h2
+                      region, so a screen reader had no outline to move
+                      through and every machine was an unlabelled blob. */}
+                  <h3 className="truncate text-sm font-semibold text-brand-dark">{item.name}</h3>
+                  <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                    <span className="font-mono text-xs text-slate-500">{item.code}</span>
+                    {optionCount > 0 ? (
+                      <Chip>
+                        {optionCount} option{optionCount === 1 ? "" : "s"}
+                      </Chip>
+                    ) : null}
+                    {/* What is wrong with this machine, on the collapsed row.
+                        Before this the only way to find an incomplete
+                        production spec was to open every card in turn, or to
+                        press Finalize and be told. */}
+                    {missingSpec.length > 0 ? (
+                      <StatusBadge tone="amber" className="gap-1">
+                        <CircleAlert className="size-3" aria-hidden="true" />
+                        Spec: {missingSpec.length} missing
+                      </StatusBadge>
+                    ) : null}
+                    {/* The amber wash below says this too, but colour alone
+                        is not a signal: this is the text half of it. */}
+                    {item.noCommission ? <StatusBadge tone="slate">No commission</StatusBadge> : null}
+                  </span>
+                </span>
+
+                <span className="shrink-0 text-sm font-semibold tabular-nums text-brand-dark">
                   {formatMoney(item.total, currency, currencySymbol)}
                 </span>
-                {!readOnly && (
-                  <>
-                    {/* md+ only. On a phone these two buttons plus the price,
-                        remove and chevron overflow the row, and reordering
-                        there is served by dragging the grip handle instead
-                        (which works on touch — see its pointer handlers). */}
-                    <div
-                      onClick={(event) => event.stopPropagation()}
-                      className="hidden items-center gap-2 md:flex"
-                    >
+
+                <ChevronDown
+                  className={cn(
+                    "size-4 shrink-0 text-slate-400 transition-transform duration-(--duration-ui) ease-(--ease-move) motion-reduce:transition-none",
+                    collapsed && "-rotate-90"
+                  )}
+                  aria-hidden="true"
+                />
+              </button>
+
+              {!readOnly && (
+                <div className="flex shrink-0 items-center gap-1 pt-1">
+                  {/* md+ only: on a phone these two plus the grip, the
+                      thumbnail, the price and the chevron overflow the row.
+                      Touch reorders by dragging the grip, and the keyboard
+                      path lives on the grip too, so nothing is lost here. */}
+                  <div className="hidden items-center gap-1 md:flex">
                       <button
                         type="button"
                         onClick={() => moveBy(index, -1)}
@@ -451,32 +484,16 @@ export function ItemsList({
                       >
                         <ChevronDown className="size-4" aria-hidden="true" />
                       </button>
-                    </div>
-                    <span onClick={(event) => event.stopPropagation()}>
-                      <RemoveItemButton action={removeItem.bind(null, item.id)} itemName={item.name} />
-                    </span>
-                  </>
-                )}
-                <button
-                  type="button"
-                  aria-label={collapsed ? `Expand ${item.name}` : `Collapse ${item.name}`}
-                  aria-expanded={!collapsed}
-                  className="focus-ring flex size-11 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600"
-                >
-                  <ChevronDown
-                    className={cn(
-                      "size-4 transition-transform duration-150 motion-reduce:transition-none",
-                      collapsed && "-rotate-90"
-                    )}
-                    aria-hidden="true"
-                  />
-                </button>
-              </div>
+                                      </div>
+                  <RemoveItemButton action={removeItem.bind(null, item.id)} itemName={item.name} />
+                </div>
+              )}
             </div>
 
             <div
+              id={panelId}
               className={cn(
-                "grid transition-[grid-template-rows] duration-150 ease-in-out motion-reduce:transition-none",
+                "grid transition-[grid-template-rows] duration-(--duration-ui) ease-(--ease-move) motion-reduce:transition-none",
                 collapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
               )}
             >
