@@ -4,7 +4,6 @@ import { startTransition, useActionState, useEffect, useRef, useState, type Chan
 import { ImageIcon, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FieldRow, fieldInputClass } from "@/components/ui-kit";
-import { useToast } from "@/components/ui-kit/client";
 import { addCustomLine, type ActionResult } from "@/lib/actions/documents";
 import { pickDerivativeWidth } from "@/lib/image-derivative-width";
 
@@ -47,7 +46,6 @@ export function AddCustomLineForm({ documentId }: { documentId: string }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const toast = useToast();
 
   useEffect(() => {
     if (wasPending.current && !pending && !state.error) {
@@ -73,16 +71,17 @@ export function AddCustomLineForm({ documentId }: { documentId: string }) {
       const response = await fetch("/api/uploads", { method: "POST", body: formData });
       const body = (await response.json().catch(() => null)) as { url?: string; error?: string } | null;
       if (!response.ok || !body?.url) {
-        const message = body?.error ?? "Upload failed.";
-        setUploadError(message);
-        toast.error(message);
+        // Inline only. The rule across the builder: `role="alert"` under the
+        // control for something the user can fix here, a toast only for an
+        // optimistic update that had to be rolled back, and never both for
+        // one failure -- which is what this was, saying the same sentence
+        // twice in two places for one bad upload.
+        setUploadError(body?.error ?? "Upload failed.");
         return;
       }
       setImageUrl(body.url);
     } catch {
-      const message = "Upload failed. Check your connection and try again.";
-      setUploadError(message);
-      toast.error(message);
+      setUploadError("Upload failed. Check your connection and try again.");
     } finally {
       setUploading(false);
     }

@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { OptionRole } from "@prisma/client";
-import { ChevronRight, Minus, Plus, SlidersHorizontal } from "lucide-react";
+import { ChevronRight, Minus, Plus, SearchX, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { fieldInputClass } from "@/components/ui-kit";
+import { EmptyState, fieldInputClass } from "@/components/ui-kit";
 import { formatMoney } from "@/lib/format";
 import { formatMetres } from "@/lib/option-length";
 import {
@@ -503,7 +503,14 @@ export function ItemOptionsEditor({
         </div>
 
         {displayOptions.length === 0 ? (
-              <p className="mt-2 text-sm text-slate-500">No options match &ldquo;{search}&rdquo;.</p>
+              <EmptyState
+            icon={SearchX}
+            title="No options match"
+            description={`Nothing here is called \u201c${search}\u201d. Try a code, or part of a name.`}
+            bordered={false}
+            compact
+            className="mt-2"
+          />
             ) : (
               <div className="mt-2 flex flex-col gap-2">
                 {displayOptions.map((option) => {

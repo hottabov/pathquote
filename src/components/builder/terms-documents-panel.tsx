@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { FileX2 } from "lucide-react";
 import { AutosaveIndicator } from "@/components/builder/autosave-indicator";
-import { fieldInputClass } from "@/components/ui-kit";
+import { EmptyState, ReadOnlyValue, fieldInputClass } from "@/components/ui-kit";
 import { useToast } from "@/components/ui-kit/client";
 import { useAutosave } from "@/lib/use-autosave";
 import { cn } from "@/lib/utils";
@@ -162,18 +163,23 @@ export function TermsDocumentsPanel({
     const printed = offered.filter((doc) => !excludedSet.has(doc.key));
     return (
       <div className="flex flex-col gap-4">
-        <dl className="flex flex-col gap-1.5">
+        {/* Through ReadOnlyValue like every other read-only field in the
+            builder, rather than this panel's own <dt>/<dd> pairing. A FINAL
+            quote used to read as six documents stapled together because each
+            section had invented its own. */}
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {TERM_FIELDS.map((field) => {
             const override = terms[field.key];
             const value = override ?? region[field.key];
             return (
-              <div key={field.key} className="flex flex-wrap items-baseline gap-x-2 text-sm">
-                <dt className="text-slate-500">{field.label}</dt>
-                <dd className="font-medium text-brand-dark">
-                  {value} {field.unit}
-                </dd>
-                {override !== null ? <OverriddenBadge /> : null}
-              </div>
+              <ReadOnlyValue key={field.key} label={field.label}>
+                <span className="flex flex-wrap items-baseline gap-x-2">
+                  <span>
+                    {value} {field.unit}
+                  </span>
+                  {override !== null ? <OverriddenBadge /> : null}
+                </span>
+              </ReadOnlyValue>
             );
           })}
         </dl>
@@ -186,7 +192,13 @@ export function TermsDocumentsPanel({
               ))}
             </ul>
           ) : (
-            <p className="mt-1 text-sm text-slate-500">None — this quote prints no legal documents.</p>
+            <EmptyState
+              icon={FileX2}
+              title="No documents will print"
+              description="This quote goes out with the quotation sheet alone."
+              bordered={false}
+              compact
+            />
           )}
         </div>
       </div>
@@ -265,9 +277,13 @@ export function TermsDocumentsPanel({
       <div className="flex flex-col gap-1 border-t border-slate-100 pt-4">
         <p className="text-sm font-medium text-brand-dark">Documents included in this quote</p>
         {documents.length === 0 ? (
-          <p className="text-sm text-slate-500">
-            This region has no legal documents set up yet — nothing will print.
-          </p>
+          <EmptyState
+            icon={FileX2}
+            title="No legal documents for this region"
+            description="Nothing will print alongside the quotation until one is set up in Settings."
+            bordered={false}
+            compact
+          />
         ) : null}
 
         {offered.map((doc) => (

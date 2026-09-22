@@ -187,8 +187,13 @@ export const RichTextEditor = forwardRef<
     onChange: (html: string) => void;
     placeholder?: string;
     disabled?: boolean;
+    /** The editing surface is a contenteditable div, so it takes no
+     * `<label>`: without a name a screen reader announces it as an unlabelled
+     * text region. The placeholder does not count -- it disappears the
+     * moment anything is typed. */
+    ariaLabel?: string;
   }
->(function RichTextEditor({ value, onChange, placeholder, disabled }, ref) {
+>(function RichTextEditor({ value, onChange, placeholder, disabled, ariaLabel }, ref) {
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -213,6 +218,7 @@ export const RichTextEditor = forwardRef<
     editorProps: {
       attributes: {
         class: cn("min-h-[200px] px-3 py-2 text-sm text-brand-dark focus:outline-none", RICH_TEXT_PROSE_CLASS),
+        ...(ariaLabel ? { "aria-label": ariaLabel } : {}),
       },
     },
     onUpdate: ({ editor }) => onChange(editor.getHTML()),

@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { toEditorHtml } from "@/lib/rich-text-core";
 import { useAutosave } from "@/lib/use-autosave";
 import { setDocumentNotes } from "@/lib/actions/documents";
+import { ReadOnlyValue } from "@/components/ui-kit";
 
 /**
  * The builder's "Notes" section (owner: freeform remarks on a document,
@@ -72,7 +73,7 @@ export function NotesSection({
   });
 
   if (readOnly) {
-    if (!notesHtml) return <p className="text-sm text-slate-500">No notes.</p>;
+    if (!notesHtml) return <ReadOnlyValue empty="No notes" />;
     return (
       <div className={cn("text-sm text-slate-700", RICH_TEXT_PROSE_CLASS)}>
         <div dangerouslySetInnerHTML={{ __html: notesHtml }} />
@@ -82,13 +83,16 @@ export function NotesSection({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* No field label: the card title already says "Notes". */}
+      {/* No visible field label: the card title already says "Notes". The
+          editor still needs a name of its own, though -- it is a
+          contenteditable div, which takes no <label>. */}
       <div className="flex items-center justify-end gap-2">
         <AutosaveIndicator status={status} error={error} />
       </div>
       <RichTextEditor
         value={body}
         onChange={setBody}
+        ariaLabel="Notes"
         placeholder="Freeform remarks for this document…"
       />
     </div>

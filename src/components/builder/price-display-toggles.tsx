@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useToast } from "@/components/ui-kit/client";
 import { setPriceDisplay } from "@/lib/actions/documents";
+import { ReadOnlyValue } from "@/components/ui-kit";
 
 type PriceDisplayState = { showItemPrices: boolean; showOptionPrices: boolean };
 
@@ -57,7 +58,7 @@ export function PriceDisplayToggles({
         : state.showItemPrices
           ? "Item totals shown"
           : "Only the grand total is shown";
-    return <p className="text-sm text-slate-700">{label}.</p>;
+    return <ReadOnlyValue>{`${label}.`}</ReadOnlyValue>;
   }
 
   return (
