@@ -68,7 +68,14 @@ export function QuoteBar({
           top of every tab to fill a line. What is left is what only this bar
           can say: where this quote stands, what it comes to, and the one
           action that moves it on. */}
-      <div className="flex flex-wrap items-end gap-x-4 gap-y-2 px-4 pt-3 md:px-6 lg:px-8">
+      {/* md+: 64px tall, the same as the sidebar's wordmark block, so this
+          bar's hairline and the one under the wordmark are a single line
+          across the window rather than two rules a few pixels apart. `min-h`
+          and not `h`, because this row wraps at narrow desktop widths and a
+          fixed height would crop the wrapped line; when it wraps the two
+          hairlines part company, which is the lesser of the two. Below md
+          the sidebar is off screen, so there is nothing to line up with. */}
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-2 px-4 pt-3 md:min-h-16 md:px-6 md:pt-0 lg:px-8">
         {/* The way out, on the tab row rather than above the company name.
             As a text link it took a line of its own at the top of the
             busiest block on the page to say one word; as an icon beside the
