@@ -31,7 +31,7 @@ import {
  * Pure on purpose: no React, no Prisma client, no money formatting. The caller
  * passes a summary of what it already has in hand and gets rows back.
  */
-export type ReadinessKey = "client" | "items" | "spec" | "delivery" | "documents" | "pathworks";
+export type ReadinessKey = "client" | "items" | "spec" | "documents" | "pathworks";
 
 export type ReadinessRow = {
   key: ReadinessKey;
@@ -41,12 +41,12 @@ export type ReadinessRow = {
   /** One short line naming what is missing, or null when the row is met. */
   detail: string | null;
   /** Which builder tab the fix lives on, so the panel can link to it. */
-  targetTab: "build" | "terms";
+  targetTab: "build" | "settings";
   /** The machine to expand and scroll to, when the fix is inside one. */
   targetItemId: string | null;
   /**
    * False for an advisory row: counted nowhere, never blocks Finalize. The
-   * delivery, documents and PathWorks rows are advisory.
+   * documents and PathWorks rows are advisory.
    */
   blocking: boolean;
   /**
@@ -60,7 +60,8 @@ export type ReadinessRow = {
    * no contact cannot be *sent*, and that is worth saying, so the row still
    * asks to be seen. The reverse happens too: the delivery row is always
    * met, and only asks to be seen on Ex Works, where it is reporting that
-   * the tax on the whole quote just went to zero.
+   * the tax on the whole quote just went to zero. (That row is gone -- see
+   * `quoteReadiness` -- but the distinction it needed is not.)
    */
   needsAttention: boolean;
 };
@@ -76,9 +77,6 @@ export type ReadinessInput = {
    *  no machines but an extra line is finalizable -- see
    *  `validateFinalizable`'s `hasDocumentLevelLines`. */
   extraLineCount: number;
-  /** The chosen terms. Never absent, which is why its row is informational
-   *  rather than a blocker: see `deliveryRow`. */
-  deliveryTerms: "DELIVERED" | "EX_WORKS";
   /** How many legal documents this quote will print. */
   printedDocumentCount: number;
   /** Over the region's discount cap. A hard stop, deliberately not a row. */
@@ -110,7 +108,6 @@ export function quoteReadiness(input: ReadinessInput): ReadinessRow[] {
     clientRow(input),
     itemsRow(input),
     specRow(input),
-    deliveryRow(input),
     documentsRow(input),
     // Last, and only when there is something to say. Every other row is
     // always present because its absence would itself be information ("is
@@ -215,31 +212,6 @@ function specRow(input: ReadinessInput): ReadinessRow {
   };
 }
 
-function deliveryRow(input: ReadinessInput): ReadinessRow {
-  const exWorks = input.deliveryTerms === "EX_WORKS";
-  return {
-    key: "delivery",
-    label: "Delivery terms",
-    // Always met, because `Document.deliveryTerms` is an enum that defaults
-    // to DELIVERED and can never be empty. It is a row anyway, and an
-    // informational one rather than a fake blocker, because Ex Works quietly
-    // zeroes the tax on the whole quote and that is worth stating in the one
-    // place someone checks before finalizing.
-    met: true,
-    // Only the Ex Works branch asks to be seen. "Delivered, GST applies" is
-    // the default and says nothing; Ex Works has quietly zeroed the tax on
-    // the whole quote, which is exactly the kind of thing nobody notices
-    // until the customer does.
-    needsAttention: exWorks,
-    detail: exWorks
-      ? "Ex Works — no GST on this quote"
-      : "Delivered, GST applies",
-    targetTab: "terms",
-    targetItemId: null,
-    blocking: false,
-  };
-}
-
 function documentsRow(input: ReadinessInput): ReadinessRow {
   const count = input.printedDocumentCount;
   return {
@@ -248,7 +220,7 @@ function documentsRow(input: ReadinessInput): ReadinessRow {
     met: count > 0,
     needsAttention: count === 0,
     detail: count > 0 ? `${count} will print` : "None will print",
-    targetTab: "terms",
+    targetTab: "settings",
     targetItemId: null,
     // Advisory. A quote that prints no legal documents is unusual but
     // `finalizeDocument` does not refuse it, so neither does this. Showing it

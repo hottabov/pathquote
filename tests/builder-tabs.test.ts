@@ -3,11 +3,11 @@ import { builderTabsFor, parseTab } from "@/lib/builder-tabs";
 
 describe("builderTabsFor", () => {
   it("gives a draft three tabs, with no Order forms among them", () => {
-    expect(builderTabsFor({ isFinal: false })).toEqual(["build", "terms", "history"]);
+    expect(builderTabsFor({ isFinal: false })).toEqual(["build", "settings", "history"]);
   });
 
   it("adds Order forms once the quote is final", () => {
-    expect(builderTabsFor({ isFinal: true })).toEqual(["build", "terms", "forms", "history"]);
+    expect(builderTabsFor({ isFinal: true })).toEqual(["build", "settings", "forms", "history"]);
   });
 
   it("keeps Order forms before History", () => {
@@ -20,8 +20,14 @@ describe("builderTabsFor", () => {
 
 describe("parseTab", () => {
   it("reads a tab this quote has", () => {
-    expect(parseTab("terms", builderTabsFor({ isFinal: false }))).toBe("terms");
+    expect(parseTab("settings", builderTabsFor({ isFinal: false }))).toBe("settings");
     expect(parseTab("forms", builderTabsFor({ isFinal: true }))).toBe("forms");
+  });
+
+  it("still honours the old ?tab=terms link", () => {
+    // That was this tab's id until the card it opens stopped being about
+    // terms. Someone's bookmark should not quietly land them on Build.
+    expect(parseTab("terms", builderTabsFor({ isFinal: false }))).toBe("settings");
   });
 
   it("falls back to Build for a tab this quote does not have", () => {
@@ -39,7 +45,7 @@ describe("parseTab", () => {
   });
 
   it("takes the first value when the query string repeats the parameter", () => {
-    expect(parseTab(["history", "terms"])).toBe("history");
+    expect(parseTab(["history", "settings"])).toBe("history");
   });
 
   it("defaults to every tab when the caller does not narrow it", () => {

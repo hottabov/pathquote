@@ -87,7 +87,7 @@ function Reveal({ row }: { row: ReadinessRow }) {
   }
   return (
     <Link href={row.targetTab === "build" ? "?" : `?tab=${row.targetTab}`} scroll={false} className={className}>
-      {row.targetTab === "terms" ? "Open Quote terms" : "Open Build"}
+      {row.targetTab === "settings" ? "Open Quote setup" : "Open Build"}
     </Link>
   );
 }

@@ -463,7 +463,7 @@ export function ItemsList({
                     aria-label={`Reorder ${item.name}`}
                     aria-describedby={reorderHintId}
                     className={cn(
-                      "focus-ring flex h-9 w-9 shrink-0 cursor-grab touch-none items-center justify-center rounded-lg text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 active:cursor-grabbing",
+                      "focus-ring flex h-(--size-item-nudge) w-9 shrink-0 cursor-grab touch-none items-center justify-center text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 active:cursor-grabbing",
                       // Picked up by the keyboard: the handle has to look
                       // different from every other handle on the page, or
                       // "which one am I carrying" is unanswerable.

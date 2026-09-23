@@ -7,7 +7,7 @@
  * component and has to resolve `?tab=` before it decides which panel to mark
  * hidden, so the parser lives here where both sides can reach it.
  */
-export type BuilderTab = "build" | "terms" | "forms" | "history";
+export type BuilderTab = "build" | "settings" | "forms" | "history";
 
 /**
  * Which tabs a quote in this state actually has.
@@ -20,7 +20,9 @@ export type BuilderTab = "build" | "terms" | "forms" | "history";
  * a surprise.
  */
 export function builderTabsFor({ isFinal }: { isFinal: boolean }): BuilderTab[] {
-  return isFinal ? ["build", "terms", "forms", "history"] : ["build", "terms", "history"];
+  return isFinal
+    ? ["build", "settings", "forms", "history"]
+    : ["build", "settings", "history"];
 }
 
 /**
@@ -34,8 +36,12 @@ export function builderTabsFor({ isFinal }: { isFinal: boolean }): BuilderTab[] 
  */
 export function parseTab(
   value: string | string[] | undefined | null,
-  available: readonly BuilderTab[] = ["build", "terms", "forms", "history"]
+  available: readonly BuilderTab[] = ["build", "settings", "forms", "history"]
 ): BuilderTab {
-  const raw = Array.isArray(value) ? value[0] : value;
+  const first = Array.isArray(value) ? value[0] : value;
+  // `?tab=terms` was this tab's id until the card it opens stopped being
+  // about terms. Honoured rather than dropped: someone's bookmark should
+  // not quietly land them on Build.
+  const raw = first === "terms" ? "settings" : first;
   return available.some((tab) => tab !== "build" && tab === raw) ? (raw as BuilderTab) : "build";
 }

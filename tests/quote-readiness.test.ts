@@ -29,7 +29,6 @@ function input(over: Partial<ReadinessInput> = {}): ReadinessInput {
     hasContact: true,
     items: [item()],
     extraLineCount: 0,
-    deliveryTerms: "DELIVERED",
     printedDocumentCount: 3,
     capExceeded: false,
     exceedsMarkupCap: false,
@@ -41,7 +40,7 @@ function input(over: Partial<ReadinessInput> = {}): ReadinessInput {
 describe("quoteReadiness", () => {
   it("returns every row even when all of them are met", () => {
     const rows = quoteReadiness(input());
-    expect(rows.map((r) => r.key)).toEqual(["client", "items", "spec", "delivery", "documents"]);
+    expect(rows.map((r) => r.key)).toEqual(["client", "items", "spec", "documents"]);
     expect(rows.every((r) => r.met)).toBe(true);
     // Returned, but none of them asking to be drawn -- the panel's own
     // visibility is a separate question from what the rules say.
@@ -138,34 +137,6 @@ describe("quoteReadiness", () => {
   // `Document.deliveryTerms` is an enum that can never be empty, so a
   // "delivery chosen" blocker would always pass and mean nothing. The row
   // earns its place by saying which terms, because Ex Works zeroes the tax.
-  it("reports the delivery terms rather than blocking on them", () => {
-    const delivered = quoteReadiness(input()).find((r) => r.key === "delivery");
-    expect(delivered?.met).toBe(true);
-    expect(delivered?.blocking).toBe(false);
-    expect(delivered?.detail).toBe("Delivered, GST applies");
-
-    const exWorks = quoteReadiness(input({ deliveryTerms: "EX_WORKS" })).find((r) => r.key === "delivery");
-    expect(exWorks?.detail).toBe("Ex Works — no GST on this quote");
-    expect(exWorks?.targetTab).toBe("terms");
-  });
-
-  it("asks to be seen on Ex Works and stays quiet on Delivered", () => {
-    // The row is always met either way -- deliveryTerms is an enum that
-    // cannot be empty -- so `met` cannot decide whether to draw it. Ex Works
-    // has quietly zeroed the tax on the whole quote; Delivered is the
-    // default and says nothing.
-    const delivered = quoteReadiness(input({ deliveryTerms: "DELIVERED" })).find(
-      (row) => row.key === "delivery"
-    );
-    const exWorks = quoteReadiness(input({ deliveryTerms: "EX_WORKS" })).find(
-      (row) => row.key === "delivery"
-    );
-    expect(delivered?.met).toBe(true);
-    expect(delivered?.needsAttention).toBe(false);
-    expect(exWorks?.met).toBe(true);
-    expect(exWorks?.needsAttention).toBe(true);
-  });
-
   it("keeps the client row visible when a company is set but no contact is", () => {
     // `validateFinalizable` checks the company and nothing else, so the row
     // is met and the count says so -- but the quote cannot be emailed

@@ -278,7 +278,6 @@ export default async function DocumentBuilderPage({
         .map((line) => ({ role: line.role, attributes: line.attributes })),
     })),
     extraLineCount: document.extraLines.length,
-    deliveryTerms: document.deliveryTerms,
     printedDocumentCount: panelDocuments.filter(
       (row) => row.includedByDefault && !document.excludedDocumentKeys.includes(row.key)
     ).length,
@@ -414,9 +413,9 @@ export default async function DocumentBuilderPage({
               place. */}
           <div
             role="tabpanel"
-            id="builder-panel-terms"
-            aria-labelledby="builder-tab-terms"
-            hidden={tab !== "terms"}
+            id="builder-panel-settings"
+            aria-labelledby="builder-tab-settings"
+            hidden={tab !== "settings"}
             className="flex flex-col gap-4"
           >
 
