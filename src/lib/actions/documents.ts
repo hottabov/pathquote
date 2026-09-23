@@ -30,7 +30,7 @@ export type { ActionResult } from "./documents/_internal";
 export { createDraft, deleteDraft, deleteDocument, setDocumentClient } from "./documents/lifecycle";
 export { addItem, duplicateItem, removeItem, reorderItems } from "./documents/items";
 export { setItemOptions, setEasyLoaderLayout } from "./documents/options";
-export { addCustomLine, removeLine } from "./documents/lines";
+export { addCustomLine, updateCustomLine, removeLine } from "./documents/lines";
 export {
   setItemDiscount,
   setDocumentDiscount,

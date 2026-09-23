@@ -10,7 +10,10 @@ export type { BuilderTab };
 
 const TAB_META: Record<BuilderTab, { label: string; Icon: typeof Hammer }> = {
   build: { label: "Build", Icon: Hammer },
-  terms: { label: "Quote terms", Icon: ScrollText },
+  // The id stays "terms" on purpose: it is in every `?tab=terms`
+  // anyone has pasted or bookmarked, and renaming a label is not a
+  // reason to break those.
+  terms: { label: "Quote setup", Icon: ScrollText },
   forms: { label: "Order forms", Icon: Factory },
   history: { label: "History", Icon: History },
 };

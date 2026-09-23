@@ -86,6 +86,79 @@ export async function addCustomLine(documentId: string, formData: FormData): Pro
 }
 
 /**
+ * Rewrites a document-level CUSTOM line in place: the same five fields
+ * `addCustomLine` takes, validated by the same schema.
+ *
+ * Without this the only way to fix a typo in "Delivery to Geelong", or a
+ * trade-in figure agreed at a different number, was to delete the line and
+ * type it again -- photo and all -- which is also how a line ends up in a
+ * different place in the list than the one it was in.
+ *
+ * `sortOrder` is deliberately untouched: editing a line is not moving it.
+ * `showImage` follows the photo, exactly as it does on create -- a custom
+ * line has no separate show/hide toggle, so attaching a photo is what turns
+ * it on and removing one is what turns it off.
+ *
+ * Scoped through the line -> document -> author chain like `removeLine`, and
+ * DRAFT-only, so neither a foreign line id nor a finalised quote can be
+ * edited by guessing ids.
+ */
+export async function updateCustomLine(lineId: string, formData: FormData): Promise<ActionResult> {
+  const session = await requireSession();
+
+  const parsedLineId = idSchema.safeParse(lineId);
+  if (!parsedLineId.success) return { error: NOT_FOUND_ERROR };
+
+  const parsed = customLineSchema.safeParse({
+    name: formData.get("name"),
+    qty: formData.get("qty"),
+    unitPrice: formData.get("unitPrice"),
+    description: formData.get("description"),
+    imageUrl: formData.get("imageUrl"),
+  });
+  if (!parsed.success) return { error: flattenZodError(parsed.error) };
+
+  const line = await db.documentLine.findFirst({
+    where: {
+      id: parsedLineId.data,
+      itemId: null,
+      kind: "CUSTOM",
+      document: { status: "DRAFT", ...documentWhereForUser(session.user) },
+    },
+    select: { id: true, documentId: true },
+  });
+  if (!line) return { error: NOT_FOUND_ERROR };
+
+  // An edit moves money in either direction -- a trade-in figure corrected
+  // upward deepens the concession, a delivery charge corrected downward
+  // shrinks the list value the cap is measured against -- so it ends in the
+  // same guarded recalc as the create and the delete.
+  let concessionWarning: string | undefined;
+  try {
+    await db.$transaction(async (tx) => {
+      await assertStillDraft(tx, line.documentId);
+      await tx.documentLine.update({
+        where: { id: line.id },
+        data: {
+          name: parsed.data.name,
+          description: parsed.data.description ?? null,
+          qty: parsed.data.qty,
+          unitPrice: new Prisma.Decimal(parsed.data.unitPrice),
+          imageUrl: parsed.data.imageUrl ?? null,
+          showImage: Boolean(parsed.data.imageUrl),
+        },
+      });
+      concessionWarning = (await recalcAndEnforce(line.documentId, tx, session.user.role)).warning;
+    });
+  } catch (error) {
+    return mapDraftWriteError(error);
+  }
+
+  revalidateDocument(line.documentId);
+  return concessionWarning ? { warning: concessionWarning } : {};
+}
+
+/**
  * Removes a document-level CUSTOM line (an "extra line" like delivery).
  * Scoped through line -> document -> author chain, and deliberately matches
  * only a document-level CUSTOM line (`itemId: null`, `kind: "CUSTOM"`) — an

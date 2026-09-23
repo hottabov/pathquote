@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, type ChangeEvent, type DragEvent } from "react";
-import { ImageIcon, Upload } from "lucide-react";
+import { ImageIcon, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
@@ -230,6 +230,7 @@ export function ImageUpload({
           </Button>
           {url ? (
             <Button type="button" variant="outline" onClick={handleRemove} disabled={busy} className="h-11">
+              <Trash2 className="size-4" data-icon="inline-start" aria-hidden="true" />
               {removeLabel}
             </Button>
           ) : null}

@@ -62,6 +62,12 @@
      h-7, h-8, h-9, h-10, h-11 and a local `compactControlClass`. */
   --size-control: 2.75rem;
   --size-control-dense: 2.25rem;
+  /* The two halves of an item card's header row. The thumbnail is the
+     tallest thing on it, so the stacked reorder controls beside it are
+     sized to add up to roughly the same: a collapsed card that is taller
+     than its own contents reads as unfinished. */
+  --size-item-thumb: 3.75rem;
+  --size-item-nudge: 1.5rem;
 
   /* ── Radii ───────────────────────────────────────────────────────────────
      Named by what they are for. The generic --radius-sm..4xl scale below

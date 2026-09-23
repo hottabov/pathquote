@@ -30,11 +30,12 @@ import { reorderItems, setItemSerialNumber } from "@/lib/actions/documents";
 import { pickDerivativeWidth } from "@/lib/image-derivative-width";
 import type { BuilderItem, CompatibleOption } from "@/lib/queries/documents";
 
-// The card header draws the item's product photo at 48 CSS px (`size-12`) —
+// The card header draws the item's product photo at 60 CSS px
+// (`--size-item-thumb`) —
 // a print-resolution snapshot (often ~1MB) has no business loading here just
 // to be shrunk by CSS, so it asks for the `?w=` thumbnail derivative instead
 // (src/lib/image-derivatives.ts), same as CatalogThumb.
-const ITEM_THUMB_BOX_PX = 48;
+const ITEM_THUMB_BOX_PX = 60;
 
 /**
  * Option roles no manager picks by hand, on any item: the per-metre MTS
@@ -338,21 +339,11 @@ export function ItemsList({
             {...reorder.cardProps(item.id)}
             className={cn(
               "rounded-(--radius-card) border border-line bg-white p-3 transition-[opacity,box-shadow,border-color] duration-(--duration-micro) motion-reduce:transition-none sm:p-4",
-              // A line the salesperson earns nothing on is set apart by a
-              // wash (owner's request). Deliberately barely-there: it is a
-              // standing fact about the product, not a problem to fix, so it
-              // must not read as a warning -- but without it the only way to
-              // discover a line pays no commission is to notice the figure at
-              // the bottom failing to move.
-              //
-              // Slate, not the amber it used to be. Amber is this app's
-              // warning colour and said the wrong thing; and every card sits
-              // on a cool grey page carrying cool grey type, so a yellow
-              // card put light grey text on a warm ground -- the one
-              // combination on this screen that looks broken rather than
-              // deliberate. A cool tint sets the card apart just as well
-              // without claiming anything is wrong.
-              item.noCommission && "border-slate-300 bg-slate-100/70",
+              // No wash for a line that pays no commission. It had one --
+              // amber first, then slate -- and neither earned its place: the
+              // "No commission" badge on the row already says it in words,
+              // and a tinted card among white ones asks the reader to
+              // remember what the tint means (Vadym, 2026-09-23).
               isDragging && "opacity-50",
               isDropTarget && "ring-2 ring-brand"
             )}
@@ -391,7 +382,7 @@ export function ItemsList({
                     // 390px, and a 48px photo is the one thing on it that
                     // does not say which machine this is any better than
                     // the name does.
-                    className="hidden size-12 shrink-0 rounded-(--radius-control) border border-line object-contain sm:block"
+                    className="hidden size-(--size-item-thumb) shrink-0 rounded-(--radius-control) border border-line object-contain sm:block"
                   />
                 ) : null}
 
@@ -399,7 +390,7 @@ export function ItemsList({
                   {/* An h3 at last: the whole items list was one flat h2
                       region, so a screen reader had no outline to move
                       through and every machine was an unlabelled blob. */}
-                  <h3 className="truncate text-sm font-semibold text-brand-dark">{item.name}</h3>
+                  <h3 className="truncate font-semibold text-brand-dark">{item.name}</h3>
                   <span className="mt-1 flex flex-wrap items-center gap-1.5">
                     <span className="font-mono text-xs text-slate-500">{item.code}</span>
                     {/* On a phone the price moves down here rather than
@@ -458,7 +449,7 @@ export function ItemsList({
                     onClick={() => reorder.moveBy(index, -1)}
                     disabled={index === 0}
                     aria-label={`Move ${item.name} up`}
-                    className="focus-ring flex h-7 w-9 items-center justify-center rounded-t-lg text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-30"
+                    className="focus-ring flex h-(--size-item-nudge) w-9 items-center justify-center rounded-t-lg text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-30"
                   >
                     <ChevronUp className="size-4" aria-hidden="true" />
                   </button>
@@ -487,7 +478,7 @@ export function ItemsList({
                     onClick={() => reorder.moveBy(index, 1)}
                     disabled={index === optimisticItems.length - 1}
                     aria-label={`Move ${item.name} down`}
-                    className="focus-ring flex h-7 w-9 items-center justify-center rounded-b-lg text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-30"
+                    className="focus-ring flex h-(--size-item-nudge) w-9 items-center justify-center rounded-b-lg text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-30"
                   >
                     <ChevronDown className="size-4" aria-hidden="true" />
                   </button>

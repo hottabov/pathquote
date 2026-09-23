@@ -23,10 +23,7 @@ import type { BuilderTab } from "@/lib/builder-tabs";
  * while taking a slot in the busiest row on the page.
  */
 export function QuoteBar({
-  companyName,
   number,
-  contactName,
-  regionName,
   status,
   total,
   currency,
@@ -35,10 +32,7 @@ export function QuoteBar({
   tabCounts,
   children,
 }: {
-  companyName: string;
   number: string | null;
-  contactName: string | null;
-  regionName: string | null;
   status: DocumentStatus;
   /** The document's `total`, unformatted; formatted here so the bar and the
    *  Summary breakdown below it can never round differently. */
@@ -53,8 +47,6 @@ export function QuoteBar({
    *  scrolling past three machines to find it. */
   children?: React.ReactNode;
 }) {
-  const meta = [number, contactName, regionName].filter(Boolean) as string[];
-
   return (
     // Full bleed. `mx-[calc(50%-50cqw)]` widens this to the full width of
     // the app's content region and the matching padding puts its contents
@@ -70,46 +62,13 @@ export function QuoteBar({
     // that much, and stayed there. The container is declared on the content
     // region in app-shell.tsx.
     <div className="sticky top-0 z-20 -mt-6 mx-[calc(50%-50cqw)] border-b border-line bg-white px-[calc(50cqw-50%)]">
-      <div className="px-4 pt-3 md:px-6 lg:px-8">
-        <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-base font-semibold text-brand-dark">{companyName}</h1>
-            {meta.length > 0 ? (
-              <p className="truncate text-xs text-slate-500">
-                {meta.map((part, index) => (
-                  <span key={part}>
-                    {index > 0 ? <span className="px-1.5 text-slate-300">/</span> : null}
-                    <span className={index === 0 ? "font-mono" : undefined}>{part}</span>
-                  </span>
-                ))}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="flex items-center gap-4">
-            <StatusBadge tone={STATUS_TONE[status]}>{status === "DRAFT" ? "Draft" : "Final"}</StatusBadge>
-
-            <div className="text-right">
-              <p className="text-[0.625rem] font-semibold tracking-wider text-slate-500 uppercase">
-                Total
-              </p>
-              <p className="text-lg font-semibold tabular-nums text-brand-dark">
-                {formatMoney(total, currency, currencySymbol)}
-              </p>
-            </div>
-
-            {children}
-          </div>
-        </div>
-      </div>
-
-      {/* The gap between the identity block and the tabs is the point: they
-          are two different things, and touching they read as one crowded
-          block. The hairline belongs to this wrapper, because only the
-          wrapper is full bleed: on the tab row it stopped where the content
-          column stops. The open tab paints over its own slice of it, see
-          BuilderTabs. */}
-      <div className="mt-4 flex items-end gap-1.5 px-4 md:px-6 lg:px-8">
+      {/* One row. The company, the contact and the region used to sit above
+          this in a block of their own, and all three are already on screen
+          in the Client card below -- the quote bar was repeating them at the
+          top of every tab to fill a line. What is left is what only this bar
+          can say: where this quote stands, what it comes to, and the one
+          action that moves it on. */}
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-2 px-4 pt-3 md:px-6 lg:px-8">
         {/* The way out, on the tab row rather than above the company name.
             As a text link it took a line of its own at the top of the
             busiest block on the page to say one word; as an icon beside the
@@ -125,7 +84,25 @@ export function QuoteBar({
             <ChevronLeft className="size-4" aria-hidden="true" />
           </Link>
         </Tooltip>
+
         <BuilderTabs tabs={tabs} counts={tabCounts} />
+
+        <div className="mb-3 ml-auto flex items-center gap-4">
+          <StatusBadge tone={STATUS_TONE[status]}>{status === "DRAFT" ? "Draft" : "Final"}</StatusBadge>
+
+          <div className="text-right">
+            {/* The quote's number, where the word "TOTAL" used to be. The
+                figure under it is obviously a total; its number is the one
+                thing about a quote you have to quote back to someone, and
+                it had been demoted to a slash-separated crumb. */}
+            <p className="font-mono text-[0.6875rem] text-slate-500">{number ?? "New quote"}</p>
+            <p className="text-lg font-semibold tabular-nums text-brand-dark">
+              {formatMoney(total, currency, currencySymbol)}
+            </p>
+          </div>
+
+          {children}
+        </div>
       </div>
     </div>
   );

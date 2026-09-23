@@ -300,23 +300,14 @@ export default async function DocumentBuilderPage({
   // same scope.
   const history = await getQuoteHistory(session.user, document.id);
 
-
-  const contactFullName = document.contact
-    ? [document.contact.firstName, document.contact.lastName].filter(Boolean).join(" ")
-    : null;
-  // Only the two tabs where a count says something. "Quote terms" has a
-  // fixed number of cards, so a badge there would be decoration.
+  // Only the two tabs where a count says something. Quote setup has a fixed
+  // number of cards, so a badge there would be decoration.
   const historyCount = (history?.revisions.length ?? 0) + (history?.emails.length ?? 0);
-
-  const title = document.company?.name ?? "New quote";
 
   return (
     <div className="flex flex-col gap-6 pb-4">
       <QuoteBar
-        companyName={title}
         number={document.number}
-        contactName={contactFullName}
-        regionName={document.regionName}
         status={document.status}
         total={document.total}
         currency={document.currency}
@@ -393,14 +384,34 @@ export default async function DocumentBuilderPage({
             readOnly={!isDraft}
           />
 
+          {/* Last on Build, under everything it comes off. A discount is
+              money on this quote, and it sat on the setup tab between the
+              delivery terms and the quote validity, where a salesperson
+              assembling a quote had no reason to look. */}
+          <SectionCard title="Discount" icon={<Percent className="size-5" />}>
+            <DocumentDiscountField
+              documentId={document.id}
+              discountMode={document.discountMode}
+              discountValue={document.discountValue}
+              currency={document.currency}
+              currencySymbol={document.currencySymbol}
+              readOnly={!isDraft}
+            />
+          </SectionCard>
+
           </div>
 
-          {/* Quote terms: everything that is set once per quote rather than
-              touched while assembling it. These seven cards used to sit in
-              the same single column as the machines, in the same visual
+          {/* Quote setup: everything that is set once per quote rather than
+              touched while assembling it. These cards used to sit in the
+              same single column as the machines, in the same visual
               register, so "Setup image" and "Items" looked equally
               important and a salesperson scrolled past five of them on
-              every quote. */}
+              every quote.
+
+              Called "Quote setup" rather than "Settings", which is already
+              the name of a whole section of this app: one word with two
+              meanings in one product is how a person ends up in the wrong
+              place. */}
           <div
             role="tabpanel"
             id="builder-panel-terms"
@@ -425,21 +436,12 @@ export default async function DocumentBuilderPage({
             />
           </SectionCard>
 
-          {/* Three small document-level fields, side by side on md+ (they each
+          {/* Two small document-level fields, side by side on md+ (they each
               hold a single control, so a full-width card apiece wasted the
-              row); they stack on mobile. */}
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <SectionCard title="Discounts" icon={<Percent className="size-5" />}>
-              <DocumentDiscountField
-                documentId={document.id}
-                discountMode={document.discountMode}
-                discountValue={document.discountValue}
-                currency={document.currency}
-                currencySymbol={document.currencySymbol}
-                readOnly={!isDraft}
-              />
-            </SectionCard>
-
+              row); they stack on mobile. Discounts used to make three of
+              them and has moved to Build: a discount is money on the quote,
+              and it belongs beside the machines it comes off. */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {/* An export sale collected at the factory door is not a domestic
                 taxable supply (the meeting question left unanswered: "What if
                 there's no GST? If it's Ex Works?") — this is what lets a quote
