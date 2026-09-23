@@ -41,14 +41,20 @@ export function AppShell({ user, children }: AppShellProps) {
             href="/"
             className="focus-ring-dark flex items-center gap-2.5 rounded-sm text-lg font-semibold tracking-tight text-white"
           >
+            {/* The transparent cut-out of the mark, not the square tile the
+                login page uses: on this dark panel a tile would draw its own
+                edge around the logo, and the mark's own silhouette reads
+                better against the navy. It is taller than it is wide, so the
+                height is pinned and the width follows -- `object-cover` on a
+                square box would have clipped the descender off the Q. */}
             <Image
-              src="/pathquote-logo.png"
+              src="/pathquote-mark.png"
               alt=""
               aria-hidden="true"
-              width={512}
-              height={512}
+              width={744}
+              height={816}
               priority
-              className="size-9 shrink-0 rounded-lg object-cover"
+              className="h-9 w-auto shrink-0 object-contain"
             />
             <span className="hidden lg:inline">
               Path<span className="text-brand-accent">Quote</span>
