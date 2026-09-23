@@ -589,6 +589,27 @@ export const SHEET_CSS = `
     margin: 0 0 8px 0;
     padding-left: 18px;
   }
+  /* The markers, spelled out rather than left to the browser's defaults.
+     This stylesheet is posted to Gotenberg as a standalone document, where
+     a bare <ul> does get its bullets -- but the same markup is also rendered
+     inside the app for the on-screen preview, and Tailwind's preflight
+     resets every list there to list-style: none. An authored bullet list
+     therefore printed correctly and previewed as unmarked, indented lines.
+     Two-part selectors so they outrank that reset wherever it applies.
+     The nested markers are the browser's own progression (disc, circle,
+     square), restated because the reset flattened those too. */
+  .pq-block-body ul {
+    list-style-type: disc;
+  }
+  .pq-block-body ul ul {
+    list-style-type: circle;
+  }
+  .pq-block-body ul ul ul {
+    list-style-type: square;
+  }
+  .pq-block-body ol {
+    list-style-type: decimal;
+  }
   .pq-block-body ul:last-child,
   .pq-block-body ol:last-child {
     margin-bottom: 0;
