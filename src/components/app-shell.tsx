@@ -41,14 +41,20 @@ export function AppShell({ user, children }: AppShellProps) {
             href="/"
             className="focus-ring-dark flex items-center gap-2.5 rounded-sm text-lg font-semibold tracking-tight text-white"
           >
+            {/* The transparent cut-out of the mark, not the square tile the
+                login page uses: on this dark panel a tile would draw its own
+                edge around the logo, and the mark's own silhouette reads
+                better against the navy. It is taller than it is wide, so the
+                height is pinned and the width follows -- `object-cover` on a
+                square box would have clipped the descender off the Q. */}
             <Image
-              src="/pathquote-logo.png"
+              src="/pathquote-mark.png"
               alt=""
               aria-hidden="true"
-              width={512}
-              height={512}
+              width={744}
+              height={816}
               priority
-              className="size-9 shrink-0 rounded-lg object-cover"
+              className="h-9 w-auto shrink-0 object-contain"
             />
             <span className="hidden lg:inline">
               Path<span className="text-brand-accent">Quote</span>
@@ -56,7 +62,12 @@ export function AppShell({ user, children }: AppShellProps) {
           </Link>
         </div>
 
-        <div className="flex-1 overflow-y-auto py-3">
+        {/* `scroll-region` is not styling: it is how globals.css finds the
+            scroll containers that have to freeze while a modal sheet is
+            open. A modal <dialog> makes the rest of the page inert, which
+            stops clicks and focus but not a wheel over a scroller -- the
+            sidebar went on scrolling behind the options sheet. */}
+        <div className="scroll-region flex-1 overflow-y-auto py-3">
           <AppNav variant="sidebar" />
         </div>
 
@@ -90,7 +101,16 @@ export function AppShell({ user, children }: AppShellProps) {
         </div>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      {/* `@container` (container-type: inline-size) is load-bearing, not
+          decoration: the quote builder's header breaks out of the centred
+          content column to run the full width of this region, and `cqw`
+          units are the only ones that measure *this* column. `vw` measured
+          the whole window, which is wider than this column by the sidebar,
+          so the header hung half a sidebar past the right edge -- invisible
+          until something (Base UI's scroll lock on a confirm dialog) made
+          the root scrollable for a moment and the whole page slid sideways
+          and stayed there. */}
+      <div className="@container flex min-w-0 flex-1 flex-col">
         {/* Mobile top bar */}
         <header className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:hidden">
           <Link

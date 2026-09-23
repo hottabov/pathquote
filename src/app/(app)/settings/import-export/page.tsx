@@ -49,7 +49,7 @@ export default async function ImportExportPage() {
       >
         <a
           href="/api/catalog/export"
-          className={cn(buttonVariants(), "h-11 w-full bg-brand text-white hover:bg-brand/90 sm:w-auto")}
+          className={cn(buttonVariants({ variant: "brand" }), "h-11 w-full sm:w-auto")}
         >
           <Download className="size-4" data-icon="inline-start" aria-hidden="true" />
           Download catalogue (.xlsx)

@@ -205,6 +205,116 @@ export async function removeItem(itemId: string): Promise<ActionResult> {
 }
 
 /**
+ * Copies an item, with its option lines and its production spec, and inserts
+ * the copy directly after the original.
+ *
+ * A quote often carries the same machine twice with one answer different --
+ * two X-Calibres, one of them left-handed; three EasyLoaders of the same
+ * table length. Before this the only way to say that was to add the product
+ * again and re-pick every option and every spec answer by hand, which is
+ * both slow and the kind of repetition that ends with the two machines
+ * quietly disagreeing about something nobody meant to change.
+ *
+ * Everything is copied from the *item*, never re-read from the catalogue:
+ * the point is a copy of what this quote says, including a hand-edited
+ * `unitPrice` and the `listPrice` it was conceded against, not a fresh item
+ * at today's list price. The serial number is the one exception -- it
+ * identifies a specific physical machine (a trade-in), so it cannot be true
+ * of two rows at once and is left blank on the copy.
+ *
+ * Scoped through the item -> document -> author chain like `removeItem`, so
+ * a foreign item id cannot be duplicated into a document by guessing ids.
+ */
+export async function duplicateItem(itemId: string): Promise<ActionResult> {
+  const session = await requireSession();
+
+  const parsedItemId = idSchema.safeParse(itemId);
+  if (!parsedItemId.success) return { error: NOT_FOUND_ERROR };
+
+  const item = await db.documentItem.findFirst({
+    where: {
+      id: parsedItemId.data,
+      document: { status: "DRAFT", ...documentWhereForUser(session.user) },
+    },
+    include: { lines: { orderBy: { sortOrder: "asc" } } },
+  });
+  if (!item) return { error: NOT_FOUND_ERROR };
+
+  // Duplicating raises both the subtotal and the concession the document
+  // carries, so it ends in the same guarded recalc as every other mutation
+  // here rather than being waved through as "obviously safe".
+  let concessionWarning: string | undefined;
+  try {
+    await db.$transaction(async (tx) => {
+      await assertStillDraft(tx, item.documentId);
+
+      // Open a gap directly after the original. Descending order so no
+      // update ever collides with a sortOrder another row still holds --
+      // there is no unique constraint on it today, but relying on that is
+      // how one gets added later and breaks this.
+      const following = await tx.documentItem.findMany({
+        where: { documentId: item.documentId, sortOrder: { gt: item.sortOrder } },
+        select: { id: true, sortOrder: true },
+        orderBy: { sortOrder: "desc" },
+      });
+      for (const row of following) {
+        await tx.documentItem.update({
+          where: { id: row.id },
+          data: { sortOrder: row.sortOrder + 1 },
+        });
+      }
+
+      const copy = await tx.documentItem.create({
+        data: {
+          documentId: item.documentId,
+          productId: item.productId,
+          sortOrder: item.sortOrder + 1,
+          code: item.code,
+          name: item.name,
+          description: item.description,
+          unitPrice: item.unitPrice,
+          listPrice: item.listPrice,
+          discountMode: item.discountMode,
+          discountValue: item.discountValue,
+          showImage: item.showImage,
+          productionSpec: item.productionSpec ?? undefined,
+          imageUrl: item.imageUrl,
+          // serialNumber deliberately omitted -- see the doc comment.
+        },
+      });
+
+      if (item.lines.length > 0) {
+        await tx.documentLine.createMany({
+          data: item.lines.map((line) => ({
+            documentId: item.documentId,
+            itemId: copy.id,
+            kind: line.kind,
+            refId: line.refId,
+            code: line.code,
+            name: line.name,
+            description: line.description,
+            qty: line.qty,
+            unitPrice: line.unitPrice,
+            listPrice: line.listPrice,
+            attributes: line.attributes ?? undefined,
+            showImage: line.showImage,
+            imageUrl: line.imageUrl,
+            sortOrder: line.sortOrder,
+          })),
+        });
+      }
+
+      concessionWarning = (await recalcAndEnforce(item.documentId, tx, session.user.role)).warning;
+    });
+  } catch (error) {
+    return mapDraftWriteError(error);
+  }
+
+  revalidateDocument(item.documentId);
+  return concessionWarning ? { warning: concessionWarning } : {};
+}
+
+/**
  * Reorders a draft's items to match `orderedItemIds`, writing each item's
  * new `sortOrder` as its index in that array. `orderedItemIds` must be a
  * permutation of the document's own item ids (same set, no dupes, none

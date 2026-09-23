@@ -81,7 +81,8 @@ export function SendToClientButton({
         onClick={handleClick}
         disabled={disabled}
         title={disabledReason ?? undefined}
-        className="h-11 w-full"
+        size="touch"
+        className="w-full"
       >
         <Send className="size-4" data-icon="inline-start" aria-hidden="true" />
         {pending ? "Sending…" : "Send to client"}

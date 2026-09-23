@@ -8,3 +8,7 @@
 export { PhoneField } from "./phone-field";
 export { ConfirmProvider, useConfirm, type ConfirmOptions } from "./confirm-dialog";
 export { ToastProvider, useToast, type ToastVariant } from "./toast";
+// Here rather than in ./index for the reason that file's header documents:
+// this one carries "use client" and its own module graph, and a server
+// component reaching for FieldRow must not drag a tooltip into its chunk.
+export { Tooltip, TooltipProvider } from "./tooltip";

@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { Building2, Search, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { FieldRow, SectionCard, fieldInputClass } from "@/components/ui-kit";
+import { EmptyState, FieldRow, ReadOnlyValue, SectionCard, fieldInputClass } from "@/components/ui-kit";
 import { useToast } from "@/components/ui-kit/client";
 import {
   CompanyDeliverySameAsMainField,
@@ -258,7 +258,7 @@ export function ClientSection({
       }
     >
       {readOnly ? (
-        <p className="text-sm text-slate-700">{selectedCompany?.name ?? "No client set"}</p>
+        <ReadOnlyValue empty="No client set">{selectedCompany?.name}</ReadOnlyValue>
       ) : (
         <div className="flex flex-col gap-3">
           {selectedCompany && !picking ? (
@@ -394,7 +394,8 @@ export function ClientSection({
                   type="button"
                   onClick={handleCreateCompany}
                   disabled={companyFormPending || !companyForm.name.trim()}
-                  className="h-11 bg-brand text-white hover:bg-brand/90 sm:h-9"
+                  variant="brand"
+                  className="h-11 sm:h-9"
                 >
                   {companyFormPending ? "Creating…" : "Create company"}
                 </Button>
@@ -414,7 +415,12 @@ export function ClientSection({
           {selectedCompany && !picking ? (
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-medium text-brand-dark">Contact</span>
+                <label
+                  htmlFor={`${documentId}-contact`}
+                  className="text-sm font-medium text-brand-dark"
+                >
+                  Contact
+                </label>
                 <button
                   type="button"
                   onClick={() => (showContactForm ? closeContactForm() : setShowContactForm(true))}
@@ -428,7 +434,7 @@ export function ClientSection({
 
               {selectedCompany.contacts.length > 0 ? (
                 <select
-                  aria-label="Contact"
+                  id={`${documentId}-contact`}
                   value={contactId}
                   onChange={(e) => handleContactChange(e.target.value)}
                   className={fieldInputClass}
@@ -443,7 +449,13 @@ export function ClientSection({
                   ))}
                 </select>
               ) : !showContactForm ? (
-                <p className="text-xs text-slate-500">No contacts on file yet.</p>
+                <EmptyState
+                  icon={UserPlus}
+                  title="No contacts yet"
+                  description="Add one so the quote can be addressed to a person."
+                  bordered={false}
+                  compact
+                />
               ) : null}
 
               {showContactForm ? (
@@ -467,7 +479,8 @@ export function ClientSection({
                       type="button"
                       onClick={handleCreateContact}
                       disabled={contactFormPending || !contactForm.firstName.trim()}
-                      className="h-11 bg-brand text-white hover:bg-brand/90 sm:h-9"
+                      variant="brand"
+                  className="h-11 sm:h-9"
                     >
                       {contactFormPending ? "Creating…" : "Create contact"}
                     </Button>

@@ -41,7 +41,6 @@ export function ItemDiscountField({
   itemId,
   discountMode,
   discountValue,
-  maxDiscountPct,
   currency,
   currencySymbol,
   readOnly = false,
@@ -49,7 +48,6 @@ export function ItemDiscountField({
   itemId: string;
   discountMode: DiscountMode;
   discountValue: string | null;
-  maxDiscountPct: string | null;
   currency: string;
   currencySymbol: string | null;
   readOnly?: boolean;
@@ -142,9 +140,6 @@ export function ItemDiscountField({
             {symbol}
           </button>
         </div>
-        {maxDiscountPct ? (
-          <span className="text-[11px] text-slate-400">max {maxDiscountPct}%</span>
-        ) : null}
         <AutosaveIndicator status={status} error={error} />
       </div>
     </div>

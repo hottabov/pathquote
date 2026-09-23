@@ -156,9 +156,10 @@ export function SeriesQuoteDescriptionCard({
           ) : null}
 
           <Button
+            variant="brand"
             type="submit"
             disabled={pending}
-            className="h-11 w-full bg-brand text-white hover:bg-brand/90 sm:w-auto sm:self-start"
+            className="h-11 w-full sm:w-auto sm:self-start"
           >
             {pending ? "Saving…" : "Save changes"}
           </Button>

@@ -1,11 +1,17 @@
 "use client";
 
-import { startTransition, useActionState, useEffect, useRef, useState, type ChangeEvent } from "react";
+import {
+  startTransition,
+  useActionState,
+  useId,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
 import { ImageIcon, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FieldRow, fieldInputClass } from "@/components/ui-kit";
-import { useToast } from "@/components/ui-kit/client";
-import { addCustomLine, type ActionResult } from "@/lib/actions/documents";
+import { addCustomLine, updateCustomLine, type ActionResult } from "@/lib/actions/documents";
 import { pickDerivativeWidth } from "@/lib/image-derivative-width";
 
 const initialState: ActionResult = {};
@@ -36,27 +42,68 @@ const PREVIEW_BOX_PX = 48;
  * the next line without the manager clearing fields by hand. Submitted
  * through `onSubmit` rather than `<form action>` precisely because of that
  * hidden field -- see the note on `handleSubmit` below.
+ *
+ * The same form edits a line as well as adding one. An extra line could
+ * previously only be deleted and typed again -- photo and all -- which is
+ * both slow and how a line ends up further down the list than the one it
+ * replaced. Editing has to offer exactly the fields creating it did, so it
+ * is this component with `line` filled in rather than a second form that
+ * would drift from it.
  */
-export function AddCustomLineForm({ documentId }: { documentId: string }) {
-  const [state, formAction, pending] = useActionState(
-    (_prevState: ActionResult, formData: FormData) => addCustomLine(documentId, formData),
-    initialState
-  );
+export function AddCustomLineForm({
+  documentId,
+  line,
+  onDone,
+}: {
+  documentId: string;
+  /** The line being edited, or undefined to add a new one. */
+  line?: {
+    id: string;
+    name: string;
+    description: string | null;
+    qty: number;
+    unitPrice: string;
+    imageUrl: string | null;
+  };
+  /** Called after a successful edit so the caller can close the form. Unused
+   * when adding: that form stays open and empties itself, ready for the
+   * next line. */
+  onDone?: () => void;
+}) {
+  const editing = line !== undefined;
+  // Declared above the action below, which clears them on a successful add.
+  // Unique ids per instance: the add form and an open edit form are on the
+  // page together, and duplicate ids would point every label at the first.
+  const fieldId = useId();
   const formRef = useRef<HTMLFormElement>(null);
-  const wasPending = useRef(false);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(line?.imageUrl ?? null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const toast = useToast();
 
-  useEffect(() => {
-    if (wasPending.current && !pending && !state.error) {
-      formRef.current?.reset();
-      setImageUrl(null);
-      setUploadError(null);
-    }
-    wasPending.current = pending;
-  }, [pending, state]);
+  // What happens after a successful save lives inside the action, not in an
+  // effect watching `pending` fall. The effect version had to remember
+  // whether it had been pending, could not tell one settle from the next,
+  // and cleared state synchronously inside an effect body -- three
+  // problems that all go away once the code that knows the save succeeded
+  // is the code that did it.
+  const [state, formAction, pending] = useActionState(
+    async (_prevState: ActionResult, formData: FormData) => {
+      const result =
+        (line ? await updateCustomLine(line.id, formData) : await addCustomLine(documentId, formData)) ?? {};
+      if (result.error) return result;
+      if (line) {
+        // The row behind this form re-renders from the server, so there is
+        // nothing to reset here -- closing is the whole of "done".
+        onDone?.();
+      } else {
+        formRef.current?.reset();
+        setImageUrl(null);
+        setUploadError(null);
+      }
+      return result;
+    },
+    initialState
+  );
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -73,16 +120,17 @@ export function AddCustomLineForm({ documentId }: { documentId: string }) {
       const response = await fetch("/api/uploads", { method: "POST", body: formData });
       const body = (await response.json().catch(() => null)) as { url?: string; error?: string } | null;
       if (!response.ok || !body?.url) {
-        const message = body?.error ?? "Upload failed.";
-        setUploadError(message);
-        toast.error(message);
+        // Inline only. The rule across the builder: `role="alert"` under the
+        // control for something the user can fix here, a toast only for an
+        // optimistic update that had to be rolled back, and never both for
+        // one failure -- which is what this was, saying the same sentence
+        // twice in two places for one bad upload.
+        setUploadError(body?.error ?? "Upload failed.");
         return;
       }
       setImageUrl(body.url);
     } catch {
-      const message = "Upload failed. Check your connection and try again.";
-      setUploadError(message);
-      toast.error(message);
+      setUploadError("Upload failed. Check your connection and try again.");
     } finally {
       setUploading(false);
     }
@@ -115,35 +163,37 @@ export function AddCustomLineForm({ documentId }: { documentId: string }) {
       <input type="hidden" name="imageUrl" value={imageUrl ?? ""} />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-[2fr_1fr_1fr]">
-        <FieldRow label="Name" htmlFor="custom-line-name" required>
+        <FieldRow label="Name" htmlFor={`${fieldId}-name`} required>
           <input
-            id="custom-line-name"
+            id={`${fieldId}-name`}
             name="name"
             required
             maxLength={200}
+            defaultValue={line?.name}
             placeholder="e.g. Delivery, or Trade-in K5 390"
             className={fieldInputClass}
           />
         </FieldRow>
-        <FieldRow label="Qty" htmlFor="custom-line-qty" required>
+        <FieldRow label="Qty" htmlFor={`${fieldId}-qty`} required>
           <input
-            id="custom-line-qty"
+            id={`${fieldId}-qty`}
             name="qty"
             type="number"
             inputMode="numeric"
             min={1}
             max={999}
-            defaultValue={1}
+            defaultValue={line?.qty ?? 1}
             required
             className={fieldInputClass}
           />
         </FieldRow>
-        <FieldRow label="Unit price" htmlFor="custom-line-unit-price" required>
+        <FieldRow label="Unit price" htmlFor={`${fieldId}-unit-price`} required>
           <input
-            id="custom-line-unit-price"
+            id={`${fieldId}-unit-price`}
             name="unitPrice"
             type="text"
             inputMode="decimal"
+            defaultValue={line?.unitPrice}
             placeholder="0.00, or -15000.00 for a trade-in"
             required
             className={fieldInputClass}
@@ -151,11 +201,17 @@ export function AddCustomLineForm({ documentId }: { documentId: string }) {
         </FieldRow>
       </div>
 
-      <FieldRow label="Description (optional)" htmlFor="custom-line-description">
-        <input id="custom-line-description" name="description" maxLength={500} className={fieldInputClass} />
+      <FieldRow label="Description (optional)" htmlFor={`${fieldId}-description`}>
+        <input
+          id={`${fieldId}-description`}
+          name="description"
+          defaultValue={line?.description ?? undefined}
+          maxLength={500}
+          className={fieldInputClass}
+        />
       </FieldRow>
 
-      <FieldRow label="Photo (optional)" htmlFor="custom-line-image">
+      <FieldRow label="Photo (optional)" htmlFor={`${fieldId}-image`}>
         <div className="flex flex-wrap items-center gap-2">
           {imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -173,12 +229,13 @@ export function AddCustomLineForm({ documentId }: { documentId: string }) {
             type="button"
             variant="outline"
             disabled={uploading}
-            className="relative h-11 overflow-hidden"
+            size="touch"
+            className="relative overflow-hidden"
           >
             <Upload className="size-4" data-icon="inline-start" aria-hidden="true" />
             {imageUrl ? "Replace photo" : "Upload photo"}
             <input
-              id="custom-line-image"
+              id={`${fieldId}-image`}
               type="file"
               accept={ACCEPTED_TYPES}
               onChange={handleFileChange}
@@ -188,7 +245,7 @@ export function AddCustomLineForm({ documentId }: { documentId: string }) {
             />
           </Button>
           {imageUrl ? (
-            <Button type="button" variant="outline" onClick={() => setImageUrl(null)} className="h-11">
+            <Button type="button" variant="outline" onClick={() => setImageUrl(null)} size="touch">
               Remove photo
             </Button>
           ) : null}
@@ -208,9 +265,22 @@ export function AddCustomLineForm({ documentId }: { documentId: string }) {
         </p>
       ) : null}
 
-      <Button type="submit" variant="outline" disabled={pending || uploading} className="h-11 w-fit">
-        {pending ? "Adding…" : "Add line"}
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="submit"
+          variant={editing ? "brand" : "outline"}
+          disabled={pending || uploading}
+          size="touch"
+          className="w-fit"
+        >
+          {pending ? (editing ? "Saving…" : "Adding…") : editing ? "Save changes" : "Add line"}
+        </Button>
+        {editing ? (
+          <Button type="button" variant="ghost" size="touch" onClick={onDone} disabled={pending}>
+            Cancel
+          </Button>
+        ) : null}
+      </div>
     </form>
   );
 }

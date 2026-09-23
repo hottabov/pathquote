@@ -265,6 +265,12 @@ type Props = {
    * machine — leaving it behind a disclosure would hide the only place a
    * manager can put money on that item. */
   defaultOpen?: boolean;
+  /** Rendered as the body of a sub-tab rather than as a disclosure of its
+   * own: no trigger button, no surface of its own, always open. The tab
+   * strip above already names this panel and says whether anything is
+   * missing, and a second button inside an open panel reads as a second
+   * thing to press. */
+  asPanel?: boolean;
 };
 
 /**
@@ -298,6 +304,7 @@ export function ProductionSpecEditor({
   screenSideImages,
   readOnly = false,
   defaultOpen = false,
+  asPanel = false,
 }: Props) {
   const form = resolveForm(productForm);
   const toast = useToast();
@@ -416,36 +423,13 @@ export function ProductionSpecEditor({
     totals.staticModules > 0 ? `${totals.staticModules} × 1.2m static` : null,
   ].filter((part): part is string => Boolean(part));
 
-  return (
-    <div className="mt-3">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="focus-ring inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:border-brand/40 hover:bg-slate-50 active:bg-slate-100 sm:w-auto"
-      >
-        <Settings2 className="size-4 text-slate-500" aria-hidden="true" />
-        <span>
-          {open ? "Close" : isEasyLoader ? "EasyLoader builder" : "Production spec"}
-        </span>
-        {isEasyLoader && totals.totalM > 0 ? (
-          <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-            {totals.totalM} m
-          </span>
-        ) : null}
-        {missing.length > 0 ? (
-          <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
-            Missing: {missing.map((key) => REQUIREMENT_LABELS[key] ?? key).join(", ")}
-          </span>
-        ) : null}
-        <ChevronDown
-          className={cn("size-4 text-slate-400 transition-transform", open && "rotate-180")}
-          aria-hidden="true"
-        />
-      </button>
-
-      {open ? (
-        <div className="mt-2 flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+  const body = (
+    <div
+      className={cn(
+        "flex flex-col gap-3",
+        asPanel ? null : "mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3"
+      )}
+    >
           {isEasyLoader ? (
             <div className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3">
               <div>
@@ -891,8 +875,40 @@ export function ProductionSpecEditor({
               {error}
             </p>
           ) : null}
-        </div>
-      ) : null}
+    </div>
+  );
+
+  if (asPanel) return body;
+
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="focus-ring inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:border-brand/40 hover:bg-slate-50 active:bg-slate-100 sm:w-auto"
+      >
+        <Settings2 className="size-4 text-slate-500" aria-hidden="true" />
+        <span>
+          {open ? "Close" : isEasyLoader ? "EasyLoader builder" : "Production spec"}
+        </span>
+        {isEasyLoader && totals.totalM > 0 ? (
+          <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+            {totals.totalM} m
+          </span>
+        ) : null}
+        {missing.length > 0 ? (
+          <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+            Missing: {missing.map((key) => REQUIREMENT_LABELS[key] ?? key).join(", ")}
+          </span>
+        ) : null}
+        <ChevronDown
+          className={cn("size-4 text-slate-400 transition-transform", open && "rotate-180")}
+          aria-hidden="true"
+        />
+      </button>
+
+      {open ? body : null}
     </div>
   );
 }

@@ -145,10 +145,11 @@ export function CatalogVisibilityEditor({
       ) : null}
 
       <Button
+        variant="brand"
         type="button"
         onClick={save}
         disabled={pending}
-        className="h-11 w-full bg-brand text-white hover:bg-brand/90 sm:w-fit"
+        className="h-11 w-full sm:w-fit"
       >
         {pending ? "Saving…" : "Save visibility"}
       </Button>

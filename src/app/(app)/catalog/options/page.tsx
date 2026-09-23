@@ -58,8 +58,8 @@ export default async function OptionsPage({
             <Link
               href="/catalog/options/new"
               className={cn(
-                buttonVariants(),
-                "h-11 w-full bg-brand text-white hover:bg-brand/90 sm:w-auto"
+                buttonVariants({ variant: "brand" }),
+                "h-11 w-full sm:w-auto"
               )}
             >
               <Plus className="size-4" data-icon="inline-start" aria-hidden="true" />

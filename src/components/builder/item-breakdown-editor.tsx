@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Pencil } from "lucide-react";
+import { pickDerivativeWidth } from "@/lib/image-derivative-width";
 import { formatMoney } from "@/lib/format";
 import { buildItemBreakdown } from "@/lib/sheet-data";
 import { discountLabel } from "@/components/sheet/item-breakdown";
@@ -57,15 +58,30 @@ import type { BuilderItem } from "@/lib/queries/documents";
  * the two cases, so it stays a parameter rather than becoming two near-copies
  * of the row.
  */
+/** The icon box on a breakdown row, in CSS pixels -- what decides which
+ * `?w=` derivative to ask for rather than shrinking a print-resolution
+ * original with CSS. */
+const ROW_ICON_BOX_PX = 24;
+
 export function ItemBreakdownEditor({
   item,
   currency,
   currencySymbol,
+  optionImageByRefId,
+  showOptionIcons = true,
   readOnly = false,
 }: {
   item: BuilderItem;
   currency: string;
   currencySymbol: string | null;
+  /** `Option.id -> imageUrl`, for the catalogue icon on each option row. An
+   * option line carries no image of its own (only a custom extra line
+   * does), so the picture has to come from the compatible-options list the
+   * card already holds. */
+  optionImageByRefId?: Record<string, string | null>;
+  /** The "ui.showOptionIcons" app setting, threaded down the same way the
+   * options sheet gets it. */
+  showOptionIcons?: boolean;
   readOnly?: boolean;
 }) {
   // Always built with showOptionPrices=true — see buildItemBreakdown's own
@@ -86,7 +102,7 @@ export function ItemBreakdownEditor({
     // from line to line and the figures never lined up vertically. `auto` on
     // the two right columns means they're as wide as their widest row and no
     // wider, so the labels still get everything that's left.
-    <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 rounded-lg bg-slate-50 px-3 py-2 mt-2 text-xs text-slate-600">
+    <div className="mt-2 grid grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1.5 rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-600">
       {/* Dropped for a product assembled from its own options (see
           `ItemBreakdown.assembledFromOptions`) — an EasyLoader, today. The
           row would read "$0" against a machine, and there is nothing here to
@@ -96,6 +112,10 @@ export function ItemBreakdownEditor({
           thing and keeps both its row and its editor. */}
       {breakdown.assembledFromOptions ? null : (
         <BreakdownRow
+          icon={showOptionIcons ? item.imageUrl : null}
+          // Code only, no name: the card header two rows up already says
+          // what this machine is called, and repeating it here made the
+          // base row the widest thing in the list to say the least.
           label={item.code}
           qty={`Qty ${breakdown.qty}`}
           displayAmount={breakdown.basePrice}
@@ -114,6 +134,12 @@ export function ItemBreakdownEditor({
         return (
           <BreakdownRow
             key={line.id}
+            icon={
+              showOptionIcons
+                ? (line.refId ? (optionImageByRefId?.[line.refId] ?? null) : line.imageUrl)
+                : null
+            }
+            code={line.code}
             label={option.name}
             qty={String(option.qty)}
             // Non-null in practice: `breakdown` above is always built with
@@ -133,15 +159,29 @@ export function ItemBreakdownEditor({
           />
         );
       })}
+      {/* A rule across all four columns, so the computed figures below it
+          read as what the priced rows above add up to rather than as two
+          more rows of the same list. It spans the grid rather than sitting
+          on the subtotal row's own cells, which the `gap-x-3` would have
+          broken into four separate dashes. */}
+      {breakdown.discount || breakdown.options.length > 0 ? (
+        <span className="col-span-4 mt-0.5 h-px bg-slate-200" aria-hidden="true" />
+      ) : null}
       {breakdown.discount ? (
         <StaticRow
           label={discountLabel(breakdown.discount)}
           amount={`-${formatMoney(breakdown.discount.amount, currency, currencySymbol)}`}
           muted
+          gutter={!readOnly}
         />
       ) : null}
       {breakdown.options.length > 0 ? (
-        <StaticRow label={`${item.code} subtotal`} amount={formatMoney(breakdown.subtotal, currency, currencySymbol)} strong />
+        <StaticRow
+          label={`${item.code} subtotal`}
+          amount={formatMoney(breakdown.subtotal, currency, currencySymbol)}
+          strong
+          gutter={!readOnly}
+        />
       ) : null}
     </div>
   );
@@ -156,20 +196,27 @@ function StaticRow({
   amount,
   muted = false,
   strong = false,
+  gutter = true,
 }: {
   label: string;
   amount: string;
   muted?: boolean;
   strong?: boolean;
+  /** Whether the priced rows above are reserving room on their right for a
+   * pencil button. They only do so while the document is editable, and this
+   * row has no pencil of its own, so it has to be told: reserving the gutter
+   * on a finalised quote left the subtotal hanging 20px short of every
+   * figure it sums. */
+  gutter?: boolean;
 }) {
   return (
     // `contents` so the two cells sit in the parent's shared columns (see the
     // grid's own comment). The wrapper generates no box, but colour/weight/
     // style are inherited properties, so the modifiers below still reach the
     // cells. The label takes the label *and* qty columns — these rows have no
-    // qty of their own — and the amount carries the same `pr-3` the editable
-    // rows reserve for their pencil, so every figure in the block ends on one
-    // line rather than the subtotal hanging 12px further right.
+    // qty of their own — and the amount carries the same right-hand gutter
+    // the rows above are using, so every figure in the block ends on one
+    // line whether or not those rows are reserving room for a pencil.
     <div
       className={cn(
         "contents",
@@ -177,8 +224,8 @@ function StaticRow({
         strong && "font-semibold text-slate-700"
       )}
     >
-      <span className="col-span-2 truncate">{label}</span>
-      <span className="pr-3 text-right tabular-nums">{amount}</span>
+      <span className="col-span-3 truncate">{label}</span>
+      <span className={cn("text-right tabular-nums", gutter && "pr-5")}>{amount}</span>
     </div>
   );
 }
@@ -190,6 +237,8 @@ function StaticRow({
  * row; see `EditablePrice`'s own doc comment for why editing itself still
  * operates on the raw per-unit price underneath that figure. */
 function BreakdownRow({
+  icon,
+  code,
   label,
   qty,
   displayAmount,
@@ -202,6 +251,10 @@ function BreakdownRow({
   setAction,
   resetAction,
 }: {
+  /** The catalogue picture, or null for a row that has none -- a spacer
+   * keeps the codes in one column either way. */
+  icon?: string | null;
+  code?: string | null;
   label: string;
   qty: string;
   displayAmount: string;
@@ -221,7 +274,20 @@ function BreakdownRow({
     // stack (`tabular-nums` keeps them the same width while a price is being
     // edited elsewhere).
     <div className="contents">
-      <span className="truncate">{label}</span>
+      {icon ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={icon.endsWith(".svg") ? icon : `${icon}?w=${pickDerivativeWidth(ROW_ICON_BOX_PX * 2)}`}
+          alt=""
+          className="size-6 shrink-0 rounded object-contain"
+        />
+      ) : (
+        <span className="size-6 shrink-0 rounded bg-slate-200/70" aria-hidden="true" />
+      )}
+      <span className="flex min-w-0 items-baseline gap-2">
+        {code ? <span className="shrink-0 font-mono text-xs text-brand-dark">{code}</span> : null}
+        <span className="truncate">{label}</span>
+      </span>
       <span className="text-right tabular-nums text-slate-400">{qty}</span>
       <span className="flex items-center justify-end tabular-nums">
         <EditablePrice
@@ -252,11 +318,11 @@ function BreakdownRow({
  *   a customer-facing sheet).
  * - Viewing (the default when editable): the plain figure, with the struck-
  *   through list price + "Reset to list" whenever there's a concession, and
- *   a pencil button revealed on hover *or focus* — copied from
- *   `avatar-editor.tsx`'s `opacity-0 group-hover:opacity-100
- *   focus-visible:opacity-100` pattern, so the affordance is keyboard-
- *   reachable (Tab lands on the real `<button>` below) and not just a
- *   pointer-hover trick.
+ *   a pencil button. The pencil is always drawn, at 60% opacity, going to
+ *   full on hover or focus. It used to be `opacity-0
+ *   group-hover:opacity-100` after `avatar-editor.tsx`, which was not a
+ *   styling choice with a touch caveat: on a tablet there is no hover, so
+ *   the affordance did not exist and the price read as plain text.
  * - Editing (after the pencil is clicked): a focused, fully-selected number
  *   input. Blurring or Enter saves through `setAction` (only when the value
  *   actually changed) exactly like `unit-price-field.tsx`'s autosave did,
@@ -390,7 +456,10 @@ function EditablePrice({
   }
 
   return (
-    <span className="group relative inline-flex items-center gap-1.5 pr-3">
+    // `pr-5` reserves the pencil's own width. It used to be `pr-3`, which
+    // was enough while the pencil only appeared on hover; now that it is
+    // always drawn it sat on the last digit of every price in the list.
+    <span className="group relative inline-flex items-center gap-1.5 pr-5">
       {hasConcession ? (
         <>
           <span className="text-slate-400 line-through">{formatMoney(listPrice!, currency, currencySymbol)}</span>
@@ -410,10 +479,13 @@ function EditablePrice({
         onClick={openEditor}
         aria-label={`Edit ${label} price`}
         className={cn(
-          "focus-ring absolute -right-1 -top-1.5 flex size-5 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200 transition-opacity hover:text-brand",
-          // Hidden until wanted, but never hidden from the keyboard — same
-          // hover-or-focus reveal as avatar-editor.tsx's overlay.
-          "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+          "focus-ring absolute top-1/2 right-0 flex size-5 -translate-y-1/2 items-center justify-center rounded-full bg-white text-slate-400 shadow-sm ring-1 ring-slate-200 transition-[opacity,color] duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:text-brand",
+          // Always there, faint until wanted. This used to be
+          // `opacity-0 group-hover:opacity-100`, which on a tablet -- where
+          // there is no hover -- meant the affordance did not exist at all:
+          // the price simply looked like text. 60% is enough to read as a
+          // control without competing with the figure it sits on.
+          "opacity-60 group-hover:opacity-100 focus-visible:opacity-100"
         )}
       >
         <Pencil className="size-3" aria-hidden="true" />

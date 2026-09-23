@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PathQuote Builder Redesign</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* brand (fixed, from globals.css) */
+  --brand:#243478; --brand-accent:#00b8e2; --accent-ink:#0e7490; --brand-dark:#2b304f;
+  --commission:#146c43;
+  /* surfaces */
+  --s0:#f6f7f9;      /* page */
+  --s1:#ffffff;      /* card */
+  --s2:#f4f6f8;      /* inset panel */
+  --line:#e3e7ec;    /* the ONE divider/border token */
+  --line-strong:#cdd4dd;
+  /* ink */
+  --ink:#141a2e; --ink-2:#4a5568; --ink-3:#7a8699;
+  /* status */
+  --ok:#047857; --ok-bg:#ecfdf5; --ok-line:#a7f3d0;
+  --warn:#b45309; --warn-bg:#fffbeb; --warn-line:#fde68a;
+  --bad:#be123c; --bad-bg:#fff1f2; --bad-line:#fecdd3;
+  /* shape: exactly three radii */
+  --r-control:8px; --r-card:12px; --r-pill:999px;
+  /* control heights: exactly two */
+  --h-touch:44px; --h-dense:36px;
+  --shadow-overlay:0 12px 32px -8px rgba(20,26,46,.22), 0 0 0 1px rgba(20,26,46,.04);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:"Geist","Segoe UI",system-ui,sans-serif;
+  background:#eceff3; color:var(--ink);
+  -webkit-font-smoothing:antialiased;
+  font-size:15px; line-height:1.5;
+}
+.mono{font-family:"Geist Mono",ui-monospace,monospace}
+.num{font-variant-numeric:tabular-nums}
+button{font:inherit;color:inherit;cursor:pointer}
+h1,h2,h3,h4{margin:0;font-weight:600;letter-spacing:-.011em}
+p{margin:0}
+ul{margin:0;padding:0;list-style:none}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+
+/* ── prototype chrome ───────────────────────────────── */
+.proto-bar{
+  position:sticky;top:0;z-index:80;
+  display:flex;flex-wrap:wrap;align-items:center;gap:16px;
+  padding:12px 20px;background:var(--brand-dark);color:#fff;
+}
+.proto-bar h1{font-size:14px;font-weight:600;margin-right:auto}
+.proto-bar h1 span{display:block;font-size:11.5px;font-weight:400;color:#aeb6cc;letter-spacing:0}
+.seg{display:flex;background:rgba(255,255,255,.1);border-radius:var(--r-pill);padding:3px;gap:2px}
+.seg button{
+  border:0;background:transparent;color:#c3c9dc;border-radius:var(--r-pill);
+  padding:6px 14px;font-size:12.5px;font-weight:500;transition:all .12s;
+}
+.seg button[aria-pressed="true"]{background:#fff;color:var(--brand-dark)}
+.proto-note{padding:10px 20px;background:#fff8e6;border-bottom:1px solid #f2e0b0;font-size:12.5px;color:#7a5a12}
+
+.stage{padding:24px 20px 60px;display:flex;justify-content:center}
+.screen{display:none;width:100%}
+.screen.on{display:block}
+.frame-d{max-width:1280px;margin:0 auto;border:1px solid var(--line-strong);border-radius:14px;overflow:hidden;background:var(--s0);box-shadow:0 8px 30px -12px rgba(20,26,46,.2)}
+.frame-m{width:390px;margin:0 auto;border:1px solid var(--line-strong);border-radius:28px;overflow:hidden;background:var(--s0);box-shadow:0 8px 30px -12px rgba(20,26,46,.2)}
+
+/* ── app shell ──────────────────────────────────────── */
+.app{display:flex;min-height:720px}
+.side{width:212px;flex:none;background:var(--brand-dark);color:#fff;display:flex;flex-direction:column}
+.side .brandmark{height:58px;display:flex;align-items:center;gap:9px;padding:0 16px;border-bottom:1px solid rgba(255,255,255,.1);font-weight:600;font-size:14.5px}
+.side .brandmark i{width:22px;height:22px;border-radius:6px;background:var(--brand-accent);display:block}
+.side nav{padding:10px 8px;display:flex;flex-direction:column;gap:2px}
+.side a{
+  display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;
+  border-radius:var(--r-control);border-left:3px solid transparent;
+  color:rgba(255,255,255,.72);text-decoration:none;font-size:13.5px;font-weight:500;
+}
+.side a.cur{background:rgba(255,255,255,.1);color:#fff;border-left-color:var(--brand-accent)}
+.side .who{margin-top:auto;padding:12px 14px;border-top:1px solid rgba(255,255,255,.1);font-size:11.5px;color:#a9b1c8}
+.canvas{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--s0)}
+
+/* ── NEW: quote header bar ──────────────────────────── */
+.qbar{position:sticky;top:0;z-index:30;background:var(--s1);border-bottom:1px solid var(--line)}
+.qbar-main{display:flex;align-items:center;gap:16px;padding:12px 24px}
+.qbar-back{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--ink-3);text-decoration:none;font-weight:500}
+.qbar-id{display:flex;flex-direction:column;gap:1px;min-width:0}
+.qbar-id h2{font-size:16px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.qbar-id .meta{font-size:11.5px;color:var(--ink-3);display:flex;align-items:center;gap:8px}
+.qbar-right{margin-left:auto;display:flex;align-items:center;gap:18px}
+.qbar-total{text-align:right}
+.qbar-total .k{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:600}
+.qbar-total .v{font-size:20px;font-weight:600;letter-spacing:-.02em}
+.qbar-tabs{display:flex;gap:2px;padding:0 24px}
+.qbar-tabs button{
+  border:0;background:transparent;padding:9px 14px 11px;font-size:13.5px;font-weight:500;
+  color:var(--ink-3);border-bottom:2px solid transparent;margin-bottom:-1px;
+  display:flex;align-items:center;gap:7px;
+}
+.qbar-tabs button[aria-selected="true"]{color:var(--brand);border-bottom-color:var(--brand);font-weight:600}
+.tabcount{min-width:18px;height:18px;padding:0 5px;border-radius:var(--r-pill);background:#eef0f5;color:var(--ink-2);font-size:11px;font-weight:600;display:inline-flex;align-items:center;justify-content:center}
+
+/* ── content grid ───────────────────────────────────── */
+.work{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:20px;padding:20px 24px 40px;align-items:start}
+.col{display:flex;flex-direction:column;gap:14px;min-width:0}
+.rail{position:sticky;top:112px;display:flex;flex-direction:column;gap:14px}
+
+/* ── card system: ONE card, ONE inset ───────────────── */
+.card{background:var(--s1);border:1px solid var(--line);border-radius:var(--r-card)}
+.card>header{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.card>header h3{font-size:13.5px;font-weight:600;color:var(--ink)}
+.card>header .sub{font-size:12px;color:var(--ink-3);font-weight:400}
+.card>header .hact{margin-left:auto;display:flex;gap:8px;align-items:center}
+.card .body{padding:16px}
+.card .body.flush{padding:0}
+.inset{background:var(--s2);border-radius:var(--r-control);padding:12px}
+
+.ico{width:17px;height:17px;flex:none;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.ico.sm{width:14px;height:14px}
+.ico.lg{width:20px;height:20px}
+.chev{transition:transform .15s}
+[aria-expanded="true"] .chev{transform:rotate(180deg)}
+
+/* ── buttons: one scale ─────────────────────────────── */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  height:var(--h-dense);padding:0 14px;border-radius:var(--r-control);
+  border:1px solid transparent;font-size:13.5px;font-weight:500;
+  background:var(--s1);color:var(--ink);transition:background .12s,border-color .12s;
+}
+.btn:active{transform:translateY(1px)}
+.btn.touch{height:var(--h-touch)}
+.btn.outline{border-color:var(--line-strong)}
+.btn.outline:hover{background:var(--s2)}
+.btn.brand{background:var(--brand);color:#fff}
+.btn.brand:hover{background:#1c2a63}
+.btn.ok{background:var(--ok);color:#fff}
+.btn.ok:hover{background:#036a4b}
+.btn.ghost{background:transparent;color:var(--ink-2)}
+.btn.ghost:hover{background:var(--s2);color:var(--ink)}
+.btn.full{width:100%}
+.btn[disabled]{opacity:.45;pointer-events:none}
+.iconbtn{width:var(--h-dense);height:var(--h-dense);padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:var(--r-control);border:0;background:transparent;color:var(--ink-3)}
+.iconbtn:hover{background:var(--s2);color:var(--ink)}
+
+/* ── badges: ONE implementation ─────────────────────── */
+.badge{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px;border-radius:var(--r-pill);border:1px solid;font-size:11.5px;font-weight:600;white-space:nowrap}
+.badge.slate{background:var(--s2);border-color:var(--line-strong);color:var(--ink-2)}
+.badge.brand{background:var(--brand);border-color:var(--brand);color:#fff}
+.badge.ok{background:var(--ok-bg);border-color:var(--ok-line);color:var(--ok)}
+.badge.warn{background:var(--warn-bg);border-color:var(--warn-line);color:var(--warn)}
+.badge.bad{background:var(--bad-bg);border-color:var(--bad-line);color:var(--bad)}
+.chip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 9px;border-radius:var(--r-pill);background:#eef1f6;color:var(--ink-2);font-size:11.5px;font-weight:500;white-space:nowrap}
+.chip .x{color:var(--ink-3);font-weight:600}
+
+/* ── readiness ──────────────────────────────────────── */
+.ready li{display:flex;align-items:flex-start;gap:9px;padding:8px 0;border-bottom:1px solid var(--line)}
+.ready li:last-child{border-bottom:0}
+.ready .dot{width:18px;height:18px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-top:1px}
+.ready .dot.y{background:var(--ok-bg);color:var(--ok)}
+.ready .dot.n{background:var(--warn-bg);color:var(--warn)}
+.ready .t{font-size:13px;font-weight:500}
+.ready .h{font-size:11.5px;color:var(--ink-3)}
+.ready a{color:var(--brand);text-decoration:none;font-weight:600;font-size:11.5px}
+.meter{height:5px;border-radius:var(--r-pill);background:#e7eaf0;overflow:hidden;margin-bottom:12px}
+.meter i{display:block;height:100%;background:var(--ok);border-radius:var(--r-pill)}
+
+/* ── totals ─────────────────────────────────────────── */
+.tot{display:flex;flex-direction:column;gap:7px;font-size:13px}
+.tot .r{display:flex;justify-content:space-between;gap:12px}
+.tot .r dt{color:var(--ink-3)}
+.tot .r dd{margin:0;color:var(--ink-2)}
+.tot .grand{border-top:1px solid var(--line);padding-top:9px;font-size:15.5px;font-weight:600;color:var(--ink)}
+.tot .comm{border-top:1px solid var(--line);padding-top:9px;color:var(--commission)}
+.tot .comm dt{color:var(--commission)}
+
+/* ── item cards ─────────────────────────────────────── */
+.items{display:flex;flex-direction:column}
+.item{border-bottom:1px solid var(--line)}
+.item:last-child{border-bottom:0}
+.item-head{display:flex;align-items:center;gap:12px;padding:12px 16px;width:100%;background:transparent;border:0;text-align:left}
+.item-head:hover{background:var(--s2)}
+.grip{width:var(--h-touch);height:var(--h-touch);margin:-4px 0 -4px -8px;display:flex;align-items:center;justify-content:center;border:0;background:transparent;color:#aab3c0;border-radius:var(--r-control)}
+.grip:hover{background:#eef1f6;color:var(--ink-2)}
+.thumb{width:44px;height:44px;flex:none;border-radius:var(--r-control);border:1px solid var(--line);background:var(--s2);display:flex;align-items:center;justify-content:center;color:#b3bbc8;overflow:hidden}
+.item-id{min-width:0;flex:1}
+.item-id .n{font-size:14px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item-id .c{font-size:11.5px;color:var(--ink-3)}
+.item-sum{display:flex;align-items:center;gap:6px;flex-wrap:wrap;max-width:330px}
+.item-price{text-align:right;flex:none;min-width:104px}
+.item-price .v{font-size:14.5px;font-weight:600}
+.item-price .q{font-size:11.5px;color:var(--ink-3)}
+.item-body{padding:0 16px 16px;display:none}
+.item.open .item-body{display:block}
+.item.open .item-head{background:var(--s2)}
+
+/* item sub-tabs: replaces the two competing drawers */
+.subtabs{display:flex;gap:3px;background:#e9edf2;border-radius:var(--r-control);padding:3px;margin-bottom:12px;width:fit-content}
+.subtabs button{border:0;background:transparent;height:30px;padding:0 13px;border-radius:6px;font-size:12.5px;font-weight:500;color:var(--ink-2);display:flex;align-items:center;gap:6px}
+.subtabs button[aria-selected="true"]{background:var(--s1);color:var(--brand);font-weight:600;box-shadow:0 1px 2px rgba(20,26,46,.08)}
+.subpanel{display:none}
+.subpanel.on{display:block}
+
+/* price rows */
+.prow{display:grid;grid-template-columns:minmax(0,1fr) 68px 112px;align-items:center;gap:12px;padding:7px 0;font-size:13px;border-bottom:1px solid var(--line)}
+.prow:last-of-type{border-bottom:0}
+.prow .lbl{color:var(--ink-2);min-width:0}
+.prow .lbl small{display:block;color:var(--ink-3);font-size:11px}
+.prow .qty{color:var(--ink-3);text-align:right;font-size:12.5px}
+.prow .amt{text-align:right}
+.prow.sub{border-top:1px solid var(--line-strong);border-bottom:0;margin-top:4px;padding-top:9px;font-weight:600}
+/* always-visible editable price (no hover-only pencil) */
+.editp{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;padding:3px 7px;margin:-3px -7px;border-radius:6px;font-size:13px;font-weight:500;color:var(--ink)}
+.editp:hover{background:#eaf6fa;color:var(--accent-ink)}
+.editp .pen{opacity:.4}
+.editp:hover .pen{opacity:1}
+.editp .old{color:var(--ink-3);text-decoration:line-through;font-weight:400;font-size:12px}
+
+/* spec fields */
+.frow{display:grid;grid-template-columns:184px minmax(0,1fr);gap:10px 14px;align-items:center;padding:7px 0}
+.frow>label{font-size:13px;font-weight:500;color:var(--ink-2)}
+.fld{height:var(--h-dense);border:1px solid var(--line-strong);border-radius:var(--r-control);background:var(--s1);padding:0 10px;font-size:13.5px;color:var(--ink);width:100%;max-width:220px}
+.fld:focus{outline:0;border-color:var(--brand);box-shadow:0 0 0 3px rgba(36,52,120,.14)}
+.fldset{border:1px solid var(--line);border-radius:var(--r-control);padding:10px 14px 12px;margin:0 0 10px}
+.fldset legend{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);padding:0 5px}
+.hint{font-size:11.5px;color:var(--ink-3)}
+.hint.warn{color:var(--warn)}
+
+/* option rows in sheet */
+.optrow{display:flex;align-items:flex-start;gap:11px;padding:11px 14px;border-bottom:1px solid var(--line)}
+.optrow:hover{background:var(--s2)}
+.optrow input[type=checkbox]{width:19px;height:19px;flex:none;margin-top:2px;accent-color:var(--brand)}
+.optrow .on{flex:1;min-width:0}
+.optrow .on .t{font-size:13.5px;font-weight:500}
+.optrow .on .c{font-size:11.5px;color:var(--ink-3)}
+.optrow .pr{text-align:right;font-size:13px;font-weight:500;flex:none}
+.stepper{display:inline-flex;align-items:center;border:1px solid var(--line-strong);border-radius:var(--r-control);overflow:hidden;height:var(--h-dense)}
+.stepper button{width:32px;height:100%;border:0;background:var(--s1);color:var(--ink-2)}
+.stepper button:hover{background:var(--s2)}
+.stepper input{width:40px;height:100%;border:0;border-left:1px solid var(--line);border-right:1px solid var(--line);text-align:center;font-size:13px;background:var(--s1)}
+
+/* ── side sheet ─────────────────────────────────────── */
+.scrim{position:absolute;inset:0;background:rgba(20,26,46,.32);z-index:60;display:none}
+.scrim.on{display:block}
+.sheet{position:absolute;top:0;right:0;bottom:0;width:440px;background:var(--s1);z-index:61;display:none;flex-direction:column;box-shadow:var(--shadow-overlay)}
+.sheet.on{display:flex}
+.sheet header{display:flex;align-items:center;gap:10px;padding:16px;border-bottom:1px solid var(--line)}
+.sheet header h3{font-size:15px}
+.sheet header .sub{font-size:12px;color:var(--ink-3)}
+.sheet .tools{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;gap:8px}
+.sheet .list{flex:1;overflow:auto}
+.sheet footer{padding:14px 16px;border-top:1px solid var(--line);display:flex;gap:9px;background:var(--s1)}
+.search{position:relative;flex:1}
+.search .ico{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--ink-3)}
+.search input{padding-left:34px}
+
+/* ── empty state ────────────────────────────────────── */
+.empty{display:flex;flex-direction:column;align-items:center;gap:9px;padding:34px 20px;text-align:center}
+.empty .circ{width:42px;height:42px;border-radius:50%;background:var(--s2);display:flex;align-items:center;justify-content:center;color:var(--ink-3)}
+.empty .t{font-size:13.5px;font-weight:600}
+.empty .d{font-size:12.5px;color:var(--ink-3)}
+
+/* ── banners ────────────────────────────────────────── */
+.note{display:flex;gap:9px;align-items:flex-start;padding:11px 14px;border-radius:var(--r-control);border:1px solid;font-size:13px}
+.note.warn{background:var(--warn-bg);border-color:var(--warn-line);color:#7c4a09}
+.note.bad{background:var(--bad-bg);border-color:var(--bad-line);color:#9f1239}
+
+/* ── mobile ─────────────────────────────────────────── */
+.m-app{display:flex;flex-direction:column;min-height:760px;background:var(--s0);position:relative}
+.m-top{background:var(--s1);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:20}
+.m-top .r1{display:flex;align-items:center;gap:10px;padding:11px 14px}
+.m-top .r2{display:flex;gap:2px;padding:0 10px;overflow:auto}
+.m-top .r2 button{border:0;background:transparent;padding:8px 12px 10px;font-size:13px;font-weight:500;color:var(--ink-3);border-bottom:2px solid transparent;white-space:nowrap}
+.m-top .r2 button[aria-selected="true"]{color:var(--brand);border-bottom-color:var(--brand);font-weight:600}
+.m-body{flex:1;padding:12px;display:flex;flex-direction:column;gap:12px;padding-bottom:150px}
+.m-dock{position:absolute;left:0;right:0;bottom:56px;background:var(--s1);border-top:1px solid var(--line);padding:10px 14px;z-index:21}
+.m-dock .row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.m-dock .k{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-3);font-weight:600}
+.m-dock .v{font-size:19px;font-weight:600}
+.m-nav{position:absolute;left:0;right:0;bottom:0;display:grid;grid-template-columns:repeat(5,1fr);background:var(--s1);border-top:1px solid var(--line);z-index:22}
+.m-nav a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:56px;font-size:10.5px;color:var(--ink-3);text-decoration:none;font-weight:500}
+.m-nav a.cur{color:var(--brand)}
+
+/* ── "before" reproduction ──────────────────────────── */
+.b-card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px}
+.b-card>h3{font-size:16px;font-weight:600;color:#2b304f;display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.b-card>h3 .tile{width:36px;height:36px;border:1px solid #e2e8f0;background:#f8fafc;border-radius:8px;display:flex;align-items:center;justify-content:center}
+.b-item{border:1px solid #e2e8f0;border-radius:12px;padding:14px;margin-bottom:12px}
+.b-drawer{border:1px solid #cbd5e1;border-radius:8px;background:#fff;height:44px;display:inline-flex;align-items:center;gap:8px;padding:0 16px;font-size:14px;font-weight:500;color:#334155}
+.b-grid{display:grid;grid-template-columns:minmax(0,1fr) 1fr 1fr;gap:12px}
+.b-break{background:#f8fafc;border-radius:8px;padding:8px 12px;font-size:12px;color:#475569;margin-top:8px}
+.b-stack{display:flex;flex-direction:column;gap:16px;padding:20px 24px 40px}
+.b-flag{position:relative}
+.b-flag::after{content:attr(data-flag);position:absolute;right:-6px;top:-9px;background:var(--bad);color:#fff;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:var(--r-pill);white-space:nowrap;z-index:5}
+
+/* ── notes ──────────────────────────────────────────── */
+.notes{max-width:1280px;margin:24px auto 0;background:#fff;border:1px solid var(--line);border-radius:var(--r-card);padding:24px 26px}
+.notes h2{font-size:18px;margin-bottom:6px}
+.notes h3{font-size:14px;margin:22px 0 8px;color:var(--brand)}
+.notes p{font-size:13.5px;color:var(--ink-2);margin-bottom:8px}
+.notes ol{padding-left:20px;margin:0;font-size:13.5px;color:var(--ink-2)}
+.notes ol li{margin-bottom:9px}
+.notes li b{color:var(--ink)}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:13px;color:var(--ink-2);margin-top:6px}
+.kv b{color:var(--ink);font-weight:600}
+.pill-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+
+@media(max-width:900px){
+  .work{grid-template-columns:minmax(0,1fr)}
+  .rail{position:static}
+  .side{display:none}
+}
+</style>
+</head>
+<body>
+
+<div class="proto-bar">
+  <h1>PathQuote · білдер квоти<span>мокап редизайну, гілка redesign/quote-builder-ux</span></h1>
+  <div class="seg" role="group" aria-label="Версія">
+    <button id="t-before" aria-pressed="false" onclick="setVer('before')">Зараз</button>
+    <button id="t-after" aria-pressed="true" onclick="setVer('after')">Пропозиція</button>
+  </div>
+  <div class="seg" role="group" aria-label="Пристрій">
+    <button id="t-desk" aria-pressed="true" onclick="setDev('desk')">Десктоп</button>
+    <button id="t-mob" aria-pressed="false" onclick="setDev('mob')">Мобільний</button>
+  </div>
+</div>
+<div class="proto-note">Це статичний мокап, не збірка застосунку. Клікабельне: вкладки Збірка / Налаштування / Історія, розкриття позиції, під-вкладки Опції / Специфікація / Ціна, кнопка «Додати опції» (панель збоку). Дані вигадані.</div>
+
+<div class="stage">
+
+<!-- ═══════════ AFTER · DESKTOP ═══════════ -->
+<div class="screen on" id="s-after-desk">
+<div class="frame-d">
+<div class="app" style="position:relative">
+
+  <aside class="side">
+    <div class="brandmark"><i></i>PathQuote</div>
+    <nav>
+      <a href="#" class="cur"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>Квоти</a>
+      <a href="#"><svg class="ico" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>Клієнти</a>
+      <a href="#"><svg class="ico" viewBox="0 0 24 24"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>Каталог</a>
+      <a href="#"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="m9 15 2 2 4-4"/></svg>Документи</a>
+      <a href="#"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6h.09A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09A1.65 1.65 0 0 0 15 4.6h.09a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>Налаштування</a>
+    </nav>
+    <div class="who">Вадим Леонов<br>Regional manager</div>
+  </aside>
+
+  <div class="canvas">
+
+    <!-- quote header bar: identity + status + total + save, always visible -->
+    <div class="qbar">
+      <div class="qbar-main">
+        <div class="qbar-id">
+          <a href="#" class="qbar-back"><svg class="ico sm" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg>Усі квоти</a>
+          <h2>Ridgeline Upholstery Pty Ltd</h2>
+          <div class="meta"><span class="mono">Q-2609-0147</span><span>·</span><span>рев. 2</span><span>·</span><span>Вікторія</span></div>
+        </div>
+        <div class="qbar-right">
+          <span style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink-3)">
+            <svg class="ico sm" viewBox="0 0 24 24" style="color:var(--ok)"><path d="M20 6 9 17l-5-5"/></svg>Збережено
+          </span>
+          <span class="badge warn">Чернетка</span>
+          <div class="qbar-total">
+            <div class="k">Разом без GST</div>
+            <div class="v num">A$ 186 420</div>
+          </div>
+          <button class="btn brand" onclick="alert('Мокап: тут перевірка готовності, потім фіналізація.')">
+            <svg class="ico sm" viewBox="0 0 24 24"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Фіналізувати
+          </button>
+        </div>
+      </div>
+      <div class="qbar-tabs" role="tablist">
+        <button role="tab" aria-selected="true" onclick="tab(this,'p-build')">
+          <svg class="ico sm" viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M3 7h18"/><path d="M3 17h18"/></svg>Збірка<span class="tabcount">4</span>
+        </button>
+        <button role="tab" aria-selected="false" onclick="tab(this,'p-settings')">
+          <svg class="ico sm" viewBox="0 0 24 24"><path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M1 14h6"/><path d="M9 8h6"/><path d="M17 16h6"/></svg>Умови квоти
+        </button>
+        <button role="tab" aria-selected="false" onclick="tab(this,'p-history')">
+          <svg class="ico sm" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>Історія<span class="tabcount">6</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ── TAB: BUILD ── -->
+    <div id="p-build" class="work">
+      <div class="col">
+
+        <!-- client -->
+        <section class="card">
+          <header>
+            <svg class="ico" style="color:var(--ink-3)" viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg>
+            <h3>Клієнт</h3>
+            <div class="hact"><button class="btn ghost">Змінити</button></div>
+          </header>
+          <div class="body" style="display:flex;gap:16px;flex-wrap:wrap">
+            <div style="flex:1;min-width:210px">
+              <div style="font-size:14px;font-weight:600">Ridgeline Upholstery Pty Ltd</div>
+              <div style="font-size:12.5px;color:var(--ink-3);margin-top:2px">Unit 7, 42 Foundry Rd, Dandenong South VIC 3175</div>
+            </div>
+            <div style="flex:1;min-width:210px">
+              <div style="font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3)">Контакт</div>
+              <div style="font-size:13.5px;margin-top:3px">Marisa Okonkwo · Operations</div>
+              <div style="font-size:12.5px;color:var(--ink-3)">m.okonkwo@ridgeline.com.au · 03 9794 6188</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- items -->
+        <section class="card">
+          <header>
+            <svg class="ico" style="color:var(--ink-3)" viewBox="0 0 24 24"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+            <h3>Позиції</h3><span class="sub">3 машини</span>
+            <div class="hact">
+              <button class="btn ghost" onclick="allItems(false)">Згорнути все</button>
+              <button class="btn ok" onclick="alert('Мокап: вибір продукту з каталогу.')">
+                <svg class="ico sm" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Додати позицію
+              </button>
+            </div>
+          </header>
+          <div class="body flush">
+            <div class="items">
+
+              <!-- item 1: open -->
+              <article class="item open" id="it1">
+                <div style="display:flex;align-items:center">
+                  <button class="grip" aria-label="Перемістити Pathfinder 2500 DMT" title="Перетягніть або натисніть Space і стрілки">
+                    <svg class="ico" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg>
+                  </button>
+                  <button class="item-head" aria-expanded="true" aria-controls="it1b" onclick="toggleItem('it1')">
+                    <span class="thumb"><svg class="ico lg" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h6"/></svg></span>
+                    <span class="item-id">
+                      <h3 class="n">Pathfinder 2500 DMT</h3>
+                      <span class="c mono">PF-2500-DMT</span>
+                    </span>
+                    <span class="item-sum">
+                      <span class="chip">Conveyor 3.2 m</span>
+                      <span class="chip">Vacuum ×2</span>
+                      <span class="chip">DMT head</span>
+                      <span class="chip">+2</span>
+                      <span class="badge ok"><svg class="ico sm" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Специфікація</span>
+                    </span>
+                    <span class="item-price">
+                      <span class="v num">A$ 128 900</span>
+                      <span class="q num">1 × 128 900</span>
+                    </span>
+                    <svg class="ico chev" style="color:var(--ink-3)" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+                  </button>
+                </div>
+
+                <div class="item-body" id="it1b">
+                  <div class="subtabs" role="tablist" aria-label="Редагування позиції">
+                    <button role="tab" aria-selected="true" onclick="sub(this,'it1-opt')">
+                      <svg class="ico sm" viewBox="0 0 24 24"><path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M1 14h6"/><path d="M9 8h6"/><path d="M17 16h6"/></svg>Опції <span class="tabcount">5</span>
+                    </button>
+                    <button role="tab" aria-selected="false" onclick="sub(this,'it1-spec')">
+                      <svg class="ico sm" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>Специфікація
+                    </button>
+                    <button role="tab" aria-selected="false" onclick="sub(this,'it1-price')">
+                      <svg class="ico sm" viewBox="0 0 24 24"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Ціна
+                    </button>
+                  </div>
+
+                  <div class="subpanel on" id="it1-opt">
+                    <div class="inset" style="display:flex;flex-direction:column;gap:9px">
+                      <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+                        <span class="chip">Conveyor table 3.2 m <span class="x">A$ 9 400</span></span>
+                        <span class="chip">Vacuum pump ×2 <span class="x">A$ 7 100</span></span>
+                        <span class="chip">DMT cutting head <span class="x">A$ 12 250</span></span>
+                        <span class="chip">Bristle bed <span class="x">A$ 3 900</span></span>
+                        <span class="chip">Spare blade kit <span class="x">A$ 640</span></span>
+                      </div>
+                      <div style="display:flex;gap:9px;align-items:center;padding-top:3px">
+                        <button class="btn outline" onclick="openSheet()">
+                          <svg class="ico sm" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Додати або змінити опції
+                        </button>
+                        <span class="hint">5 обрано · 23 доступно для цієї серії</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="subpanel" id="it1-spec">
+                    <fieldset class="fldset">
+                      <legend>Геометрія</legend>
+                      <div class="frow"><label for="f1">Довжина столу</label><span style="display:flex;gap:9px;align-items:center"><input class="fld" id="f1" value="3200" style="max-width:110px"><span class="hint">мм</span></span></div>
+                      <div class="frow"><label for="f2">Робоча ширина</label><span style="display:flex;gap:9px;align-items:center"><input class="fld" id="f2" value="1800" style="max-width:110px"><span class="hint">мм</span></span></div>
+                      <div class="frow"><label for="f3">Сторона екрана</label>
+                        <select class="fld" id="f3"><option>+Y (оператор ліворуч)</option><option>-Y (оператор праворуч)</option></select>
+                      </div>
+                    </fieldset>
+                    <fieldset class="fldset" style="margin-bottom:0">
+                      <legend>Живлення</legend>
+                      <div class="frow"><label for="f4">Напруга</label><select class="fld" id="f4"><option>415 V · 3 фази · 50 Hz</option><option>240 V · 1 фаза · 50 Hz</option></select></div>
+                      <div class="frow"><label for="f5">Тип вилки</label><select class="fld" id="f5"><option>Не потрібна, прямий підвід</option><option>56P532 5-pin 32 A</option></select></div>
+                    </fieldset>
+                  </div>
+
+                  <div class="subpanel" id="it1-price">
+                    <div class="inset">
+                      <div class="prow"><span class="lbl">Базова машина<small class="mono">PF-2500-DMT</small></span><span class="qty num">1</span>
+                        <span class="amt"><button class="editp num">A$ 96 000<svg class="ico sm pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button></span></div>
+                      <div class="prow"><span class="lbl">Conveyor table 3.2 m</span><span class="qty num">1</span>
+                        <span class="amt"><button class="editp num"><span class="old">10 200</span>A$ 9 400<svg class="ico sm pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button></span></div>
+                      <div class="prow"><span class="lbl">Vacuum pump</span><span class="qty num">2</span>
+                        <span class="amt"><button class="editp num">A$ 7 100<svg class="ico sm pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button></span></div>
+                      <div class="prow"><span class="lbl">DMT cutting head</span><span class="qty num">1</span>
+                        <span class="amt"><button class="editp num">A$ 12 250<svg class="ico sm pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button></span></div>
+                      <div class="prow"><span class="lbl" style="color:var(--warn)">Знижка по позиції 4 %</span><span class="qty"></span><span class="amt num" style="color:var(--warn)">-A$ 5 371</span></div>
+                      <div class="prow sub"><span class="lbl">Разом по позиції</span><span class="qty"></span><span class="amt num">A$ 128 900</span></div>
+                    </div>
+                    <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
+                      <label style="font-size:12.5px;color:var(--ink-2);font-weight:500">Знижка</label>
+                      <input class="fld" value="4" style="width:72px;max-width:none;text-align:right">
+                      <div class="subtabs" style="margin:0">
+                        <button aria-selected="true">%</button><button aria-selected="false">A$</button>
+                      </div>
+                      <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-2);margin-left:auto">
+                        <input type="checkbox" checked style="width:17px;height:17px;accent-color:var(--brand)">Показувати фото в квоті
+                      </label>
+                      <button class="btn ghost" style="color:var(--bad)">
+                        <svg class="ico sm" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>Видалити
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </article>
+
+              <!-- item 2 -->
+              <article class="item" id="it2">
+                <div style="display:flex;align-items:center">
+                  <button class="grip" aria-label="Перемістити EasyLoader 180"><svg class="ico" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg></button>
+                  <button class="item-head" aria-expanded="false" aria-controls="it2b" onclick="toggleItem('it2')">
+                    <span class="thumb"><svg class="ico lg" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="10" rx="2"/><path d="M8 8V5h8v3"/></svg></span>
+                    <span class="item-id"><h3 class="n">EasyLoader 180</h3><span class="c mono">PF-EL-180</span></span>
+                    <span class="item-sum">
+                      <span class="chip">Table module ×3</span>
+                      <span class="chip">Travel rail 6 m</span>
+                      <span class="badge warn"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="10"/></svg>Специфікація не заповнена</span>
+                    </span>
+                    <span class="item-price"><span class="v num">A$ 41 300</span><span class="q num">1 × 41 300</span></span>
+                    <svg class="ico chev" style="color:var(--ink-3)" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+                  </button>
+                </div>
+                <div class="item-body" id="it2b">
+                  <div class="note warn" style="margin-bottom:12px">
+                    <svg class="ico sm" style="margin-top:2px" viewBox="0 0 24 24"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="10"/></svg>
+                    <span>Не заповнено 2 поля виробничої специфікації: довжина рейки та сторона підводу. Без них квота не фіналізується.</span>
+                  </div>
+                  <div class="subtabs"><button aria-selected="false">Опції <span class="tabcount">2</span></button><button aria-selected="true">Специфікація</button><button aria-selected="false">Ціна</button></div>
+                  <fieldset class="fldset" style="margin-bottom:0">
+                    <legend>Конфігурація рейки</legend>
+                    <div class="frow"><label for="g1">Довжина рейки</label>
+                      <span style="display:flex;gap:9px;align-items:center;flex-wrap:wrap">
+                        <input class="fld" id="g1" placeholder="0000" style="max-width:110px;border-color:var(--bad)">
+                        <span class="hint warn">Обовʼязкове поле</span>
+                      </span></div>
+                    <div class="frow"><label for="g2">Сторона підводу</label><select class="fld" id="g2"><option value="">Не обрано</option><option>Ліворуч</option><option>Праворуч</option></select></div>
+                  </fieldset>
+                </div>
+              </article>
+
+              <!-- item 3 -->
+              <article class="item" id="it3">
+                <div style="display:flex;align-items:center">
+                  <button class="grip" aria-label="Перемістити Spreader MTS 220"><svg class="ico" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg></button>
+                  <button class="item-head" aria-expanded="false" aria-controls="it3b" onclick="toggleItem('it3')">
+                    <span class="thumb"><svg class="ico lg" viewBox="0 0 24 24"><path d="M3 12h18"/><rect x="5" y="4" width="14" height="16" rx="2"/></svg></span>
+                    <span class="item-id"><h3 class="n">Spreader MTS 220</h3><span class="c mono">PF-MTS-220</span></span>
+                    <span class="item-sum"><span class="chip">Edge control</span><span class="badge ok"><svg class="ico sm" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>Специфікація</span></span>
+                    <span class="item-price"><span class="v num">A$ 16 220</span><span class="q num">1 × 16 220</span></span>
+                    <svg class="ico chev" style="color:var(--ink-3)" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+                  </button>
+                </div>
+                <div class="item-body" id="it3b"><p class="hint">Під-вкладки Опції / Специфікація / Ціна, як у першій позиції.</p></div>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <!-- extras -->
+        <section class="card">
+          <header>
+            <svg class="ico" style="color:var(--ink-3)" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M8 12h8"/><path d="M8 16h5"/></svg>
+            <h3>Додаткові рядки</h3><span class="sub">доставка, монтаж, навчання</span>
+            <div class="hact"><button class="btn outline"><svg class="ico sm" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Додати рядок</button></div>
+          </header>
+          <div class="body flush">
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)">
+              <span class="thumb" style="width:36px;height:36px"><svg class="ico" viewBox="0 0 24 24"><path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/></svg></span>
+              <span style="flex:1"><span style="font-size:13.5px;font-weight:500;display:block">Доставка до Dandenong South</span><span class="hint">1 × A$ 2 400</span></span>
+              <span class="num" style="font-weight:600;font-size:13.5px">A$ 2 400</span>
+              <button class="iconbtn" aria-label="Видалити рядок"><svg class="ico sm" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 16px">
+              <span class="thumb" style="width:36px;height:36px"><svg class="ico" viewBox="0 0 24 24"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg></span>
+              <span style="flex:1"><span style="font-size:13.5px;font-weight:500;display:block">Навчання оператора, 2 дні</span><span class="hint">2 × A$ 800</span></span>
+              <span class="num" style="font-weight:600;font-size:13.5px">A$ 1 600</span>
+              <button class="iconbtn" aria-label="Видалити рядок"><svg class="ico sm" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- right rail -->
+      <aside class="rail">
+        <section class="card">
+          <header><svg class="ico" style="color:var(--ink-3)" viewBox="0 0 24 24"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><h3>Готовність</h3><span class="sub" style="margin-left:auto">4 з 5</span></header>
+          <div class="body">
+            <div class="meter"><i style="width:80%"></i></div>
+            <ul class="ready">
+              <li><span class="dot y"><svg class="ico sm" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span><span class="t">Клієнт і контакт</span></span></li>
+              <li><span class="dot y"><svg class="ico sm" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span><span class="t">3 позиції з цінами</span></span></li>
+              <li><span class="dot n"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="10"/></svg></span>
+                <span><span class="t">Виробнича специфікація</span><span class="h">EasyLoader 180: 2 поля порожні</span><a href="#" onclick="jumpTo2();return false">Перейти і заповнити</a></span></li>
+              <li><span class="dot y"><svg class="ico sm" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span><span class="t">Умови доставки</span></span></li>
+              <li><span class="dot y"><svg class="ico sm" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span><span><span class="t">Юридичні документи</span><span class="h">3 документи друкуються</span></span></li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="card">
+          <header><svg class="ico" style="color:var(--ink-3)" viewBox="0 0 24 24"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M8 10h8"/><path d="M8 14h5"/></svg><h3>Підсумок</h3></header>
+          <div class="body">
+            <dl class="tot">
+              <div class="r"><dt>Машини</dt><dd class="num">A$ 186 420</dd></div>
+              <div class="r"><dt>Додаткові рядки</dt><dd class="num">A$ 4 000</dd></div>
+              <div class="r"><dt>Знижка по квоті 2 %</dt><dd class="num" style="color:var(--warn)">-A$ 3 808</dd></div>
+              <div class="r grand"><dt>Разом без GST</dt><dd class="num">A$ 186 612</dd></div>
+              <div class="r comm"><dt>Ваша комісія</dt><dd class="num">A$ 9 331</dd></div>
+            </dl>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
+              <button class="btn outline full"><svg class="ico sm" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>Попередній перегляд</button>
+              <button class="btn outline full"><svg class="ico sm" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>PDF квоти</button>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+
+    <!-- ── TAB: SETTINGS ── -->
+    <div id="p-settings" class="work" style="display:none;grid-template-columns:minmax(0,1fr)">
+      <div class="col" style="max-width:860px">
+        <div class="note warn">
+          <svg class="ico sm" style="margin-top:2px" viewBox="0 0 24 24"><path d="M12 16v-4"/><path d="M12 8h.01"/><circle cx="12" cy="12" r="10"/></svg>
+          <span>Сім карток, які раніше стояли в одній стрічці з позиціями, зібрані тут. Це налаштування квоти, їх задають раз, а не при кожному додаванні машини.</span>
+        </div>
+
+        <section class="card">
+          <header><svg class="ico" style="color:var(--ink-3)" viewBox="0 0 24 24"><path d="m19 5-14 14"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg><h3>Знижка, доставка, строк дії</h3></header>
+          <div class="body">
+            <div class="frow"><label for="s1">Знижка на всю квоту</label>
+              <span style="display:flex;gap:9px;align-items:center"><input class="fld" id="s1" value="2" style="width:86px;max-width:none;text-align:right"><div class="subtabs" style="margin:0"><button aria-selected="true">%</button><button aria-selected="false">A$</button></div></span></div>
+            <div class="frow"><label for="s2">Умови поставки</label><select class="fld" id="s2"><option>Delivered · GST застосовується</option><option>Ex Works · GST не застосовується</option></select></div>
+            <div class="frow"><label for="s3">Квота дійсна</label><span style="display:flex;gap:9px;align-items:center"><input class="fld" id="s3" value="30" style="width:86px;max-width:none;text-align:right"><span class="hint">днів</span></span></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <header><svg class="ico" style="color:var(--ink-3)" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><rect x="9" y="1" width="6" height="4" rx="1"/><path d="M8 11h8"/><path d="M8 15h5"/></svg><h3>Строки та юридичні документи</h3></header>
+          <div class="body">
+            <div class="frow"><label for="s4">Доставка, тижнів</label><span style="display:flex;gap:9px;align-items:center;flex-wrap:wrap"><input class="fld" id="s4" value="14" style="width:86px;max-width:none;text-align:right;border-color:var(--warn);background:var(--warn-bg)"><span class="badge warn">Перевизначено</span><span class="hint">стандарт регіону 12</span></span></div>
+            <div class="frow"><label for="s5">Монтаж, днів</label><span style="display:flex;gap:9px;align-items:center"><input class="fld" id="s5" placeholder="3" style="width:86px;max-width:none;text-align:right"><span class="hint">успадковано з регіону: 3</span></span></div>
+            <div class="frow"><label for="s6">Гарантія, місяців</label><span style="display:flex;gap:9px;align-items:center"><input class="fld" id="s6" placeholder="24" style="width:86px;max-width:none;text-align:right"><span class="hint">успадковано з регіону: 24</span></span></div>
+            <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:14px;display:flex;flex-direction:column;gap:2px">
+              <label style="display:flex;align-items:center;gap:10px;min-height:var(--h-touch);font-size:13.5px"><input type="checkbox" checked style="width:17px;height:17px;accent-color:var(--brand)">Standard terms of sale<span class="hint" style="margin-left:auto">друкується</span></label>
+              <label style="display:flex;align-items:center;gap:10px;min-height:var(--h-touch);font-size:13.5px"><input type="checkbox" checked style="width:17px;height:17px;accent-color:var(--brand)">Warranty conditions<span class="hint" style="margin-left:auto">друкується</span></label>
+              <label style="display:flex;align-items:center;gap:10px;min-height:var(--h-touch);font-size:13.5px"><input type="checkbox" checked style="width:17px;height:17px;accent-color:var(--brand)">Installation requirements<span class="hint" style="margin-left:auto">друкується</span></label>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <header><svg class="ico" style="color:var(--ink-3)" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg><h3>Що бачить клієнт</h3></header>
+          <div class="body" style="display:flex;flex-direction:column;gap:2px">
+            <label style="display:flex;align-items:center;gap:10px;min-height:var(--h-touch);font-size:13.5px"><input type="checkbox" checked style="width:17px;height:17px;accent-color:var(--brand)">Показувати ціну кожної позиції</label>
+            <p class="hint" style="margin:-4px 0 6px 27px">Вимкніть, щоб клієнт бачив лише підсумок.</p>
+            <label style="display:flex;align-items:center;gap:10px;min-height:var(--h-touch);font-size:13.5px"><input type="checkbox" checked style="width:17px;height:17px;accent-color:var(--brand)">Показувати ціну опцій усередині позиції</label>
+            <p class="hint" style="margin:-4px 0 0 27px">Доступно лише коли ввімкнено ціну позиції.</p>
+          </div>
+        </section>
+
+        <section class="card">
+          <header><svg class="ico" style="color:var(--ink-3)" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg><h3>Примітки та титульне фото</h3></header>
+          <div class="body">
+            <div class="inset" style="min-height:88px;color:var(--ink-3);font-size:13px">Машини постачаються в конфігурації під тканину 220 gsm. Пуско-налагодження узгоджується окремо після підтвердження дати доставки.</div>
+            <div style="display:flex;gap:12px;align-items:center;margin-top:12px">
+              <span class="thumb" style="width:56px;height:56px"><svg class="ico lg" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg></span>
+              <div><div style="font-size:13.5px;font-weight:500">setup-ridgeline-2609.jpg</div><span class="hint">друкується першою сторінкою квоти</span></div>
+              <button class="btn outline" style="margin-left:auto">Замінити</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ── TAB: HISTORY ── -->
+    <div id="p-history" class="work" style="display:none;grid-template-columns:minmax(0,1fr)">
+      <div class="col" style="max-width:860px">
+        <section class="card">
+          <header><svg class="ico" style="color:var(--ink-3)" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg><h3>Ревізії</h3><span class="sub">2</span></header>
+          <div class="body flush">
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)">
+              <span class="badge slate mono">рев. 1</span>
+              <span style="flex:1;font-size:13.5px">18 вересня 2026, 14:22 · Вадим Леонов</span>
+              <span class="num" style="font-size:13.5px">A$ 179 400</span>
+              <button class="btn ghost">PDF</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 16px">
+              <span class="badge brand mono">рев. 2</span>
+              <span style="flex:1;font-size:13.5px">21 вересня 2026, 09:07 · Вадим Леонов</span>
+              <span class="num" style="font-size:13.5px">A$ 186 612</span>
+              <button class="btn ghost">PDF</button>
+            </div>
+          </div>
+        </section>
+        <section class="card">
+          <header><svg class="ico" style="color:var(--ink-3)" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg><h3>Листи клієнту</h3><span class="sub">1</span></header>
+          <div class="body flush">
+            <div style="padding:12px 16px">
+              <div style="display:flex;align-items:center;gap:10px"><span class="badge ok">Переглянуто</span><span style="font-size:13.5px">m.okonkwo@ridgeline.com.au</span><span class="hint" style="margin-left:auto">19 вересня, 08:41</span></div>
+              <button class="btn ghost" style="padding-left:0;margin-top:5px">Показати текст листа</button>
+            </div>
+          </div>
+        </section>
+        <section class="card">
+          <header><svg class="ico" style="color:var(--ink-3)" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><h3>Виробничі бланки</h3></header>
+          <div class="body">
+            <div class="empty"><span class="circ"><svg class="ico lg" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>
+              <span class="t">Бланки зʼявляться після фіналізації</span><span class="d">Зараз квота у статусі чернетки.</span></div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- options side sheet -->
+  <div class="scrim" id="scrim" onclick="closeSheet()"></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Опції позиції">
+    <header>
+      <div style="flex:1"><h3>Опції позиції</h3><div class="sub">Pathfinder 2500 DMT · серія 2500</div></div>
+      <button class="iconbtn" onclick="closeSheet()" aria-label="Закрити"><svg class="ico" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    </header>
+    <div class="tools">
+      <span class="search"><svg class="ico sm" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg><input class="fld" style="max-width:none" placeholder="Пошук опції або коду"></span>
+      <button class="btn outline">Обрані · 5</button>
+    </div>
+    <div class="list">
+      <div class="optrow"><input type="checkbox" checked id="o1"><span class="on"><label for="o1" class="t">Conveyor table 3.2 m</label><span class="c mono">OPT-CNV-32</span></span><span class="pr num">A$ 9 400</span></div>
+      <div class="optrow"><input type="checkbox" checked id="o2"><span class="on"><label for="o2" class="t">Vacuum pump</label><span class="c mono">OPT-VAC-01</span></span><span class="stepper"><button aria-label="Менше">−</button><input class="num" value="2" aria-label="Кількість Vacuum pump"><button aria-label="Більше">+</button></span><span class="pr num">A$ 7 100</span></div>
+      <div class="optrow"><input type="checkbox" checked id="o3"><span class="on"><label for="o3" class="t">DMT cutting head</label><span class="c mono">OPT-DMT-H</span><span class="badge warn" style="margin-top:5px">Конфліктує з Rotary head</span></span><span class="pr num">A$ 12 250</span></div>
+      <div class="optrow"><input type="checkbox" checked id="o4"><span class="on"><label for="o4" class="t">Bristle bed</label><span class="c mono">OPT-BRS-32</span></span><span class="pr num">A$ 3 900</span></div>
+      <div class="optrow"><input type="checkbox" checked id="o5"><span class="on"><label for="o5" class="t">Spare blade kit</label><span class="c mono">OPT-BLD-K1</span></span><span class="pr num">A$ 640</span></div>
+      <div class="optrow"><input type="checkbox" id="o6" disabled><span class="on"><label for="o6" class="t" style="color:var(--ink-3)">Rotary cutting head</label><span class="c mono">OPT-ROT-H</span><span class="badge bad" style="margin-top:5px">Недоступно: обрано DMT head</span></span><span class="pr num" style="color:var(--ink-3)">A$ 11 800</span></div>
+      <div class="optrow"><input type="checkbox" id="o7"><span class="on"><label for="o7" class="t">Extended warranty, 12 міс</label><span class="c mono">OPT-WAR-12</span></span><span class="pr num">A$ 4 250</span></div>
+      <div class="optrow"><input type="checkbox" id="o8"><span class="on"><label for="o8" class="t">Laser projection kit</label><span class="c mono">OPT-LSR-01</span></span><span class="pr num">A$ 6 900</span></div>
+      <div class="optrow"><input type="checkbox" id="o9"><span class="on"><label for="o9" class="t">Dust extraction port</label><span class="c mono">OPT-DST-P</span></span><span class="pr num">A$ 1 150</span></div>
+    </div>
+    <footer>
+      <button class="btn brand touch" style="flex:1" onclick="closeSheet()">Зберегти, 5 опцій</button>
+      <button class="btn outline touch" onclick="closeSheet()">Скасувати</button>
+    </footer>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- ═══════════ AFTER · MOBILE ═══════════ -->
+<div class="screen" id="s-after-mob">
+<div class="frame-m">
+<div class="m-app">
+  <div class="m-top">
+    <div class="r1">
+      <button class="iconbtn" aria-label="Назад"><svg class="ico" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Ridgeline Upholstery</div>
+        <div style="font-size:11px;color:var(--ink-3)" class="mono">Q-2609-0147 · рев. 2</div>
+      </div>
+      <span class="badge warn">Чернетка</span>
+    </div>
+    <div class="r2" role="tablist">
+      <button aria-selected="true">Збірка</button><button aria-selected="false">Умови</button><button aria-selected="false">Історія</button>
+    </div>
+  </div>
+
+  <div class="m-body">
+    <div class="card">
+      <header style="padding:12px 14px"><svg class="ico" style="color:var(--ink-3)" viewBox="0 0 24 24"><path d="m9 11 3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><h3>Готовність 4 з 5</h3></header>
+      <div class="body" style="padding:12px 14px">
+        <div class="meter"><i style="width:80%"></i></div>
+        <div style="display:flex;align-items:flex-start;gap:9px">
+          <span class="dot n" style="width:18px;height:18px;flex:none;border-radius:50%;background:var(--warn-bg);color:var(--warn);display:flex;align-items:center;justify-content:center;margin-top:1px"><svg class="ico sm" viewBox="0 0 24 24"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="10"/></svg></span>
+          <span><span style="font-size:13px;font-weight:500;display:block">EasyLoader 180: специфікація</span><a href="#" style="color:var(--brand);font-size:11.5px;font-weight:600;text-decoration:none">Заповнити 2 поля</a></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <header style="padding:12px 14px"><h3>Позиції</h3><span class="sub">3</span><div class="hact"><button class="btn ok" style="height:34px;padding:0 11px"><svg class="ico sm" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Додати</button></div></header>
+      <div class="body flush">
+        <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line)">
+          <span class="thumb" style="width:38px;height:38px"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/></svg></span>
+          <span style="flex:1;min-width:0">
+            <span style="font-size:13.5px;font-weight:600;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Pathfinder 2500 DMT</span>
+            <span style="display:flex;gap:4px;margin-top:3px"><span class="chip" style="height:19px;font-size:10.5px">5 опцій</span><span class="badge ok" style="height:19px;font-size:10.5px">Специфікація</span></span>
+          </span>
+          <span style="text-align:right"><span class="num" style="font-size:13.5px;font-weight:600;display:block">128 900</span></span>
+          <svg class="ico sm" style="color:var(--ink-3)" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line);background:var(--warn-bg)">
+          <span class="thumb" style="width:38px;height:38px;background:#fff"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="10" rx="2"/></svg></span>
+          <span style="flex:1;min-width:0">
+            <span style="font-size:13.5px;font-weight:600;display:block">EasyLoader 180</span>
+            <span style="display:flex;gap:4px;margin-top:3px"><span class="chip" style="height:19px;font-size:10.5px">2 опції</span><span class="badge warn" style="height:19px;font-size:10.5px">Специфікація</span></span>
+          </span>
+          <span style="text-align:right"><span class="num" style="font-size:13.5px;font-weight:600;display:block">41 300</span></span>
+          <svg class="ico sm" style="color:var(--ink-3)" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;padding:11px 14px">
+          <span class="thumb" style="width:38px;height:38px"><svg class="ico" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="16" rx="2"/></svg></span>
+          <span style="flex:1;min-width:0">
+            <span style="font-size:13.5px;font-weight:600;display:block">Spreader MTS 220</span>
+            <span style="display:flex;gap:4px;margin-top:3px"><span class="chip" style="height:19px;font-size:10.5px">1 опція</span><span class="badge ok" style="height:19px;font-size:10.5px">Специфікація</span></span>
+          </span>
+          <span style="text-align:right"><span class="num" style="font-size:13.5px;font-weight:600;display:block">16 220</span></span>
+          <svg class="ico sm" style="color:var(--ink-3)" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <header style="padding:12px 14px"><h3>Додаткові рядки</h3><span class="sub">2</span></header>
+      <div class="body" style="padding:12px 14px">
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0"><span>Доставка</span><span class="num">A$ 2 400</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0"><span>Навчання, 2 дні</span><span class="num">A$ 1 600</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- persistent total dock: was hidden on tablet, missing above the fold on phone -->
+  <div class="m-dock">
+    <div class="row">
+      <div><div class="k">Разом без GST</div><div class="v num">A$ 186 612</div></div>
+      <button class="btn brand touch" style="padding:0 18px">Фіналізувати</button>
+    </div>
+  </div>
+
+  <nav class="m-nav">
+    <a href="#" class="cur"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>Квоти</a>
+    <a href="#"><svg class="ico" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Клієнти</a>
+    <a href="#"><svg class="ico" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>Каталог</a>
+    <a href="#"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="m9 15 2 2 4-4"/></svg>Документи</a>
+    <a href="#"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82 2 2 0 1 1-2.83 2.83 1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51 2 2 0 1 1-4 0 1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33 2 2 0 1 1-2.83-2.83A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1 2 2 0 1 1 0-4 1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82 2 2 0 1 1 2.83-2.83A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51 2 2 0 1 1 4 0 1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33 2 2 0 1 1 2.83 2.83A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1 2 2 0 1 1 0 4 1.65 1.65 0 0 0-1.51 1Z"/></svg>Ще</a>
+  </nav>
+</div>
+</div>
+</div>
+
+<!-- ═══════════ BEFORE · DESKTOP ═══════════ -->
+<div class="screen" id="s-before-desk">
+<div class="frame-d">
+<div class="app">
+  <aside class="side">
+    <div class="brandmark"><i></i>PathQuote</div>
+    <nav>
+      <a href="#" class="cur"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>Quotes</a>
+      <a href="#"><svg class="ico" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/></svg>Clients</a>
+      <a href="#"><svg class="ico" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>Catalog</a>
+      <a href="#"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="m9 15 2 2 4-4"/></svg>Documents</a>
+      <a href="#"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/></svg>Settings</a>
+    </nav>
+  </aside>
+
+  <div class="canvas">
+    <div class="b-stack">
+      <div>
+        <a href="#" style="font-size:14px;color:#64748b;text-decoration:none">&larr; Quotes</a>
+        <h1 style="font-size:22px;color:#2b304f;margin-top:8px">Ridgeline Upholstery Pty Ltd</h1>
+        <p style="font-size:14px;color:#64748b;margin-top:3px">Quote Q-2609-0147</p>
+      </div>
+
+      <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:20px;align-items:start">
+        <div style="display:flex;flex-direction:column;gap:16px">
+
+          <div class="b-card"><h3><span class="tile"><svg class="ico" viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/></svg></span>Client</h3>
+            <p style="font-size:14px;color:#334155">Ridgeline Upholstery Pty Ltd</p></div>
+
+          <div class="b-card b-flag" data-flag="4 рівні вкладеності, 2 конкурентні шухляди"><h3><span class="tile"><svg class="ico" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg></span>Items</h3>
+            <div style="text-align:right;font-size:12px;color:#64748b;margin-bottom:10px">Collapse all <span style="color:#cbd5e1">|</span> Expand all</div>
+            <div class="b-item">
+              <div style="display:flex;align-items:flex-start;gap:12px">
+                <div style="width:44px;height:44px;border:1px solid #e2e8f0;border-radius:8px;flex:none"></div>
+                <div style="flex:1"><div style="font-size:14px;font-weight:500;color:#2b304f">Pathfinder 2500 DMT</div><div style="font-size:12px;color:#64748b;font-family:monospace">PF-2500-DMT</div></div>
+                <div style="font-size:14px;font-weight:500;color:#2b304f;padding-top:8px">A$ 128,900</div>
+                <svg class="ico" style="color:#94a3b8;margin-top:8px" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+              </div>
+              <div class="b-break">
+                Base price <span style="float:right">A$ 96,000</span><br>
+                Conveyor table 3.2 m <span style="float:right">A$ 9,400</span><br>
+                Vacuum pump ×2 <span style="float:right">A$ 7,100</span><br>
+                <span style="border-top:1px solid #cbd5e1;display:block;margin-top:6px;padding-top:6px">Subtotal <b style="float:right">A$ 128,900</b></span>
+              </div>
+              <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+                <span class="b-drawer"><svg class="ico sm" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>Options <span style="background:rgba(36,52,120,.1);color:#243478;border-radius:999px;padding:1px 7px;font-size:12px;font-weight:600">5</span><svg class="ico sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+                <span class="b-drawer"><svg class="ico sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/></svg>Production spec <span style="background:#f1f5f9;color:#475569;border-radius:999px;padding:1px 7px;font-size:12px">4</span><svg class="ico sm" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></span>
+              </div>
+              <div style="border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;margin-top:10px;overflow:hidden">
+                <div style="padding:12px;display:flex;gap:10px"><input class="fld" placeholder="Search options" style="max-width:none"><button class="btn outline">Filter</button></div>
+                <div style="max-height:150px;overflow:auto;padding:0 12px 12px;display:flex;flex-direction:column;gap:8px">
+                  <div style="border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:10px;font-size:13px">☑ Conveyor table 3.2 m</div>
+                  <div style="border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:10px;font-size:13px">☑ Vacuum pump</div>
+                  <div style="border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:10px;font-size:13px">☐ Rotary cutting head</div>
+                </div>
+                <div style="border-top:1px solid #e2e8f0;background:#fff;padding:12px;display:flex;gap:8px">
+                  <button class="btn brand" style="flex:1;height:40px">Save</button><button class="btn outline" style="height:40px">Cancel</button>
+                </div>
+              </div>
+              <div style="border-top:1px solid #f1f5f9;margin-top:12px;padding-top:12px;display:flex;gap:12px;align-items:center;font-size:12px;color:#64748b">
+                Discount <input class="fld" value="4" style="width:60px;max-width:none;height:36px"> <span style="border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;display:inline-flex"><button style="border:0;background:#2b304f;color:#fff;height:30px;padding:0 10px;font-size:12px">%</button><button style="border:0;background:#fff;height:30px;padding:0 10px;font-size:12px">A$</button></span>
+                <label style="margin-left:auto;display:flex;gap:6px;align-items:center">☑ Show image</label>
+              </div>
+            </div>
+            <div class="b-item" style="margin-bottom:0"><div style="display:flex;gap:12px"><div style="width:44px;height:44px;border:1px solid #e2e8f0;border-radius:8px"></div><div style="flex:1;font-size:14px;color:#2b304f">EasyLoader 180</div><div style="font-size:14px">A$ 41,300</div></div></div>
+            <button class="btn ok" style="height:44px;margin-top:14px">+ Add item</button>
+          </div>
+
+          <div class="b-card"><h3><span class="tile"><svg class="ico" viewBox="0 0 24 24"><rect x="8" y="2" width="8" height="4" rx="1"/></svg></span>Extra</h3><p style="font-size:14px;color:#64748b">Delivery, Training</p></div>
+
+          <div class="b-grid b-flag" data-flag="7 карток налаштувань упереміш із роботою">
+            <div class="b-card"><h3 style="font-size:14px"><span class="tile"><svg class="ico sm" viewBox="0 0 24 24"><path d="m19 5-14 14"/></svg></span>Discounts</h3><input class="fld" value="2"></div>
+            <div class="b-card"><h3 style="font-size:14px"><span class="tile"><svg class="ico sm" viewBox="0 0 24 24"><path d="M14 18V6H2v12h12Z"/></svg></span>Delivery</h3><select class="fld"><option>Delivered</option></select></div>
+            <div class="b-card"><h3 style="font-size:14px"><span class="tile"><svg class="ico sm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></svg></span>Validity</h3><input class="fld" value="30"></div>
+          </div>
+          <div class="b-card"><h3><span class="tile"><svg class="ico" viewBox="0 0 24 24"><path d="M12 20h9"/></svg></span>Notes</h3><div style="border:1px solid #e2e8f0;border-radius:8px;min-height:70px;padding:10px;font-size:13px;color:#94a3b8">Rich text…</div></div>
+          <div class="b-card"><h3><span class="tile"><svg class="ico" viewBox="0 0 24 24"><rect x="9" y="1" width="6" height="4" rx="1"/></svg></span>Terms and documents</h3><p style="font-size:13px;color:#64748b">Delivery weeks, installation days, warranty, 3 document tickboxes</p></div>
+          <div class="b-card"><h3><span class="tile"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></svg></span>Setup image</h3><p style="font-size:13px;color:#64748b">Upload</p></div>
+          <div class="b-card"><h3><span class="tile"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/></svg></span>Quotation pricing display</h3><p style="font-size:13px;color:#64748b">2 checkboxes</p></div>
+          <div class="b-card"><h3><span class="tile"><svg class="ico" viewBox="0 0 24 24"><path d="M3 3v5h5"/></svg></span>Revisions</h3><p style="font-size:13px;color:#64748b">2 rows</p></div>
+          <div class="b-card"><h3><span class="tile"><svg class="ico" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/></svg></span>Email history</h3><p style="font-size:13px;color:#64748b">1 row</p></div>
+        </div>
+
+        <aside style="display:flex;flex-direction:column;gap:16px;position:sticky;top:20px">
+          <div class="b-card b-flag" data-flag="зникає на планшеті 768-1023">
+            <h3><span class="tile"><svg class="ico" viewBox="0 0 24 24"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2"/></svg></span>Summary</h3>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="badge warn">DRAFT</span></div>
+            <dl class="tot" style="border-top:1px solid #f1f5f9;padding-top:12px">
+              <div class="r"><dt>Items</dt><dd class="num">A$ 186,420</dd></div>
+              <div class="r"><dt>Extra</dt><dd class="num">A$ 4,000</dd></div>
+              <div class="r grand"><dt>Total</dt><dd class="num">A$ 186,612</dd></div>
+              <div class="r comm"><dt>Your commission</dt><dd class="num">A$ 9,331</dd></div>
+            </dl>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px;border-top:1px solid #f1f5f9;padding-top:12px">
+              <button class="btn brand" style="height:44px">Finalize</button>
+              <button class="btn outline" style="height:44px">Quotation preview</button>
+              <button class="btn outline" style="height:44px">Quotation PDF</button>
+              <button class="btn ghost" style="height:44px;color:#be123c">Delete draft</button>
+            </div>
+            <p style="font-size:12px;color:#b45309;margin-top:10px">Cannot finalize yet.</p>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- ═══════════ BEFORE · MOBILE ═══════════ -->
+<div class="screen" id="s-before-mob">
+<div class="frame-m">
+<div class="m-app">
+  <div class="m-top"><div class="r1"><span style="font-weight:600;font-size:14px">PathQuote</span><span class="badge slate" style="margin-left:auto">Regional</span></div></div>
+  <div class="m-body" style="padding-bottom:120px">
+    <div><a href="#" style="font-size:13px;color:#64748b;text-decoration:none">&larr; Quotes</a><h1 style="font-size:20px;color:#2b304f;margin-top:6px">Ridgeline Upholstery Pty Ltd</h1></div>
+    <div class="b-card"><h3 style="font-size:15px"><span class="tile"><svg class="ico sm" viewBox="0 0 24 24"><path d="M5 21V7l8-4v18"/></svg></span>Client</h3><p style="font-size:13px;color:#334155">Ridgeline Upholstery Pty Ltd</p></div>
+    <div class="b-card b-flag" data-flag="сума тільки в самому низу"><h3 style="font-size:15px"><span class="tile"><svg class="ico sm" viewBox="0 0 24 24"><path d="M21 16V8l-9-5-9 5v8l9 5Z"/></svg></span>Items</h3>
+      <div class="b-item" style="padding:10px"><div style="display:flex;gap:10px"><div style="width:40px;height:40px;border:1px solid #e2e8f0;border-radius:8px"></div><div style="flex:1;font-size:13px;color:#2b304f">Pathfinder 2500 DMT</div></div>
+        <div style="margin-top:8px"><span class="b-drawer" style="height:44px;width:100%;justify-content:center;font-size:13px">Options 5</span></div>
+        <div style="margin-top:8px"><span class="b-drawer" style="height:44px;width:100%;justify-content:center;font-size:13px">Production spec 4</span></div>
+      </div>
+      <div class="b-item" style="padding:10px;margin-bottom:0"><div style="font-size:13px;color:#2b304f">EasyLoader 180</div></div>
+    </div>
+    <div class="b-card"><h3 style="font-size:15px">Extra</h3></div>
+    <div class="b-card"><h3 style="font-size:15px">Discounts</h3></div>
+    <div class="b-card"><h3 style="font-size:15px">Delivery terms</h3></div>
+    <div class="b-card"><h3 style="font-size:15px">Quote validity</h3></div>
+    <div class="b-card"><h3 style="font-size:15px">Notes</h3></div>
+    <div class="b-card"><h3 style="font-size:15px">Terms and documents</h3></div>
+    <div class="b-card"><h3 style="font-size:15px">Setup image</h3></div>
+    <div class="b-card"><h3 style="font-size:15px">Quotation pricing display</h3></div>
+    <div class="b-card b-flag" data-flag="дубль підсумку в DOM"><h3 style="font-size:15px">Status &amp; actions</h3><button class="btn brand" style="height:44px;width:100%;margin-top:8px">Finalize</button></div>
+  </div>
+  <div class="m-dock" style="bottom:56px"><div class="row"><div><div class="k">Total</div><div class="v num">A$ 186,612</div></div><span class="badge warn">DRAFT</span></div></div>
+  <nav class="m-nav">
+    <a href="#" class="cur"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>Quotes</a>
+    <a href="#"><svg class="ico" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/></svg>Clients</a>
+    <a href="#"><svg class="ico" viewBox="0 0 24 24"><path d="M21 16V8l-9-5-9 5v8l9 5Z"/></svg>Catalog</a>
+    <a href="#"><svg class="ico" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>Docs</a>
+    <a href="#"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/></svg>Settings</a>
+  </nav>
+</div>
+</div>
+</div>
+
+</div>
+
+<!-- ═══════════ NOTES ═══════════ -->
+<div class="notes">
+  <h2>Що саме змінюється і чому</h2>
+  <p>Гілка <span class="mono">redesign/quote-builder-ux</span> вже створена з <span class="mono">main</span>. Нічого не змінено в коді до вашого «так».</p>
+
+  <h3>Про скіл</h3>
+  <p><b>taste-skill</b> у розділі 13 прямо пише, що він не для «dashboards / dense product UI / data tables / multi-step forms», і вимагає це сказати вголос. Білдер квоти і є такий екран. Тому основним правилом я беру <b>redesign-skill</b> із того самого репозиторію (він написаний під наявні застосунки), а з taste-skill беру наскрізні розділи: 9 (AI-tells), 11 (протокол редизайну), 14 (pre-flight). Нічого з лендінгової частини (герої, бенто, маркі, скрол-хайджек) до PathQuote не застосовується.</p>
+  <div class="kv">
+    <b>Режим</b><span>Redesign · Preserve. Бренд, маршрути, назви навігації, імена полів форм не чіпаємо (розділ 11.C/11.F).</span>
+    <b>DESIGN_VARIANCE</b><span>3 · внутрішній інструмент, симетрія і передбачуваність важливіші за характер</span>
+    <b>MOTION_INTENSITY</b><span>2 · тільки зворотний звʼязок: розкриття, збереження, натиск. Жодних скрол-анімацій</span>
+    <b>VISUAL_DENSITY</b><span>6 · щільно, але не «кокпіт»</span>
+  </div>
+
+  <h3>1. Три вкладки замість стрічки з 11 карток</h3>
+  <p>Зараз в одній колонці стоять поруч «Items» і «Setup image», «Discounts» і «Email history». Людина, яка збирає квоту, прокручує 11 карток, з яких реально працює з трьома.</p>
+  <ol>
+    <li><b>Збірка</b>: клієнт, позиції, додаткові рядки. Те, що змінюється в кожній квоті.</li>
+    <li><b>Умови квоти</b>: знижка, доставка, строк дії, примітки, юридичні документи, титульне фото, що бачить клієнт. Сім карток, які задають один раз.</li>
+    <li><b>Історія</b>: ревізії, листи, виробничі бланки. Тільки читання.</li>
+  </ol>
+
+  <h3>2. Шапка квоти замість дубля «Summary»</h3>
+  <p>Зараз статус і дії відрендерені <b>двічі</b> в DOM: <span class="mono">hidden lg:block</span> для десктопа і <span class="mono">lg:hidden</span> для мобільного, а на планшеті 768-1023 px картка Summary зникає разом із сумою. Нова липка шапка несе назву клієнта, номер, статус, стан автозбереження, суму і головну дію, однаково на всіх ширинах. На телефоні сума живе в доці над нижньою навігацією.</p>
+
+  <h3>3. Готовність замість сюрпризу на «Finalize»</h3>
+  <p>Кнопка Finalize сьогодні показує причину блокування лише після натискання. Права колонка стає живим чеклистом: клієнт, позиції з цінами, виробнича специфікація, умови доставки, документи. Кожен незакритий пункт є посиланням, яке відкриває саме те місце, де чогось бракує.</p>
+
+  <h3>4. Позиція: одна панель замість двох конкурентних шухляд</h3>
+  <p>Зараз усередині кожної позиції дві кнопки-шухляди з <b>однаковим</b> класом («Options» і «Production spec»), а панель опцій це псевдомодалка з власним скролом і липким футером, вкладена в акордеон, вкладений у картку, вкладену в картку. Чотири рівні.</p>
+  <ol>
+    <li>Згорнута позиція показує чипи опцій, стан специфікації, кількість і суму. Одразу видно, що недороблено.</li>
+    <li>Розгорнута: сегментований перемикач <b>Опції · Специфікація · Ціна</b>. Одна панель за раз.</li>
+    <li>Вибір опцій переїжджає у справжню бічну панель (на телефоні на весь екран) з пасткою фокуса, Escape і нормальним футером. Зараз це модалка без пастки фокуса.</li>
+  </ol>
+
+  <h3>5. Ціну можна редагувати з тачскрина</h3>
+  <p>Олівець редагування ціни зараз <span class="mono">opacity-0 group-hover:opacity-100</span>. На планшеті і телефоні hover не існує, тобто функції фактично немає. Сама ціна стає кнопкою з завжди видимим олівцем на 40 % прозорості.</p>
+
+  <h3>6. Доступність</h3>
+  <ol>
+    <li>Заголовок позиції зараз <span class="mono">&lt;div onClick&gt;</span> без <span class="mono">role</span>, <span class="mono">tabIndex</span> і клавіатури. Стає справжньою <span class="mono">&lt;button aria-expanded aria-controls&gt;</span>.</li>
+    <li>Перетягування позицій не має клавіатурного шляху, а кнопки-стрілки, що його замінюють, стоять під <span class="mono">hidden md:flex</span>. На телефоні клавіатурний користувач не може переставити позиції взагалі. Ручка отримує Space і стрілки.</li>
+    <li>Назва позиції стає <span class="mono">&lt;h3&gt;</span>. Зараз увесь список позицій це одна пласка <span class="mono">h2</span>-секція без структури документа.</li>
+    <li><span class="mono">noCommission</span> позначено тільки фоном <span class="mono">bg-amber-50/60</span>. Додається текстовий бейдж, бо колір сам по собі не сигнал.</li>
+  </ol>
+
+  <h3>7. Причесати систему (решта застосунку)</h3>
+  <p>Аудит дав цифри по одному лише екрану білдера:</p>
+  <div class="kv">
+    <b>5 радіусів</b><span><span class="mono">rounded-lg</span> ×35, <span class="mono">rounded-xl</span> ×10, <span class="mono">rounded-full</span> ×9, <span class="mono">rounded-md</span> ×7, голий <span class="mono">rounded</span> ×2 → три токени: контрол 8, картка 12, пігулка</span>
+    <b>6 висот контролів</b><span>h-7, h-8, h-9, h-10, h-11 і <span class="mono">compactControlClass</span> → дві: 44 (дотик) і 36 (щільний десктоп)</span>
+    <b>9 обгорток</b><span>картка / вкладена картка / тонована панель / шухляда xl / шухляда lg / біла підкартка / рядок опції / сірий блок → картка + вставка</span>
+    <b>6 бейджів</b><span>StatusBadge, OverriddenBadge, чипи опцій, мета-пігулка, лічильник, статусні пігулки → StatusBadge + Chip + Count</span>
+    <b>4 розкладки полів</b><span>FieldRow, CompactField, грід умов, label-обгортка → одна з двома режимами</span>
+    <b>2 кольори рамок інпутів</b><span><span class="mono">border-slate-200</span> у fieldInputClass проти <span class="mono">border-slate-300</span> у локальних інпутів → один токен</span>
+    <b>Кнопка</b><span>максимальний розмір CVA дорівнює 36 px при правилі 44, тому <b>кожен</b> виклик у білдері перевизначає <span class="mono">className="h-11"</span>. Немає варіанта <span class="mono">brand</span>, тому <span class="mono">bg-brand text-white</span> вписано руками 4 рази. Додаю розміри і варіант, після чого перевизначення зникають.</span>
+    <b>Шрифт</b><span>Geist завантажується через <span class="mono">next/font</span> і <b>не використовується</b>: <span class="mono">body</span> перебито на Segoe UI. Або вмикаємо Geist, або прибираємо завантаження. Пропоную ввімкнути, і <span class="mono">tabular-nums</span> скрізь, де є гроші.</span>
+    <b>Темна тема</b><span>токени <span class="mono">.dark</span> описані повністю, але клас <span class="mono">.dark</span> ніде не ставиться. Мертвий код: або вмикаємо перемикач, або прибираємо. Це окреме рішення, не входить у цей етап.</span>
+  </div>
+
+  <h3>8. Стани</h3>
+  <p>Порожньо зараз виглядає вісьмома різними реченнями («No options», «No notes.», «No contacts on file yet.», голий прочерк). Помилки йдуть трьома паралельними каналами, іноді двома одночасно для однієї невдачі. Read-only режим має шість різних форм. Зводжу до <span class="mono">EmptyState</span>, одного правила помилок (інлайн під контролом, тост тільки для відкату оптимістичної дії) і одного примітива <span class="mono">ReadOnlyValue</span>.</p>
+
+  <h3>Чого я свідомо НЕ роблю</h3>
+  <ol>
+    <li>Не чіпаю маршрути, слаги, назви пунктів навігації та імена полів форм (11.F).</li>
+    <li>Не міняю бібліотеку іконок. redesign-skill радить піти з lucide, але в репо це єдине джерело іконок і 900-рядковий редактор специфікації. Заміна дасть шум без користі. Скажіть, якщо все ж хочете Phosphor.</li>
+    <li>Не переписую бізнес-логіку, розрахунки, права ролей, PDF і бланки.</li>
+    <li>Не чіпаю екран підпису <span class="mono">/sign/[token]</span> у цьому етапі.</li>
+  </ol>
+
+  <h3>Порядок робіт після вашого «так»</h3>
+  <ol>
+    <li>Токени і примітиви: радіуси, висоти, Button (розміри + варіант brand), Badge/Chip, FieldRow, EmptyState, ReadOnlyValue, шрифт. Один комміт, візуально майже непомітний, але прибирає всі перевизначення.</li>
+    <li>Шапка квоти + три вкладки + панель готовності. Дубль DOM зникає.</li>
+    <li>Перебудова картки позиції: h3, справжня кнопка акордеона, під-вкладки, редагована ціна, клавіатурне перевпорядкування.</li>
+    <li>Бічна панель опцій замість інлайн-псевдомодалки.</li>
+    <li>Стани: порожньо, помилки, read-only, скелетони.</li>
+    <li>Прогін по решті екранів на узгодження токенів, потім <span class="mono">npm run typecheck</span>, <span class="mono">lint</span>, <span class="mono">test</span> і скріншоти до/після.</li>
+  </ol>
+  <p style="margin-top:14px"><b>Скажіть, що прибрати або додати.</b> Якщо щось із цього для вас зайве (наприклад, три вкладки здаються перебором), кажіть, і я переберу до кодування, а не після.</p>
+</div>
+
+<script>
+var ver='after', dev='desk';
+function show(){
+  document.querySelectorAll('.screen').forEach(function(e){e.classList.remove('on')});
+  var id='s-'+ver+'-'+dev; var el=document.getElementById(id);
+  if(el) el.classList.add('on');
+  ['t-before','t-after'].forEach(function(i){document.getElementById(i).setAttribute('aria-pressed', i==='t-'+ver)});
+  ['t-desk','t-mob'].forEach(function(i){document.getElementById(i).setAttribute('aria-pressed', i==='t-'+dev)});
+}
+function setVer(v){ver=v;show()}
+function setDev(d){dev=d;show()}
+function tab(btn,panel){
+  btn.parentNode.querySelectorAll('[role=tab]').forEach(function(b){b.setAttribute('aria-selected','false')});
+  btn.setAttribute('aria-selected','true');
+  ['p-build','p-settings','p-history'].forEach(function(p){
+    document.getElementById(p).style.display = (p===panel) ? 'grid' : 'none';
+  });
+}
+function sub(btn,panel){
+  btn.parentNode.querySelectorAll('[role=tab]').forEach(function(b){b.setAttribute('aria-selected','false')});
+  btn.setAttribute('aria-selected','true');
+  var body=btn.closest('.item-body');
+  body.querySelectorAll('.subpanel').forEach(function(p){p.classList.remove('on')});
+  document.getElementById(panel).classList.add('on');
+}
+function toggleItem(id){
+  var el=document.getElementById(id);
+  var open=el.classList.toggle('open');
+  el.querySelector('.item-head').setAttribute('aria-expanded', open);
+}
+function allItems(open){
+  ['it1','it2','it3'].forEach(function(id){
+    var el=document.getElementById(id);
+    el.classList.toggle('open', open);
+    el.querySelector('.item-head').setAttribute('aria-expanded', open);
+  });
+}
+function openSheet(){document.getElementById('scrim').classList.add('on');document.getElementById('sheet').classList.add('on')}
+function closeSheet(){document.getElementById('scrim').classList.remove('on');document.getElementById('sheet').classList.remove('on')}
+function jumpTo2(){
+  var el=document.getElementById('it2');
+  el.classList.add('open'); el.querySelector('.item-head').setAttribute('aria-expanded','true');
+  el.scrollIntoView({block:'center'});
+}
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closeSheet()});
+show();
+</script>
+</body>
+</html>

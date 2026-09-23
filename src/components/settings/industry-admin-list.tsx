@@ -130,7 +130,7 @@ export function IndustryAdminList({ industries }: { industries: IndustryAdminLis
         : `${industry.companyCount} ${industry.companyCount === 1 ? "company uses" : "companies use"} it, and all of them will show the new name.`;
     const ok = await confirm({
       title: `Rename "${industry.name}" to "${name}"?`,
-      description: `${reach} Production forms print this name too.`,
+      description: `${reach} Order forms print this name too.`,
       confirmLabel: "Rename",
     });
     if (!ok) return;
@@ -203,10 +203,11 @@ export function IndustryAdminList({ industries }: { industries: IndustryAdminLis
           className={fieldInputClass}
         />
         <Button
+          variant="brand"
           type="button"
           onClick={() => void add()}
           disabled={pending || !newName.trim()}
-          className="h-11 shrink-0 bg-brand text-white hover:bg-brand/90 sm:w-auto"
+          className="h-11 shrink-0 sm:w-auto"
         >
           <Plus className="size-4" data-icon="inline-start" aria-hidden="true" />
           Add
@@ -414,10 +415,11 @@ export function IndustryAdminList({ industries }: { industries: IndustryAdminLis
                       className={cn(fieldInputClass, "min-w-0 flex-1")}
                     />
                     <Button
+                      variant="brand"
                       type="button"
                       onClick={() => void addAlias(industry)}
                       disabled={pending || !aliasDraft.trim()}
-                      className="h-11 shrink-0 bg-brand text-white hover:bg-brand/90"
+                      className="h-11 shrink-0"
                     >
                       Add alias
                     </Button>
@@ -465,10 +467,11 @@ export function IndustryAdminList({ industries }: { industries: IndustryAdminLis
                     ))}
                   </select>
                   <Button
+                    variant="brand"
                     type="button"
                     onClick={() => void merge(industry)}
                     disabled={pending || !mergeTargetId}
-                    className="h-11 shrink-0 bg-brand text-white hover:bg-brand/90"
+                    className="h-11 shrink-0"
                   >
                     Merge
                   </Button>

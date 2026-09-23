@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Plus, ChevronLeft, X } from "lucide-react";
+import { Plus, ChevronLeft, PackageSearch, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/ui-kit";
+import { EmptyState, StatusBadge } from "@/components/ui-kit";
 import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 import { addItem } from "@/lib/actions/documents";
@@ -61,7 +61,8 @@ export function AddItemPicker({
         type="button"
         variant="success"
         onClick={() => setOpen(true)}
-        className="h-11 w-full gap-2 px-5 text-[0.9375rem] sm:w-fit"
+        size="touch"
+        className="w-full px-5 text-[0.9375rem] sm:w-fit"
       >
         <Plus className="size-4" aria-hidden="true" />
         Add item
@@ -134,7 +135,13 @@ export function AddItemPicker({
               </button>
             ))}
         {activeSeries && activeSeries.products.length === 0 ? (
-          <p className="px-2 py-2 text-sm text-slate-500">No products in this series.</p>
+          <EmptyState
+            icon={PackageSearch}
+            title="Nothing in this series"
+            description="Every product in it is inactive or hidden from you."
+            bordered={false}
+            compact
+          />
         ) : null}
       </div>
 

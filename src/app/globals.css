@@ -36,6 +36,69 @@
      state. #146c43 clears WCAG AA for text on white (5.1:1), same
      accessibility bar brand-accent-ink was darkened to meet. */
   --color-commission: #146c43;
+
+  /* ── Surfaces ────────────────────────────────────────────────────────────
+     Three levels, and nesting depth picks the level: the page is surface-0,
+     a card is surface-1, a panel inside a card is surface-2. Before these,
+     the builder screen alone carried nine different wrapper treatments,
+     because every author picked background + border + radius + padding by
+     hand at each nesting depth and none of the choices agreed. */
+  --color-surface-0: oklch(0.977 0.002 247);
+  --color-surface-1: #ffffff;
+  --color-surface-2: oklch(0.974 0.003 247);
+
+  /* ── Lines ───────────────────────────────────────────────────────────────
+     One border colour, one divider colour. The builder used slate-100 and
+     slate-200 interchangeably for hairlines inside a card, and slate-200 and
+     slate-300 interchangeably for control borders: fieldInputClass said 200
+     while every input written outside it said 300. */
+  --color-line: oklch(0.917 0.005 247);
+  --color-divider: oklch(0.944 0.004 247);
+
+  /* ── Control heights ─────────────────────────────────────────────────────
+     Two, not six. 44px is the touch target this app committed to and is the
+     default everywhere; 36px is allowed only from `sm:` up, and only where a
+     control sits in a dense row of its own kind. One builder screen managed
+     h-7, h-8, h-9, h-10, h-11 and a local `compactControlClass`. */
+  --size-control: 2.75rem;
+  --size-control-dense: 2.25rem;
+  /* The two halves of an item card's header row. The thumbnail is the
+     tallest thing on it, so the stacked reorder controls beside it are
+     sized to add up to roughly the same: a collapsed card that is taller
+     than its own contents reads as unfinished. */
+  --size-item-thumb: 3.75rem;
+  --size-item-nudge: 1.5rem;
+
+  /* ── Radii ───────────────────────────────────────────────────────────────
+     Named by what they are for. The generic --radius-sm..4xl scale below
+     stays because existing `rounded-lg`/`rounded-xl` utilities are generated
+     from it and removing them would restyle every screen at once; new code
+     uses these three, and callers migrate as they are touched.
+
+     One builder screen carried five: rounded-lg x35, rounded-xl x10,
+     rounded-full x9, rounded-md x7, bare rounded x2. */
+  --radius-control: 0.5rem;
+  --radius-card: 0.75rem;
+  --radius-pill: 9999px;
+
+  /* ── Motion ──────────────────────────────────────────────────────────────
+     Feedback only. This screen is opened dozens of times a day, so nothing
+     animates on load, nothing loops, and nothing moves that the user did not
+     just act on. Easing follows the usual split: ease-out for anything
+     entering or leaving, ease-in-out for something already on screen that
+     moves to a new place. */
+  /* Tailwind has no `--duration-*` namespace, so these do not become
+     `duration-micro` utilities; reference them as `duration-(--duration-ui)`.
+     They live here rather than in a bare `:root` block so the whole design
+     vocabulary reads in one place. `--ease-*` and `--size-*` ARE namespaces,
+     so `ease-out-soft` and `size-control` are real utilities. Note `h-*`
+     reads the spacing scale, not `--size-*`, so a 44px height is
+     `h-(--size-control)`. */
+  --duration-micro: 120ms;
+  --duration-ui: 180ms;
+  --duration-overlay: 220ms;
+  --ease-out-soft: cubic-bezier(0.215, 0.61, 0.355, 1);
+  --ease-move: cubic-bezier(0.645, 0.045, 0.355, 1);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -153,10 +216,33 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-family: "Segoe UI", "Source Sans 3", system-ui, sans-serif;
+    /* Geist has been loaded by next/font in layout.tsx since the scaffold and
+       thrown away right here, so the app paid for a webfont on every page
+       load and then rendered in Segoe UI. It is now what renders. It is also
+       the better fit for a screen that is mostly figures: its digits are the
+       same width by default, so a price column lines up without anyone
+       remembering to ask for tabular-nums. The system stack stays as the
+       fallback for the moment before the font file arrives. */
+    font-family: var(--font-geist-sans), "Segoe UI", "Source Sans 3", system-ui, sans-serif;
   }
   html {
     @apply font-sans;
+    /* A backstop, not a load-bearing fix. The quote builder's header breaks
+       out of the centred content column to run edge to edge, and it now
+       measures that column with `cqw` so it overhangs nothing (see
+       quote-bar.tsx). This stays because an element that overflows
+       horizontally by a few pixels is otherwise invisible until something
+       makes the root scrollable -- which is exactly how the header's own
+       overhang went unnoticed. `clip` rather than `hidden`: hidden makes a
+       scroll container, and that would stop every `position: sticky` inside
+       from sticking. */
+    overflow-x: clip;
+    /* The options side sheet takes the page's scrollbar away while it is
+       open (see `.side-sheet` below). Reserving the gutter permanently is
+       what stops the whole layout jumping sideways at that moment; the cost
+       is a strip of empty track on the rare page short enough not to
+       scroll. */
+    scrollbar-gutter: stable;
     /* Explicitly off — Phase 5b design direction calls for no scroll-linked
        motion beyond the standard micro-transitions on interactive elements. */
     scroll-behavior: auto;
@@ -169,10 +255,97 @@
   textarea {
     font-size: 1rem;
   }
+  /* Tailwind v4 dropped the preflight rule that gave buttons a pointer
+     cursor, following the CSS spec, which says a button is not a link. The
+     practical effect in this app was that only `<Button>` looked clickable,
+     because its own CVA class sets `cursor-pointer`, while every
+     hand-rolled control -- the Options and Production spec disclosures, the
+     discount %/A$ toggle, the reorder handles, the tab strip -- did not, and
+     a control that does not answer the pointer reads as disabled.
+
+     `:disabled` and `[aria-disabled]` are excluded: those should keep the
+     default arrow, which is the one case where the spec behaviour is the
+     one we want. */
+  button:not(:disabled):not([aria-disabled="true"]),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"]:not([aria-disabled="true"]),
+  summary,
+  label:has(> input[type="checkbox"]:not(:disabled)),
+  label:has(> input[type="radio"]:not(:disabled)),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  select:not(:disabled) {
+    cursor: pointer;
+  }
+
   ::selection {
     background-color: var(--color-brand);
     color: white;
   }
+}
+
+@layer components {
+  /* The per-item options side sheet (src/components/builder/side-sheet.tsx).
+     Both directions are animated here rather than in React: `@starting-style`
+     supplies the state to enter from, and `transition-behavior: allow-discrete`
+     on `display` and `overlay` holds the dialog in the top layer long enough
+     to leave. Nothing in the component tracks "closing". */
+  .side-sheet {
+    transform: translateX(100%);
+    opacity: 0;
+    transition:
+      transform var(--duration-overlay) var(--ease-out-soft),
+      opacity var(--duration-overlay) var(--ease-out-soft),
+      display var(--duration-overlay) allow-discrete,
+      overlay var(--duration-overlay) allow-discrete;
+  }
+  .side-sheet[open] {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  @starting-style {
+    .side-sheet[open] {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+  }
+
+  .side-sheet::backdrop {
+    /* slate-900 at 32%. Written out rather than referenced through a token
+       because ::backdrop is not in the document tree and cannot inherit
+       custom properties from :root in every engine. */
+    background-color: rgb(15 23 42 / 0.32);
+    opacity: 0;
+    transition:
+      opacity var(--duration-overlay) var(--ease-out-soft),
+      display var(--duration-overlay) allow-discrete,
+      overlay var(--duration-overlay) allow-discrete;
+  }
+  .side-sheet[open]::backdrop {
+    opacity: 1;
+  }
+  @starting-style {
+    .side-sheet[open]::backdrop {
+      opacity: 0;
+    }
+  }
+
+  /* Nothing behind an open sheet may scroll. `:has()` rules keep that here,
+     next to the sheet, instead of as styles an effect has to set and unset
+     -- and they cannot leak if a sheet unmounts abruptly.
+
+     On the root, not on `body`: body's `overflow` only propagates to the
+     viewport while the root's own is `visible`, and this app's root carries
+     `overflow-x: clip`, so a lock on body locked nothing and the page went
+     on scrolling behind the sheet.
+
+     The sidebar needs its own rule because it is a separate scroll
+     container. A modal <dialog> makes the rest of the page inert, which
+     stops clicks and focus but not a wheel over a scroller. */
+  html:has(.side-sheet[open]) {
+    overflow: hidden;
+  }
+
 }
 
 @layer utilities {
@@ -188,6 +361,14 @@
   .focus-ring-dark {
     @apply outline-none transition-shadow duration-150 motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-brand-accent focus-visible:ring-offset-2 focus-visible:ring-offset-brand-dark;
   }
+  /* Freezes a nested scroll container while a modal sheet is open -- the
+     sidebar, today. Here in the utilities layer rather than beside the
+     sheet's own rules in components, because the element it has to outrank
+     carries Tailwind's `overflow-y-auto`, and a layer beats specificity. */
+  html:has(.side-sheet[open]) .scroll-region {
+    overflow: hidden;
+  }
+
   /* Safe-area padding for elements pinned to a mobile viewport edge (bottom
      nav, sticky action bars) so they clear the home-indicator/notch. */
   .pb-safe {
@@ -195,5 +376,35 @@
   }
   .pt-safe {
     padding-top: env(safe-area-inset-top);
+  }
+}
+
+/* Every animated thing in this app also carries its own `motion-reduce:`
+   variant, which is the real mechanism. This is the backstop: someone who has
+   asked their OS for reduced motion gets none, including from a component
+   written later that forgets the variant.
+
+   `!important` is load-bearing here and not a shortcut: a media query adds no
+   specificity, so without it a utility class setting `transition-duration`
+   later in the cascade simply wins and the backstop does nothing.
+
+   Near-zero rather than `animation: none`, because a zero-length animation
+   still fires `animationend` and `transitionend`. Base UI unmounts its popups
+   on that event, and the options side sheet drops its children on it, so
+   `none` would leave a dialog mounted forever for exactly the users this
+   block is meant to help.
+
+   `::backdrop` is listed by hand: it is not in the document tree, so `*` and
+   `*::before`/`*::after` never reach it, and the sheet's dimming would go on
+   fading in. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after,
+  *::backdrop {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

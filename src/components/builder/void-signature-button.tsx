@@ -51,7 +51,8 @@ export function VoidSignatureButton({ documentId }: { documentId: string }) {
         type="button"
         variant="destructive"
         onClick={() => setOpen(true)}
-        className="h-11 w-full"
+        size="touch"
+        className="w-full"
       >
         <ShieldOff className="size-4" data-icon="inline-start" aria-hidden="true" />
         Void signature

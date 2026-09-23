@@ -176,12 +176,18 @@ export function CommissionTiersForm({
               {/* The lower bound is derived from the row above, never typed
                   (see `toTiers`), so it reads as text — showing it turns a
                   bare number into the range it actually means. */}
-              <span className="shrink-0 text-sm tabular-nums text-slate-500">{fromPct}%</span>
+              {/* Fixed width, right-aligned. The bound is derived, so it
+                  varies from "0%" to "15.01%" down the column -- left to
+                  size itself, it pushed every row's input to a different
+                  x and the table read as if it had been dropped. */}
+              <span className="w-14 shrink-0 text-right text-sm tabular-nums text-slate-500">
+                {fromPct}%
+              </span>
               {isLast ? (
                 <span className="text-sm text-slate-500">and above</span>
               ) : (
                 <>
-                  <span aria-hidden="true" className="text-sm text-slate-400">
+                  <span aria-hidden="true" className="w-3 shrink-0 text-center text-sm text-slate-400">
                     –
                   </span>
                   <input

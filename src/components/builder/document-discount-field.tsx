@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AutosaveIndicator } from "@/components/builder/autosave-indicator";
-import { fieldInputClass } from "@/components/ui-kit";
+import { ReadOnlyValue, fieldInputClass } from "@/components/ui-kit";
 import { useAutosave } from "@/lib/use-autosave";
 import { currencySymbol as deriveCurrencySymbol, formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -66,9 +66,9 @@ export function DocumentDiscountField({
     // "must not print" rule as the customer-facing sheet (see
     // quotation-sheet.tsx).
     if (!discountValue || Number(discountValue) === 0)
-      return <p className="text-sm text-slate-700">No document discount applied.</p>;
+      return <ReadOnlyValue empty="No discount" />;
     const label = discountMode === "PERCENT" ? `${discountValue}% off the subtotal` : `${formatMoney(discountValue, currency, currencySymbol)} off the subtotal`;
-    return <p className="text-sm text-slate-700">{label}</p>;
+    return <ReadOnlyValue>{label}</ReadOnlyValue>;
   }
 
   // Aliased on import because this component now also takes a

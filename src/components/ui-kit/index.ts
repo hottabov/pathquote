@@ -15,5 +15,7 @@ export { SectionCard } from "./section-card";
 export { TableShell, RowCell, tableClassName, tableHeadRowClassName, tableRowClassName } from "./data-table";
 export { StatusBadge, STATUS_TONE, type StatusTone } from "./status-badge";
 export { EmptyState } from "./empty-state";
+export { Chip, CountBadge } from "./chip";
+export { ReadOnlyValue } from "./read-only-value";
 export { FieldRow, fieldInputClass } from "./field-row";
 export { CountrySelect } from "./country-select";

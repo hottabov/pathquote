@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AutosaveIndicator } from "@/components/builder/autosave-indicator";
-import { fieldInputClass } from "@/components/ui-kit";
+import { ReadOnlyValue, fieldInputClass } from "@/components/ui-kit";
 import { useAutosave } from "@/lib/use-autosave";
 import { cn } from "@/lib/utils";
 import { setDeliveryTerms } from "@/lib/actions/documents";
@@ -51,10 +51,10 @@ export function DeliveryTermsField({
 
   if (readOnly) {
     return (
-      <p className="text-sm text-slate-700">
+      <ReadOnlyValue>
         {LABELS[deliveryTerms]}
         {deliveryTerms === "EX_WORKS" ? " — no GST applicable." : "."}
-      </p>
+      </ReadOnlyValue>
     );
   }
 

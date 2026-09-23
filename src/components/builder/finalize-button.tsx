@@ -6,6 +6,7 @@ import { CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useConfirm, useToast } from "@/components/ui-kit/client";
 import { finalizeDocument } from "@/lib/actions/finalize";
+import type { ReadinessRow } from "@/lib/quote-readiness";
 
 /**
  * Turns a DRAFT into a numbered FINAL document. Finalizing is a one-way
@@ -20,19 +21,23 @@ import { finalizeDocument } from "@/lib/actions/finalize";
  */
 export function FinalizeButton({
   documentId,
-  blocker = null,
+  rows,
   capBlocker = null,
 }: {
   documentId: string;
   /**
-   * What still has to be completed before this quote can be finalized
-   * (`productionIssues`), or null. The button stays disabled while it is
-   * set; the server refuses the same state regardless.
+   * Every readiness row for this quote, from `quoteReadiness`. The button
+   * reads the same rows the rail's ReadinessPanel renders, which is the
+   * whole point of them existing: the panel cannot say "ready" while this
+   * button refuses, because there is only one answer. The server enforces
+   * the same state regardless of what arrives here.
    */
-  blocker?: string | null;
+  rows: ReadinessRow[];
   /**
    * The region discount-cap / markup-ceiling message when the quote is over
    * it, or null. A hard stop for every role -- see `validateFinalizable`.
+   * Not a readiness row: it is not something you complete, it is a limit you
+   * have to come back under.
    */
   capBlocker?: string | null;
 }) {
@@ -41,6 +46,8 @@ export function FinalizeButton({
   const toast = useToast();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  const unmet = rows.filter((row) => row.blocking && !row.met);
 
   async function handleClick() {
     const confirmed = await confirm({
@@ -67,8 +74,10 @@ export function FinalizeButton({
       <Button
         type="button"
         onClick={handleClick}
-        disabled={pending || blocker !== null || capBlocker !== null}
-        className="h-11 w-full bg-brand text-white hover:bg-brand/90"
+        disabled={pending || unmet.length > 0 || capBlocker !== null}
+        variant="brand"
+        size="touch"
+        className="w-full"
       >
         <CheckCircle2 className="size-4" data-icon="inline-start" aria-hidden="true" />
         {pending ? "Finalizing…" : "Finalize"}
@@ -78,9 +87,14 @@ export function FinalizeButton({
           Can&rsquo;t finalize — {capBlocker} Bring it within the limit first.
         </p>
       ) : null}
-      {blocker ? (
+      {unmet.length > 0 ? (
         <p role="status" className="text-sm text-amber-700">
-          Complete before finalizing — {blocker}
+          {/* The row's `detail` is the specific problem ("EL-3220 has no
+              price"); its `label` is only the heading ("13 machines
+              priced"), which reads as nonsense in a sentence. */}
+          {unmet.length === 1
+            ? `Left to do: ${unmet[0].detail ?? unmet[0].label.toLowerCase()}.`
+            : `${unmet.length} things left before this can be finalized.`}
         </p>
       ) : null}
       {error ? (

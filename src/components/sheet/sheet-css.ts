@@ -589,6 +589,27 @@ export const SHEET_CSS = `
     margin: 0 0 8px 0;
     padding-left: 18px;
   }
+  /* The markers, spelled out rather than left to the browser's defaults.
+     This stylesheet is posted to Gotenberg as a standalone document, where
+     a bare <ul> does get its bullets -- but the same markup is also rendered
+     inside the app for the on-screen preview, and Tailwind's preflight
+     resets every list there to list-style: none. An authored bullet list
+     therefore printed correctly and previewed as unmarked, indented lines.
+     Two-part selectors so they outrank that reset wherever it applies.
+     The nested markers are the browser's own progression (disc, circle,
+     square), restated because the reset flattened those too. */
+  .pq-block-body ul {
+    list-style-type: disc;
+  }
+  .pq-block-body ul ul {
+    list-style-type: circle;
+  }
+  .pq-block-body ul ul ul {
+    list-style-type: square;
+  }
+  .pq-block-body ol {
+    list-style-type: decimal;
+  }
   .pq-block-body ul:last-child,
   .pq-block-body ol:last-child {
     margin-bottom: 0;
@@ -747,16 +768,29 @@ export const SHEET_CSS = `
   }
   /* Per-item subtotal row (base + options, less the item discount — owner:
      "base price per item + options listed, totals at bottom" replacing the
-     old lump-sum item-row amount) — small and muted, distinct from both the
-     plain option rows above it and the document-level totals block below
-     the table. */
+     old lump-sum item-row amount).
+
+     It used to be 10px and grey, which made the one figure a customer
+     looks for on a machine the smallest type in its own block — smaller
+     than the options it adds up. It is now a tinted band with a rule above
+     it, in the brand navy the TOTAL below uses: the same idea one level
+     down, so a machine's figure and the quote's figure read as the same
+     kind of thing without competing (the TOTAL is still larger, and the
+     only one with a heavy rule). */
   .pq-item-subtotal-row td {
     border-bottom: none;
-    padding-top: 2px;
-    padding-bottom: 8px;
-    color: #555555;
+    border-top: 1px solid #c7ccdf;
+    background-color: #f4f5fa;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    color: #243478;
     font-weight: 700;
-    font-size: 10px;
+    font-size: 12px;
+  }
+  /* The band has to reach both edges of the table, so the indent every
+     other option row carries is cancelled here. */
+  .pq-item-subtotal-row .pq-option-indent {
+    padding-left: 4px !important;
   }
   .pq-amount {
     text-align: right;

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AutosaveIndicator } from "@/components/builder/autosave-indicator";
-import { fieldInputClass } from "@/components/ui-kit";
+import { ReadOnlyValue, fieldInputClass } from "@/components/ui-kit";
 import { useAutosave } from "@/lib/use-autosave";
 import { cn } from "@/lib/utils";
 import { setValidityDays } from "@/lib/actions/documents";
@@ -55,7 +55,7 @@ export function ValidityDaysField({
 
   if (readOnly) {
     const days = validityDays ?? orgDefaultDays;
-    return <p className="text-sm text-slate-700">Valid for {days} days.</p>;
+    return <ReadOnlyValue>Valid for {days} days.</ReadOnlyValue>;
   }
 
   return (

@@ -1,6 +1,7 @@
 import { AlertTriangle, Download, Factory, FileText } from "lucide-react";
 import { SectionCard } from "@/components/ui-kit";
 import { buildFormContexts, softwareItemsOnDocument } from "@/lib/production-forms/context";
+import { pathWorksModulesWithoutHost } from "@/lib/production-forms/pathworks";
 import { missingRequirements, resolveForm, unmatchedOptions } from "@/lib/production-forms/resolve";
 import type { FormContext } from "@/lib/production-forms/types";
 import type { DocumentForForms } from "@/lib/queries/documents";
@@ -69,7 +70,7 @@ export function ProductionFormsSection({ document }: { document: DocumentForForm
   const software = softwareItemsOnDocument(document);
 
   return (
-    <SectionCard title="Production forms" icon={<Factory className="size-5" />}>
+    <SectionCard title="Order forms" icon={<Factory className="size-5" />}>
       {contexts.length === 0 ? (
         software.length > 0 || document.lines.length > 0 ? (
           // No machine forms, but the quote still has software to order or
@@ -81,7 +82,7 @@ export function ProductionFormsSection({ document }: { document: DocumentForForm
             ) : null}
           </ul>
         ) : (
-          <p className="text-sm text-slate-500">No production forms apply to this quote.</p>
+          <p className="text-sm text-slate-500">No order forms apply to this quote.</p>
         )
       ) : (
         <ProductionFormsBody document={document} contexts={contexts} software={software} />
@@ -113,13 +114,10 @@ function ProductionFormsBody({
     document.lines.length +
     rows.reduce((total, row) => total + unmatchedOptions(row.spec, row.ctx).length, 0);
 
-  // A PathWorks module (`specs.pathworksModule`) needs a PathWorks licence
-  // to run in -- either the standalone or the integrated one, which is what
-  // `specs.softwareMode` marks.
-  const softwareSpecs = contexts[0].software;
-  const modulesWithoutHost =
-    softwareSpecs.some((s) => s.specs.pathworksModule !== undefined) &&
-    !softwareSpecs.some((s) => s.specs.softwareMode !== undefined);
+  // Shared with the builder's readiness rail, which now raises the same
+  // remark while the quote is still a draft -- see
+  // `pathWorksModulesWithoutHost`.
+  const modulesWithoutHost = pathWorksModulesWithoutHost(contexts[0].software);
 
   return (
     <div className="flex flex-col gap-4">

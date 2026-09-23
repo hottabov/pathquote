@@ -73,7 +73,8 @@ export function SignButton({
         variant="outline"
         onClick={handleSignClick}
         disabled={pending}
-        className="h-11 w-full"
+        size="touch"
+        className="w-full"
       >
         <PenLine className="size-4" data-icon="inline-start" aria-hidden="true" />
         {pending ? "Signing…" : hasAuthorSignature ? "Re-sign" : "Sign"}

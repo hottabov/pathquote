@@ -143,13 +143,17 @@ export function UserAccessSection({
             : "This account is deactivated — it can't sign in. Everything it owns and wrote is still here."}
         </p>
         <Button
+          variant="brand"
           type="button"
           onClick={() => void toggleAccess()}
           disabled={pending || (active && accessLocked)}
           title={active && accessLocked ? accessLockedReason : undefined}
           className={cn(
             "h-11 w-full sm:w-auto sm:self-start",
-            active ? "bg-destructive text-white hover:bg-destructive/90" : "bg-brand text-white hover:bg-brand/90"
+            // Same reason as the confirm dialog: the tinted `destructive`
+            // variant reads as a secondary action, and deactivating an
+            // account is not one.
+            active && "bg-destructive text-white hover:bg-destructive/90"
           )}
         >
           {active ? "Deactivate account" : "Reactivate account"}
@@ -191,10 +195,11 @@ export function UserAccessSection({
                 ))}
               </select>
               <Button
+                variant="brand"
                 type="button"
                 onClick={() => void handOver()}
                 disabled={pending || !handoverToId}
-                className="h-11 shrink-0 bg-brand text-white hover:bg-brand/90"
+                className="h-11 shrink-0"
               >
                 Hand over
               </Button>

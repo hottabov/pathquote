@@ -103,10 +103,11 @@ export function DocumentRegionPane({
         }
         action={
           <Button
+            variant="brand"
             type="button"
             onClick={handleCreate}
             disabled={pending}
-            className="h-11 bg-brand text-white hover:bg-brand/90"
+            className="h-11"
           >
             {pending ? "Creating…" : hasDefault ? "Create version from default" : "Create a blank version"}
           </Button>

@@ -48,7 +48,7 @@ export function AcceptButton({ documentId }: { documentId: string }) {
 
   return (
     <div className="flex flex-col items-start gap-1.5">
-      <Button type="button" onClick={handleClick} disabled={pending} className="h-11 w-full">
+      <Button type="button" onClick={handleClick} disabled={pending} size="touch" className="w-full">
         <CheckCircle2 className="size-4" data-icon="inline-start" aria-hidden="true" />
         {pending ? "Accepting…" : "Accept quote"}
       </Button>

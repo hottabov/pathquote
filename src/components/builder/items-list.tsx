@@ -1,31 +1,41 @@
 "use client";
 
-import { useOptimistic, useRef, useState, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronUp, GripVertical } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  CircleAlert,
+  GripVertical,
+} from "lucide-react";
 import { formatMoney } from "@/lib/format";
-import { RemoveItemButton } from "@/components/builder/remove-item-button";
 import { ItemOptionsEditor } from "@/components/builder/item-options-editor";
-import { ItemDiscountField } from "@/components/builder/item-discount-field";
+import { ItemActionBar } from "@/components/builder/item-action-bar";
 import { ItemBreakdownEditor } from "@/components/builder/item-breakdown-editor";
-import { ItemShowImageToggle } from "@/components/builder/item-show-image-toggle";
 import { ProductionSpecEditor } from "@/components/builder/production-spec-editor";
+import { ItemTabs, type ItemTab } from "@/components/builder/item-tabs";
+import { useItemReorder } from "@/components/builder/use-item-reorder";
+import { Chip, CountBadge, StatusBadge } from "@/components/ui-kit";
 import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 import { formHasScreenSide } from "@/lib/production-forms/resolve";
+import { itemMissing } from "@/lib/production-forms/readiness";
 import { assignRails, type RailSource } from "@/lib/production-forms/rails";
 import { EL_MODULE_ROLES } from "@/lib/production-forms/table-sections";
 import type { OptionRole } from "@prisma/client";
 import { readProductSpecs } from "@/lib/validation/product-specs";
-import { removeItem, reorderItems, setItemSerialNumber } from "@/lib/actions/documents";
+import { reorderItems, setItemSerialNumber } from "@/lib/actions/documents";
 import { pickDerivativeWidth } from "@/lib/image-derivative-width";
 import type { BuilderItem, CompatibleOption } from "@/lib/queries/documents";
 
-// The card header draws the item's product photo at 48 CSS px (`size-12`) —
+// The card header draws the item's product photo at 60 CSS px
+// (`--size-item-thumb`) —
 // a print-resolution snapshot (often ~1MB) has no business loading here just
 // to be shrunk by CSS, so it asks for the `?w=` thumbnail derivative instead
 // (src/lib/image-derivatives.ts), same as CatalogThumb.
-const ITEM_THUMB_BOX_PX = 48;
+const ITEM_THUMB_BOX_PX = 60;
 
 /**
  * Option roles no manager picks by hand, on any item: the per-metre MTS
@@ -40,13 +50,6 @@ const EASYLOADER_LOCKED_ROLES: ReadonlySet<OptionRole> = new Set<OptionRole>([
   ...EL_MODULE_ROLES,
   ...DERIVED_ROLES,
 ]);
-
-function arrayMove<T>(list: T[], from: number, to: number): T[] {
-  const copy = list.slice();
-  const [moved] = copy.splice(from, 1);
-  copy.splice(to, 0, moved);
-  return copy;
-}
 
 /**
  * The builder's item cards, reorderable when the document is a DRAFT.
@@ -93,6 +96,7 @@ export function ItemsList({
   compatibleOptionsByItemKey,
   showOptionIcons = true,
   screenSideImages,
+  heading,
   readOnly = false,
 }: {
   documentId: string;
@@ -106,6 +110,10 @@ export function ItemsList({
    * Fetched once per page load (src/lib/queries/spec-images.ts) and passed
    * straight through to every item card, same as `showOptionIcons`. */
   screenSideImages: Record<string, string>;
+  /** The section's own heading, rendered by the caller and passed in so that
+   *  it can share a row with the collapse control, which reads this
+   *  component's state and so cannot be lifted above it. */
+  heading?: React.ReactNode;
   readOnly?: boolean;
 }) {
   const router = useRouter();
@@ -115,13 +123,6 @@ export function ItemsList({
     (_state: BuilderItem[], newOrder: BuilderItem[]) => newOrder
   );
   const [, startTransition] = useTransition();
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
-  const cardNodes = useRef(new Map<string, HTMLDivElement>());
-  /** The in-flight touch/pen drag, or `null`. Mouse drags don't come through
-   * here at all — they use the native HTML5 drag below, which gives a real
-   * drag image for free. See `startPointerDrag`. */
-  const pointerDrag = useRef<{ pointerId: number; itemId: string } | null>(null);
   const [collapsedByItemId, setCollapsedByItemId] = useState<Map<string, boolean>>(new Map());
 
   function isCollapsed(itemId: string) {
@@ -144,6 +145,11 @@ export function ItemsList({
     setCollapsedByItemId(new Map());
   }
 
+  // Drives the single Collapse/Expand control's label, icon and aria-expanded.
+  // "Any" rather than "all" so the control always does the thing the list is
+  // not already doing.
+  const anyExpanded = optimisticItems.some((item) => !isCollapsed(item.id));
+
   function commitOrder(newOrder: BuilderItem[]) {
     startTransition(async () => {
       setOptimisticItems(newOrder);
@@ -158,11 +164,11 @@ export function ItemsList({
     });
   }
 
-  function moveBy(index: number, delta: number) {
-    const targetIndex = index + delta;
-    if (targetIndex < 0 || targetIndex >= optimisticItems.length) return;
-    commitOrder(arrayMove(optimisticItems, index, targetIndex));
-  }
+  // Mouse drag, touch drag and keyboard, one state machine -- see
+  // use-item-reorder.ts for why the keyboard path could not simply sit
+  // beside the other two.
+  const reorder = useItemReorder({ items: optimisticItems, commitOrder });
+  const reorderHintId = `${documentId}-reorder-hint`;
 
   // The offer to apply a screen side to the rest of the quote is noise on a
   // single-machine one, so it only appears once the document holds two or
@@ -190,324 +196,120 @@ export function ItemsList({
     optimisticItems.filter((item) => item.form === "FABRICPRO").map((item) => item.id)
   );
 
-  /** The id of the item card under a viewport point, or `null` when the
-   * point is outside every card. Hit-testing the DOM is what stands in for
-   * `dragover`/`drop` during a pointer drag: those fire only for the native
-   * HTML5 drag, which touch browsers never start. */
-  function itemIdAtPoint(clientX: number, clientY: number): string | null {
-    const card = document
-      .elementFromPoint(clientX, clientY)
-      ?.closest<HTMLElement>("[data-builder-item-id]");
-    return card?.dataset.builderItemId ?? null;
-  }
-
-  function endPointerDrag(clientX: number, clientY: number) {
-    const drag = pointerDrag.current;
-    if (!drag) return;
-    pointerDrag.current = null;
-    const targetId = itemIdAtPoint(clientX, clientY);
-    if (targetId) {
-      handleDrop(targetId);
-      return;
-    }
-    // Dropped on empty space — leave the order alone.
-    setDraggingId(null);
-    setDropTargetId(null);
-  }
-
-  function cancelPointerDrag() {
-    pointerDrag.current = null;
-    setDraggingId(null);
-    setDropTargetId(null);
-  }
-
-  function handleDrop(targetId: string) {
-    setDropTargetId(null);
-    const sourceId = draggingId;
-    setDraggingId(null);
-    if (!sourceId || sourceId === targetId) return;
-    const fromIndex = optimisticItems.findIndex((item) => item.id === sourceId);
-    const toIndex = optimisticItems.findIndex((item) => item.id === targetId);
-    if (fromIndex === -1 || toIndex === -1) return;
-    commitOrder(arrayMove(optimisticItems, fromIndex, toIndex));
-  }
-
   return (
-    <div className="flex flex-col gap-3">
-      {optimisticItems.length > 1 ? (
-        <div className="flex justify-end gap-3 text-xs font-medium text-slate-500">
+    <div className="flex flex-col gap-4">
+      {/* A reorder is invisible to a screen reader otherwise: focus stays on
+          the same grip and that grip's label never changes. */}
+      <p aria-live="polite" className="sr-only">
+        {reorder.announcement}
+      </p>
+      <p id={reorderHintId} className="sr-only">
+        Press Space to pick this item up, the arrow keys to move it, Space again to drop it, and
+        Escape to put it back.
+      </p>
+      {/* Heading and collapse control on one row. They were two stacked rows,
+          which put a whole line of whitespace between the section's title and
+          its first machine for no reason. */}
+      <div className="flex min-h-9 items-center gap-2 px-1">
+        {heading}
+        {optimisticItems.length > 1 ? (
+          // One control that flips, rather than two text buttons separated by
+          // a literal "|": only one of the two is ever the useful one, and
+          // which one that is can be read off the list.
           <button
             type="button"
-            onClick={collapseAll}
-            className="focus-ring rounded transition-colors hover:text-brand"
+            aria-expanded={anyExpanded}
+            onClick={() => (anyExpanded ? collapseAll() : expandAll())}
+            className="focus-ring ml-auto inline-flex h-9 items-center gap-1.5 rounded-(--radius-control) px-2.5 text-sm font-medium text-slate-600 transition-colors duration-(--duration-micro) motion-reduce:transition-none md:hover:bg-slate-100 md:hover:text-brand-dark"
           >
-            Collapse all
+            {anyExpanded ? (
+              <ChevronsDownUp className="size-4" aria-hidden="true" />
+            ) : (
+              <ChevronsUpDown className="size-4" aria-hidden="true" />
+            )}
+            {anyExpanded ? "Collapse all" : "Expand all"}
           </button>
-          <span aria-hidden="true" className="text-slate-300">
-            |
-          </span>
-          <button
-            type="button"
-            onClick={expandAll}
-            className="focus-ring rounded transition-colors hover:text-brand"
-          >
-            Expand all
-          </button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
 
       {optimisticItems.map((item, index) => {
         const compatKey = item.productId ?? (item.seriesId ? `series:${item.seriesId}` : null);
         const isEasyLoader = item.form === "EASYLOADER";
-        const isDragging = draggingId === item.id;
-        const isDropTarget = dropTargetId === item.id && draggingId !== item.id;
+        const isDragging = reorder.draggingId === item.id;
+        const isDropTarget =
+          reorder.dropTargetId === item.id && reorder.draggingId !== item.id;
+        const grabbed = reorder.grabbedId === item.id;
         const collapsed = isCollapsed(item.id);
         const optionCount = item.lines.filter((line) => line.kind === "OPTION").length;
+        const compatibleOptions = compatKey ? (compatibleOptionsByItemKey[compatKey] ?? []) : [];
+        // An OPTION line carries no image of its own -- only a custom extra
+        // line does -- so the breakdown's icons come from the compatible
+        // options this card already holds, keyed by the id the line points
+        // at.
+        const optionImageByRefId = Object.fromEntries(
+          compatibleOptions.map((option) => [option.id, option.imageUrl])
+        );
+        const panelId = `item-panel-${item.id}`;
+        // The same per-item check finalizeDocument enforces, so the badge on
+        // the card and the refusal at finalize can never disagree.
+        const missingSpec = itemMissing({
+          code: item.code,
+          form: item.form,
+          productionSpec: item.productionSpec,
+          options: item.lines
+            .filter((line) => line.kind === "OPTION")
+            .map((line) => ({ role: line.role, attributes: line.attributes })),
+        });
 
-        return (
-          <div
-            key={item.id}
-            // Read back by `itemIdAtPoint` to hit-test a touch drag. A data
-            // attribute rather than the `cardNodes` map because the lookup
-            // starts from whatever element is under the finger and walks up.
-            data-builder-item-id={item.id}
-            ref={(node) => {
-              if (node) cardNodes.current.set(item.id, node);
-              else cardNodes.current.delete(item.id);
-            }}
-            onDragOver={(event) => {
-              if (!draggingId) return;
-              event.preventDefault();
-              if (dropTargetId !== item.id) setDropTargetId(item.id);
-            }}
-            onDragLeave={() => {
-              setDropTargetId((current) => (current === item.id ? null : current));
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              handleDrop(item.id);
-            }}
-            className={cn(
-              "rounded-xl border border-slate-200 p-3 transition-[opacity,box-shadow] duration-150 motion-reduce:transition-none sm:p-4",
-              // A line the salesperson earns nothing on carries a faint amber
-              // wash (owner's request). Deliberately barely-there: it is a
-              // standing fact about the product, not a problem to fix, so it
-              // must not read as a warning — but without it the only way to
-              // discover a line pays no commission is to notice the figure at
-              // the bottom failing to move.
-              item.noCommission && "bg-amber-50/60",
-              isDragging && "opacity-50",
-              isDropTarget && "ring-2 ring-brand"
-            )}
-          >
-            {/* Header: always visible, clicking anywhere on it (other than
-                the drag/reorder controls and remove button, which stop
-                propagation) toggles the card's collapsed state. The chevron
-                button is the keyboard/screen-reader-accessible affordance —
-                it carries no handler of its own and relies on its native
-                click event bubbling up to this row. Reorder controls (up/down)
-                are inline on the right with compact 36px visual / 44px hit area. */}
-            <div
-              onClick={() => toggleCollapsed(item.id)}
-              className="flex cursor-pointer select-none flex-wrap items-start justify-between gap-x-2 gap-y-1 sm:flex-nowrap sm:gap-x-3"
-            >
-              {/* `flex-1` matters as much as `min-w-0` here: the controls to
-                  the right are `shrink-0`, so without it a narrow row hands
-                  them everything and collapses this column to zero width —
-                  at which point its children paint straight over the price,
-                  which is exactly what a phone used to render.
-                  `basis-full` then takes it further below `sm`: even once it
-                  stops overlapping, sharing one 327px line with the grip,
-                  the thumbnail and ~170px of controls leaves the name about
-                  35px — enough for "Co…". Wrapping the controls onto their
-                  own line buys the title the whole width instead. */}
-              <div className="flex min-w-0 basis-full items-start gap-2 sm:flex-1 sm:basis-auto">
-                {!readOnly && (
-                  <div
-                    onClick={(event) => event.stopPropagation()}
-                    className="flex shrink-0 items-center"
-                  >
-                    <button
-                      type="button"
-                      draggable
-                      onDragStart={(event) => {
-                        event.dataTransfer.effectAllowed = "move";
-                        event.dataTransfer.setData("text/plain", item.id);
-                        const node = cardNodes.current.get(item.id);
-                        if (node) event.dataTransfer.setDragImage(node, 20, 20);
-                        setDraggingId(item.id);
-                      }}
-                      onDragEnd={() => {
-                        setDraggingId(null);
-                        setDropTargetId(null);
-                      }}
-                      // Touch/pen path. Mobile browsers never fire the HTML5
-                      // drag events above, so on a phone — where the up/down
-                      // buttons are hidden — this is the only way to reorder.
-                      // Mouse is left to the native drag, which supplies a
-                      // drag image these handlers can't.
-                      onPointerDown={(event) => {
-                        if (event.pointerType === "mouse") return;
-                        // Suppresses the scroll/long-press gesture that would
-                        // otherwise steal the pointer mid-drag; `touch-none`
-                        // below is the same guarantee at the CSS level, which
-                        // is the one Safari actually honours.
-                        event.preventDefault();
-                        // Keeps `pointermove`/`pointerup` targeted at this
-                        // handle once the finger leaves it, which is the
-                        // entire drag. Not fatal if the browser refuses (the
-                        // pointer can already be gone by the time this runs):
-                        // the drag still starts, it just ends early if the
-                        // finger slides off — far better than throwing here
-                        // and never setting `draggingId` at all.
-                        try {
-                          event.currentTarget.setPointerCapture(event.pointerId);
-                        } catch {
-                          // Capture is an optimisation, not a precondition.
-                        }
-                        pointerDrag.current = { pointerId: event.pointerId, itemId: item.id };
-                        setDraggingId(item.id);
-                      }}
-                      onPointerMove={(event) => {
-                        const drag = pointerDrag.current;
-                        if (drag?.pointerId !== event.pointerId) return;
-                        const overId = itemIdAtPoint(event.clientX, event.clientY);
-                        setDropTargetId(overId === drag.itemId ? null : overId);
-                      }}
-                      onPointerUp={(event) => {
-                        if (pointerDrag.current?.pointerId !== event.pointerId) return;
-                        endPointerDrag(event.clientX, event.clientY);
-                      }}
-                      onPointerCancel={(event) => {
-                        if (pointerDrag.current?.pointerId !== event.pointerId) return;
-                        cancelPointerDrag();
-                      }}
-                      aria-label={`Reorder ${item.name}`}
-                      className="focus-ring flex size-11 cursor-grab touch-none items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 active:cursor-grabbing"
-                    >
-                      <GripVertical className="size-4" aria-hidden="true" />
-                    </button>
-                  </div>
-                )}
-                {item.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={
-                      item.imageUrl.endsWith(".svg")
-                        ? item.imageUrl
-                        : `${item.imageUrl}?w=${pickDerivativeWidth(ITEM_THUMB_BOX_PX * 2)}`
-                    }
-                    alt={item.name}
-                    className="size-12 shrink-0 rounded-lg border border-slate-200 object-contain"
-                  />
-                ) : null}
-                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                  <div className="flex min-w-0 flex-col">
-                    <span className="truncate text-sm font-medium text-brand-dark">{item.name}</span>
-                    {/* Truncates for the same reason the name does: a code is
-                        unbroken text, so without it a squeezed column lets it
-                        spill out over whatever sits to its right. */}
-                    <span className="truncate font-mono text-xs text-slate-500">{item.code}</span>
-                  </div>
-                  {optionCount > 0 ? (
-                    <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
-                      {optionCount} option{optionCount === 1 ? "" : "s"}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              {/* Below `sm` this sits on its own line under the title (the
-                  title block is `basis-full` there), so it stretches to the
-                  full width and keeps its controls right-aligned. */}
-              <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
-                <span className="text-sm font-medium tabular-nums text-brand-dark sm:pt-2">
-                  {formatMoney(item.total, currency, currencySymbol)}
-                </span>
-                {!readOnly && (
-                  <>
-                    {/* md+ only. On a phone these two buttons plus the price,
-                        remove and chevron overflow the row, and reordering
-                        there is served by dragging the grip handle instead
-                        (which works on touch — see its pointer handlers). */}
-                    <div
-                      onClick={(event) => event.stopPropagation()}
-                      className="hidden items-center gap-2 md:flex"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => moveBy(index, -1)}
-                        disabled={index === 0}
-                        aria-label={`Move ${item.name} up`}
-                        className="focus-ring flex size-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-30 -m-1 p-1"
-                      >
-                        <ChevronUp className="size-4" aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => moveBy(index, 1)}
-                        disabled={index === optimisticItems.length - 1}
-                        aria-label={`Move ${item.name} down`}
-                        className="focus-ring flex size-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-30 -m-1 p-1"
-                      >
-                        <ChevronDown className="size-4" aria-hidden="true" />
-                      </button>
-                    </div>
-                    <span onClick={(event) => event.stopPropagation()}>
-                      <RemoveItemButton action={removeItem.bind(null, item.id)} itemName={item.name} />
-                    </span>
-                  </>
-                )}
-                <button
-                  type="button"
-                  aria-label={collapsed ? `Expand ${item.name}` : `Collapse ${item.name}`}
-                  aria-expanded={!collapsed}
-                  className="focus-ring flex size-11 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-50 hover:text-slate-600"
-                >
-                  <ChevronDown
-                    className={cn(
-                      "size-4 transition-transform duration-150 motion-reduce:transition-none",
-                      collapsed && "-rotate-90"
-                    )}
-                    aria-hidden="true"
-                  />
-                </button>
-              </div>
+        const optionsTab: ItemTab = {
+          key: "options",
+          label: "Options",
+          badge: optionCount > 0 ? <CountBadge>{optionCount}</CountBadge> : null,
+          content: (
+            <div className="flex flex-col gap-3">
+              <ItemBreakdownEditor
+                item={item}
+                currency={currency}
+                currencySymbol={currencySymbol}
+                optionImageByRefId={optionImageByRefId}
+                showOptionIcons={showOptionIcons}
+                readOnly={readOnly}
+              />
+              <ItemOptionsEditor
+                itemId={item.id}
+                itemName={item.name}
+                itemCode={item.code}
+                currentLines={item.lines
+                  .filter((line) => line.kind === "OPTION")
+                  .map((line) => ({
+                    refId: line.refId,
+                    code: line.code,
+                    qty: line.qty,
+                    attributes: line.attributes,
+                    role: line.role,
+                  }))}
+                compatibleOptions={compatibleOptions}
+                currency={currency}
+                currencySymbol={currencySymbol}
+                showOptionIcons={showOptionIcons}
+                readOnly={readOnly}
+                lockedRoles={isEasyLoader ? EASYLOADER_LOCKED_ROLES : DERIVED_ROLES}
+              />
             </div>
+          ),
+        };
 
-            <div
-              className={cn(
-                "grid transition-[grid-template-rows] duration-150 ease-in-out motion-reduce:transition-none",
-                collapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
-              )}
-            >
-              <div className="overflow-hidden">
-                {/* Base price / options / item discount / per-item subtotal,
-                    each price editable in place (pencil-on-hover-or-focus,
-                    same reveal pattern as avatar-editor.tsx) — see
-                    item-breakdown-editor.tsx for why this is the builder's
-                    own copy of the layout rather than a reuse of the shared
-                    (non-interactive) sheet presenter. Replaces what used to
-                    be two separate blocks: a read-only compact breakdown
-                    here, and a second list of `UnitPriceField` rows
-                    repeating the same lines below it with a "Price" input
-                    each. */}
-                <div className="mb-3">
-                  <ItemBreakdownEditor item={item} currency={currency} currencySymbol={currencySymbol} readOnly={readOnly} />
-                </div>
-
-                {item.isCredit ? (
-                  <CreditItemSerialNumber
-                    itemId={item.id}
-                    serialNumber={item.serialNumber}
-                    readOnly={readOnly}
-                  />
-                ) : null}
-
-                {/* On an EasyLoader these two swap places. Its builder is
-                    where the machine is assembled and priced, so it comes
-                    first and opens itself; the options panel holds only the
-                    accessories by then, and starts closed rather than
-                    inviting a manager to pick modules the builder owns. */}
+        /** Null for a product with no order form at all -- a software or
+         * service row, which has nothing to specify. */
+        const specTab: ItemTab | null = item.form
+          ? {
+              key: "spec",
+              label: isEasyLoader ? "Builder" : "Spec",
+              badge:
+                missingSpec.length > 0 ? (
+                  <StatusBadge tone="amber">{missingSpec.length}</StatusBadge>
+                ) : null,
+              content: (
                 <ProductionSpecEditor
                   itemId={item.id}
                   form={item.form}
@@ -520,53 +322,228 @@ export function ItemsList({
                     .reduce((sum, line) => sum + line.qty, 0)}
                   screenSideImages={screenSideImages}
                   readOnly={readOnly}
-                  defaultOpen={isEasyLoader && !readOnly}
+                  asPanel
                 />
+              ),
+            }
+          : null;
 
-                <ItemOptionsEditor
-                  itemId={item.id}
-                  currentLines={item.lines
-                    .filter((line) => line.kind === "OPTION")
-                    .map((line) => ({
-                      refId: line.refId,
-                      code: line.code,
-                      qty: line.qty,
-                      attributes: line.attributes,
-                      role: line.role,
-                    }))}
-                  compatibleOptions={compatKey ? (compatibleOptionsByItemKey[compatKey] ?? []) : []}
-                  currency={currency}
-                  currencySymbol={currencySymbol}
-                  showOptionIcons={showOptionIcons}
-                  readOnly={readOnly}
-                  lockedRoles={isEasyLoader ? EASYLOADER_LOCKED_ROLES : DERIVED_ROLES}
-                  startClosed={isEasyLoader}
-                />
+        return (
+          <div
+            key={item.id}
+            // Read back by `itemIdAtPoint` to hit-test a touch drag. A data
+            // attribute rather than the `cardNodes` map because the lookup
+            // starts from whatever element is under the finger and walks up.
+            data-builder-item-id={item.id}
+            ref={reorder.registerCard(item.id)}
+            {...reorder.cardProps(item.id)}
+            className={cn(
+              "rounded-(--radius-card) border border-line bg-white p-3 transition-[opacity,box-shadow,border-color] duration-(--duration-micro) motion-reduce:transition-none sm:p-4",
+              // No wash for a line that pays no commission. It had one --
+              // amber first, then slate -- and neither earned its place: the
+              // "No commission" badge on the row already says it in words,
+              // and a tinted card among white ones asks the reader to
+              // remember what the tint means (Vadym, 2026-09-23).
+              isDragging && "opacity-50",
+              isDropTarget && "ring-2 ring-brand"
+            )}
+          >
+            {/* The header is a real button now, not a div with an onClick.
+                It was operable by keyboard only because the chevron's native
+                click bubbled up to the div, which is a coincidence rather
+                than a design: the row announced nothing, took no focus and
+                answered no key. Making it a button means the grip, the
+                reorder arrows and remove all have to sit OUTSIDE it, since a
+                button cannot contain buttons, which is also why the old
+                version needed a stopPropagation on each of them.
 
-                {/* A credit item (item.isCredit — the TRADE-IN product) is
-                    already a negative line; a discount on it is meaningless
-                    and, entered by accident, silently wrong — so the control
-                    doesn't exist for it at all, not merely disabled. See
-                    `setItemDiscount`'s own guard for the server-side half of
-                    this. */}
-                {!item.isCredit || (!readOnly && item.productHasImage) ? (
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
-                    {!item.isCredit ? (
-                      <ItemDiscountField
-                        itemId={item.id}
-                        discountMode={item.discountMode}
-                        discountValue={item.discountValue}
-                        maxDiscountPct={item.maxDiscountPct}
-                        currency={currency}
-                        currencySymbol={currencySymbol}
-                        readOnly={readOnly}
-                      />
-                    ) : null}
-                    {!readOnly && item.productHasImage ? (
-                      <ItemShowImageToggle itemId={item.id} showImage={item.showImage} />
-                    ) : null}
-                  </div>
+                Reading order is thumbnail, name, price, then the two
+                reorder arrows and the grip -- what the line *is* first, then
+                the controls that move it. */}
+            <div className="flex items-start gap-1">
+              <button
+                type="button"
+                aria-expanded={!collapsed}
+                aria-controls={panelId}
+                onClick={() => toggleCollapsed(item.id)}
+                className="focus-ring flex min-w-0 flex-1 items-center gap-3 rounded-(--radius-control) p-1.5 text-left transition-colors duration-(--duration-micro) motion-reduce:transition-none md:hover:bg-slate-50"
+              >
+                {item.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={
+                      item.imageUrl.endsWith(".svg")
+                        ? item.imageUrl
+                        : `${item.imageUrl}?w=${pickDerivativeWidth(ITEM_THUMB_BOX_PX * 2)}`
+                    }
+                    alt=""
+                    // Hidden on a phone. The row has to hold a grip, a
+                    // name, a price, two reorder arrows and a chevron in
+                    // 390px, and a 48px photo is the one thing on it that
+                    // does not say which machine this is any better than
+                    // the name does.
+                    className="hidden size-(--size-item-thumb) shrink-0 rounded-(--radius-control) border border-line object-contain sm:block"
+                  />
                 ) : null}
+
+                <span className="min-w-0 flex-1">
+                  {/* An h3 at last: the whole items list was one flat h2
+                      region, so a screen reader had no outline to move
+                      through and every machine was an unlabelled blob. */}
+                  <h3 className="truncate font-semibold text-brand-dark">{item.name}</h3>
+                  <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                    <span className="font-mono text-xs text-slate-500">{item.code}</span>
+                    {/* On a phone the price moves down here rather than
+                        taking a column of its own: with the grip, the two
+                        reorder arrows and the chevron all on the same row,
+                        a column for it left the machine's name about eight
+                        characters wide. */}
+                    <span className="text-xs font-semibold tabular-nums text-brand-dark sm:hidden">
+                      {formatMoney(item.total, currency, currencySymbol)}
+                    </span>
+                    {optionCount > 0 ? (
+                      <Chip>
+                        {optionCount} option{optionCount === 1 ? "" : "s"}
+                      </Chip>
+                    ) : null}
+                    {/* What is wrong with this machine, on the collapsed row.
+                        Before this the only way to find an incomplete
+                        production spec was to open every card in turn, or to
+                        press Finalize and be told. */}
+                    {missingSpec.length > 0 ? (
+                      <StatusBadge tone="amber" className="gap-1">
+                        <CircleAlert className="size-3" aria-hidden="true" />
+                        Spec: {missingSpec.length} missing
+                      </StatusBadge>
+                    ) : null}
+                    {/* The amber wash below says this too, but colour alone
+                        is not a signal: this is the text half of it. */}
+                    {item.noCommission ? <StatusBadge tone="slate">No commission</StatusBadge> : null}
+                  </span>
+                </span>
+
+                <span className="hidden shrink-0 text-sm font-semibold tabular-nums text-brand-dark sm:block">
+                  {formatMoney(item.total, currency, currencySymbol)}
+                </span>
+
+                <ChevronDown
+                  className={cn(
+                    "size-4 shrink-0 text-slate-400 transition-transform duration-(--duration-ui) ease-(--ease-move) motion-reduce:transition-none",
+                    collapsed && "-rotate-90"
+                  )}
+                  aria-hidden="true"
+                />
+              </button>
+
+              {!readOnly && (
+                /* One column, not a row: up, grip, down, in the order the
+                   three of them actually mean. Side by side they took three
+                   controls' worth of width off a header that already has a
+                   thumbnail, a name, a code, a badge and a price to fit,
+                   and read as an arbitrary trio. Stacked, the arrows point
+                   the way they move the card and the grip sits between them
+                   where the card itself is. */
+                <div className="flex shrink-0 flex-col items-center">
+                  <button
+                    type="button"
+                    onClick={() => reorder.moveBy(index, -1)}
+                    disabled={index === 0}
+                    aria-label={`Move ${item.name} up`}
+                    className="focus-ring flex h-(--size-item-nudge) w-9 items-center justify-center rounded-t-lg text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-30"
+                  >
+                    <ChevronUp className="size-4" aria-hidden="true" />
+                  </button>
+
+                  {/* The grip in the middle, and the only one of the three
+                      with a full-size target: it is the touch path, and the
+                      arrows are the pointer and keyboard one. */}
+                  <button
+                    type="button"
+                    {...reorder.handleProps(item, index)}
+                    aria-label={`Reorder ${item.name}`}
+                    aria-describedby={reorderHintId}
+                    className={cn(
+                      "focus-ring flex h-(--size-item-nudge) w-9 shrink-0 cursor-grab touch-none items-center justify-center text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 active:cursor-grabbing",
+                      // Picked up by the keyboard: the handle has to look
+                      // different from every other handle on the page, or
+                      // "which one am I carrying" is unanswerable.
+                      grabbed && "bg-brand/10 text-brand ring-2 ring-brand"
+                    )}
+                  >
+                    <GripVertical className="size-4" aria-hidden="true" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => reorder.moveBy(index, 1)}
+                    disabled={index === optimisticItems.length - 1}
+                    aria-label={`Move ${item.name} down`}
+                    className="focus-ring flex h-(--size-item-nudge) w-9 items-center justify-center rounded-b-lg text-slate-400 transition-colors duration-(--duration-micro) ease-out-soft motion-reduce:transition-none hover:bg-slate-50 hover:text-slate-600 disabled:pointer-events-none disabled:opacity-30"
+                  >
+                    <ChevronDown className="size-4" aria-hidden="true" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div
+              id={panelId}
+              className={cn(
+                "grid transition-[grid-template-rows] duration-(--duration-ui) ease-(--ease-move) motion-reduce:transition-none",
+                collapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]"
+              )}
+            >
+              <div className="overflow-hidden">
+                {/* One panel at a time. Each machine used to stack a
+                    breakdown that was always open, a production-spec
+                    disclosure and an options disclosure whose trigger
+                    buttons were byte-identical apart from their label --
+                    so opening a machine meant choosing between two
+                    identical buttons, and a machine with both open was
+                    taller than the screen. */}
+                <div className="mt-3 border-t border-divider pt-3">
+                  {item.isCredit ? (
+                    <CreditItemSerialNumber
+                      itemId={item.id}
+                      serialNumber={item.serialNumber}
+                      readOnly={readOnly}
+                    />
+                  ) : null}
+
+{/* Options is the whole commercial picture of the line
+                      now: the priced list of what it is made of, and the
+                      button that changes it. There is no separate Price tab
+                      -- that list *was* the Price tab, and holding the same
+                      rows behind two labels meant reading the options in one
+                      place and their prices in another.
+
+                      An EasyLoader leads with its Builder instead. The
+                      machine itself costs nothing and the table drawn there
+                      is what puts money on the line, so it is the first
+                      thing to do, not the second. */}
+                  <ItemTabs
+                    tabs={(isEasyLoader ? [specTab, optionsTab] : [optionsTab, specTab]).filter(
+                      (tab) => tab !== null
+                    )}
+                  />
+
+                  {/* Global to the machine, so it sits under the strip
+                      rather than inside one of the tabs. A tab holds what
+                      its label names, and neither a discount nor a delete
+                      is a price or a spec. */}
+                  <ItemActionBar
+                    itemId={item.id}
+                    itemName={item.name}
+                    isCredit={item.isCredit}
+                    productHasImage={item.productHasImage}
+                    showImage={item.showImage}
+                    discountMode={item.discountMode}
+                    discountValue={item.discountValue}
+                    currency={currency}
+                    currencySymbol={currencySymbol}
+                    readOnly={readOnly}
+                  />
+                </div>
               </div>
             </div>
           </div>
