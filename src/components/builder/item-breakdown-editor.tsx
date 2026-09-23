@@ -159,15 +159,29 @@ export function ItemBreakdownEditor({
           />
         );
       })}
+      {/* A rule across all four columns, so the computed figures below it
+          read as what the priced rows above add up to rather than as two
+          more rows of the same list. It spans the grid rather than sitting
+          on the subtotal row's own cells, which the `gap-x-3` would have
+          broken into four separate dashes. */}
+      {breakdown.discount || breakdown.options.length > 0 ? (
+        <span className="col-span-4 mt-0.5 h-px bg-slate-200" aria-hidden="true" />
+      ) : null}
       {breakdown.discount ? (
         <StaticRow
           label={discountLabel(breakdown.discount)}
           amount={`-${formatMoney(breakdown.discount.amount, currency, currencySymbol)}`}
           muted
+          gutter={!readOnly}
         />
       ) : null}
       {breakdown.options.length > 0 ? (
-        <StaticRow label={`${item.code} subtotal`} amount={formatMoney(breakdown.subtotal, currency, currencySymbol)} strong />
+        <StaticRow
+          label={`${item.code} subtotal`}
+          amount={formatMoney(breakdown.subtotal, currency, currencySymbol)}
+          strong
+          gutter={!readOnly}
+        />
       ) : null}
     </div>
   );
@@ -182,20 +196,27 @@ function StaticRow({
   amount,
   muted = false,
   strong = false,
+  gutter = true,
 }: {
   label: string;
   amount: string;
   muted?: boolean;
   strong?: boolean;
+  /** Whether the priced rows above are reserving room on their right for a
+   * pencil button. They only do so while the document is editable, and this
+   * row has no pencil of its own, so it has to be told: reserving the gutter
+   * on a finalised quote left the subtotal hanging 20px short of every
+   * figure it sums. */
+  gutter?: boolean;
 }) {
   return (
     // `contents` so the two cells sit in the parent's shared columns (see the
     // grid's own comment). The wrapper generates no box, but colour/weight/
     // style are inherited properties, so the modifiers below still reach the
     // cells. The label takes the label *and* qty columns — these rows have no
-    // qty of their own — and the amount carries the same `pr-5` the editable
-    // rows reserve for their pencil, so every figure in the block ends on one
-    // line rather than the subtotal hanging 12px further right.
+    // qty of their own — and the amount carries the same right-hand gutter
+    // the rows above are using, so every figure in the block ends on one
+    // line whether or not those rows are reserving room for a pencil.
     <div
       className={cn(
         "contents",
@@ -204,7 +225,7 @@ function StaticRow({
       )}
     >
       <span className="col-span-3 truncate">{label}</span>
-      <span className="pr-5 text-right tabular-nums">{amount}</span>
+      <span className={cn("text-right tabular-nums", gutter && "pr-5")}>{amount}</span>
     </div>
   );
 }
