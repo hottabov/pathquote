@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -45,7 +45,6 @@ export function FinalizeButton({
   const confirm = useConfirm();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
 
   const unmet = rows.filter((row) => row.blocking && !row.met);
 
@@ -57,11 +56,13 @@ export function FinalizeButton({
     });
     if (!confirmed) return;
 
-    setError(null);
+    // A failed finalize is a toast, not a line under the button: the button
+    // sits in the quote bar, where anything below it adds height to a header
+    // every tab shares.
     startTransition(async () => {
       const result = await finalizeDocument(documentId);
       if ("error" in result) {
-        setError(result.error);
+        toast.error(result.error);
         return;
       }
       toast.success(`Finalized as ${result.number}`);
@@ -69,39 +70,36 @@ export function FinalizeButton({
     });
   }
 
+  // What is stopping this quote is said once, in the Summary panel, beside
+  // the concession-cap message — not a second time under this button. The
+  // button lives in the quote bar, whose height every tab inherits, so a
+  // one- or two-line explanation here pushed the whole header down for as
+  // long as the quote was unfinished, which is most of a quote's life. The
+  // reason survives as the disabled state and as the button's title, for a
+  // hover on the control itself.
+  const blockedReason =
+    capBlocker !== null
+      ? `Can’t finalize — ${capBlocker} Bring it within the limit first.`
+      : unmet.length === 0
+        ? undefined
+        : unmet.length === 1
+          ? // The row's `detail` is the specific problem ("EL-3220 has no
+            // price"); its `label` is only the heading ("13 machines
+            // priced"), which reads as nonsense in a sentence.
+            `Left to do: ${unmet[0].detail ?? unmet[0].label.toLowerCase()}.`
+          : `${unmet.length} things left before this can be finalized — see the Summary panel.`;
+
   return (
-    <div className="flex flex-col items-start gap-1.5">
-      <Button
-        type="button"
-        onClick={handleClick}
-        disabled={pending || unmet.length > 0 || capBlocker !== null}
-        variant="brand"
-        size="touch"
-        className="w-full"
-      >
-        <CheckCircle2 className="size-4" data-icon="inline-start" aria-hidden="true" />
-        {pending ? "Finalizing…" : "Finalize"}
-      </Button>
-      {capBlocker ? (
-        <p role="status" className="text-sm text-destructive">
-          Can&rsquo;t finalize — {capBlocker} Bring it within the limit first.
-        </p>
-      ) : null}
-      {unmet.length > 0 ? (
-        <p role="status" className="text-sm text-amber-700">
-          {/* The row's `detail` is the specific problem ("EL-3220 has no
-              price"); its `label` is only the heading ("13 machines
-              priced"), which reads as nonsense in a sentence. */}
-          {unmet.length === 1
-            ? `Left to do: ${unmet[0].detail ?? unmet[0].label.toLowerCase()}.`
-            : `${unmet.length} things left before this can be finalized.`}
-        </p>
-      ) : null}
-      {error ? (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
-    </div>
+    <Button
+      type="button"
+      onClick={handleClick}
+      disabled={pending || unmet.length > 0 || capBlocker !== null}
+      title={blockedReason}
+      variant="brand"
+      size="touch"
+    >
+      <CheckCircle2 className="size-4" data-icon="inline-start" aria-hidden="true" />
+      {pending ? "Finalizing…" : "Finalize"}
+    </Button>
   );
 }
