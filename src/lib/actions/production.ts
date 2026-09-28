@@ -47,7 +47,7 @@ export async function setProductionSpec(itemId: string, spec: unknown): Promise<
 
   const item = await db.documentItem.findFirst({
     where: { id: parsedItemId.data, document: documentWhereForUser(session.user) },
-    select: { id: true, documentId: true, product: { select: { form: true } } },
+    select: { id: true, documentId: true, productionSpec: true, product: { select: { form: true } } },
   });
   if (!item) return { error: NOT_FOUND_ERROR };
 
@@ -57,9 +57,20 @@ export async function setProductionSpec(itemId: string, spec: unknown): Promise<
   const parsed = schema.safeParse(spec);
   if (!parsed.success) return { error: flattenZodError(parsed.error) };
 
+  // An M-Series' voltage decides its transformer, which the customer pays
+  // for, so it only changes through `setMachineVoltage` (DRAFT-only, and
+  // written together with the transformer line). Whatever arrives here keeps
+  // the stored one.
+  const data = parsed.data as Record<string, unknown>;
+  if (item.product?.form === "M_SERIES") {
+    const storedVoltage = ((item.productionSpec ?? {}) as Record<string, unknown>).voltage;
+    if (storedVoltage === undefined) delete data.voltage;
+    else data.voltage = storedVoltage;
+  }
+
   await db.documentItem.update({
     where: { id: item.id },
-    data: { productionSpec: parsed.data as object },
+    data: { productionSpec: data as object },
   });
 
   revalidateDocument(item.documentId);

@@ -6,7 +6,8 @@ import { formComponent } from "../src/components/forms/registry";
 import { formContext, formItem } from "./helpers/fixtures";
 import type { FormContext } from "../src/lib/production-forms/types";
 
-const option = (code: string, role: string, qty = 1) => ({ id: code, code, role, qty, attributes: null }) as never;
+const option = (code: string, role: string | null, qty = 1, extra: Record<string, unknown> = {}) =>
+  ({ id: code, lineId: `line-${code}`, parentLineId: null, code, name: code, role, qty, attributes: null, ...extra }) as never;
 
 const ctx = (
   specs: Record<string, unknown> = {},
@@ -52,11 +53,6 @@ describe("the L-Series form", () => {
     expect(on).toContain("Urethane");
   });
 
-  it("also ticks the extended cutting length from an L_EXTENDED option, not just the product code", () => {
-    const on = marked(render(ctx({}, {}, [option("L-EXT-KIT", "L_EXTENDED")])), "pf-on").join(" | ");
-    expect(on).toContain("316");
-  });
-
   it("marks MRK as standard on a machine with no other marking tool", () => {
     expect(marked(render(), "pf-std").join(" | ")).toContain("MRK");
   });
@@ -89,6 +85,16 @@ describe("the L-Series form", () => {
     const html = render(ctx({}, {}, [option("RKT-28", "L_TOOL", 2)]));
     expect(marked(html, "pf-qty").join(" | ")).toContain("RKT-28");
     expect(html).toContain('<span class="pf-q">2</span>');
+  });
+
+  it("prints a tool's part-numbered name and the consumable it ships with", () => {
+    const html = render(
+      ctx({}, {}, [
+        option("DRG", "L_TOOL", 1, { name: "Drag Knife Tool L22656" }),
+        option("CB-30", "CONSUMABLE", 2, { name: "30° Carbide Blade 380017", parentLineId: "line-DRG" }),
+      ])
+    );
+    expect(html).toContain("Drag Knife Tool L22656 — Includes 2 × 30° Carbide Blade 380017");
   });
 
   it("says so plainly when no tools were ordered", () => {

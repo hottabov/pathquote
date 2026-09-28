@@ -72,7 +72,6 @@ describe("parseCatalogSheets — happy path", () => {
     expect(dm.parentProduct).toBe("EL-2020");
     expect(dm.unitLengthM).toBe(1.2);
     expect(dm.compatProducts).toEqual(["EL-2020"]);
-    expect(dm.attributeSchema).toEqual([{ key: "metres", type: "number" }]);
     const abr = parsed.options.find((o) => o.code === "ABR-M")!;
     expect(abr.compatSeries).toEqual(["M", "X"]);
     expect(abr.role).toBe("ABR");
@@ -224,18 +223,14 @@ describe("parseCatalogSheets — every error kind, as sheet/row/column", () => {
     expectError(errors, "Options", 2, "role", /must be one of ABR/);
   });
 
-  it("bad JSON and specs that fail productSpecsSchema; bad attributeSchema shape", () => {
+  it("bad JSON and specs that fail productSpecsSchema", () => {
     const snapshot = tinySnapshot();
     const sheets = sheetsOf(snapshot);
     setCell(sheets.products, "M-5180", "specs", "{cutHeightCm: 5}");
     setCell(sheets.products, "EL-2020", "specs", '{"cutHeightCm":-1,"colour":"red"}');
-    setCell(sheets.options, "ABR-M", "attributeSchema", "[1,");
-    setCell(sheets.options, "EL-2020-DM12", "attributeSchema", '"just a string"');
     const { errors } = parseCatalogSheets(sheets, snapshot);
     expectError(errors, "Products", 2, "specs", /not valid JSON/);
     expectError(errors, "Products", 3, "specs", /specs: /);
-    expectError(errors, "Options", 2, "attributeSchema", /not valid JSON/);
-    expectError(errors, "Options", 3, "attributeSchema", /array or object/);
   });
 
   it("non-numeric and negative numbers (amount, sortOrder, unitLengthM)", () => {

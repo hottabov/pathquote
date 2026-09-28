@@ -91,7 +91,6 @@ export type ParsedOption = {
   active: boolean;
   sortOrder: number;
   imageUrl: string | null;
-  attributeSchema: unknown;
 };
 
 export type ParsedPrice = {
@@ -541,14 +540,6 @@ export function parseCatalogSheets(sheets: CatalogSheets, snapshot: CatalogExpor
       const active = readBool(r, "active", true);
       const sortOrder = readNumber(r, "sortOrder", { required: false, integer: true, min: 0 }) ?? 0;
       const imageUrl = readImageUrl(r, "imageUrl");
-      const attributeJson = readJson(r, "attributeSchema");
-      if (
-        attributeJson.ok &&
-        attributeJson.value !== null &&
-        !(Array.isArray(attributeJson.value) || typeof attributeJson.value === "object")
-      ) {
-        fail(r, "attributeSchema", "attributeSchema must be a JSON array or object");
-      }
 
       if (errors.length !== before || code === null || name === null) {
         if (id !== null) failedOptionIds.add(id);
@@ -569,7 +560,6 @@ export function parseCatalogSheets(sheets: CatalogSheets, snapshot: CatalogExpor
         active,
         sortOrder,
         imageUrl,
-        attributeSchema: attributeJson.value,
       });
     });
     checkUnique(SHEET_NAMES.options, "code", options.map((o) => ({ row: o.row, value: o.code })), "Option code", errors);

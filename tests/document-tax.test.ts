@@ -124,8 +124,8 @@ describe("resolveDocumentTax — Ex Works", () => {
       region: { taxName: "GST", taxRate: "10.00" },
     });
     expect(tax.engineTaxRate).toBe(0);
-    // The document is not rewritten to 0% — the sheet renders "Ex Works —
-    // no GST applicable" from the terms, and needs the real rate to name.
+    // The document is not rewritten to 0% — the sheet renders "Ex Works"
+    // from the terms, and keeps the real rate for the Delivered case.
     expect(tax.taxRate).toBe("10.00");
   });
 

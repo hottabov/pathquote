@@ -1,4 +1,5 @@
 import type { OptionRole } from "@prisma/client";
+import { M_SERIES_VOLTAGES } from "@/lib/production-forms/voltage";
 import type { FormContext } from "@/lib/production-forms/types";
 import { PATHWORKS_BOXES, pathWorksTicked } from "@/lib/production-forms/pathworks";
 import { EndUserSection, FormSheet, provenance } from "./form-sheet";
@@ -59,9 +60,6 @@ const OPTION_BOXES: OptionBox[] = [
   { role: "CRATE", code: "CRATE", desc: "Wooden crate" },
 ];
 
-/** The supply voltage, which is a production-spec answer rather than an option. */
-export const VOLTAGES = ["220V", "400V", "415V", "480V"] as const;
-
 /** The two transformers the catalogue sells, both role TRANSFORMER, told apart by code. */
 export const TRANSFORMERS = [
   { code: "TR220", desc: "ext. xfmr" },
@@ -74,14 +72,23 @@ export const TRANSFORMERS = [
  * prints after the two known ones under its own code, rather than vanishing
  * into a box that does not name it.
  */
-export function PowerTicks({ ctx, voltage }: { ctx: FormContext; voltage?: string }) {
+export function PowerTicks({
+  ctx,
+  voltage,
+  voltages,
+}: {
+  ctx: FormContext;
+  voltage?: string;
+  /** The supply voltages this machine can be ordered for (voltage.ts). */
+  voltages: readonly string[];
+}) {
   const transformers = ctx.item.options.filter((option) => option.role === "TRANSFORMER");
   const known = (code: string) => transformers.some((option) => option.code.startsWith(code));
   const others = transformers.filter((option) => !TRANSFORMERS.some((t) => option.code.startsWith(t.code)));
 
   return (
     <>
-      {VOLTAGES.map((value) => (
+      {voltages.map((value) => (
         <Tick key={value} on={voltage === value}>
           <span className="pf-code pf-num">{value}</span>
         </Tick>
@@ -106,14 +113,17 @@ export function hasRole(ctx: FormContext, role: OptionRole): boolean {
 }
 
 /**
- * The PathWorks section, identical on every cutter form: the integrated
- * licence and the programs that run in it, ticked from the option lines on
- * this machine or from software products on the quote (see
- * src/lib/production-forms/pathworks.ts for which counts when).
+ * The Software section, identical on every cutter form: the PathWorks
+ * integrated licence, the programs that run in it and the standalone ones
+ * sold with the machine (Production Analyst, LS Convert), ticked from the
+ * option lines on this machine or from software products on the quote (see
+ * src/lib/production-forms/pathworks.ts for which counts when). Called
+ * Software rather than PathWorks since the catalogue review: not everything
+ * in it is part of PathWorks.
  */
-export function PathWorksSection({ ctx }: { ctx: FormContext }) {
+export function SoftwareSection({ ctx }: { ctx: FormContext }) {
   return (
-    <Section title="PathWorks" hint="integrated licence only">
+    <Section title="Software">
       <TickGrid variant="four">
         {PATHWORKS_BOXES.map((box) => (
           <Tick key={box.role} on={pathWorksTicked(ctx, box)} code={box.code} desc={box.desc} />
@@ -296,12 +306,12 @@ export function MSeriesForm({ ctx }: { ctx: FormContext }) {
         <div className="pf-subrow">
           <Label>Power</Label>
           <TickGrid variant="row">
-            <PowerTicks ctx={ctx} voltage={spec.voltage} />
+            <PowerTicks ctx={ctx} voltage={spec.voltage} voltages={M_SERIES_VOLTAGES} />
           </TickGrid>
         </div>
       </Section>
 
-      <PathWorksSection ctx={ctx} />
+      <SoftwareSection ctx={ctx} />
 
       <SectionRow>
         <Section title="Knife size">

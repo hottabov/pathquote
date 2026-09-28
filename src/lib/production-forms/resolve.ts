@@ -88,11 +88,18 @@ export function missingRequirements(spec: FormSpec, productionSpec: unknown): st
  * that kind of coverage.
  *
  * Coverage is by `Option.role`. An option with no role is never covered: no
- * form has a box for it, by definition.
+ * form has a box for it, by definition. The one exception is the consumable
+ * a tool was sold with (see OptionConsumable): it prints with its tool, so it
+ * is covered exactly when the tool is.
  */
 export function unmatchedOptions(spec: FormSpec, ctx: FormContext): FormItemOption[] {
   const covered = coveredRoles(spec);
-  return ctx.item.options.filter((option) => option.role === null || !covered.has(option.role));
+  const isCovered = (option: FormItemOption) => option.role !== null && covered.has(option.role);
+  const byLineId = new Map(ctx.item.options.map((option) => [option.lineId, option]));
+  return ctx.item.options.filter((option) => {
+    const tool = option.parentLineId ? byLineId.get(option.parentLineId) : undefined;
+    return !isCovered(tool ?? option);
+  });
 }
 
 /**

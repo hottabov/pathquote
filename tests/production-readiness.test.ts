@@ -9,7 +9,7 @@ const mSeries = (productionSpec: unknown, options: Array<{ role: "MTS" | "HDC"; 
   options,
 });
 
-const complete = { knifeSize: "1.5x7.0" };
+const complete = { knifeSize: "1.5x7.0", voltage: "400V" };
 
 describe("mtsMetresValid", () => {
   it.each([
@@ -46,8 +46,8 @@ describe("productionIssues", () => {
     const issues = productionIssues([
       mSeries({ drills: { required: true, detail: "" } }, [{ role: "MTS", attributes: {} }]),
     ]);
-    expect(issues).toEqual([{ code: "M-7220", missing: ["knifeSize", "drills", "mtsTravel"] }]);
-    expect(describeIssues(issues)).toBe("M-7220: knife size, drill details, MTS travel (m)");
+    expect(issues).toEqual([{ code: "M-7220", missing: ["knifeSize", "voltage", "drills", "mtsTravel"] }]);
+    expect(describeIssues(issues)).toBe("M-7220: knife size, voltage, drill details, MTS travel (m)");
   });
 
   it("ignores items with no production form", () => {

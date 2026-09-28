@@ -77,11 +77,14 @@ export type BuilderLine = {
    * customer-facing sheet (see src/lib/sheet-data.ts, which never reads this
    * field at all). */
   listPrice: string | null;
-  /** `DocumentLine.attributes` (e.g. `{ metres: 4 }`) as stored — only
-   * meaningful on OPTION lines whose option has an `attributeSchema`; loosely
-   * typed since it's opaque JSON round-tripped straight from the option
-   * editor into storage and back. */
+  /** `DocumentLine.attributes` (e.g. `{ metres: 14 }`) as stored — only
+   * set on an MTS line, where it carries the travel length (see
+   * src/lib/production-forms/mts.ts); loosely typed since it's JSON
+   * round-tripped straight from the option editor into storage and back. */
   attributes: Record<string, string | number> | null;
+  /** For a consumable line (the blade a tool was sold with -- see
+   * OptionConsumable): its tool's line id. `null` for every other line. */
+  parentLineId: string | null;
   sortOrder: number;
   /** For an OPTION line: `Option.role`, resolved by `refId` against the
    * catalog the same live way `imageUrl` below is. What the builder uses to
@@ -497,6 +500,7 @@ function toBuilderLine(
     unitPrice: { toString(): string };
     listPrice: { toString(): string } | null;
     attributes: unknown;
+    parentLineId: string | null;
     sortOrder: number;
     refId: string | null;
     imageUrl: string | null;
@@ -519,6 +523,7 @@ function toBuilderLine(
       line.attributes && typeof line.attributes === "object" && !Array.isArray(line.attributes)
         ? (line.attributes as Record<string, string | number>)
         : null,
+    parentLineId: line.parentLineId,
     sortOrder: line.sortOrder,
     role: optionRow?.role ?? null,
     unitLengthM: optionRow?.unitLengthM ?? null,

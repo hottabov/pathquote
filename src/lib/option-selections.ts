@@ -10,11 +10,16 @@
 
 import type { OptionRole } from "@prisma/client";
 
-/** One option as the panel holds it while open. */
-export type SelectionState = { qty: number; attributes: Record<string, string> };
+/** One option as the panel holds it while open. `consumableId` is the
+ * consumable picked for a tool that takes one (src/lib/consumables.ts). */
+export type SelectionState = { qty: number; attributes: Record<string, string>; consumableId?: string };
 
 /** An OPTION line of the item, as `ItemOptionsEditor` receives it. */
 export type SelectionLine = {
+  /** The line's own id -- what a consumable line's `parentLineId` names. */
+  id: string;
+  /** Set on the consumable line a tool was sold with: its tool's line id. */
+  parentLineId: string | null;
   /** The option's id (`DocumentLine.refId`) -- what the selection is keyed
    * by and what goes back to `setItemOptions`. */
   refId: string | null;
@@ -35,14 +40,21 @@ export function selectionFromLine(line: SelectionLine): SelectionState {
 }
 
 /** Selection keyed by option id. A line with no `refId` has no catalogue
- * row to resubmit, so it is left out -- `save` could not send it anyway. */
+ * row to resubmit, so it is left out -- `save` could not send it anyway. A
+ * consumable line is not a selection of its own: it becomes its tool's
+ * `consumableId`. */
 export function selectionsFromLines(lines: SelectionLine[]): Map<string, SelectionState> {
   const map = new Map<string, SelectionState>();
   for (const line of lines) {
-    if (!line.refId) continue;
-    map.set(line.refId, selectionFromLine(line));
+    if (!line.refId || line.parentLineId !== null) continue;
+    map.set(line.refId, { ...selectionFromLine(line), consumableId: consumableOf(line, lines) });
   }
   return map;
+}
+
+/** The consumable picked for a tool's line, if it has one. */
+function consumableOf(line: SelectionLine, lines: SelectionLine[]): string | undefined {
+  return lines.find((candidate) => candidate.parentLineId === line.id)?.refId ?? undefined;
 }
 
 /**
@@ -76,7 +88,7 @@ export function withDerivedSelections(
   const merged = new Map<string, SelectionState>();
   for (const [id, state] of selected) if (!isLocked(id)) merged.set(id, state);
   for (const line of lines) {
-    if (!line.refId || !isLocked(line.refId)) continue;
+    if (!line.refId || line.parentLineId !== null || !isLocked(line.refId)) continue;
     merged.set(line.refId, selectionFromLine(line));
   }
   return merged;

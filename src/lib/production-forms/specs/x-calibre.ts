@@ -26,7 +26,7 @@ export const xCalibreSpec: HtmlFormSpec = {
   form: "X_CALIBRE",
   renderer: "html",
   specSchema: xCalibreSpecSchema,
-  requires: ["drills"],
+  requires: ["voltage", "drills"],
 
   // Every X-compatible option in the catalogue has a box (2026-09-16 dump):
   // the selected column, TR220/TR480 in the power column, the crate, MTS

@@ -206,7 +206,17 @@ export function formOption(
   role: OptionRole | null,
   overrides: Partial<Omit<FormItemOption, "code" | "role">> = {}
 ): FormItemOption {
-  return { id: `opt-${code}`, code, role, qty: 1, attributes: null, ...overrides };
+  return {
+    id: `opt-${code}`,
+    lineId: `line-${code}`,
+    parentLineId: null,
+    code,
+    name: code,
+    role,
+    qty: 1,
+    attributes: null,
+    ...overrides,
+  };
 }
 
 /** One M5220 line on a production form, with no options selected. The legacy
@@ -221,7 +231,7 @@ export function formItem(overrides: Partial<FormItem> = {}): FormItem {
     kind: "MACHINE",
     form: "M_SERIES",
     specs: { cutHeightCm: 5, cutWidthCm: 227, widthCode: 220, modelTier: "M5" },
-    spec: { ui: "+Y", knifeSize: "1.5x5.0", drills: { required: false, detail: "" } },
+    spec: { ui: "+Y", knifeSize: "1.5x5.0", voltage: "400V", drills: { required: false, detail: "" } },
     options,
     ...legacyOptionViews(options),
     ...overrides,

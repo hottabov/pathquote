@@ -7,6 +7,7 @@
  * module.
  */
 
+import { randomUUID } from "node:crypto";
 import { revalidateDocument } from "@/lib/revalidate";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/authz";
@@ -284,8 +285,13 @@ export async function duplicateItem(itemId: string): Promise<ActionResult> {
       });
 
       if (item.lines.length > 0) {
+        // Fresh ids, made here so a consumable line can be pointed at the
+        // copy of its tool's line rather than at the original's.
+        const newIdByOldId = new Map(item.lines.map((line) => [line.id, randomUUID()]));
         await tx.documentLine.createMany({
           data: item.lines.map((line) => ({
+            id: newIdByOldId.get(line.id)!,
+            parentLineId: line.parentLineId ? (newIdByOldId.get(line.parentLineId) ?? null) : null,
             documentId: item.documentId,
             itemId: copy.id,
             kind: line.kind,

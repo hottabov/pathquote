@@ -168,8 +168,8 @@ export type ToSheetDataDoc = {
    * documents.ts — the single source of truth for a document's effective
    * tax rate); this field exists purely so `toSheetData` can swap the
    * printed tax-rate line for the terms themselves (see `DocSheetTotals`) —
-   * an EX_WORKS quote must read as deliberate ("Ex Works — no GST
-   * applicable"), not as a forgotten "GST 0%" line. */
+   * an EX_WORKS quote must read as deliberate ("Ex Works"), not as a
+   * forgotten "GST 0%" line. */
   deliveryTerms: "DELIVERED" | "EX_WORKS";
   entitySnapshot: unknown;
   entityName: string;
@@ -419,9 +419,9 @@ export type DocSheetTotals = {
   taxAmount: string;
   total: string;
   /** See `ToSheetDataDoc.deliveryTerms` — carried through so
-   * `quotation-sheet.tsx` can print "Ex Works — no GST applicable" in place
-   * of a `{taxName} 0%` line, which would otherwise read as a mistake
-   * rather than a deliberate choice. */
+   * `quotation-sheet.tsx` can print "Ex Works" in place of a `{taxName} 0%`
+   * line, which would otherwise read as a mistake rather than a deliberate
+   * choice. */
   deliveryTerms: "DELIVERED" | "EX_WORKS";
 };
 

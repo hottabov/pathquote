@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   MARKING_TOOL_ROLES,
-  markingToolConflict,
   markingToolReplacingMrk,
   markingToolsAmong,
   mrkFitted,
@@ -33,20 +32,3 @@ describe("which marking tool is fitted", () => {
   });
 });
 
-describe("markingToolConflict", () => {
-  it("passes a selection with one marking tool, or none", () => {
-    expect(markingToolConflict(["HDC", "PM"])).toBeNull();
-    expect(markingToolConflict(["IJP", "HDC"])).toBeNull();
-    expect(markingToolConflict(["MRK"])).toBeNull();
-  });
-
-  it("refuses two at once, naming them as the form does", () => {
-    expect(markingToolConflict(["MRK", "IJP"])).toContain("MRK, IJP");
-    expect(markingToolConflict(["JTP", "ABR"])).toContain("JetPen, ABR");
-    expect(markingToolConflict(["IJP", "ABR"])).toMatch(/only one marking tool/i);
-  });
-
-  it("names all of them when a quote somehow carries three", () => {
-    expect(markingToolConflict(["MRK", "IJP", "ABR"])).toContain("MRK, IJP, ABR");
-  });
-});

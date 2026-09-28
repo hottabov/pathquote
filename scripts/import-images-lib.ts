@@ -123,7 +123,7 @@ export const ICON_OPTION_TARGETS: Record<string, string[]> = {
   MTS: ["MTS", "MTS-M"],
   OFD: ["OFD-M", "OFD-L"],
   OFJ: ["OFJ"],
-  OFP: ["OFP-M", "OFP-L"],
+  OFP: ["OFP", "OFP-L"],
   PRM: ["PRM-M", "PRM-L"],
   JTP: ["JTP"],
 };

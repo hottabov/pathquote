@@ -136,13 +136,9 @@ export function InvestmentSummary({
           </div>
         ) : null}
         {totals.deliveryTerms === "EX_WORKS" ? (
-          // Same reasoning as the banner note above — no `{taxName} 0%`
-          // line, which would read as a mistake rather than the
-          // deliberate export-terms choice it is.
-          <div className="pq-totals-row">
-            <span>Ex Works — no {totals.taxName} applicable</span>
-            <span>{formatMoney(totals.taxAmount, totals.currency, totals.currencySymbol)}</span>
-          </div>
+          // No tax line at all: a `{taxName} 0%` row would read as a
+          // mistake, and the banner already says the quote is Ex Works.
+          null
         ) : (
           <div className="pq-totals-row">
             <span>

@@ -65,7 +65,7 @@ describe("the X-Calibre form", () => {
   });
 
   it("ticks the voltage from the production spec", () => {
-    expect(marked(render(ctx({ voltage: "415V" })), "pf-on")).toContain("415V");
+    expect(marked(render(ctx({ voltage: "480V" })), "pf-on")).toContain("480V");
   });
 
   it("prints the MTS travel distance", () => {

@@ -99,13 +99,9 @@ export async function GET(request: Request, { params }: { params: Promise<Params
       const spec = resolveForm(ctx.item.form)!;
       const item = document.items.find((row) => row.id === ctx.item.id);
       return unmatchedOptions(spec, ctx).map((option) => {
-        // The line is found by `refId` (the option's id), not by its
-        // snapshotted code: the catalogue may have renamed the option since
-        // the quote was written. A line with no `refId` has no catalogue row
-        // at all, so its code is as stable as anything.
-        const line = item?.lines.find((row) =>
-          option.id !== null ? row.refId === option.id : row.code === option.code,
-        );
+        // The line it came from, by id: two tools can carry the same
+        // consumable, so neither the option's id nor its code picks one out.
+        const line = item?.lines.find((row) => row.id === option.lineId);
         return {
           name: line?.name ?? option.code,
           qty: line?.qty ?? option.qty,

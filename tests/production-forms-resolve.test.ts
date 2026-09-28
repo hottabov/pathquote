@@ -65,7 +65,7 @@ describe("specSchemaForForm", () => {
     const form = resolveForm("M_SERIES")!;
     const result = specSchemaForForm("M_SERIES")!.safeParse({ knifeSize: "1.5x5.0" });
     expect(result.success).toBe(true);
-    expect(missingRequirements(form, result.success && result.data)).toEqual([]);
+    expect(missingRequirements(form, result.success && result.data)).toEqual(["voltage"]);
   });
 });
 
@@ -101,7 +101,7 @@ describe("unmatchedOptions", () => {
   it("returns the option lines themselves, so the route can match by id", () => {
     const context = formContext({ item: formItem({ options: [formOption("EDS-500", "EDS", { qty: 3 })] }) });
     expect(unmatchedOptions(mSeries, context)).toEqual([
-      { id: "opt-EDS-500", code: "EDS-500", role: "EDS", qty: 3, attributes: null },
+      expect.objectContaining({ id: "opt-EDS-500", lineId: "line-EDS-500", code: "EDS-500", role: "EDS", qty: 3 }),
     ]);
   });
 
@@ -140,11 +140,11 @@ describe("missingRequirements", () => {
   it("reports every requirement when the spec is empty", () => {
     // "ui" is not among them: screenSideSchema defaults to -Y, so it can
     // never be missing.
-    expect(missingRequirements(mSeries, {})).toEqual(["knifeSize"]);
+    expect(missingRequirements(mSeries, {})).toEqual(["knifeSize", "voltage"]);
   });
 
   it("reports drills when they are required with no detail", () => {
-    const spec = { ui: "+Y", knifeSize: "1.5x5.0", drills: { required: true, detail: "" } };
+    const spec = { ui: "+Y", knifeSize: "1.5x5.0", voltage: "400V", drills: { required: true, detail: "" } };
     expect(missingRequirements(mSeries, spec)).toEqual(["drills"]);
   });
 });

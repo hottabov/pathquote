@@ -4,12 +4,12 @@ import { coveredRoles, resolveForm, unmatchedOptions } from "../src/lib/producti
 import { FORM_SPECS } from "../src/lib/production-forms/specs";
 import { PATHWORKS_ROLES } from "../src/lib/production-forms/pathworks";
 import { lSeriesSpecSchema, xCalibreSpecSchema } from "../src/lib/validation/production-spec";
-import { formContext, formItem } from "./helpers/fixtures";
+import { formContext, formItem, formOption } from "./helpers/fixtures";
 
 /** A synthetic option line for each role, one per role, so a form's coverage
  * can be checked against the whole set at once. */
 const optionsFor = (roles: readonly OptionRole[]) =>
-  roles.map((role, i) => ({ id: `opt-${i}`, code: `opt-${role}`, role, qty: 1, attributes: null }));
+  roles.map((role, i) => formOption(`opt-${role}`, role, { id: `opt-${i}` }));
 
 /**
  * Every option role the catalogue sells against a series (2026-09-16 dump),
@@ -32,7 +32,7 @@ const X_COMPATIBLE_ROLES = [
 ] as const satisfies readonly OptionRole[];
 
 const L_COMPATIBLE_ROLES = [
-  "ABR", "APM", "BCR", "CRATE", "L_TOOL", "L_EXTENDED", "HDC", "HFV", "JTP",
+  "ABR", "APM", "BCR", "CRATE", "L_TOOL", "HDC", "HFV", "JTP",
   "MRK", "OFD", "OFP", "PM", "PRM", ...PATHWORKS_ROLES,
 ] as const satisfies readonly OptionRole[];
 
@@ -72,8 +72,8 @@ describe("the form registry", () => {
 describe("X-Calibre", () => {
   const spec = resolveForm("X_CALIBRE")!;
 
-  it("asks for drills and nothing else", () => {
-    expect(spec.requires).toEqual(["drills"]);
+  it("asks for the voltage and drills and nothing else", () => {
+    expect(spec.requires).toEqual(["voltage", "drills"]);
   });
 
   it("does not ask for a knife size — the form prints one", () => {
@@ -90,7 +90,7 @@ describe("X-Calibre", () => {
   it("ticks a DuctMasTer rather than sending it to the Additional items sheet", () => {
     // X-Calibre gained a DMT box (2026-09-16), so it no longer needs the
     // Additional items sheet to surface a DMT line.
-    const dmt = { id: "o", code: "DMT", role: "DMT" as const, qty: 1, attributes: null };
+    const dmt = formOption("DMT", "DMT");
     const ctx = formContext({ item: formItem({ form: "X_CALIBRE", options: [dmt] }) });
 
     expect(unmatchedOptions(spec, ctx).map((o) => o.code)).toEqual([]);
@@ -130,6 +130,20 @@ describe("L-Series", () => {
     // than rejected, so an old quote does not fail to load.
     const parsed = lSeriesSpecSchema.parse({ shipping: "crate-whole" });
     expect(parsed).not.toHaveProperty("shipping");
+  });
+
+  it("prints a tool's consumable with the tool, not on the Additional items sheet", () => {
+    const drg = formOption("DRG", "L_TOOL");
+    const blade = formOption("CB-30", "CONSUMABLE", { qty: 2, parentLineId: drg.lineId });
+    const ctx = formContext({ item: formItem({ form: "L_SERIES", options: [drg, blade] }) });
+    expect(unmatchedOptions(spec, ctx)).toEqual([]);
+  });
+
+  it("sends a consumable to the Additional items sheet along with a tool the form has no box for", () => {
+    const tool = formOption("ODD", null);
+    const blade = formOption("ODD-B", "CONSUMABLE", { parentLineId: tool.lineId });
+    const ctx = formContext({ item: formItem({ form: "L_SERIES", options: [tool, blade] }) });
+    expect(unmatchedOptions(spec, ctx).map((o) => o.code)).toEqual(["ODD", "ODD-B"]);
   });
 
   it("leaves nothing unmatched when every L-compatible role is on the item", () => {

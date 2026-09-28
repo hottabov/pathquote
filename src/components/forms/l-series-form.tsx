@@ -1,8 +1,10 @@
 import type { OptionRole } from "@prisma/client";
-import type { FormContext } from "@/lib/production-forms/types";
+import type { FormContext, FormItemOption } from "@/lib/production-forms/types";
+import { consumableIncludedLabel } from "@/lib/consumables";
+import { L_SERIES_DEFAULT_VOLTAGE } from "@/lib/production-forms/voltage";
 import { EndUserSection, FormSheet, provenance } from "./form-sheet";
 import { Footnote, InlineValue, Label, OfficeUse, Section, Tick, TickGrid, WriteIn } from "./primitives";
-import { PathWorksSection, ScreenSideBlock, hasRole } from "./m-series-form";
+import { SoftwareSection, ScreenSideBlock, hasRole } from "./m-series-form";
 import {
   MARKING_TOOL_LABELS,
   markingToolReplacingMrk,
@@ -55,11 +57,14 @@ export function LSeriesForm({ ctx }: { ctx: FormContext }) {
     specialNotes?: string;
   };
   const side = spec.ui ?? "-Y";
-  // Extended either by the product code (L-320E) or by the priced
-  // extension option (180-E, 220-E) on a standard machine.
-  const extended = ctx.item.specs.extended === true || hasRole(ctx, "L_EXTENDED");
+  // Extended is a model of its own (L-180E, L-220EF, ...), read off its specs.
+  const extended = ctx.item.specs.extended === true;
   const belt = ctx.item.specs.belt;
   const tools = ctx.item.options.filter((option) => option.role === "L_TOOL");
+  // The blade or drill each tool was sold with (see OptionConsumable) prints
+  // beside it, so the workshop packs the right one.
+  const consumableOf = (tool: FormItemOption) =>
+    ctx.item.options.find((option) => option.parentLineId !== null && option.parentLineId === tool.lineId);
   // MRK is standard on every L-Series, but it shares its mount with the ink
   // jet printer, the JetPen and the air brush -- so one of those on the quote
   // takes it off the machine. The sheet says which, rather than quietly
@@ -136,9 +141,22 @@ export function LSeriesForm({ ctx }: { ctx: FormContext }) {
           ) : (
             <Tick std code="MRK" desc="standard on all" />
           )}
-          {tools.map((tool) => (
-            <Tick key={tool.id ?? tool.code} qty={tool.qty} code={tool.code} />
-          ))}
+          {tools.map((tool) => {
+            const consumable = consumableOf(tool);
+            return (
+              <Tick
+                key={tool.lineId}
+                qty={tool.qty}
+                code={tool.code}
+                // The name carries the assembly part number the workshop
+                // picks by (John: "use the part number"), and the blade or
+                // drill that goes with it follows.
+                desc={[tool.name, consumable ? consumableIncludedLabel(consumable.qty, consumable.name) : null]
+                  .filter(Boolean)
+                  .join(" — ")}
+              />
+            );
+          })}
         </TickGrid>
         {tools.length === 0 ? (
           <p className="pf-terms">No tools ordered.</p>
@@ -149,7 +167,7 @@ export function LSeriesForm({ ctx }: { ctx: FormContext }) {
           the workshop's (Vadym, 2026-09-16). */}
       <Section title="Voltage">
         <TickGrid variant="row">
-          <Tick lead on={spec.voltage === "220/230"}>
+          <Tick lead on={(spec.voltage ?? L_SERIES_DEFAULT_VOLTAGE) === L_SERIES_DEFAULT_VOLTAGE}>
             <span className="pf-num">220 / 230</span>
           </Tick>
           <Tick lead on={spec.voltage === "other"}>
@@ -170,7 +188,7 @@ export function LSeriesForm({ ctx }: { ctx: FormContext }) {
         </TickGrid>
       </Section>
 
-      <PathWorksSection ctx={ctx} />
+      <SoftwareSection ctx={ctx} />
 
       <Section title="Special notes">
         <WriteIn>

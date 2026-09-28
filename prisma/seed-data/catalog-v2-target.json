@@ -2243,7 +2243,7 @@
     },
     {
       "id": "cmtfmusjx001eeo9khd2th9al",
-      "action": "keep",
+      "action": "delete",
       "code": "180-E",
       "name": "Extended Length, L-180",
       "description": "Extended length for L-180",
@@ -2256,12 +2256,12 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "L_EXTENDED",
+      "reason": "the extension is a model of its own (L-180E, L-220E, ...) since z53",
       "contentBlockKey": null
     },
     {
       "id": "cmtfmusjz001geo9ka0pta8u3",
-      "action": "keep",
+      "action": "delete",
       "code": "220-E",
       "name": "Extended Length, L-220",
       "description": "Extended length for L-220",
@@ -2274,7 +2274,7 @@
         "L"
       ],
       "compatProducts": [],
-      "role": "L_EXTENDED",
+      "reason": "the extension is a model of its own (L-180E, L-220E, ...) since z53",
       "contentBlockKey": null
     },
     {

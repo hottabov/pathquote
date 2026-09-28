@@ -29,7 +29,6 @@ export default async function NewOptionPage() {
             code: "",
             name: "",
             shortDescription: "",
-            attributeSchema: "",
             active: true,
             noCommission: false,
             sortOrder: 0,

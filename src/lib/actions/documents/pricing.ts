@@ -520,6 +520,9 @@ export async function setLineUnitPrice(lineId: string, formData: FormData): Prom
     where: {
       id: parsedLineId.data,
       kind: "OPTION",
+      // A consumable that comes with a tool is not sold, so it has no price
+      // to set (see OptionConsumable).
+      parentLineId: null,
       document: { status: "DRAFT", ...documentWhereForUser(session.user) },
     },
     select: { id: true, documentId: true, unitPrice: true, listPrice: true },
@@ -560,6 +563,9 @@ export async function resetLineUnitPrice(lineId: string): Promise<ActionResult> 
     where: {
       id: parsedLineId.data,
       kind: "OPTION",
+      // A consumable that comes with a tool is not sold, so it has no price
+      // to set (see OptionConsumable).
+      parentLineId: null,
       document: { status: "DRAFT", ...documentWhereForUser(session.user) },
     },
     select: { id: true, documentId: true, listPrice: true },

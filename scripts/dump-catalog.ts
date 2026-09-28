@@ -58,7 +58,6 @@ async function main() {
       role: o.role,
       parentProductCode: o.parentProduct?.code ?? null,
       unitLengthM: o.unitLengthM === null ? null : o.unitLengthM.toNumber(),
-      attributeSchema: o.attributeSchema,
       active: o.active,
       noCommission: o.noCommission,
       imageUrl: o.imageUrl,

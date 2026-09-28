@@ -851,7 +851,8 @@ describe("renderQuotationHtml — Ex Works delivery terms", () => {
         },
       })
     );
-    expect(html).toContain("Ex Works — no GST applicable");
+    expect(html).toContain("(Ex Works)");
+    expect(html).not.toContain("applicable");
     expect(html).not.toContain("GST 0%");
     expect(html).not.toContain("GST 10%");
     expect(html).not.toContain("(incl. GST 10%)");

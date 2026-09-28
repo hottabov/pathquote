@@ -33,7 +33,6 @@ export const lSeriesSpec: HtmlFormSpec = {
   // themselves -- covered here, printed with their quantities.
   covers: [
     "L_TOOL",
-    "L_EXTENDED",
     "OFD",
     "OFP",
     "BCR",

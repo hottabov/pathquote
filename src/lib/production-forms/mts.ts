@@ -16,8 +16,9 @@
  *
  * The length lives on the `MTS` line's `attributes.metres`, where it already
  * was: the M-Series form prints it at M73 beside "Travel distance, end to end
- * of tables", and the options editor already renders the field from the
- * option's `attributeSchema`. Nothing new had to be stored.
+ * of tables", and the options editor renders the input for it (see
+ * `MTS_METRES_FIELD`). It is the only value an option line carries beyond
+ * its quantity.
  */
 
 /** The key the travel distance is stored under on the MTS option line. */
@@ -26,13 +27,11 @@ export const MTS_METRES_KEY = "metres";
 /**
  * The travel-length input the options editor renders on an MTS row.
  *
- * Declared here rather than in the catalogue's `Option.attributeSchema`,
- * which is where an option's extra inputs normally come from. An MTS has a
- * travel distance the way it has a price: it is what the thing is, not an
- * admin's decision about it, and the number drives both what the quote
+ * Declared in code rather than configured in the catalogue: an MTS has a
+ * travel distance the way it has a price — it is what the thing is, not an
+ * admin's decision about it — and the number drives both what the quote
  * charges (`mtsTravelMetres`) and what the workshop builds (the M-Series
- * form prints it at M73). Leaving it in a hand-edited JSON blob would mean
- * one cleared field silently stops the extra metres being billed.
+ * form prints it at M73).
  */
 export const MTS_METRES_FIELD = {
   key: MTS_METRES_KEY,

@@ -11,10 +11,10 @@ import type { OptionRole } from "@prisma/client";
  * 2026-09-18: "якщо менеджер обирає IJP, JetPen or ABR, треба MRK
  * виключати").
  *
- * Kept here rather than as an `OptionConflictGroup` in the catalogue because
- * the rule belongs to the L-Series: on an M-Series the same options are
- * separate boxes with no exclusivity, and a conflict group is catalogue-wide,
- * so it would refuse a combination the M form is drawn to print.
+ * That only one can be fitted -- on every machine, not just the L-Series
+ * (John) -- is the catalogue's `OptionConflictGroup` of MRK, IJP,
+ * JetPen and the air brushes. This file is what the L-Series form needs to
+ * know about which one is on the machine.
  */
 export const MARKING_TOOL_ROLES = ["MRK", "IJP", "JTP", "ABR"] as const;
 
@@ -49,16 +49,4 @@ export function markingToolReplacingMrk(roles: Array<OptionRole | null | undefin
 /** Whether the standard MRK is still on the machine. */
 export function mrkFitted(roles: Array<OptionRole | null | undefined>): boolean {
   return markingToolReplacingMrk(roles) === null;
-}
-
-/**
- * The error for an L-Series quote that fits two marking tools at once, or
- * null when the selection is legal. Pure, so the rule can be tested without
- * a database; `setItemOptions` is what applies it.
- */
-export function markingToolConflict(roles: Array<OptionRole | null | undefined>): string | null {
-  const fitted = markingToolsAmong(roles);
-  if (fitted.length < 2) return null;
-  const names = fitted.map((tool) => MARKING_TOOL_LABELS[tool]).join(", ");
-  return `Only one marking tool can be fitted on an L-Series — remove all but one of ${names}`;
 }

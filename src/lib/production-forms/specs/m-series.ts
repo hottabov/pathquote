@@ -24,7 +24,7 @@ export const mSeriesSpec: HtmlFormSpec = {
   // "ui" is not listed: screenSideSchema defaults to -Y, so it can never be
   // missing -- leaving it here would permanently disable the download button
   // for any spec stored before that default existed.
-  requires: ["knifeSize", "drills"],
+  requires: ["knifeSize", "voltage", "drills"],
 
   covers: [
     "OFJ",

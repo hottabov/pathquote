@@ -86,7 +86,6 @@ function optionWrite(o: ParsedOption): OptionWrite {
     active: o.active,
     sortOrder: o.sortOrder,
     imageUrl: o.imageUrl,
-    attributeSchema: o.attributeSchema,
   };
 }
 

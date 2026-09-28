@@ -1,6 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import {
+  L_SERIES_DEFAULT_VOLTAGE,
+  M_SERIES_VOLTAGES,
+  X_CALIBRE_VOLTAGES,
+  transformerCodeFor,
+} from "@/lib/production-forms/voltage";
 import type { ProductionForm } from "@prisma/client";
 import { ChevronDown, Minus, Plus, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,7 +14,7 @@ import { fieldInputClass } from "@/components/ui-kit";
 import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 import { applyScreenSideToQuote, setProductionSpec } from "@/lib/actions/production";
-import { setEasyLoaderLayout } from "@/lib/actions/documents";
+import { setEasyLoaderLayout, setMachineVoltage } from "@/lib/actions/documents";
 import { formHasScreenSide, missingRequirements, resolveForm, screenSideLabel } from "@/lib/production-forms/resolve";
 import { REQUIREMENT_LABELS } from "@/lib/production-forms/readiness";
 import { easyLoaderPrintedWidth } from "@/lib/production-forms/specs/easyloader";
@@ -56,7 +62,6 @@ function writeDistance(distances: number[], index: number, value: number | undef
 }
 
 const KNIFE_SIZES = ["1.5x5.0", "1.5x7.0", "2.0x7.0"] as const;
-const VOLTAGES = ["220V", "400V", "415V", "480V"] as const;
 
 const checkboxClass = "size-5 shrink-0 rounded border-slate-300 accent-brand";
 /** Compact control height, matching the dense Qty/attribute rows in
@@ -345,7 +350,7 @@ export function ProductionSpecEditor({
 
   const isEasyLoader = form.form === "EASYLOADER";
 
-  async function save(next: Record<string, unknown>, kind: "spec" | "layout") {
+  async function save(next: Record<string, unknown>, kind: "spec" | "layout" | "voltage") {
     setDraft(next);
     setError(null);
     setInFlight((n) => n + 1);
@@ -353,8 +358,14 @@ export function ProductionSpecEditor({
     // so it goes through the documents action, which is DRAFT-gated. The
     // screen side and usage do not, so they keep the looser path that stays
     // available after finalize.
+    // An M-Series' voltage brings its transformer with it (voltage.ts), so it
+    // too is a price change and goes through the DRAFT-gated action.
     const result =
-      kind === "layout" ? await setEasyLoaderLayout(itemId, next) : await setProductionSpec(itemId, next);
+      kind === "layout"
+        ? await setEasyLoaderLayout(itemId, next)
+        : kind === "voltage"
+          ? await setMachineVoltage(itemId, String(next.voltage))
+          : await setProductionSpec(itemId, next);
     setInFlight((n) => n - 1);
     setError(result.error ?? null);
     if (result.error) {
@@ -618,17 +629,18 @@ export function ProductionSpecEditor({
           {form.form === "X_CALIBRE" ? (
             <>
               {/* No knife size: the X-Calibre form prints one, 2.4 x 8.5. */}
-              <CompactField label="Voltage (optional)" htmlFor={`${itemId}-voltage`}>
+              <CompactField label="Voltage" htmlFor={`${itemId}-voltage`}>
                 <select
                   id={`${itemId}-voltage`}
                   value={(draft.voltage as string) ?? ""}
-                  onChange={(e) =>
-                    save({ ...draft, voltage: e.target.value === "" ? undefined : e.target.value }, "spec")
-                  }
+                  onChange={(e) => save({ ...draft, voltage: e.target.value }, "spec")}
+                  required
                   className={cn(fieldInputClass, compactControlClass, "w-28")}
                 >
-                  <option value="">—</option>
-                  {VOLTAGES.map((v) => (
+                  <option value="" disabled>
+                    Choose…
+                  </option>
+                  {X_CALIBRE_VOLTAGES.map((v) => (
                     <option key={v} value={v}>
                       {v}
                     </option>
@@ -662,13 +674,10 @@ export function ProductionSpecEditor({
               <CompactField label="Voltage" htmlFor={`${itemId}-l-voltage`}>
                 <select
                   id={`${itemId}-l-voltage`}
-                  value={(draft.voltage as string) ?? ""}
-                  onChange={(e) =>
-                    save({ ...draft, voltage: e.target.value === "" ? undefined : e.target.value }, "spec")
-                  }
+                  value={(draft.voltage as string) ?? L_SERIES_DEFAULT_VOLTAGE}
+                  onChange={(e) => save({ ...draft, voltage: e.target.value }, "spec")}
                   className={cn(fieldInputClass, compactControlClass, "w-32")}
                 >
-                  <option value="">—</option>
                   <option value="220/230">220/230</option>
                   <option value="other">Other</option>
                 </select>
@@ -717,21 +726,26 @@ export function ProductionSpecEditor({
                 </select>
               </CompactField>
 
-              <CompactField label="Voltage (optional)" htmlFor={`${itemId}-voltage`}>
+              <CompactField label="Voltage" htmlFor={`${itemId}-voltage`}>
                 <select
                   id={`${itemId}-voltage`}
                   value={(draft.voltage as string) ?? ""}
-                  onChange={(e) =>
-                    save({ ...draft, voltage: e.target.value === "" ? undefined : e.target.value }, "spec")
-                  }
-                  className={cn(fieldInputClass, compactControlClass, "w-28")}
+                  onChange={(e) => save({ ...draft, voltage: e.target.value }, "voltage")}
+                  required
+                  className={cn(fieldInputClass, compactControlClass, "w-44")}
                 >
-                  <option value="">—</option>
-                  {VOLTAGES.map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
+                  <option value="" disabled>
+                    Choose…
+                  </option>
+                  {M_SERIES_VOLTAGES.map((v) => {
+                    // Says what the choice adds to the quote.
+                    const transformer = transformerCodeFor(v);
+                    return (
+                      <option key={v} value={v}>
+                        {transformer ? `${v} + ${transformer} transformer` : v}
+                      </option>
+                    );
+                  })}
                 </select>
               </CompactField>
 

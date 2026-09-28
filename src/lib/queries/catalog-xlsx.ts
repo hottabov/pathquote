@@ -70,7 +70,6 @@ export async function loadCatalogSnapshot(client: SnapshotClient = db): Promise<
       active: o.active,
       sortOrder: o.sortOrder,
       imageUrl: o.imageUrl,
-      attributeSchema: o.attributeSchema,
       prices: priceMap(o.prices),
       refs: refs.get(o.id) ?? { draftDocumentIds: [], finalDocuments: 0 },
     })),

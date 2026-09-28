@@ -95,37 +95,8 @@ const shortDescriptionSchema = z.preprocess(
   z.string().max(500, "Short description must be at most 500 characters").optional()
 );
 
-/**
- * Raw JSON text for `Option.attributeSchema`, e.g.
- * `[{"key":"metres","label":"Travel (m)","type":"number"}]`. Empty/blank
- * input becomes `null` (meaning "no attribute schema"); non-empty input
- * must `JSON.parse` to an array or a plain object. The final output is the
- * *parsed* value (or `null`), ready to hand straight to Prisma's Json field.
- */
-const attributeSchemaSchema = z
-  .string()
-  .nullish()
-  .transform((value) => {
-    const trimmed = typeof value === "string" ? value.trim() : "";
-    return trimmed === "" ? null : trimmed;
-  })
-  .refine(
-    (value) => {
-      if (value === null) return true;
-      try {
-        const parsed = JSON.parse(value);
-        return Array.isArray(parsed) || (typeof parsed === "object" && parsed !== null);
-      } catch {
-        return false;
-      }
-    },
-    { message: "Attribute schema must be valid JSON representing an array or object" }
-  )
-  .transform((value): unknown => (value === null ? null : JSON.parse(value)));
-
 export const optionSchema = productSchema.extend({
   shortDescription: shortDescriptionSchema,
-  attributeSchema: attributeSchemaSchema,
 });
 
 export type OptionInput = z.infer<typeof optionSchema>;

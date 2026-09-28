@@ -44,7 +44,6 @@ type Dump = {
     code: string;
     name: string;
     shortDescription: string | null;
-    attributeSchema: unknown;
     active: boolean;
     noCommission: boolean;
     imageUrl: string | null;
@@ -127,7 +126,6 @@ function tiny(): CatalogExportSnapshot {
     active: true,
     sortOrder: 1,
     imageUrl: "/images/dm.png",
-    attributeSchema: [{ key: "metres", type: "number" }],
     prices: { AU: { amount: "4200", needsReview: false } },
   };
   const option2: ExportOption = {
@@ -140,7 +138,6 @@ function tiny(): CatalogExportSnapshot {
     compatSeries: ["M", "X"],
     compatProducts: [],
     imageUrl: null,
-    attributeSchema: null,
     prices: { AU: { amount: 1950, needsReview: false } },
   };
   return {
@@ -196,7 +193,6 @@ describe("catalog export builder — rows", () => {
     expect(dm[OPTION_COLUMNS.indexOf("unitLengthM")]).toBe(1.2);
     expect(dm[OPTION_COLUMNS.indexOf("compatProducts")]).toBe("EL-2020");
     expect(dm[OPTION_COLUMNS.indexOf("compatSeries")]).toBeNull();
-    expect(dm[OPTION_COLUMNS.indexOf("attributeSchema")]).toBe('[{"key":"metres","type":"number"}]');
 
     const abr = sheets.options.find((r) => r[OPTION_COLUMNS.indexOf("code")] === "ABR-M")!;
     expect(abr[OPTION_COLUMNS.indexOf("compatSeries")]).toBe("M; X");

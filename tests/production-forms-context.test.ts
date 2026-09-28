@@ -125,8 +125,8 @@ describe("buildFormContexts", () => {
   it("joins each option line to its catalogue role", () => {
     const item = buildFormContexts(baseDocument as never)[0].item;
     expect(item.options).toEqual([
-      { id: "opt-mts", code: "MTS", role: "MTS", qty: 1, attributes: { metres: 14 } },
-      { id: "opt-abr", code: "ABR-M", role: "ABR", qty: 1, attributes: null },
+      expect.objectContaining({ id: "opt-mts", code: "MTS", role: "MTS", qty: 1, attributes: { metres: 14 } }),
+      expect.objectContaining({ id: "opt-abr", code: "ABR-M", role: "ABR", qty: 1, attributes: null }),
     ]);
   });
 
@@ -165,7 +165,7 @@ describe("buildFormContexts", () => {
     };
     const item = buildFormContexts(doc as never)[0].item;
     expect(item.options).toEqual([
-      { id: "opt-conv", code: "EL-2420 Additional 1.2M lengths", role: "EL_CONVEYOR", qty: 6, attributes: null },
+      expect.objectContaining({ id: "opt-conv", code: "EL-2420 Additional 1.2M lengths", role: "EL_CONVEYOR", qty: 6, attributes: null }),
     ]);
     expect(item.optionQtys).toEqual([{ code: "EL-2420 Additional 1.2M lengths", qty: 6 }]);
   });

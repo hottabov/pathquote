@@ -9,12 +9,14 @@ import {
 } from "../src/lib/option-selections";
 import { EL_MODULE_ROLES } from "../src/lib/production-forms/table-sections";
 
+let lineSeq = 0;
 const line = (
   refId: string | null,
   qty: number,
   role: OptionRole | null,
-  attributes: Record<string, string | number> | null = null
-): SelectionLine => ({ refId, qty, role, attributes });
+  attributes: Record<string, string | number> | null = null,
+  parentLineId: string | null = null
+): SelectionLine => ({ id: `line-${++lineSeq}`, parentLineId, refId, qty, role, attributes });
 
 /** The EasyLoader's lock: its table modules plus the per-metre MTS rail,
  * exactly as `items-list.tsx` assembles it. */
@@ -64,6 +66,20 @@ describe("selectionsFromLines", () => {
     const map = selectionsFromLines([line("a", 2, null), line(null, 9, null)]);
     expect([...map.keys()]).toEqual(["a"]);
     expect(map.get("a")).toEqual({ qty: 2, attributes: {} });
+  });
+
+  it("reads a consumable line as its tool's pick, not as a selection of its own", () => {
+    const drg = line("drg", 1, "L_TOOL");
+    const drgB = line("drg-b", 1, "L_TOOL");
+    const map = selectionsFromLines([
+      drg,
+      line("blade-30", 2, null, null, drg.id),
+      drgB,
+      line("blade-45", 2, null, null, drgB.id),
+    ]);
+    expect([...map.keys()]).toEqual(["drg", "drg-b"]);
+    expect(map.get("drg")?.consumableId).toBe("blade-30");
+    expect(map.get("drg-b")?.consumableId).toBe("blade-45");
   });
 });
 

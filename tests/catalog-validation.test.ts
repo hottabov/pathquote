@@ -134,7 +134,6 @@ describe("optionSchema", () => {
     active: "on",
     sortOrder: "0",
     shortDescription: "A skate option",
-    attributeSchema: "",
   };
 
   accepts(optionSchema, [
@@ -147,53 +146,6 @@ describe("optionSchema", () => {
     ["an empty code (base product rule)", { ...base, code: "" }],
     ["a name shorter than 2 characters (base product rule)", { ...base, name: "A" }],
   ]);
-
-  describe("attributeSchema JSON refine", () => {
-    it("collapses an empty string to null", () => {
-      const result = optionSchema.safeParse({ ...base, attributeSchema: "" });
-      expect(result.success).toBe(true);
-      if (result.success) expect(result.data.attributeSchema).toBeNull();
-    });
-
-    it("collapses whitespace-only input to null", () => {
-      const result = optionSchema.safeParse({ ...base, attributeSchema: "   " });
-      expect(result.success).toBe(true);
-      if (result.success) expect(result.data.attributeSchema).toBeNull();
-    });
-
-    it("collapses a missing/null value to null", () => {
-      const result = optionSchema.safeParse({ ...base, attributeSchema: null });
-      expect(result.success).toBe(true);
-      if (result.success) expect(result.data.attributeSchema).toBeNull();
-    });
-
-    it("parses a valid JSON array", () => {
-      const result = optionSchema.safeParse({
-        ...base,
-        attributeSchema: '[{"key":"metres","label":"Travel (m)","type":"number"}]',
-      });
-      expect(result.success).toBe(true);
-      if (result.success) {
-        expect(result.data.attributeSchema).toEqual([
-          { key: "metres", label: "Travel (m)", type: "number" },
-        ]);
-      }
-    });
-
-    it("parses a valid JSON object", () => {
-      const result = optionSchema.safeParse({ ...base, attributeSchema: '{"metres":4}' });
-      expect(result.success).toBe(true);
-      if (result.success) expect(result.data.attributeSchema).toEqual({ metres: 4 });
-    });
-
-    rejects(optionSchema, [
-      ["an attributeSchema value that's malformed JSON", { ...base, attributeSchema: "{not json" }],
-      ["an attributeSchema value that's a bare number", { ...base, attributeSchema: "123" }],
-      ["an attributeSchema value that's a bare string", { ...base, attributeSchema: '"hello"' }],
-      ["an attributeSchema value that's the literal null", { ...base, attributeSchema: "null" }],
-      ["an attributeSchema value that's the literal true", { ...base, attributeSchema: "true" }],
-    ]);
-  });
 });
 
 describe("priceInputSchema", () => {

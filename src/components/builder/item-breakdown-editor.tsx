@@ -153,7 +153,9 @@ export function ItemBreakdownEditor({
             listPrice={line.listPrice}
             currency={currency}
             currencySymbol={currencySymbol}
-            editable={!readOnly}
+            // A consumable that comes with its tool is not sold, so there is
+            // no price of it to edit (see OptionConsumable).
+            editable={!readOnly && line.parentLineId === null}
             setAction={setLineUnitPrice}
             resetAction={resetLineUnitPrice}
           />

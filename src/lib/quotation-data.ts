@@ -78,6 +78,10 @@ export type QuotationLineInput = ToSheetLineInput & {
    * `Option.shortDescription`, snapshotted onto the line), so the attributes
    * are display data only now and no token anywhere resolves from them. */
   attributes: Record<string, string | number> | null;
+  /** Set on the consumable a tool was sold with (see OptionConsumable): its
+   * tool's line id. Such a row comes with the tool, so it prints as
+   * "Included" rather than a price. */
+  parentLineId?: string | null;
   /** The line's option's `Option.imageUrl` (resolved by `refId` — see
    * `getDocumentForBuilder`'s `optionImageMap`), snapshotted from the
    * catalog at read time rather than frozen on the line itself (an option's
@@ -1128,11 +1132,13 @@ export function buildQuotationData(
         attributesLine: attributesLine(line.attributes),
         qty: docLine?.qty ?? line.qty,
         price: doc.showOptionPrices
-          ? formatMoney(
-              docLine?.lineTotal ?? "0",
-              sheet.totals.currency,
-              sheet.totals.currencySymbol
-            )
+          ? line.parentLineId
+            ? "Included"
+            : formatMoney(
+                docLine?.lineTotal ?? "0",
+                sheet.totals.currency,
+                sheet.totals.currencySymbol
+              )
           : null,
       });
     }

@@ -7,6 +7,7 @@ import { EmptyState, StatusBadge } from "@/components/ui-kit";
 import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 import { addItem } from "@/lib/actions/documents";
+import { CatalogThumb } from "@/components/catalog/catalog-thumb";
 import type { ItemPickerSeries } from "@/lib/queries/documents";
 
 /**
@@ -106,8 +107,11 @@ export function AddItemPicker({
                 onClick={() => setSeriesId(series.id)}
                 className="focus-ring flex min-h-11 items-center justify-between gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors hover:bg-white"
               >
-                <span>{series.name}</span>
-                <span className="text-xs text-slate-500">
+                <span className="flex min-w-0 items-center gap-3">
+                  <CatalogThumb src={series.imageUrl} width={64} />
+                  <span className="truncate">{series.name}</span>
+                </span>
+                <span className="shrink-0 text-xs text-slate-500">
                   {series.products.length} {series.products.length === 1 ? "product" : "products"}
                 </span>
               </button>
@@ -123,9 +127,12 @@ export function AddItemPicker({
                   "disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
                 )}
               >
-                <span className="flex min-w-0 items-baseline gap-2">
-                  <span className="font-mono text-xs text-brand-dark">{product.code}</span>
-                  <span className="truncate">{product.name}</span>
+                <span className="flex min-w-0 items-center gap-3">
+                  <CatalogThumb src={product.imageUrl} width={64} />
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <span className="font-mono text-xs text-brand-dark">{product.code}</span>
+                    <span className="truncate">{product.name}</span>
+                  </span>
                 </span>
                 {!product.priced && (
                   <StatusBadge tone="rose" className="shrink-0">

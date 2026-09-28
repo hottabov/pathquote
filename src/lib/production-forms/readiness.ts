@@ -23,6 +23,7 @@ import { missingRequirements, resolveForm } from "./resolve";
 /** The label a missing key shows under, in the builder and in the finalize error. */
 export const REQUIREMENT_LABELS: Record<string, string> = {
   knifeSize: "knife size",
+  voltage: "voltage",
   drills: "drill details",
   usage: "EasyLoader usage",
   sections: "table sections",

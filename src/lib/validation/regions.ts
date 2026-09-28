@@ -128,8 +128,7 @@ export type BankDetailsRecord = z.infer<typeof bankDetailsRecordSchema>;
 /** Raw JSON text from the dynamic key-value editor's hidden input (see
  * src/components/regions/bank-details-editor.tsx), parsed and validated as a
  * flat string->string record. Empty/blank input becomes `null` (no bank
- * details stored) — mirrors `attributeSchemaSchema` in
- * src/lib/validation/catalog.ts. */
+ * details stored). */
 export const bankDetailsSchema = z
   .string()
   .nullish()

@@ -1,5 +1,5 @@
 {
-  "extractedAt": "2026-09-17T06:24:07.127Z",
+  "extractedAt": "2026-09-28T01:37:04.667Z",
   "series": [
     {
       "seriesCode": "X",
@@ -321,6 +321,36 @@
           }
         },
         {
+          "code": "L-180E",
+          "name": "L-Series Cutting Machine 180cm, Extended",
+          "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 180cm. Cutting belt perforated flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included. Extended length.",
+          "price": 141000,
+          "needsReview": false,
+          "kind": "MACHINE",
+          "form": "L_SERIES",
+          "specs": {
+            "belt": "urethane",
+            "extended": true,
+            "widthCode": 180,
+            "cutWidthCm": 180
+          }
+        },
+        {
+          "code": "L-180EF",
+          "name": "L-Series Cutting Machine 180cm, Extended, Felt",
+          "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 180cm. Cutting belt Porous felt flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included. Extended length.",
+          "price": 136000,
+          "needsReview": false,
+          "kind": "MACHINE",
+          "form": "L_SERIES",
+          "specs": {
+            "belt": "felt",
+            "extended": true,
+            "widthCode": 180,
+            "cutWidthCm": 180
+          }
+        },
+        {
           "code": "L-220",
           "name": "L-Series Cutting Machine 226cm",
           "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 226cm. Cutting belt perforated flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included.",
@@ -351,18 +381,33 @@
           }
         },
         {
-          "code": "L-320",
-          "name": "L-Series Cutting Machine 320cm",
-          "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 320cm. Cutting belt perforated flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included.",
-          "price": 170000,
+          "code": "L-220E",
+          "name": "L-Series Cutting Machine 226cm, Extended",
+          "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 226cm. Cutting belt perforated flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included. Extended length.",
+          "price": 158000,
           "needsReview": false,
           "kind": "MACHINE",
           "form": "L_SERIES",
           "specs": {
             "belt": "urethane",
-            "extended": false,
-            "widthCode": 320,
-            "cutWidthCm": 320
+            "extended": true,
+            "widthCode": 220,
+            "cutWidthCm": 226
+          }
+        },
+        {
+          "code": "L-220EF",
+          "name": "L-Series Cutting Machine 226cm, Extended, Felt",
+          "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 226cm. Cutting belt Porous felt flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included. Extended length.",
+          "price": 153000,
+          "needsReview": false,
+          "kind": "MACHINE",
+          "form": "L_SERIES",
+          "specs": {
+            "belt": "felt",
+            "extended": true,
+            "widthCode": 220,
+            "cutWidthCm": 226
           }
         },
         {
@@ -376,21 +421,6 @@
           "specs": {
             "belt": "urethane",
             "extended": true,
-            "widthCode": 320,
-            "cutWidthCm": 320
-          }
-        },
-        {
-          "code": "L-320F",
-          "name": "L-Series Cutting Machine 320cm, Felt",
-          "description": "Conveyorised cnc cutting machine - Capacity single/low ply. Width 320cm. Cutting belt Porous felt flat. Standard with MRK (included). Facility for 3 Simultaneous tools. Quick release tools not included.",
-          "price": 165000,
-          "needsReview": false,
-          "kind": "MACHINE",
-          "form": "L_SERIES",
-          "specs": {
-            "belt": "felt",
-            "extended": false,
             "widthCode": 320,
             "cutWidthCm": 320
           }
@@ -420,7 +450,7 @@
         {
           "code": "ANT-V5",
           "name": "Automatic Nester V5",
-          "description": "Automatic Nester V5",
+          "description": "<p>Automatic Nester V5</p>",
           "price": 8320,
           "needsReview": false,
           "kind": "SOFTWARE",
@@ -432,7 +462,7 @@
         {
           "code": "ANT-V6",
           "name": "Automatic Nester V6",
-          "description": "Automatic Nester V6 (Faster results, higher level nesting algorithm) Includes edge buffer function (container)",
+          "description": "<p>Automatic Nester V6 (Faster results, higher level nesting algorithm) Includes edge buffer function (container)</p>",
           "price": 11720,
           "needsReview": false,
           "kind": "SOFTWARE",
@@ -512,7 +542,7 @@
         {
           "code": "PTW-S",
           "name": "PathWorks Standalone",
-          "description": "PathWorks Standalone software module. Pathworks features include, pattern creation tools, piece shredder, magnetic nesting, importing and exporting of standard DXF and G-code.",
+          "description": "<p>PathWorks Standalone software module. Pathworks features include pattern creation tools, piece shredder, magnetic nesting, importing and exporting of standard DXF and G-code.</p>",
           "price": 4000,
           "needsReview": false,
           "kind": "SOFTWARE",
@@ -768,8 +798,8 @@
           "code": "FP-TROLLEY",
           "name": "Fabric Roll Trolley",
           "description": "Ergonomic fabric roll trolley designed for seamless use with the FabricPro spreading system. Direct roll transfer from storage to FabricPro with no intermediate handling or bulky roll-lifting devices. Carries up to 2 fabric rolls; 2 lockable castor wheels; welded steel construction; compatible with EasyLoader tables (880-940mm height); compact flat-packed design.",
-          "price": 0,
-          "needsReview": true,
+          "price": 2500,
+          "needsReview": false,
           "kind": "ACCESSORY",
           "form": "FP_TROLLEY",
           "specs": null
@@ -830,32 +860,6 @@
     }
   ],
   "options": [
-    {
-      "code": "180-E",
-      "name": "Extended Length, L-180",
-      "description": "Extended length for L-180",
-      "price": 6000,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "L_EXTENDED",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "220-E",
-      "name": "Extended Length, L-220",
-      "description": "Extended length for L-220",
-      "price": 8000,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "L_EXTENDED",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
     {
       "code": "ABR-L",
       "name": "Air Brush",
@@ -954,7 +958,7 @@
     {
       "code": "BCR-L",
       "name": "Barcode Scanner",
-      "description": "Barcode Scanner - input of marker name via barcode",
+      "description": "Barcode Scanner - input of marker name via integrated camera",
       "price": 1050,
       "needsReview": false,
       "compatibleSeries": [
@@ -967,7 +971,7 @@
     {
       "code": "BCR-M",
       "name": "Barcode Scanner",
-      "description": "Barcode scanner - input of marker name via barcode",
+      "description": "Barcode scanner - input of marker name via integrated camera.",
       "price": 2500,
       "needsReview": false,
       "compatibleSeries": [
@@ -975,6 +979,39 @@
         "X"
       ],
       "role": "BCR",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "CB-0",
+      "name": "0° Carbide Blade (Notch) 380016",
+      "description": "",
+      "price": null,
+      "needsReview": true,
+      "compatibleSeries": [],
+      "role": "CONSUMABLE",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "CB-30",
+      "name": "30° Carbide Blade 380017",
+      "description": "",
+      "price": null,
+      "needsReview": true,
+      "compatibleSeries": [],
+      "role": "CONSUMABLE",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "CB-45",
+      "name": "45° Carbide Blade 380018",
+      "description": "",
+      "price": null,
+      "needsReview": true,
+      "compatibleSeries": [],
+      "role": "CONSUMABLE",
       "parentProductCode": null,
       "unitLengthM": null
     },
@@ -1133,40 +1170,13 @@
       "noCommission": true
     },
     {
-      "code": "DKT-30",
-      "name": "Drag Knife Tool 30°, Quick Release",
-      "description": "Drag Knife Tool - Quick Release (to suit carbide knife 1.0mm x 7mm purchased separately) 30 deg",
-      "price": 730,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "L_TOOL",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "DKT-45",
-      "name": "Drag Knife Tool 45°, Quick Release",
-      "description": "Drag Knife Tool - Quick Release (to suit carbide knife 1.0mm x 7mm purchased separately) 45 deg",
-      "price": 730,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "L_TOOL",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
       "code": "DMT",
       "name": "DuctMasTer",
-      "description": "DuctMasTer",
+      "description": "Tools included: Straight knife 45º, 2 X Bevel 45º (typically used for through cut and partial cut). Maximum board thickness 30mm. (!) Test cutting compatibility before sale.",
       "price": 18240,
       "needsReview": false,
       "compatibleSeries": [
-        "M",
-        "X"
+        "M"
       ],
       "role": "DMT",
       "parentProductCode": null,
@@ -1182,6 +1192,19 @@
         "M"
       ],
       "role": "DR2",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "DRG",
+      "name": "Drag Knife Tool L22656",
+      "description": "Drag knife tool, quick release. Typically used for thin, flexible materials such as fabrics, films, vinyl and paper. Choose its carbide blade: 0° (notch), 30° or 45°.",
+      "price": 730,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "L_TOOL",
       "parentProductCode": null,
       "unitLengthM": null
     },
@@ -1225,15 +1248,50 @@
       "unitLengthM": null
     },
     {
-      "code": "DRV-28",
-      "name": "Driven Knife 28mm",
-      "description": "Driven - Electrically driven. Suit 28mm Carbide Octagonal blade. Only used with machine optioned with Felt cutting belt.",
+      "code": "DRG-B",
+      "name": "Drag Knife Tool with Bearing L22658",
+      "description": "This tool has a roller bearing. Typically used when cutting sticky material, e.g. prepreg. Choose its carbide blade: 0° (notch), 30° or 45°.",
+      "price": 730,
+      "needsReview": false,
+      "compatibleSeries": [
+        "L"
+      ],
+      "role": "L_TOOL",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "DRK",
+      "name": "Driven Round Knife 28mm L22670",
+      "description": "Electrically driven round knife, 28 mm. Suitable for the felt cutting belt version only. Choose its blade: 5-sided or 10-sided.",
       "price": 6400,
       "needsReview": false,
       "compatibleSeries": [
         "L"
       ],
       "role": "L_TOOL",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "DRK-B10",
+      "name": "10-Sided Driven Knife Blade 380032-10",
+      "description": "",
+      "price": null,
+      "needsReview": true,
+      "compatibleSeries": [],
+      "role": "CONSUMABLE",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "DRK-B5",
+      "name": "5-Sided Driven Knife Blade 380032-5",
+      "description": "",
+      "price": null,
+      "needsReview": true,
+      "compatibleSeries": [],
+      "role": "CONSUMABLE",
       "parentProductCode": null,
       "unitLengthM": null
     },
@@ -1548,7 +1606,7 @@
     {
       "code": "HDC-L",
       "name": "HeadCam",
-      "description": "HeadCam:Camera in cutting head - Dynamic interaction with PathCut",
+      "description": "Head Camera mounted inside cutting head - Dynamic interaction with PathCut",
       "price": 2000,
       "needsReview": false,
       "compatibleSeries": [
@@ -1561,7 +1619,7 @@
     {
       "code": "HDC-M",
       "name": "HeadCam",
-      "description": "HeadCam:Camera in cutting head - Dynamic interaction with PathCut",
+      "description": "Head Camera mounted inside cutting head - Dynamic interaction with PathCut",
       "price": 5000,
       "needsReview": false,
       "compatibleSeries": [
@@ -1575,7 +1633,7 @@
     {
       "code": "HFV-L",
       "name": "High Flow Vacuum 15kW",
-      "description": "High Flow Vacuum system - THIS REQUIRES 3PHASE POWER - Recommended for ALL Extended and standard 220 & 320 models. Specific application to be discussed with Pathfinder.(Replacement for standard Vac unit)",
+      "description": "High Flow Vacuum system - THIS REQUIRES 3PHASE POWER - Recommended for ALL Extended and standard 220 & 320 models. Specific application to be discussed with Pathfinder. (Replacement for standard Vac unit)",
       "price": 16000,
       "needsReview": false,
       "compatibleSeries": [
@@ -1710,7 +1768,7 @@
     {
       "code": "OFD-L",
       "name": "Offload Display",
-      "description": "Offload Display",
+      "description": "Identifies pieces to be removed from the offload area",
       "price": 1400,
       "needsReview": false,
       "compatibleSeries": [
@@ -1723,7 +1781,7 @@
     {
       "code": "OFD-M",
       "name": "Offload Display",
-      "description": "Offload Display",
+      "description": "Identifies pieces to be removed from the offload area",
       "price": 3200,
       "needsReview": false,
       "compatibleSeries": [
@@ -1749,22 +1807,9 @@
       "unitLengthM": null
     },
     {
-      "code": "OFP-L",
+      "code": "OFP",
       "name": "Offload Printer",
-      "description": "Offload Printer - synchronised with PathCut & OFD",
-      "price": 2250,
-      "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "OFP",
-      "parentProductCode": null,
-      "unitLengthM": null
-    },
-    {
-      "code": "OFP-M",
-      "name": "Offload Printer",
-      "description": "Offload Printer - synchronised with PathCut & OFD",
+      "description": "Automatic label creation synchronised with cut pieces presented into offload area",
       "price": 3900,
       "needsReview": false,
       "compatibleSeries": [
@@ -1776,79 +1821,93 @@
       "unitLengthM": null
     },
     {
-      "code": "PCH-1.0",
-      "name": "Punch 1.0mm",
-      "description": "1.0mm dia punch",
-      "price": 100,
+      "code": "OFP-L",
+      "name": "Offload Printer",
+      "description": "Automatic label creation synchronised with cut pieces presented into offload area",
+      "price": 2250,
       "needsReview": false,
       "compatibleSeries": [
         "L"
       ],
-      "role": "L_TOOL",
+      "role": "OFP",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "PCH-1.5",
+      "name": "1.5 mm Hollow Drill Punch L22146-1.5",
+      "description": "",
+      "price": 100,
+      "needsReview": false,
+      "compatibleSeries": [],
+      "role": "CONSUMABLE",
       "parentProductCode": null,
       "unitLengthM": null,
       "noCommission": true
     },
     {
       "code": "PCH-2.0",
-      "name": "Punch 2.0mm",
-      "description": "2.0mm dia punch",
+      "name": "2 mm Hollow Drill Punch L22146-2",
+      "description": "",
       "price": 100,
       "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "L_TOOL",
+      "compatibleSeries": [],
+      "role": "CONSUMABLE",
       "parentProductCode": null,
       "unitLengthM": null,
       "noCommission": true
     },
     {
       "code": "PCH-3.0",
-      "name": "Punch 3.0mm",
-      "description": "3.0mm dia punch",
+      "name": "3 mm Hollow Drill Punch L22146-3",
+      "description": "",
       "price": 100,
       "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "L_TOOL",
+      "compatibleSeries": [],
+      "role": "CONSUMABLE",
       "parentProductCode": null,
       "unitLengthM": null,
       "noCommission": true
     },
     {
       "code": "PCH-4.0",
-      "name": "Punch 4.0mm",
-      "description": "4.0mm dia punch",
+      "name": "4 mm Hollow Drill Punch L22146-4",
+      "description": "",
       "price": 100,
       "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "L_TOOL",
+      "compatibleSeries": [],
+      "role": "CONSUMABLE",
       "parentProductCode": null,
       "unitLengthM": null,
       "noCommission": true
     },
     {
       "code": "PCH-5.0",
-      "name": "Punch 5.0mm",
-      "description": "5.0mm dia punch",
+      "name": "5 mm Hollow Drill Punch L22146-5",
+      "description": "",
       "price": 100,
       "needsReview": false,
-      "compatibleSeries": [
-        "L"
-      ],
-      "role": "L_TOOL",
+      "compatibleSeries": [],
+      "role": "CONSUMABLE",
       "parentProductCode": null,
       "unitLengthM": null,
       "noCommission": true
     },
     {
+      "code": "PCH-6.0",
+      "name": "6 mm Hollow Drill Punch L22146-6",
+      "description": "",
+      "price": null,
+      "needsReview": true,
+      "compatibleSeries": [],
+      "role": "CONSUMABLE",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
       "code": "PCH-QR",
-      "name": "Punch Tool, Quick Release",
-      "description": "Punch Tool - Quick Release (to suit Hollow dia 1mm/2mm/3mm/4mm/5mm purchased separately)",
+      "name": "Hollow Drill Punch Tool L22657",
+      "description": "Hollow drill punch tool, quick release. One drill included — choose its diameter.",
       "price": 450,
       "needsReview": false,
       "compatibleSeries": [
@@ -1957,9 +2016,9 @@
       "unitLengthM": null
     },
     {
-      "code": "RKT-28",
-      "name": "Round Knife Tool 28mm",
-      "description": "28 Dia. Round Knife Tool - Patented Quick release mechanism (Not used on Felt bed) 2x10 sided blades included std",
+      "code": "RCC-28",
+      "name": "Round Crush-Cut Tool 28mm L22654",
+      "description": "28 mm round crush-cut tool, patented quick release mechanism. Not used on felt bed.",
       "price": 580,
       "needsReview": false,
       "compatibleSeries": [
@@ -1970,15 +2029,37 @@
       "unitLengthM": null
     },
     {
-      "code": "RKT-40",
-      "name": "Round Knife Tool 40mm",
-      "description": "40 Dia. Round Knife Tool - Quick release (Not used on Felt bed).",
+      "code": "RCC-28-BP",
+      "name": "Blade Pack for RCC-28 (2 pcs) 380019",
+      "description": "",
+      "price": null,
+      "needsReview": true,
+      "compatibleSeries": [],
+      "role": "CONSUMABLE",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "RCC-45",
+      "name": "Round Crush-Cut Tool 45mm L22655",
+      "description": "45 mm round crush-cut tool, quick release. Not used on felt bed.",
       "price": 630,
       "needsReview": false,
       "compatibleSeries": [
         "L"
       ],
       "role": "L_TOOL",
+      "parentProductCode": null,
+      "unitLengthM": null
+    },
+    {
+      "code": "RCC-45-BP",
+      "name": "Blade Pack for RCC-45 (2 pcs) 380015",
+      "description": "",
+      "price": null,
+      "needsReview": true,
+      "compatibleSeries": [],
+      "role": "CONSUMABLE",
       "parentProductCode": null,
       "unitLengthM": null
     },
@@ -2158,8 +2239,7 @@
       "price": 7195,
       "needsReview": false,
       "compatibleSeries": [
-        "M",
-        "X"
+        "M"
       ],
       "role": "TRANSFORMER",
       "parentProductCode": null,
@@ -2172,7 +2252,6 @@
       "price": 3880,
       "needsReview": false,
       "compatibleSeries": [
-        "X",
         "M"
       ],
       "role": "TRANSFORMER",

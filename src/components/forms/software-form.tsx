@@ -18,7 +18,7 @@ import { Footnote, OfficeUse, Section, Tick, TickGrid, WriteIn } from "./primiti
  *
  * Martin's sheet, not Jeff's -- nothing here is built, so there is no model,
  * no interface side and no crate. Software sold as an option ON a machine
- * (PTW-I, the PathWorks modules) prints in that machine's PathWorks row
+ * (PTW-I, the PathWorks modules) prints in that machine's Software section
  * instead; the footnote says so, because the same code can arrive either
  * way and the two sheets must not look like two orders for one licence.
  */
@@ -65,7 +65,7 @@ export function SoftwareForm({ ctx }: { ctx: SoftwareFormContext }) {
       />
 
       <Footnote
-        note="Software supplied with a machine is ordered on that machine's own form, under PathWorks."
+        note="Software supplied with a machine is ordered on that machine's own form, under Software."
         provenance={`SOFTWARE · ${ctx.documentNumber} · ${stamp(ctx.generatedAt)}`}
       />
     </SheetShell>

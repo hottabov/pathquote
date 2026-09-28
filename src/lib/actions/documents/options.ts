@@ -7,6 +7,7 @@
  * which is the only place OPTION lines are ever written.
  */
 
+import { randomUUID } from "node:crypto";
 import { revalidateDocument } from "@/lib/revalidate";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
@@ -19,13 +20,14 @@ import {
   conflictPartnersByGroup,
 } from "@/lib/catalog-compat";
 import { recalcAndEnforce } from "@/lib/documents/recalc";
-import { easyLoaderSpecSchema } from "@/lib/validation/production-spec";
+import { easyLoaderSpecSchema, mSeriesSpecSchema } from "@/lib/validation/production-spec";
+import { isMSeriesVoltage, transformerCodeFor } from "@/lib/production-forms/voltage";
 import {
   deriveEasyLoaderOptions,
   EL_MODULE_ROLE_LIST,
   isEasyLoaderModuleRole,
 } from "@/lib/production-forms/table-sections";
-import { markingToolConflict } from "@/lib/production-forms/marking-tools";
+import { consumableChoice, consumableRequiredMessage, type ConsumableLink } from "@/lib/consumables";
 import { MTS_METRES_REQUIRED, mtsMetresValid, normaliseMtsSelections } from "@/lib/production-forms/mts";
 import { idSchema, optionSelectionSchema, type OptionSelectionInput } from "@/lib/validation/documents";
 import { NOT_FOUND_ERROR, flattenZodError } from "../_shared";
@@ -75,7 +77,9 @@ export async function setItemOptions(
   const normalised = await withDerivedMtsTravel(selections);
   if ("error" in normalised) return normalised;
   const withModules = await withDerivedEasyLoaderModules(session.user, itemId, normalised.selections);
-  return writeItemOptions(session.user, itemId, withModules);
+  const withTransformer = await withDerivedTransformer(session.user, itemId, withModules);
+  if ("error" in withTransformer) return withTransformer;
+  return writeItemOptions(session.user, itemId, withTransformer.selections);
 }
 
 /**
@@ -283,6 +287,17 @@ async function writeItemOptions(
       // *submitted* options share a group with which other submitted
       // options, never who else (outside this submission) is in that group.
       conflictGroupMemberships: { select: { groupId: true } },
+      // The consumables a tool takes -- see src/lib/consumables.ts. An
+      // inactive consumable is no longer on offer, the same as an inactive
+      // option is not.
+      consumables: {
+        where: { consumable: { active: true } },
+        orderBy: [{ sortOrder: "asc" }, { consumable: { code: "asc" } }],
+        select: {
+          qty: true,
+          consumable: { select: { id: true, code: true, name: true, shortDescription: true } },
+        },
+      },
     },
   });
   const optionById = new Map(options.map((o) => [o.id, o]));
@@ -319,16 +334,6 @@ async function writeItemOptions(
     return { error: `Price required for: ${unpricedCodes.join(", ")}` };
   }
 
-  // The L-Series fits one marking tool. MRK is on every machine as standard
-  // and shares its mount with IJP, JetPen and ABR, so two of the four on one
-  // item is a machine that cannot be built (see marking-tools.ts). Checked
-  // here rather than as an `OptionConflictGroup`, which is catalogue-wide:
-  // on an M-Series the same options are independent boxes.
-  if (item.product.form === "L_SERIES") {
-    const markingToolError = markingToolConflict(options.map((option) => option.role));
-    if (markingToolError) return { error: markingToolError };
-  }
-
   const conflictsById = conflictPartnersByGroup(
     options.flatMap((option) =>
       option.conflictGroupMemberships.map((m) => ({ memberKey: option.id, groupId: m.groupId }))
@@ -339,6 +344,35 @@ async function writeItemOptions(
     const a = optionById.get(conflictingPair[0])!.code;
     const b = optionById.get(conflictingPair[1])!.code;
     return { error: `${a} conflicts with ${b} — remove one before saving` };
+  }
+
+  // Every tool that takes a consumable goes on the quote with exactly one
+  // (src/lib/consumables.ts). Resolved here, after every check on the tools
+  // themselves, so the manager is told about a missing blade only once the
+  // rest of the selection is sound.
+  const consumableBySelection = new Map<number, { link: ConsumableLink; description: string | null }>();
+  for (const [index, selection] of parsedSelections.data.entries()) {
+    const option = optionById.get(selection.optionId)!;
+    const links = option.consumables.map(({ qty, consumable }) => ({
+      id: consumable.id,
+      code: consumable.code,
+      name: consumable.name,
+      qty,
+    }));
+    const choice = consumableChoice(links, selection.consumableId);
+    if (!choice.ok) {
+      return {
+        error:
+          choice.reason === "required"
+            ? consumableRequiredMessage(option.code)
+            : `That consumable does not fit ${option.code}`,
+      };
+    }
+    if (choice.link) {
+      const description =
+        option.consumables.find(({ consumable }) => consumable.id === choice.link!.id)?.consumable.shortDescription ?? null;
+      consumableBySelection.set(index, { link: choice.link, description });
+    }
   }
 
   // Delete+create+recalc all in one interactive transaction (previously
@@ -353,36 +387,59 @@ async function writeItemOptions(
     await db.$transaction(async (tx) => {
       await assertStillDraft(tx, item.documentId);
       await tx.documentLine.deleteMany({ where: { itemId: item.id, kind: "OPTION" } });
-      // One `createMany` rather than a `create` per selection: an option line
-      // is written and never read back here (nothing downstream needs the
-      // generated ids — the recalc below works off the document, not off
-      // these rows), so the whole set goes in a single round trip instead of
-      // holding the transaction open for one per option.
-      await tx.documentLine.createMany({
-        data: parsedSelections.data.map((selection, index) => {
-          const option = optionById.get(selection.optionId)!;
-          const price = option.prices[0]!;
-          return {
+      // One `createMany` rather than a `create` per selection, so the whole
+      // set goes in a single round trip instead of holding the transaction
+      // open for one per option. The ids are made here rather than by the
+      // database because a consumable line points at its tool's line
+      // (`parentLineId`), and both go in the same statement.
+      const data: Prisma.DocumentLineCreateManyInput[] = [];
+      for (const [index, selection] of parsedSelections.data.entries()) {
+        const option = optionById.get(selection.optionId)!;
+        const price = option.prices[0]!;
+        const lineId = randomUUID();
+        data.push({
+          id: lineId,
+          documentId: item.documentId,
+          itemId: item.id,
+          kind: "OPTION" as const,
+          refId: option.id,
+          code: option.code,
+          name: option.name,
+          description: option.shortDescription,
+          qty: selection.qty,
+          unitPrice: price.amount,
+          // Snapshot the catalogue price too — see setItemUnitPrice's
+          // comment. A freshly (re)selected option always starts equal to
+          // its list price; any prior manual edit to this option line is
+          // gone anyway once selections are resaved (this whole-set
+          // replace deletes and recreates every OPTION line).
+          listPrice: price.amount,
+          attributes: selection.attributes as Prisma.InputJsonValue | undefined,
+          sortOrder: data.length,
+        });
+        const consumable = consumableBySelection.get(index);
+        if (consumable) {
+          // Comes with the tool: no charge, never a price of its own to
+          // concede against, and as many pieces as the tool ships with per
+          // tool ordered.
+          data.push({
+            id: randomUUID(),
             documentId: item.documentId,
             itemId: item.id,
             kind: "OPTION" as const,
-            refId: option.id,
-            code: option.code,
-            name: option.name,
-            description: option.shortDescription,
-            qty: selection.qty,
-            unitPrice: price.amount,
-            // Snapshot the catalogue price too — see setItemUnitPrice's
-            // comment. A freshly (re)selected option always starts equal to
-            // its list price; any prior manual edit to this option line is
-            // gone anyway once selections are resaved (this whole-set
-            // replace deletes and recreates every OPTION line).
-            listPrice: price.amount,
-            attributes: selection.attributes as Prisma.InputJsonValue | undefined,
-            sortOrder: index,
-          };
-        }),
-      });
+            refId: consumable.link.id,
+            code: consumable.link.code,
+            name: consumable.link.name,
+            description: consumable.description,
+            qty: consumable.link.qty * selection.qty,
+            unitPrice: 0,
+            listPrice: 0,
+            parentLineId: lineId,
+            sortOrder: data.length,
+          });
+        }
+      }
+      await tx.documentLine.createMany({ data });
       await alsoWrite?.(tx);
       concessionWarning = (await recalcAndEnforce(item.documentId, tx, user.role)).warning;
     });
@@ -392,6 +449,154 @@ async function writeItemOptions(
 
   revalidateDocument(item.documentId);
   return concessionWarning ? { warning: concessionWarning } : {};
+}
+
+type StoredOptionLine = {
+  id: string;
+  qty: number;
+  attributes: unknown;
+  refId: string | null;
+  parentLineId: string | null;
+};
+
+/**
+ * An item's stored OPTION lines as the selection that would write them
+ * again, minus the ones `drop` names (a derived family about to be
+ * recomputed). A line is carried over by its `refId` (the option's id), never
+ * by its snapshotted code: a line with no `refId` has no catalogue row to
+ * resubmit and is dropped, exactly as `writeItemOptions` would reject it. A
+ * consumable line is not a pick of its own: it rides on its tool's selection
+ * as `consumableId`, and is written again under the tool.
+ */
+function selectionsFromItemLines(
+  lines: StoredOptionLine[],
+  drop: (optionId: string) => boolean
+): OptionSelectionInput[] {
+  const consumableByToolLine = new Map(
+    lines
+      .filter((line) => line.parentLineId !== null && line.refId !== null)
+      .map((line) => [line.parentLineId!, line.refId!])
+  );
+  return lines
+    .filter((line): line is StoredOptionLine & { refId: string } => line.refId !== null)
+    .filter((line) => line.parentLineId === null && !drop(line.refId))
+    .map((line) => ({
+      optionId: line.refId,
+      qty: line.qty,
+      attributes: (line.attributes ?? undefined) as Record<string, string | number> | undefined,
+      consumableId: consumableByToolLine.get(line.id),
+    }));
+}
+
+/**
+ * The transformer an M-Series at `voltage` ships with, as a selection, or
+ * none at 400 V (see src/lib/production-forms/voltage.ts). Found by role
+ * and code together -- both transformers are role TRANSFORMER and the order
+ * forms already tell them apart by code.
+ */
+async function transformerSelection(
+  voltage: unknown
+): Promise<{ selections: OptionSelectionInput[] } | { error: string }> {
+  const code = transformerCodeFor(voltage);
+  if (!code) return { selections: [] };
+  const transformer = await db.option.findFirst({
+    where: { role: "TRANSFORMER", code: { startsWith: code }, active: true },
+    select: { id: true },
+  });
+  if (!transformer) return { error: `The catalogue has no ${code} transformer, so ${String(voltage)} cannot be quoted` };
+  return { selections: [{ optionId: transformer.id, qty: 1 }] };
+}
+
+/**
+ * Replaces whatever transformer the caller sent with the one an M-Series'
+ * stored voltage calls for. The voltage is the input and the transformer its
+ * consequence (`setMachineVoltage`), so a transformer is never picked by hand
+ * -- the same rule, and the same reason, as the EasyLoader's modules above.
+ */
+async function withDerivedTransformer(
+  user: ScopeUser,
+  itemId: string,
+  selections: OptionSelectionInput[]
+): Promise<{ selections: OptionSelectionInput[] } | { error: string }> {
+  const parsedItemId = idSchema.safeParse(itemId);
+  if (!parsedItemId.success) return { selections };
+
+  const item = await db.documentItem.findFirst({
+    where: { id: parsedItemId.data, document: { status: "DRAFT", ...documentWhereForUser(user) } },
+    select: { productionSpec: true, product: { select: { form: true } } },
+  });
+  if (item?.product?.form !== "M_SERIES") return { selections };
+
+  const ids = selections.map((selection) => selection?.optionId).filter((id): id is string => typeof id === "string");
+  const transformers =
+    ids.length > 0
+      ? await db.option.findMany({ where: { id: { in: ids }, role: "TRANSFORMER" }, select: { id: true } })
+      : [];
+  const transformerIds = new Set(transformers.map((option) => option.id));
+
+  const voltage = ((item.productionSpec ?? {}) as Record<string, unknown>).voltage;
+  const derived = await transformerSelection(voltage);
+  if ("error" in derived) return derived;
+
+  return {
+    selections: [...selections.filter((selection) => !transformerIds.has(selection?.optionId)), ...derived.selections],
+  };
+}
+
+/**
+ * Sets an M-Series' supply voltage and the transformer that comes with it
+ * (220 V -> TR220, 480 V -> TR480, 400 V none -- voltage.ts), in one
+ * transaction: the voltage the workshop builds for and the transformer the
+ * customer pays for are one answer, written together or not at all.
+ *
+ * DRAFT-only, like `setEasyLoaderLayout` and for the same reason: it moves
+ * the price. The X-Calibre's voltage carries no transformer and stays an
+ * ordinary production-spec answer (`setProductionSpec`).
+ */
+export async function setMachineVoltage(itemId: string, voltage: string): Promise<ActionResult> {
+  const session = await requireSession();
+
+  const parsedItemId = idSchema.safeParse(itemId);
+  if (!parsedItemId.success) return { error: NOT_FOUND_ERROR };
+  if (!isMSeriesVoltage(voltage)) return { error: "Choose 220V, 400V or 480V" };
+
+  const item = await db.documentItem.findFirst({
+    where: { id: parsedItemId.data, document: { status: "DRAFT", ...documentWhereForUser(session.user) } },
+    select: {
+      id: true,
+      productionSpec: true,
+      product: { select: { form: true } },
+      lines: {
+        where: { kind: "OPTION" },
+        select: { id: true, qty: true, attributes: true, refId: true, parentLineId: true },
+        orderBy: { sortOrder: "asc" },
+      },
+    },
+  });
+  if (!item) return { error: NOT_FOUND_ERROR };
+  if (item.product?.form !== "M_SERIES") return { error: "This item is not an M-Series" };
+
+  const spec = mSeriesSpecSchema.safeParse({ ...((item.productionSpec ?? {}) as object), voltage });
+  if (!spec.success) return { error: flattenZodError(spec.error) };
+
+  const derived = await transformerSelection(voltage);
+  if ("error" in derived) return derived;
+
+  const lineRefIds = item.lines.map((line) => line.refId).filter((id): id is string => id !== null);
+  const transformers =
+    lineRefIds.length > 0
+      ? await db.option.findMany({ where: { id: { in: lineRefIds }, role: "TRANSFORMER" }, select: { id: true } })
+      : [];
+  const transformerIds = new Set(transformers.map((option) => option.id));
+  const kept = selectionsFromItemLines(item.lines, (optionId) => transformerIds.has(optionId));
+
+  return writeItemOptions(session.user, item.id, [...kept, ...derived.selections], async (tx) => {
+    const written = await tx.documentItem.updateMany({
+      where: { id: item.id, document: { status: "DRAFT" } },
+      data: { productionSpec: spec.data as object },
+    });
+    if (written.count !== 1) abortDraftWrite();
+  });
 }
 
 /**
@@ -434,7 +639,7 @@ export async function setEasyLoaderLayout(itemId: string, spec: unknown): Promis
       product: { select: { code: true, form: true } },
       lines: {
         where: { kind: "OPTION" },
-        select: { qty: true, attributes: true, refId: true },
+        select: { id: true, qty: true, attributes: true, refId: true, parentLineId: true },
         orderBy: { sortOrder: "asc" },
       },
     },
@@ -484,15 +689,12 @@ export async function setEasyLoaderLayout(itemId: string, spec: unknown): Promis
   // carried over by its `refId` (the option's id), never by its snapshotted
   // code: a line with no `refId` has no catalogue row to resubmit and is
   // dropped, exactly as `writeItemOptions` would reject it.
+  // A consumable line is not a pick of its own: it rides on its tool's
+  // selection as `consumableId`, and is written again under the tool.
   const roleByOptionId = new Map(lineOptions.map((option) => [option.id, option.role]));
-  const kept = item.lines
-    .filter((line): line is typeof line & { refId: string } => line.refId !== null)
-    .filter((line) => !isEasyLoaderModuleRole(roleByOptionId.get(line.refId)))
-    .map((line) => ({
-      optionId: line.refId,
-      qty: line.qty,
-      attributes: (line.attributes ?? undefined) as Record<string, unknown> | undefined,
-    }));
+  const kept = selectionsFromItemLines(item.lines, (optionId) =>
+    isEasyLoaderModuleRole(roleByOptionId.get(optionId))
+  );
 
   // The spec and the option lines describe the same table -- the drawing the
   // workshop builds from and the rows the customer is charged for -- so they

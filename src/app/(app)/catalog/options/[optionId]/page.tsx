@@ -4,7 +4,11 @@ import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { isAdminRole } from "@/lib/roles";
 import { priceRegionIdForSessionUser } from "@/lib/authz";
-import { getOptionDetailById, listSeriesWithCounts } from "@/lib/queries/catalog";
+import {
+  getOptionDetailById,
+  listOptionsForConflictGroups,
+  listSeriesWithCounts,
+} from "@/lib/queries/catalog";
 import { catalogVisibilityUserId, filterHiddenSeries } from "@/lib/catalog-visibility";
 import { getHiddenCatalogIds } from "@/lib/queries/catalog-visibility";
 import {
@@ -12,11 +16,13 @@ import {
   deleteOption,
   upsertPrice,
   setOptionCompatibility,
+  setOptionConsumables,
   updateOptionImage,
 } from "@/lib/actions/catalog";
 import { OptionForm } from "@/components/catalog/option-form";
 import { PriceEditor } from "@/components/catalog/price-editor";
 import { CompatEditor } from "@/components/catalog/compat-editor";
+import { ConsumablesEditor } from "@/components/catalog/consumables-editor";
 import { ImageUpload } from "@/components/catalog/image-upload";
 import { DeleteButton } from "@/components/catalog/delete-button";
 import { PageHeader, SectionCard } from "@/components/ui-kit";
@@ -62,9 +68,10 @@ export default async function OptionEditorPage({ params }: { params: Promise<Par
   // single request-memoized query across the two calls. `listSeriesWithCounts`
   // needs no region and still runs alongside the option fetch.
   const session = await auth();
-  const [option, series] = await Promise.all([
+  const [option, series, allOptions] = await Promise.all([
     getOptionDetailById(optionId, priceRegionIdForSessionUser(session?.user)),
     listSeriesWithCounts(),
+    listOptionsForConflictGroups(),
   ]);
 
   if (!option) notFound();
@@ -96,9 +103,6 @@ export default async function OptionEditorPage({ params }: { params: Promise<Par
               code: option.code,
               name: option.name,
               shortDescription: option.shortDescription ?? "",
-              attributeSchema: option.attributeSchema
-                ? JSON.stringify(option.attributeSchema, null, 2)
-                : "",
               active: option.active,
               noCommission: option.noCommission,
               sortOrder: option.sortOrder,
@@ -139,6 +143,39 @@ export default async function OptionEditorPage({ params }: { params: Promise<Par
               readOnly={!isAdmin}
             />
           </SectionCard>
+
+          {option.consumableFor.length > 0 ? (
+            <SectionCard
+              title="Consumable of"
+              description="Tools that go on a quote with this option as their consumable."
+            >
+              <ul className="flex flex-col gap-2">
+                {option.consumableFor.map((tool) => (
+                  <li key={tool.id}>
+                    <Link
+                      href={`/catalog/options/${tool.id}`}
+                      className="focus-ring rounded text-sm font-medium text-brand-dark underline-offset-2 hover:underline"
+                    >
+                      {tool.code} — {tool.name}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </SectionCard>
+          ) : (
+            <SectionCard
+              title="Consumables"
+              description="For a tool: the blades or drills it goes on a quote with. The salesperson picks one; it is included at no charge, in the quantity set here. A single consumable is added without asking."
+            >
+              <ConsumablesEditor
+                toolId={option.id}
+                candidates={allOptions.filter((candidate) => candidate.id !== option.id)}
+                initial={option.consumables}
+                action={setOptionConsumables}
+                readOnly={!isAdmin}
+              />
+            </SectionCard>
+          )}
 
           <SectionCard
             title="Conflict groups"

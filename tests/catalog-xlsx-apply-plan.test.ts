@@ -39,7 +39,7 @@ describe("buildApplyPlan", () => {
     sheets.prices = sheets.prices.filter((r) => r[col(sheets.prices, "itemType")] !== "option");
     setCell(sheets.products, "M-5180", "code", "M5-180");
     sheets.products.push([null, "M", "M-7180", "New machine", null, "MACHINE", "M_SERIES", null, false, false, true, 1, null]);
-    sheets.options.push([null, "HFV", "High-flow vacuum", null, "HFV", null, null, "M", "M-7180", false, true, 0, null, null]);
+    sheets.options.push([null, "HFV", "High-flow vacuum", null, "HFV", null, null, "M", "M-7180", false, true, 0, null]);
     sheets.prices.push(["product", null, "M-7180", "AU", "AUD", 210000, false]);
     sheets.prices.push(["option", null, "HFV", "AU", "AUD", 900, false]);
     const amount = col(sheets.prices, "amount");

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { M_SERIES_VOLTAGES, X_CALIBRE_VOLTAGES } from "@/lib/production-forms/voltage";
 import { MAX_SECTIONS } from "../production-forms/table-sections";
 
 /**
@@ -89,7 +90,10 @@ export const drillsSchema = z.object({
 export const mSeriesSpecSchema = z.object({
   ui: screenSideSchema,
   knifeSize: z.enum(["1.5x5.0", "1.5x7.0", "2.0x7.0"]).optional(),
-  voltage: z.enum(["220V", "400V", "415V", "480V"]).optional(),
+  // Required, through `requires` on the form spec -- see voltage.ts. Changing
+  // it re-prices the machine (the transformer), so it is written through
+  // `setMachineVoltage`, never here.
+  voltage: z.enum(M_SERIES_VOLTAGES).optional(),
   drills: drillsSchema.optional(),
   specialNotes: z.string().trim().max(500, "Special notes must be 500 characters or fewer").optional(),
 });
@@ -104,7 +108,8 @@ export const mSeriesSpecSchema = z.object({
  */
 export const xCalibreSpecSchema = z.object({
   ui: screenSideSchema,
-  voltage: z.enum(["220V", "400V", "415V", "480V"]).optional(),
+  // Required, through `requires` on the form spec -- see voltage.ts.
+  voltage: z.enum(X_CALIBRE_VOLTAGES).optional(),
   drills: drillsSchema.optional(),
   specialNotes: z.string().trim().optional(),
 });
@@ -127,7 +132,8 @@ export const xCalibreSpecSchema = z.object({
  */
 export const lSeriesSpecSchema = z.object({
   ui: screenSideSchema,
-  /** The printed row is 220/230 or a written-in figure. */
+  /** The printed row is 220/230 or a written-in figure. Absent reads as
+   * 220/230 (`L_SERIES_DEFAULT_VOLTAGE`). */
   voltage: z.enum(["220/230", "other"]).optional(),
   voltageOtherVac: z.string().trim().max(20).optional(),
   // `shipping` is gone: packing and delivery go on logistics' own document,

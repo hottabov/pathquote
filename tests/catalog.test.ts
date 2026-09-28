@@ -138,14 +138,22 @@ describe("catalog.json: products", () => {
     expect(readProductSpecs(sw.products.find((p) => p.code === "PTW-S")?.specs).softwareMode).toBe("standalone");
   });
 
-  it("L-320EF is the extended felt machine with US price 154864; L-320F has no US price", () => {
+  it("L-320EF is the extended felt machine with US price 154864", () => {
     const l320ef = products.find((p) => p.code === "L-320EF");
     expect(l320ef).toBeDefined();
     expect(l320ef?.seriesCode).toBe("L");
     expect(readProductSpecs(l320ef?.specs)).toMatchObject({ cutWidthCm: 320, extended: true, belt: "felt" });
     expect(usByCode.get("L-320EF")).toBe(154864);
-    expect(products.find((p) => p.code === "L-320F")).toBeDefined();
-    expect(usByCode.has("L-320F")).toBe(false);
+  });
+
+  it("sells 180 and 220 standard and extended, and 320 only extended (z53)", () => {
+    const l = products.filter((p) => p.seriesCode === "L").map((p) => p.code);
+    expect(new Set(l)).toEqual(
+      new Set(["L-180", "L-180F", "L-180E", "L-180EF", "L-220", "L-220F", "L-220E", "L-220EF", "L-320E", "L-320EF"])
+    );
+    // An extended model is priced as its base machine plus the old extension option.
+    expect(usByCode.get("L-180E")).toBe((usByCode.get("L-180") ?? 0) + 5304);
+    expect(usByCode.get("L-220EF")).toBe((usByCode.get("L-220F") ?? 0) + 7071);
   });
 
   it("the EasyLoader itself is free (assembled from its modules) and every width has a drive module", () => {
@@ -186,6 +194,8 @@ describe("catalog.json: options", () => {
 
   it("every option is compatible with something, and every compat refers to an existing series or product", () => {
     for (const o of options) {
+      // A consumable is only ever offered under its tool (OptionConsumable).
+      if (o.role === "CONSUMABLE") continue;
       const series = o.compatibleSeries;
       const prods = o.compatibleProducts ?? [];
       expect(series.length + prods.length, o.code).toBeGreaterThan(0);
@@ -255,13 +265,10 @@ describe("catalog.json: options", () => {
         "MTS-M",
         "PRM-M",
         "OFD-M",
-        "OFP-M",
+        "OFP",
         "OFJ",
         "HDC-M",
         "BCR-M",
-        "DMT",
-        "TR220",
-        "TR480",
         "Crate-M-180",
         "Crate-M-220",
         // Software sold as a machine option, on every cutter.

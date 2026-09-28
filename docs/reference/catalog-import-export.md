@@ -40,7 +40,7 @@ tests; the actions are a thin shell around it.
 |---|---|---|
 | `README` | -- | The rules below plus the generation timestamp. Ignored on import. |
 | `Products` | product | `id`, `series`, `code`, `name`, `description`, `kind`, `form`, `specs`, `isCredit`, `noCommission`, `active`, `sortOrder`, `imageUrl` |
-| `Options` | option | `id`, `code`, `name`, `shortDescription`, `role`, `parentProduct`, `unitLengthM`, `compatSeries`, `compatProducts`, `noCommission`, `active`, `sortOrder`, `imageUrl`, `attributeSchema` |
+| `Options` | option | `id`, `code`, `name`, `shortDescription`, `role`, `parentProduct`, `unitLengthM`, `compatSeries`, `compatProducts`, `noCommission`, `active`, `sortOrder`, `imageUrl` |
 | `Prices` | item x region | `itemType` (product\|option), `itemId`, `code`, `region`, `currency`, `amount`, `needsReview` |
 
 Both sheets carried a `contentBlockKey` column until migration
@@ -51,8 +51,8 @@ as unknown, and re-exporting drops it from that copy.
 
 Products are ordered by series `sortOrder`, then product `sortOrder`, then code; options by
 code; prices by item type, code, region. `series`, `parentProduct`, `compatSeries`,
-`compatProducts` and `region` are codes, not ids. Lists are `; `-separated; `specs` and
-`attributeSchema` are compact JSON. Booleans are TRUE/FALSE, amounts are numbers, a missing
+`compatProducts` and `region` are codes, not ids. Lists are `; `-separated; `specs` is
+compact JSON. Booleans are TRUE/FALSE, amounts are numbers, a missing
 value is a blank cell. The header row has column widths and an autofilter; freeze panes and
 bold are not written by the community SheetJS build.
 

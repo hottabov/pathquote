@@ -48,6 +48,8 @@ export { upsertPrice } from "./catalog/prices";
 
 export { setOptionCompatibility } from "./catalog/compatibility";
 
+export { setOptionConsumables } from "./catalog/consumables";
+
 export {
   createConflictGroup,
   updateConflictGroupName,

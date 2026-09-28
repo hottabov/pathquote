@@ -24,6 +24,11 @@ import {
   type SelectionState,
 } from "@/lib/option-selections";
 import { cn } from "@/lib/utils";
+import {
+  consumableChoice,
+  consumableIncludedLabel,
+  consumableRequiredMessage,
+} from "@/lib/consumables";
 import { useAutosave } from "@/lib/use-autosave";
 import { AutosaveIndicator } from "@/components/builder/autosave-indicator";
 import { SideSheet } from "@/components/builder/side-sheet";
@@ -40,42 +45,6 @@ import type { OptionSelectionInput } from "@/lib/validation/documents";
 // original.
 const OPTION_ICON_BOX_PX = 24;
 
-type AttributeField = { key: string; label: string; type: "number" | "text" };
-
-/**
- * Tolerates a malformed/absent `Option.attributeSchema` (admin-entered raw
- * JSON — see catalog.ts's `attributeSchemaSchema`): only entries that are
- * plain objects with a string `key`/`label` and a recognized `type` become
- * an input; anything else (not an array, wrong shape, unknown type) is
- * silently skipped rather than crashing the editor.
- */
-function parseAttributeFields(schema: unknown): AttributeField[] {
-  if (!Array.isArray(schema)) return [];
-  const fields: AttributeField[] = [];
-  for (const entry of schema) {
-    if (!entry || typeof entry !== "object") continue;
-    const { key, label, type } = entry as Record<string, unknown>;
-    if (typeof key !== "string" || key.trim() === "") continue;
-    if (typeof label !== "string" || label.trim() === "") continue;
-    if (type !== "number" && type !== "text") continue;
-    fields.push({ key, label, type });
-  }
-  return fields;
-}
-
-/**
- * The inputs an option row shows: whatever its catalogue schema declares,
- * plus the MTS travel length, which is a property of an MTS rather than an
- * admin's configuration of one (see `MTS_METRES_FIELD`). Appended rather
- * than substituted, and skipped when the schema already declares the same
- * key, so an admin who adds it by hand does not get the field twice.
- */
-function attributeFieldsFor(schema: unknown, role: OptionRole | null): AttributeField[] {
-  const fields = parseAttributeFields(schema);
-  if (role !== "MTS" || fields.some((field) => field.key === MTS_METRES_KEY)) return fields;
-  return [...fields, { ...MTS_METRES_FIELD }];
-}
-
 type CurrentLine = SelectionLine & {
   /** The snapshot label shown on the chip, nothing more. */
   code: string | null;
@@ -85,8 +54,8 @@ type CurrentLine = SelectionLine & {
  * Per-item options editor: an "Edit options" button that opens a side sheet
  * listing every option compatible with the item (series- and/or
  * product-level `OptionCompatibility` — preloaded via
- * `listCompatibleOptions`). Checking an option reveals its qty stepper and
- * (when it carries an `attributeSchema`) its attribute inputs; an unpriced
+ * `listCompatibleOptions`). Checking an option reveals its qty stepper (or,
+ * for an MTS, its travel-length input instead); an unpriced
  * option is shown but its checkbox is disabled, and so is one that shares
  * an `OptionConflictGroup` with another option already checked in this
  * same panel — its reason names the specific option and group responsible
@@ -111,6 +80,62 @@ type CurrentLine = SelectionLine & {
  * series has many options — including on a phone, the primary device this
  * builder targets.
  */
+/**
+ * The consumable a tool goes on the quote with (src/lib/consumables.ts). A
+ * tool with one consumable says what comes with it; a tool with several asks
+ * which, as radio buttons, because exactly one is sold with the tool -- more
+ * go on the quote as an extra line.
+ */
+function ConsumablePicker({
+  option,
+  toolQty,
+  value,
+  onChange,
+}: {
+  option: CompatibleOption;
+  toolQty: number;
+  value: string | undefined;
+  onChange: (consumableId: string) => void;
+}) {
+  if (option.consumables.length === 1) {
+    const only = option.consumables[0];
+    return (
+      <p className="mt-2 pl-[1.875rem] text-xs text-slate-500">
+        {consumableIncludedLabel(only.qty * toolQty, only.name)}
+      </p>
+    );
+  }
+
+  const missing = !option.consumables.some((consumable) => consumable.id === value);
+  return (
+    <fieldset className="mt-2 flex flex-col gap-1 pl-[1.875rem]">
+      <legend className="mb-1 text-xs text-slate-500">
+        Consumable
+        <span className="text-destructive" aria-hidden="true">
+          {" "}*
+        </span>
+      </legend>
+      {option.consumables.map((consumable) => (
+        <label key={consumable.id} className="flex min-h-11 items-center gap-2.5 text-sm text-slate-700 sm:min-h-9">
+          <input
+            type="radio"
+            name={`${option.id}-consumable`}
+            checked={value === consumable.id}
+            onChange={() => onChange(consumable.id)}
+            className="size-4 shrink-0 accent-brand"
+          />
+          <span className="font-mono text-xs text-brand-dark">{consumable.code}</span>
+          <span className="min-w-0">{consumable.name}</span>
+          <span className="shrink-0 text-xs text-slate-500 tabular-nums">× {consumable.qty * toolQty}</span>
+        </label>
+      ))}
+      {missing ? (
+        <p className="text-xs text-destructive">{consumableRequiredMessage(option.code)}.</p>
+      ) : null}
+    </fieldset>
+  );
+}
+
 /**
  * The MTS row's one control: how far the system has to travel.
  *
@@ -178,18 +203,10 @@ function buildSelections(
     .filter((option) => effective.has(option.id))
     .map((option) => {
       const state = effective.get(option.id)!;
-      const fields = attributeFieldsFor(option.attributeSchema, option.role);
-      const attributes: Record<string, string | number> = {};
-      for (const field of fields) {
-        const raw = state.attributes[field.key];
-        if (raw === undefined || raw === "") continue;
-        if (field.type === "number") {
-          const num = Number(raw);
-          attributes[field.key] = Number.isFinite(num) ? num : raw;
-        } else {
-          attributes[field.key] = raw;
-        }
-      }
+      // The MTS travel length is the only value an option line carries
+      // beyond its quantity (see src/lib/production-forms/mts.ts).
+      const raw = option.role === "MTS" ? state.attributes[MTS_METRES_KEY] : undefined;
+      const metres = raw === undefined || raw === "" ? undefined : Number(raw);
       return {
         optionId: option.id,
         // One MTS, whatever its length: the length is the attribute and the
@@ -197,7 +214,11 @@ function buildSelections(
         // here so the number sent matches the row on screen, which offers no
         // quantity at all.
         qty: option.role === "MTS" ? 1 : state.qty,
-        attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
+        attributes:
+          metres === undefined
+            ? undefined
+            : { [MTS_METRES_KEY]: Number.isFinite(metres) ? metres : raw! },
+        consumableId: option.consumables.length > 0 ? state.consumableId : undefined,
       };
     });
 }
@@ -257,7 +278,7 @@ export function ItemOptionsEditor({
   // to draw ("WPN ×1  LSC ×1  …") said the same thing as the priced list
   // above it, in less detail and a second visual language, so they were two
   // answers to one question sitting one above the other.
-  const optionCount = currentLines.filter((line) => Boolean(line.code)).length;
+  const optionCount = currentLines.filter((line) => Boolean(line.code) && line.parentLineId === null).length;
 
   // Selection state is keyed by option id (that is what `setItemOptions`
   // takes), so locking resolves an id back to its role through the two
@@ -352,6 +373,16 @@ export function ItemOptionsEditor({
     });
   }
 
+  function setConsumable(id: string, consumableId: string) {
+    setSelected((prev) => {
+      const current = prev.get(id);
+      if (!current) return prev;
+      const next = new Map(prev);
+      next.set(id, { ...current, consumableId });
+      return next;
+    });
+  }
+
   function setAttribute(id: string, key: string, value: string) {
     setSelected((prev) => {
       const current = prev.get(id);
@@ -378,6 +409,14 @@ export function ItemOptionsEditor({
       !mtsMetresValid(effective.get(option.id)!.attributes)
   );
 
+  // The other thing the server refuses: a tool that takes a consumable with
+  // none picked (src/lib/consumables.ts). Same treatment as the MTS length.
+  const toolsWithoutConsumable = compatibleOptions.filter(
+    (option) =>
+      effective.has(option.id) &&
+      !consumableChoice(option.consumables, effective.get(option.id)!.consumableId).ok
+  );
+
   // Every change commits on its own. There is no Save and no Cancel: with
   // nothing staged, Save would be a lie and Cancel a promise this panel
   // cannot keep, so closing it is never a decision and Escape, the backdrop
@@ -388,7 +427,7 @@ export function ItemOptionsEditor({
   const autosaveKey = JSON.stringify(selections);
   const autosave = useAutosave({
     value: autosaveKey,
-    enabled: open && !readOnly && !mtsWithoutLength,
+    enabled: open && !readOnly && !mtsWithoutLength && toolsWithoutConsumable.length === 0,
     // Deliberately no router.refresh() here. Nothing in this app's document
     // actions calls revalidatePath, so the refresh has to happen somewhere,
     // but doing it per save would re-render the page on every checkbox and,
@@ -468,6 +507,11 @@ export function ItemOptionsEditor({
                   {MTS_METRES_REQUIRED}
                 </span>
               ) : null}
+              {toolsWithoutConsumable.map((option) => (
+                <span key={option.id} role="alert" className="block text-xs text-destructive">
+                  {consumableRequiredMessage(option.code)}
+                </span>
+              ))}
             </p>
             {/* Only speaks up while a save is in flight or has failed. There
                 is no resting "Saved", for the same reason the quote bar
@@ -527,11 +571,6 @@ export function ItemOptionsEditor({
                   const disabledReason = isOptionDisabled(option.price, conflictingWith);
                   const priced = disabledReason === null || disabledReason.type !== "unpriced";
                   const isMts = option.role === "MTS";
-                  // The MTS length has its own control above; leaving it in
-                  // the generic attribute list too would draw it twice.
-                  const attributeFields = attributeFieldsFor(option.attributeSchema, option.role).filter(
-                    (field) => !(isMts && field.key === MTS_METRES_KEY)
-                  );
                   const unitLength = option.unitLengthM;
 
                   return (
@@ -583,7 +622,11 @@ export function ItemOptionsEditor({
 
                       {checked && locked ? (
                         <div className="mt-2 pl-[1.875rem] text-xs text-slate-500">
-                          Qty {state!.qty} — set by the table layout above
+                          {option.role === "TRANSFORMER"
+                            ? "Added by the voltage chosen for this machine"
+                            : option.role === "MTS_TRAVEL"
+                              ? `Qty ${state!.qty} — set by the MTS travel length`
+                              : `Qty ${state!.qty} — set by the table layout above`}
                         </div>
                       ) : null}
 
@@ -667,23 +710,16 @@ export function ItemOptionsEditor({
                               </span>
                             ) : null}
                           </div>
-                          {attributeFields.map((field) => (
-                            <label
-                              key={field.key}
-                              className="flex items-center gap-2 text-xs text-slate-500"
-                            >
-                              {field.label}
-                              <input
-                                type={field.type === "number" ? "number" : "text"}
-                                inputMode={field.type === "number" ? "decimal" : undefined}
-                                value={state!.attributes[field.key] ?? ""}
-                                onChange={(e) => setAttribute(option.id, field.key, e.target.value)}
-                                className={cn(fieldInputClass, "h-11 w-28 sm:h-9")}
-                              />
-                            </label>
-                          ))}
-
                         </div>
+                      ) : null}
+
+                      {checked && !locked && option.consumables.length > 0 ? (
+                        <ConsumablePicker
+                          option={option}
+                          toolQty={state!.qty}
+                          value={state!.consumableId}
+                          onChange={(consumableId) => setConsumable(option.id, consumableId)}
+                        />
                       ) : null}
                     </div>
                   );

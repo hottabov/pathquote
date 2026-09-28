@@ -109,7 +109,7 @@ describe("planCatalogV2 against the pre-migration dump", () => {
 
   it("plans the renames, deletes and adds the decisions file describes", () => {
     expect(plan.summary.products).toMatchObject({ renamed: 19, deleted: 12, created: 1 });
-    expect(plan.summary.options).toMatchObject({ renamed: 45, deleted: 23, created: 8 });
+    expect(plan.summary.options).toMatchObject({ renamed: 45, deleted: 25, created: 8 });
   });
 
   it("renames M3180 -> M-3180, matched by id", () => {

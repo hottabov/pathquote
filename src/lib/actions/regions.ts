@@ -47,9 +47,8 @@ function revalidateRegionPaths(regionId: string) {
 
 /** Builds the `bankDetails` write for a Prisma `create`/`update` call: `null`
  * clears the column (via `Prisma.DbNull`, since Prisma rejects a literal
- * JSON `null` for a Json field — see the same pattern for
- * `Option.attributeSchema` in src/lib/actions/catalog.ts), otherwise the
- * validated record is passed straight through. */
+ * JSON `null` for a Json field), otherwise the validated record is passed
+ * straight through. */
 function bankDetailsWrite(value: Record<string, string> | null): Prisma.InputJsonValue | typeof Prisma.DbNull {
   return value === null ? Prisma.DbNull : (value as Prisma.InputJsonValue);
 }

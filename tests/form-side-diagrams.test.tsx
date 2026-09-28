@@ -101,8 +101,10 @@ describe("the blue section bands", () => {
     }
   });
 
-  it("keeps the PathWorks licence note, which says what is being sold rather than how to fill the form in", () => {
-    expect(hints(render("M_SERIES", "-Y"))).toContain("integrated licence only");
+  it.each(["M_SERIES", "X_CALIBRE", "L_SERIES"] as const)("%s titles its software block Software, not PathWorks", (form) => {
+    const html = render(form, "-Y");
+    expect(html).toContain("<h2><span>Software</span></h2>");
+    expect(html).not.toContain("<span>PathWorks</span>");
   });
 });
 

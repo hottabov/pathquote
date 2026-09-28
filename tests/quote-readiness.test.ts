@@ -10,7 +10,7 @@ import {
 // tests/production-readiness.test.ts, which covers the per-item check this
 // one wraps.
 
-const COMPLETE_SPEC = { knifeSize: "1.5x7.0" };
+const COMPLETE_SPEC = { knifeSize: "1.5x7.0", voltage: "400V" };
 
 function item(over: Partial<ReadinessInput["items"][number]> = {}): ReadinessInput["items"][number] {
   return {
@@ -115,7 +115,7 @@ describe("quoteReadiness", () => {
     const rows = quoteReadiness(input({ items: [item({ productionSpec: {} })] }));
     const row = rows.find((r) => r.key === "spec");
     expect(row?.met).toBe(false);
-    expect(row?.detail).toBe("M-7220: knife size");
+    expect(row?.detail).toBe("M-7220: knife size, voltage");
     expect(row?.targetItemId).toBe("i1");
   });
 

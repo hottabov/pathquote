@@ -102,7 +102,10 @@ export function buildFormContexts(
           const row = line.refId !== null ? document.optionsById[line.refId] : undefined;
           return {
             id: row?.id ?? line.refId,
+            lineId: line.id,
+            parentLineId: line.parentLineId,
             code: line.code as string,
+            name: line.name,
             role: row?.role ?? null,
             qty: line.qty,
             attributes:

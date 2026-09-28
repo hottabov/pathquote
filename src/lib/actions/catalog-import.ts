@@ -345,7 +345,6 @@ class PlanExecutor {
             active: d.active,
             sortOrder: d.sortOrder,
             imageUrl: d.imageUrl,
-            ...(d.attributeSchema != null ? { attributeSchema: d.attributeSchema as Prisma.InputJsonValue } : {}),
           },
           select: { id: true },
         });
@@ -367,7 +366,6 @@ class PlanExecutor {
             active: d.active,
             sortOrder: d.sortOrder,
             imageUrl: d.imageUrl,
-            attributeSchema: d.attributeSchema == null ? Prisma.DbNull : (d.attributeSchema as Prisma.InputJsonValue),
           },
         });
         return;

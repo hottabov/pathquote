@@ -46,7 +46,6 @@ export function readOptionForm(formData: FormData) {
   return {
     ...readProductForm(formData),
     shortDescription: formData.get("shortDescription"),
-    attributeSchema: formData.get("attributeSchema"),
   };
 }
 

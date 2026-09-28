@@ -61,6 +61,7 @@ type RawLine = {
   unitPrice: { toString(): string };
   listPrice: { toString(): string } | null;
   attributes: unknown;
+  parentLineId: string | null;
   refId: string | null;
   imageUrl: string | null;
   showImage: boolean;
@@ -80,6 +81,7 @@ function toSigningLine(line: RawLine, optionRowMap: Map<string, OptionRow>): Quo
       line.attributes && typeof line.attributes === "object" && !Array.isArray(line.attributes)
         ? (line.attributes as Record<string, string | number>)
         : null,
+    parentLineId: line.parentLineId,
     role: optionRow?.role ?? null,
     unitLengthM: optionRow?.unitLengthM ?? null,
     imageUrl: line.kind === "OPTION" ? (optionRow?.imageUrl ?? null) : line.imageUrl,
@@ -263,6 +265,7 @@ export async function getDocumentForSigning(tokenHash: string): Promise<Document
                   unitPrice: true,
                   listPrice: true,
                   attributes: true,
+                  parentLineId: true,
                   refId: true,
                   imageUrl: true,
                   showImage: true,
@@ -296,6 +299,7 @@ export async function getDocumentForSigning(tokenHash: string): Promise<Document
               unitPrice: true,
               listPrice: true,
               attributes: true,
+              parentLineId: true,
               refId: true,
               imageUrl: true,
               showImage: true,

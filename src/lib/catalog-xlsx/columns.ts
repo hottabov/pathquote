@@ -49,7 +49,6 @@ export const OPTION_COLUMNS = [
   "active",
   "sortOrder",
   "imageUrl",
-  "attributeSchema",
 ] as const;
 
 /**
@@ -168,7 +167,6 @@ export const OPTION_ROLES = [
   "VRB",
   "WASTE_BIN",
   "JTP",
-  "L_EXTENDED",
   "L_TOOL",
   "EL_DRIVE",
   "EL_CONVEYOR",

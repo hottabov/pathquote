@@ -7,7 +7,15 @@ import type { RailAssignment } from "./rails";
 export type FormItemOption = {
   /** `Option.id` (the line's `refId`), or null for a line with no catalogue row. */
   id: string | null;
+  /** The `DocumentLine` it came from. */
+  lineId: string;
+  /** Set on the consumable a tool was sold with: that tool's `lineId` (see
+   * OptionConsumable). A form that prints the tool prints this with it. */
+  parentLineId: string | null;
   code: string;
+  /** The line's snapshotted name (part number included, for a tool or
+   * consumable). */
+  name: string;
   /** `Option.role` -- what the forms tick and cover by. Null means no form has a box for it. */
   role: OptionRole | null;
   qty: number;

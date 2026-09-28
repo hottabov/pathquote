@@ -21,9 +21,10 @@ export function TotalBanner({
         {formatMoney(totals.total, totals.currency, totals.currencySymbol)} {totals.currency}
       </span>
       <span className="pq-total-banner-note">
+        {/* The delivery term, plainly (owner: "just Ex Works or Delivered"). */}
         {totals.deliveryTerms === "EX_WORKS"
-          ? `(Ex Works — no ${totals.taxName} applicable)`
-          : `(incl. ${totals.taxName} ${totals.taxRate}%)`}
+          ? "(Ex Works)"
+          : `(Delivered, incl. ${totals.taxName} ${totals.taxRate}%)`}
       </span>
       {/* Repeats the header's expiry right next to the price it applies
           to (owner: "put the valid-to in this total investment line, so

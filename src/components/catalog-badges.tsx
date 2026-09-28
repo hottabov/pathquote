@@ -1,6 +1,6 @@
 import { formatMoney } from "@/lib/format";
 import type { CatalogPrice } from "@/lib/queries/catalog";
-import { StatusBadge } from "@/components/ui-kit";
+import { StatusBadge } from "@/components/ui-kit/status-badge";
 import { cn } from "@/lib/utils";
 
 /**

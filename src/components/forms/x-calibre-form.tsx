@@ -1,4 +1,5 @@
 import type { OptionRole } from "@prisma/client";
+import { X_CALIBRE_VOLTAGES } from "@/lib/production-forms/voltage";
 import type { FormContext } from "@/lib/production-forms/types";
 import { EndUserSection, FormSheet, provenance } from "./form-sheet";
 import {
@@ -16,7 +17,7 @@ import {
   DrillsAndNotesSection,
   MACHINE_OFFICE_FIELDS,
   MtsSection,
-  PathWorksSection,
+  SoftwareSection,
   PowerTicks,
   ScreenSideBlock,
   hasRole,
@@ -101,7 +102,7 @@ export function XCalibreForm({ ctx }: { ctx: FormContext }) {
             ))}
           </OptionColumn>
           <OptionColumn caption="Power &amp; packing">
-            <PowerTicks ctx={ctx} voltage={spec.voltage} />
+            <PowerTicks ctx={ctx} voltage={spec.voltage} voltages={X_CALIBRE_VOLTAGES} />
             <Tick on={hasRole(ctx, "CRATE")} code="CRATE" />
           </OptionColumn>
           <OptionColumn caption="Standard — always fitted">
@@ -112,7 +113,7 @@ export function XCalibreForm({ ctx }: { ctx: FormContext }) {
         </OptionColumns>
       </Section>
 
-      <PathWorksSection ctx={ctx} />
+      <SoftwareSection ctx={ctx} />
 
       <SectionRow>
         <Section title="Knife size">

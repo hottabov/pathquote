@@ -78,7 +78,7 @@ describe("diffCatalog — buckets", () => {
     expect(diff.counts.prices).toEqual({ unchanged: 4, updated: 0, created: 0, deleted: 0 });
   });
 
-  it("option updates cover parentProduct, compat lists, role, unitLengthM and attributeSchema", () => {
+  it("option updates cover parentProduct, compat lists, role and unitLengthM", () => {
     const snapshot = tinySnapshot();
     const sheets = sheetsOf(snapshot);
     setCell(sheets.options, "EL-2020-DM12", "parentProduct", null);
@@ -86,7 +86,6 @@ describe("diffCatalog — buckets", () => {
     setCell(sheets.options, "EL-2020-DM12", "compatSeries", "EL");
     setCell(sheets.options, "EL-2020-DM12", "role", "EL_CONVEYOR");
     setCell(sheets.options, "EL-2020-DM12", "unitLengthM", 2.4);
-    setCell(sheets.options, "EL-2020-DM12", "attributeSchema", null);
     const diff = diffOf(sheets, snapshot);
     expect(diff.options.updated[0].changes).toEqual([
       { field: "role", before: "EL_DRIVE", after: "EL_CONVEYOR" },
@@ -94,7 +93,6 @@ describe("diffCatalog — buckets", () => {
       { field: "unitLengthM", before: 1.2, after: 2.4 },
       { field: "compatSeries", before: null, after: "EL" },
       { field: "compatProducts", before: "EL-2020", after: null },
-      { field: "attributeSchema", before: '[{"key":"metres","type":"number"}]', after: null },
     ]);
   });
 
@@ -102,7 +100,7 @@ describe("diffCatalog — buckets", () => {
     const snapshot = tinySnapshot();
     const sheets = sheetsOf(snapshot);
     sheets.products.push([null, "X", "X-10390", "X-Calibre 10 x 390", null, "MACHINE", "M_SERIES", null, false, false, true, 0, null]);
-    sheets.options.push([null, "ABR-X", "Abrasive kit X", null, "ABR", null, null, "X", null, false, true, 0, null, null]);
+    sheets.options.push([null, "ABR-X", "Abrasive kit X", null, "ABR", null, null, "X", null, false, true, 0, null]);
     sheets.prices.push(["product", null, "X-10390", "AU", "AUD", 250000, false]);
     sheets.prices.push(["option", "", "ABR-X", "US", "USD", 1500, true]);
     const diff = diffOf(sheets, snapshot);

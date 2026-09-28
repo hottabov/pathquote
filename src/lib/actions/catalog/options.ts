@@ -2,7 +2,6 @@
 
 import { revalidateOption, revalidateOptionList } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
-import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/authz";
 import { optionSchema } from "@/lib/validation/catalog";
@@ -24,13 +23,6 @@ export async function createOption(formData: FormData): Promise<ActionResult> {
         code: parsed.data.code,
         name: parsed.data.name,
         shortDescription: parsed.data.shortDescription ?? null,
-        // Omit rather than pass `null` on create: an optional Json column
-        // just defaults to NULL when the field is left unset, and Prisma
-        // rejects a literal `null` for Json fields (it wants
-        // Prisma.DbNull/Prisma.JsonNull to disambiguate from JSON `null`).
-        ...(parsed.data.attributeSchema !== null
-          ? { attributeSchema: parsed.data.attributeSchema as Prisma.InputJsonValue }
-          : {}),
         active: parsed.data.active,
         noCommission: parsed.data.noCommission,
         sortOrder: parsed.data.sortOrder,
@@ -63,12 +55,6 @@ export async function updateOption(optionId: string, formData: FormData): Promis
         code: parsed.data.code,
         name: parsed.data.name,
         shortDescription: parsed.data.shortDescription ?? null,
-        // Here we *do* need to actively clear the column when the user
-        // emptied the textarea, so use Prisma.DbNull instead of omitting.
-        attributeSchema:
-          parsed.data.attributeSchema === null
-            ? Prisma.DbNull
-            : (parsed.data.attributeSchema as Prisma.InputJsonValue),
         active: parsed.data.active,
         noCommission: parsed.data.noCommission,
         sortOrder: parsed.data.sortOrder,

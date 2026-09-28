@@ -72,7 +72,7 @@ describe("the M-Series form renders from the quote", () => {
   });
 
   it("ticks the voltage from the production spec, not from an option", () => {
-    expect(ticked(render(ctx({}, { voltage: "415V" })))).toContain("415V");
+    expect(ticked(render(ctx({}, { voltage: "480V" })))).toContain("480V");
   });
 
   it("prints the MTS travel distance beside its tick", () => {

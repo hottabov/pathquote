@@ -50,7 +50,6 @@ export type ExportOption = {
   active: boolean;
   sortOrder: number;
   imageUrl: string | null;
-  attributeSchema: unknown;
   prices: Record<string, ExportPrice>;
 };
 

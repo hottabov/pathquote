@@ -70,8 +70,8 @@ export type ResolvedTax = {
    * place a document's effective rate is computed, rather than scattered
    * across every reader of `taxAmount`/`total`. Note that this zero never
    * reaches `taxRate` above: the document goes on carrying its region's
-   * nominal rate, and the sheet renders "Ex Works — no GST applicable" from
-   * the terms rather than printing a misleading "GST 0%". */
+   * nominal rate, and the sheet renders "Ex Works" from the terms rather
+   * than printing a misleading "GST 0%". */
   engineTaxRate: number;
   /** The pair to write back to the document row, or `null` when the row
    * already agrees and the write would be a no-op. Always `null` for a

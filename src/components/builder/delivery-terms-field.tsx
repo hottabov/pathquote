@@ -52,8 +52,7 @@ export function DeliveryTermsField({
   if (readOnly) {
     return (
       <ReadOnlyValue>
-        {LABELS[deliveryTerms]}
-        {deliveryTerms === "EX_WORKS" ? " — no GST applicable." : "."}
+        {LABELS[deliveryTerms]}.
       </ReadOnlyValue>
     );
   }

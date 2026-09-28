@@ -40,10 +40,12 @@ const ITEM_THUMB_BOX_PX = 60;
 /**
  * Option roles no manager picks by hand, on any item: the per-metre MTS
  * travel rail, whose quantity comes from the length typed against the MTS
- * itself (see `mtsTravelMetres`). Shown with its quantity, and inert -- a
- * number typed here would be recomputed by the server on the next save.
+ * itself (see `mtsTravelMetres`), and an M-Series' transformer, which comes
+ * from the voltage chosen in its production spec (`setMachineVoltage`).
+ * Shown with their quantity, and inert -- anything changed here would be
+ * recomputed by the server on the next save.
  */
-const DERIVED_ROLES: ReadonlySet<OptionRole> = new Set<OptionRole>(["MTS_TRAVEL"]);
+const DERIVED_ROLES: ReadonlySet<OptionRole> = new Set<OptionRole>(["MTS_TRAVEL", "TRANSFORMER"]);
 
 /** The same, plus the EasyLoader's table modules, which its builder owns. */
 const EASYLOADER_LOCKED_ROLES: ReadonlySet<OptionRole> = new Set<OptionRole>([
@@ -240,7 +242,8 @@ export function ItemsList({
           reorder.dropTargetId === item.id && reorder.draggingId !== item.id;
         const grabbed = reorder.grabbedId === item.id;
         const collapsed = isCollapsed(item.id);
-        const optionCount = item.lines.filter((line) => line.kind === "OPTION").length;
+        // A consumable rides on its tool and is not counted as an option.
+        const optionCount = item.lines.filter((line) => line.kind === "OPTION" && line.parentLineId === null).length;
         const compatibleOptions = compatKey ? (compatibleOptionsByItemKey[compatKey] ?? []) : [];
         // An OPTION line carries no image of its own -- only a custom extra
         // line does -- so the breakdown's icons come from the compatible
@@ -282,6 +285,8 @@ export function ItemsList({
                 currentLines={item.lines
                   .filter((line) => line.kind === "OPTION")
                   .map((line) => ({
+                    id: line.id,
+                    parentLineId: line.parentLineId,
                     refId: line.refId,
                     code: line.code,
                     qty: line.qty,

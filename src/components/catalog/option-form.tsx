@@ -10,7 +10,6 @@ export type OptionFormValues = {
   code: string;
   name: string;
   shortDescription: string;
-  attributeSchema: string;
   active: boolean;
   noCommission: boolean;
   sortOrder: number;
@@ -24,16 +23,12 @@ const initialState: ActionResult = {};
 
 /**
  * The option create/edit form. Same fields as ProductForm plus a short
- * description and a raw-JSON attribute schema textarea (validated by
- * optionSchema — must parse to an array or object, or be left empty), set
- * in a monospace face since it holds structured text.
+ * description.
  *
  * Controlled throughout, for the reason `CompanyForm` spells out: React
- * empties an uncontrolled form as soon as its action returns, error or not.
- * That hurt most here, where the likeliest rejection is the attribute schema
- * failing to parse — the one field on the screen nobody wants to retype, and
- * the one that used to vanish along with everything else the moment the
- * server said so. `defaultValue` cannot survive that reset; state can.
+ * empties an uncontrolled form as soon as its action returns, error or not,
+ * so a rejected save (a duplicate code, say) used to take everything typed
+ * with it. `defaultValue` cannot survive that reset; state can.
  */
 export function OptionForm({
   action,
@@ -67,10 +62,9 @@ export function OptionForm({
   // Submitted through `onSubmit` rather than `<form action>` -- see
   // `CompanyForm` (src/components/clients/company-form.tsx). `<form action>`
   // still resets every field's DOM value once the action settles regardless
-  // of state, so a malformed attribute schema -- the one field on this form
-  // nobody wants to retype -- would come back visibly blank while `values`
-  // still held what was typed, and the next save would have posted that
-  // blank DOM value instead. Browser validation still runs before this
+  // of state, so a rejected field would come back visibly blank while
+  // `values` still held what was typed, and the next save would have posted
+  // that blank DOM value instead. Browser validation still runs before this
   // fires.
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -121,23 +115,6 @@ export function OptionForm({
             rows={2}
             disabled={readOnly}
             className={cn(fieldInputClass, "h-auto min-h-16 py-2")}
-          />
-        </FieldRow>
-
-        <FieldRow
-          label="Attribute schema (JSON)"
-          htmlFor="option-attribute-schema"
-          hint='Optional. Must be a JSON array or object, e.g. [{"key":"metres","label":"Travel (m)","type":"number"}]. Leave blank for none.'
-          className="lg:col-span-2"
-        >
-          <textarea
-            id="option-attribute-schema"
-            name="attributeSchema"
-            value={values.attributeSchema}
-            onChange={(e) => set("attributeSchema", e.target.value)}
-            rows={4}
-            disabled={readOnly}
-            className={cn(fieldInputClass, "h-auto min-h-24 py-2 font-mono text-xs")}
           />
         </FieldRow>
 

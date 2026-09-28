@@ -263,26 +263,18 @@ export type OptionListItem = {
 };
 
 /**
- * Global options list, ordered by code, optionally filtered by a
- * case-insensitive name/code search and/or restricted to those compatible
- * with a given series (series-level compatibility only, per phase 3 scope).
+ * Global options list, ordered by code, optionally restricted to those
+ * compatible with a given series (series-level compatibility only, per
+ * phase 3 scope). The name/code search runs in the browser over this list
+ * (see `OptionsList`, src/components/catalog/options-list.tsx).
  */
 export async function listOptions(params: {
-  search?: string;
   seriesCode?: string;
   regionCode?: string;
 } = {}): Promise<OptionListItem[]> {
-  const { search, seriesCode, regionCode = DEFAULT_REGION_CODE } = params;
+  const { seriesCode, regionCode = DEFAULT_REGION_CODE } = params;
 
   const where: NonNullable<Parameters<typeof db.option.findMany>[0]>["where"] = {};
-
-  if (search && search.trim()) {
-    const term = search.trim();
-    where.OR = [
-      { name: { contains: term, mode: "insensitive" } },
-      { code: { contains: term, mode: "insensitive" } },
-    ];
-  }
 
   // `seriesCode` is the `?series=` query parameter on /catalog/options -- a
   // human-readable filter in a URL, so it stays a code on purpose: the
@@ -474,7 +466,6 @@ export type OptionDetail = {
   code: string;
   name: string;
   shortDescription: string | null;
-  attributeSchema: unknown;
   active: boolean;
   noCommission: boolean;
   sortOrder: number;
@@ -492,6 +483,11 @@ export type OptionDetail = {
    * side). Two options conflict when they share at least one group here —
    * see the `OptionConflictGroup` model comment in schema.prisma. */
   conflictGroups: ConflictGroupSummary[];
+  /** The consumables this option, as a tool, goes on a quote with (see
+   * OptionConsumable) -- edited by `ConsumablesEditor`. */
+  consumables: { consumableId: string; code: string; name: string; qty: number }[];
+  /** The tools this option is a consumable of -- read-only here. */
+  consumableFor: { id: string; code: string; name: string }[];
 };
 
 /** A single option (by id) with a price row per region the viewer may see
@@ -518,6 +514,14 @@ export const getOptionDetailById = cache(async function getOptionDetailById(
         prices: { include: { region: true } },
         compat: { select: { seriesId: true, productId: true } },
         conflictGroupMemberships: { include: { group: { select: { id: true, name: true } } } },
+        consumables: {
+          orderBy: [{ sortOrder: "asc" }, { consumable: { code: "asc" } }],
+          select: { qty: true, consumable: { select: { id: true, code: true, name: true } } },
+        },
+        consumableFor: {
+          orderBy: { tool: { code: "asc" } },
+          select: { tool: { select: { id: true, code: true, name: true } } },
+        },
       },
     }),
     listActiveRegions(),
@@ -533,7 +537,6 @@ export const getOptionDetailById = cache(async function getOptionDetailById(
     code: option.code,
     name: option.name,
     shortDescription: option.shortDescription,
-    attributeSchema: option.attributeSchema,
     active: option.active,
     noCommission: option.noCommission,
     sortOrder: option.sortOrder,
@@ -544,6 +547,13 @@ export const getOptionDetailById = cache(async function getOptionDetailById(
       .map((c) => c.seriesId)
       .filter((id): id is string => id !== null),
     conflictGroups,
+    consumables: option.consumables.map(({ qty, consumable }) => ({
+      consumableId: consumable.id,
+      code: consumable.code,
+      name: consumable.name,
+      qty,
+    })),
+    consumableFor: option.consumableFor.map(({ tool }) => tool),
   };
 });
 

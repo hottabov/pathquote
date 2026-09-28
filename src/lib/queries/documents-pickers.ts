@@ -1,4 +1,5 @@
 import type { OptionRole } from "@prisma/client";
+import type { ConsumableLink } from "@/lib/consumables";
 import { db } from "@/lib/db";
 import { companyWhereForUser, type ScopeUser } from "@/lib/scope";
 import { compatibilityOrFilter } from "@/lib/catalog-compat";
@@ -70,6 +71,8 @@ export type ItemPickerProduct = {
   code: string;
   name: string;
   priced: boolean;
+  /** `Product.imageUrl`, shown as a thumbnail beside the product in the picker. */
+  imageUrl: string | null;
 };
 
 export type ItemPickerSeries = {
@@ -77,6 +80,9 @@ export type ItemPickerSeries = {
   code: string;
   name: string;
   maxDiscountPct: string | null;
+  /** The series' own image, else its first product's -- the same fallback
+   * the /catalog series cards use (see listSeriesWithCounts). */
+  imageUrl: string | null;
   products: ItemPickerProduct[];
 };
 
@@ -119,6 +125,7 @@ export async function getItemPickerCatalog(
       code: true,
       name: true,
       maxDiscountPct: true,
+      imageUrl: true,
       products: {
         where: { active: true },
         // Same ordering `listProductsBySeriesById` uses, and for the same
@@ -129,6 +136,7 @@ export async function getItemPickerCatalog(
           id: true,
           code: true,
           name: true,
+          imageUrl: true,
           prices: { where: { region: { code: regionCode } }, select: { needsReview: true } },
         },
       },
@@ -137,12 +145,8 @@ export async function getItemPickerCatalog(
 
   return seriesList
     .filter((series) => !isSeriesHidden(series.id, hidden))
-    .map((series) => ({
-      id: series.id,
-      code: series.code,
-      name: series.name,
-      maxDiscountPct: series.maxDiscountPct?.toString() ?? null,
-      products: series.products
+    .map((series) => {
+      const products = series.products
         .filter((product) => !hidden.productIds.has(product.id))
         .map((product) => {
           const price = product.prices[0];
@@ -151,9 +155,18 @@ export async function getItemPickerCatalog(
             code: product.code,
             name: product.name,
             priced: Boolean(price && !price.needsReview),
+            imageUrl: product.imageUrl,
           };
-        }),
-    }));
+        });
+      return {
+        id: series.id,
+        code: series.code,
+        name: series.name,
+        maxDiscountPct: series.maxDiscountPct?.toString() ?? null,
+        imageUrl: series.imageUrl ?? products.find((product) => product.imageUrl)?.imageUrl ?? null,
+        products,
+      };
+    });
 }
 
 // --- options editor ---------------------------------------------------------
@@ -163,11 +176,6 @@ export type CompatibleOption = {
   code: string;
   name: string;
   shortDescription: string | null;
-  /** Raw `Option.attributeSchema`, expected shape (when present) is an array
-   * of `{key, label, type: "number"|"text"}` — the options editor is
-   * responsible for tolerating anything else (see its `parseAttributeFields`
-   * helper) since this is unvalidated admin-entered JSON. */
-  attributeSchema: unknown;
   /** `Option.role` -- what the builder uses to recognise the rows an
    * EasyLoader's table layout owns (see `EL_MODULE_ROLES`) and lock them in
    * the options editor. `null` for an option no form or builder keys on. */
@@ -198,6 +206,9 @@ export type CompatibleOption = {
    * (the first found, if a pair happens to share more than one) — enough to
    * explain a block without an exhaustive list. */
   conflictsWith: { id: string; code: string; name: string; groupName: string }[];
+  /** The consumables this tool takes, one of which must be picked with it
+   * (src/lib/consumables.ts) -- empty for anything that is not such a tool. */
+  consumables: ConsumableLink[];
 };
 
 /**
@@ -226,6 +237,11 @@ export async function listCompatibleOptions(
     include: {
       prices: { where: { regionId } },
       conflictGroupMemberships: { select: { groupId: true } },
+      consumables: {
+        where: { consumable: { active: true } },
+        orderBy: [{ sortOrder: "asc" }, { consumable: { code: "asc" } }],
+        select: { qty: true, consumable: { select: { id: true, code: true, name: true } } },
+      },
     },
   });
 
@@ -275,12 +291,12 @@ export async function listCompatibleOptions(
       code: o.code,
       name: o.name,
       shortDescription: o.shortDescription,
-      attributeSchema: o.attributeSchema,
       role: o.role,
       unitLengthM: o.unitLengthM !== null ? Number(o.unitLengthM) : null,
       price: price ? { amount: price.amount.toString(), needsReview: price.needsReview } : null,
       imageUrl: o.imageUrl,
       conflictsWith: Array.from(partnersById.values()),
+      consumables: o.consumables.map(({ qty, consumable }) => ({ ...consumable, qty })),
     };
   });
 }

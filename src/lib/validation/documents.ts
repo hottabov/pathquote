@@ -204,17 +204,16 @@ export type CreditUnitPriceInput = z.infer<typeof creditUnitPriceSchema>;
 /** One option selection from the item options editor: the option's `id`
  * (never its code -- a code is a label an admin can rename while the editor
  * is open, see docs/plans/2026-09-05-catalog-identity-and-cleanup.md), the
- * quantity of it on the item, and (when the option carries an
- * `attributeSchema`) the freeform attribute values keyed by attribute
- * `key`. Value type is loosely `string | number` — the editor renders
- * "number" and "text" attribute inputs and this schema doesn't re-validate
- * per-attribute types against the option's schema (that's a display/UX
- * concern, not a data-integrity one: the value is stored as-is in
- * `DocumentLine.attributes` Json). */
+ * quantity of it on the item, and (for an MTS only) the travel length as
+ * `{ metres }` — see src/lib/production-forms/mts.ts, which validates it.
+ * Value type is loosely `string | number`; it is stored as-is in
+ * `DocumentLine.attributes` Json. `consumableId` is the consumable picked for
+ * a tool that takes one (see src/lib/consumables.ts). */
 export const optionSelectionSchema = z.object({
   optionId: idSchema,
   qty: qtySchema,
   attributes: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
+  consumableId: idSchema.optional(),
 });
 export type OptionSelectionInput = z.infer<typeof optionSelectionSchema>;
 

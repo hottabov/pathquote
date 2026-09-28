@@ -115,7 +115,6 @@ export function optionRow(o: ExportOption): Cell[] {
     o.active,
     o.sortOrder,
     text(o.imageUrl),
-    json(o.attributeSchema),
   ];
 }
 
@@ -166,7 +165,7 @@ export function readmeLines(snapshot: CatalogExportSnapshot): string[] {
     "Products: one row per catalogue product. Options: one row per option (compatSeries / compatProducts / parentProduct say what it fits). Prices: one row per item x region.",
     "The id column is the database key and must never be edited -- the import matches rows by id. Leave id blank on a new row.",
     "The code column may be edited freely; it is a label, and renaming it simply updates the row.",
-    "Lists (compatSeries, compatProducts) are separated by '; '. specs and attributeSchema are JSON.",
+    "Lists (compatSeries, compatProducts) are separated by '; '. specs is JSON.",
     "A row deleted from this file is deleted from the catalogue on import (with confirmation). Finalized quotes are not affected.",
     "Booleans are TRUE / FALSE. Leave a cell blank to clear the value. This README sheet is ignored on import.",
   ];
@@ -224,7 +223,6 @@ const OPTION_WIDTHS: Record<OptionColumn, number> = {
   active: 8,
   sortOrder: 10,
   imageUrl: 36,
-  attributeSchema: 40,
 };
 
 const PRICE_WIDTHS: Record<PriceColumn, number> = {
