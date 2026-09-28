@@ -120,6 +120,14 @@ set -euo pipefail
 VPS_DIR="$1"; DUMP="$2"; UPL="$3"; VOL="$4"; FPSQL="$5"; FPOUT="$6"
 cd "$VPS_DIR"
 
+# Start the image the last deploy pinned (tagged with the commit sha), not
+# whatever the local `latest` tag points at. The deploy pulls by sha only, so
+# `latest` on the VPS is whichever image was pulled under that tag last --
+# often weeks old -- and a bare `docker compose up -d app` ran that stale code
+# against the freshly migrated database (2026-09-28: P2022 on
+# Option.attributeSchema after z51 dropped it).
+export TAG="$(git rev-parse HEAD)"
+
 # Every `docker compose exec -T` below gets its stdin from a file or
 # /dev/null, never inherited. See the note at the top of the caller.
 
