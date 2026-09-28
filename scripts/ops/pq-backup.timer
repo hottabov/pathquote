@@ -1,5 +1,5 @@
 [Unit]
-Description=PathQuote off-site backup, Saturdays 04:00 Melbourne time
+Description=PathQuote backup, Saturdays 04:00 Melbourne time
 
 [Timer]
 # Melbourne local time, so the run stays at 04:00 across daylight saving.

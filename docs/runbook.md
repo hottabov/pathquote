@@ -295,108 +295,48 @@ Certbot's systemd timer renews automatically; confirm it's active with
 
 ## 4. Backups
 
-The live VPS runs `/usr/local/bin/pq-backup.sh` from root's crontab at 03:00.
-It dumps Postgres *and* the `uploads` volume (uploaded files are not in the
-database), writes each artifact to a `.tmp` path and renames it only after the
-command succeeds — a dump that dies partway leaves a `.tmp` behind instead of a
-truncated file that looks like a valid backup — then prunes anything older than
-14 days:
+One job, set up 2026-09-29 (source in `scripts/ops/`, installed on the VPS):
+
+| | |
+|---|---|
+| When | Saturdays 04:00 Australia/Melbourne (`pq-backup.timer`, DST-aware; a run missed while the VPS was down happens at next boot) |
+| What | fresh `pg_dump` + tar of the `pathquote_uploads` volume, each checked (gzip integrity, at least 10 `CREATE TABLE`s) before it gets its final name |
+| Local | `/opt/backups/pq-<UTC stamp>.sql.gz`, `/opt/backups/uploads-<UTC stamp>.tar.gz`, 30 days |
+| Off-site | `rclone sync` of `/opt/backups` to `gdrive:PathQuote/backups` (Google account pathfindermarketingdept@gmail.com): Drive holds exactly the local files, deletions skip the Drive trash, at most 6 deletions per run so an emptied `/opt/backups` cannot wipe Drive |
+| On failure | `pq-backup-alert.service` emails marketing@pathfindercut.com through the app's SMTP account (`SMTP_*`, `EMAIL_FROM` in `.env`) |
+| Log | `/var/log/pq-backup.log` ("backup ok: ...") |
+
+This replaced the old nightly cron job (14 days, local only)
+and the first off-site script. Weekly means up to a week of quotes can be lost
+if the VPS disk dies between runs: take a manual backup before anything risky.
 
 ```bash
-#!/bin/bash
-set -euo pipefail
-
-BACKUP_DIR=/opt/backups
-COMPOSE=/opt/pathquote/docker-compose.yml
-KEEP_DAYS=14
-STAMP=$(date +%F)
-
-mkdir -p "$BACKUP_DIR"
-
-docker compose -f "$COMPOSE" exec -T postgres \
-  pg_dump -U pathquote pathquote | gzip > "$BACKUP_DIR/pq-$STAMP.sql.gz.tmp"
-mv "$BACKUP_DIR/pq-$STAMP.sql.gz.tmp" "$BACKUP_DIR/pq-$STAMP.sql.gz"
-
-docker run --rm \
-  -v pathquote_uploads:/data:ro \
-  -v "$BACKUP_DIR":/backup \
-  alpine tar czf "/backup/uploads-$STAMP.tar.gz.tmp" -C /data .
-mv "$BACKUP_DIR/uploads-$STAMP.tar.gz.tmp" "$BACKUP_DIR/uploads-$STAMP.tar.gz"
-
-find "$BACKUP_DIR" -name 'pq-*.sql.gz'      -mtime +$KEEP_DAYS -delete
-find "$BACKUP_DIR" -name 'uploads-*.tar.gz' -mtime +$KEEP_DAYS -delete
-find "$BACKUP_DIR" -name '*.tmp'            -mtime +1          -delete
-
-echo "$(date -Is) backup ok"
+systemctl list-timers pq-backup.timer        # next run
+systemctl start pq-backup.service            # back up now (also before a risky migration)
+tail /var/log/pq-backup.log
+rclone lsl gdrive:PathQuote/backups
+/usr/local/bin/pq-backup-alert.sh --test     # check the failure email still arrives
 ```
 
-Crontab entry:
-
-```cron
-0 3 * * * /usr/local/bin/pq-backup.sh >> /var/log/pq-backup.log 2>&1
-```
-
-Verify a dump is real, not just present:
+Installing or updating from the repository:
 
 ```bash
-gunzip -t /opt/backups/pq-$(date +%F).sql.gz
-zcat /opt/backups/pq-$(date +%F).sql.gz | grep -c 'CREATE TABLE'   # expect ~19
+scp -P 3498 scripts/ops/pq-backup.sh scripts/ops/pq-backup-alert.sh root@VPS:/usr/local/bin/
+scp -P 3498 scripts/ops/pq-backup*.service scripts/ops/pq-backup.timer root@VPS:/etc/systemd/system/
+ssh -p 3498 root@VPS 'chmod 700 /usr/local/bin/pq-backup*.sh && systemctl daemon-reload && systemctl enable --now pq-backup.timer'
 ```
 
-`/opt/backups` sits on the same disk as the database, so it protects against a
-bad migration or an accidental `DROP`, not against losing the VPS. Off-site
-copies go to Google Drive weekly — see "Off-site backups" below.
-
-### Off-site backups (Google Drive)
-
-Set up 2026-09-29. Every Saturday at 04:00 Melbourne time (DST-aware)
-`pq-offsite-backup.timer` runs `/usr/local/bin/pq-offsite-backup.sh`
-(source: `scripts/ops/`). It takes a fresh `pg_dump` and a fresh tar of the
-`pathquote_uploads` volume, checks both (gzip integrity, at least 10
-`CREATE TABLE`s), uploads them with rclone to `gdrive:PathQuote/backups`
-(Google account pathfindermarketingdept@gmail.com, 15 GB), and deletes
-anything there older than 30 days — bypassing the Drive trash, which would
-otherwise keep counting against the quota. A run missed while the VPS was down
-happens at next boot (`Persistent=true`).
-
-```bash
-systemctl list-timers pq-offsite-backup.timer     # next run
-systemctl start pq-offsite-backup.service         # run now
-tail /var/log/pq-offsite-backup.log               # "offsite backup ok: ..."
-rclone lsl gdrive:PathQuote/backups               # what is on Drive
-```
-
-rclone config: `/root/.config/rclone/rclone.conf` (remote `gdrive`, mode
-600). It currently uses rclone's shared OAuth client_id, which Google is
-retiring during 2026; before it stops working, create an own client_id
-(https://rclone.org/drive/#making-your-own-client-id) and re-authorize with
-`rclone config reconnect gdrive:`. If the log stops saying "ok", check this
-first.
+rclone config: `/root/.config/rclone/rclone.conf`, remote `gdrive`, mode 600.
+If the OAuth client is still rclone's shared one, it stops working during
+2026; the Pathfinder Google Cloud client_id replaces it (re-authorize with
+`rclone authorize "drive" "<client_id>" "<secret>"` on a machine with a
+browser, then put `client_id`, `client_secret` and the new `token` into the
+config). The Google Cloud OAuth consent screen must be **In production**, not
+Testing — a Testing app's refresh token expires after 7 days, and every
+weekly run would fail.
 
 Restore from Drive: `rclone copy gdrive:PathQuote/backups/<file> /tmp/`, then
 follow "Restore procedure" below.
-
-The two plain cron entries below are the minimal equivalent, kept for
-reference on a host without the script.
-
-### Nightly dump
-
-Add to the deploy user's crontab (`crontab -e`):
-
-```cron
-0 3 * * * mkdir -p /opt/backups && docker compose -f /opt/pathquote/docker-compose.yml exec -T postgres pg_dump -U pathquote pathquote | gzip > /opt/backups/pq-$(date +\%F).sql.gz
-```
-
-### 14-day rotation
-
-Add a second cron entry to prune anything older than 14 days:
-
-```cron
-30 3 * * * find /opt/backups -name 'pq-*.sql.gz' -mtime +14 -delete
-```
-
-(The `\%F` escaping above is required because `%` is special to cron; when
-editing the crontab directly via `crontab -e` the same escaping applies.)
 
 ### Restore procedure
 
@@ -409,7 +349,7 @@ editing the crontab directly via `crontab -e` the same escaping applies.)
 2. Restore from a chosen dump:
 
    ```bash
-   gunzip -c /opt/backups/pq-2026-08-29.sql.gz | \
+   gunzip -c /opt/backups/pq-2026-09-28T2340Z.sql.gz | \
      docker compose exec -T postgres psql -U pathquote -d pathquote
    ```
 
@@ -420,7 +360,7 @@ editing the crontab directly via `crontab -e` the same escaping applies.)
    ```bash
    docker compose exec -T postgres psql -U pathquote -d postgres -c \
      "DROP DATABASE pathquote; CREATE DATABASE pathquote OWNER pathquote;"
-   gunzip -c /opt/backups/pq-2026-08-29.sql.gz | \
+   gunzip -c /opt/backups/pq-2026-09-28T2340Z.sql.gz | \
      docker compose exec -T postgres psql -U pathquote -d pathquote
    ```
 
@@ -454,7 +394,7 @@ How changes reach production now:
   cascade away with the row, and a revision or re-quote may still need it.
 - **Anything that deletes or rewrites existing `Document` rows** — does not
   ship. A migration that has to touch live quotes needs a backup taken first
-  (`/usr/local/bin/pq-backup.sh`) and an explicit decision, not a deploy.
+  (`systemctl start pq-backup.service`) and an explicit decision, not a deploy.
 - **Images** — `scripts/push-images-to-prod.sh`, below.
 
 ### Copying catalogue images to production

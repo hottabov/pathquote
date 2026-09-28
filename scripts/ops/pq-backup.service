@@ -1,0 +1,11 @@
+[Unit]
+Description=PathQuote production backup (local + Google Drive mirror)
+After=docker.service network-online.target
+Wants=network-online.target
+OnFailure=pq-backup-alert.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pq-backup.sh
+StandardOutput=append:/var/log/pq-backup.log
+StandardError=append:/var/log/pq-backup.log
