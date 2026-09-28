@@ -8,9 +8,8 @@ import type { HtmlFormSpec } from "../types";
  *
  * The catalogue sells one option for the FabricPro, `Crate-FP`, and the
  * builder adds it with the machine (DEFAULT_OPTION_ROLES). The travel
- * platform and its two rails are not options: the platform is fitted to
- * every machine, and the rails' length comes from the EasyLoader table the
- * machine is paired with (`ctx.rails`) or from the manager's override.
+ * platform is not an option: it is fitted to every machine. Its two rails
+ * belong to the EasyLoader table and print on that table's form (`rails.ts`).
  */
 export const fabricProSpec: HtmlFormSpec = {
   id: "fabricpro",

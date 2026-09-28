@@ -125,54 +125,6 @@ function Stepper({
   );
 }
 
-/**
- * One rail-length field. Empty means "use the length the EasyLoader tables in
- * this quote add up to", which is the normal case, so the derived figure is
- * shown as the placeholder and spelled out underneath rather than written
- * into the input — a pre-filled box reads as a value someone chose, and the
- * next person to redraw the table would have no way to tell it apart from
- * one that was typed.
- */
-function RailField({
-  id,
-  label,
-  value,
-  derived,
-  onCommit,
-}: {
-  id: string;
-  label: string;
-  value: number | undefined;
-  derived: number | null;
-  onCommit: (value: number | undefined) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <CompactField label={label} htmlFor={id}>
-        <input
-          id={id}
-          type="number"
-          step="0.1"
-          min={0}
-          inputMode="decimal"
-          placeholder={derived !== null ? String(derived) : "—"}
-          defaultValue={value ?? ""}
-          onBlur={(e) => onCommit(e.target.value === "" ? undefined : Number(e.target.value))}
-          className={cn(fieldInputClass, compactControlClass, "w-28")}
-        />
-        {derived !== null && value === undefined ? (
-          <span className="text-xs text-slate-500">from the EasyLoader table ({derived} m)</span>
-        ) : null}
-        {derived !== null && value !== undefined && value !== derived ? (
-          <span className="text-xs text-amber-700">
-            overrides the EasyLoader table ({derived} m)
-          </span>
-        ) : null}
-      </CompactField>
-    </div>
-  );
-}
-
 type Drills = { required?: boolean; detail?: string } | undefined;
 
 /**
@@ -246,14 +198,6 @@ type Props = {
    * expected until the owner uploads the real artwork. */
   screenSideImages: Record<string, string>;
   /**
-   * Metres of rail the FabricPro-compatible EasyLoader tables in this quote
-   * add up to, or null when there are none. Shown on a FabricPro card as the
-   * value the form will print unless someone types over it -- the rails bolt
-   * to the table, so re-typing a number the table already states is how the
-   * two end up disagreeing. See `src/lib/production-forms/rails.ts`.
-   */
-  derivedRailLengthM: number | null;
-  /**
    * How many single roll feed attachments this item sells (role
    * `EL_ROLL_FEED`, `EL-2020-RF` / `EL-2420-RF`), or 0 for none. The
    * attachment is an option, so it is picked in the options editor; what
@@ -304,7 +248,6 @@ export function ProductionSpecEditor({
   productSpecs,
   spec,
   hasOtherMachines,
-  derivedRailLengthM,
   rollFeedQty,
   screenSideImages,
   readOnly = false,
@@ -853,36 +796,6 @@ export function ProductionSpecEditor({
             </>
           ) : null}
 
-          {form.form === "FABRICPRO" ? (
-            <>
-              {/* Both rails are the same length, and that length is a fact
-                  about the EasyLoader table this FabricPro runs over — so
-                  when a table in this quote is marked FabricPro compatible,
-                  the number arrives on its own and the field is left empty
-                  rather than pre-filled. Typing one overrides it, for the
-                  case the quote cannot see: a customer extending a table
-                  they already own. */}
-              <RailField
-                id={`${itemId}-rail-length`}
-                label="Travel platform rail length (m)"
-                value={draft.railLengthM as number | undefined}
-                derived={derivedRailLengthM}
-                onCommit={(value) => save({ ...draft, railLengthM: value }, "spec")}
-              />
-
-              <RailField
-                id={`${itemId}-power-rail-length`}
-                label="Electrical power rail length (m)"
-                value={draft.powerRailLengthM as number | undefined}
-                derived={derivedRailLengthM}
-                onCommit={(value) => save({ ...draft, powerRailLengthM: value }, "spec")}
-              />
-
-              {/* Ex-Works was here. It is a delivery term the quote states,
-                  and a second copy on the build sheet reads as something the
-                  workshop sets (Vadym, 2026-09-11). */}
-            </>
-          ) : null}
 
           {error ? (
             <p role="alert" className="text-sm text-destructive">

@@ -1,10 +1,8 @@
 import { displayCountry } from "@/lib/countries";
 import type { DocumentForForms } from "@/lib/queries/documents";
 import { readProductSpecs } from "@/lib/validation/product-specs";
-import { assignRails } from "./rails";
 import { resolveForm } from "./resolve";
 import type { SoftwareFormContext, SoftwareItem } from "./software";
-import type { Section } from "./table-sections";
 import type { FormContext, FormItem, FormItemOption } from "./types";
 
 type AddressLike = {
@@ -67,25 +65,6 @@ export function buildFormContexts(
   const company = document.company;
   const addressLines = company ? companyAddressLines(company) : [];
 
-  // Which table each form prints rail lengths off, decided once for the whole
-  // document: a FabricPro runs over one table, so the pairing is per machine
-  // and never a sum (rails.ts). Both lists are in document order, which is
-  // the whole of the pairing rule -- the manager types nothing.
-  const rails = assignRails(
-    document.items
-      .filter((item) => item.product?.form === "EASYLOADER")
-      .map((item) => {
-        const spec = (item.productionSpec ?? {}) as Record<string, unknown>;
-        return {
-          id: item.id,
-          code: item.code,
-          fabricProCompatible: spec.fabricProCompatible === true,
-          sections: (spec.sections ?? []) as Section[],
-        };
-      }),
-    document.items.filter((item) => item.product?.form === "FABRICPRO").map((item) => item.id)
-  );
-
   const software = document.items
     .filter((item) => item.product?.kind === "SOFTWARE")
     .map((item) => ({ code: item.code, specs: readProductSpecs(item.product?.specs) }));
@@ -143,7 +122,6 @@ export function buildFormContexts(
         },
         software,
         softwareCodes,
-        rails: rails.get(item.id) ?? null,
         documentNumber: document.number ?? "",
         itemIndex: index + 1,
         itemCount: formItems.length,

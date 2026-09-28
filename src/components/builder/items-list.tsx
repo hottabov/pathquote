@@ -22,7 +22,6 @@ import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 import { formHasScreenSide } from "@/lib/production-forms/resolve";
 import { itemMissing } from "@/lib/production-forms/readiness";
-import { assignRails, type RailSource } from "@/lib/production-forms/rails";
 import { EL_MODULE_ROLES } from "@/lib/production-forms/table-sections";
 import type { OptionRole } from "@prisma/client";
 import { readProductSpecs } from "@/lib/validation/product-specs";
@@ -177,27 +176,6 @@ export function ItemsList({
   // more items a production form recognizes.
   const machineCount = optimisticItems.filter((item) => formHasScreenSide(item.form)).length;
 
-  // Rail length for the FabricPro cards, read off the EasyLoader cards in the
-  // same quote -- the rails bolt to the table, not to the FabricPro, so the
-  // number is already known the moment a table is drawn "FabricPro
-  // compatible" (see src/lib/production-forms/rails.ts). One machine runs
-  // over one table, so this is a pairing in card order rather than a total:
-  // two tables and two FabricPros are two lengths, not one doubled one. The
-  // same function decides what the printed forms say, so the card and the
-  // sheet can never disagree. Computed from `optimisticItems` so ticking
-  // "FabricPro compatible" updates the FabricPro card in the same render
-  // rather than after a round trip.
-  const railsByItemId = assignRails(
-    optimisticItems
-      .filter((item) => item.form === "EASYLOADER")
-      .map((item) => ({
-        id: item.id,
-        code: item.code,
-        ...((item.productionSpec ?? {}) as RailSource),
-      })),
-    optimisticItems.filter((item) => item.form === "FABRICPRO").map((item) => item.id)
-  );
-
   return (
     <div className="flex flex-col gap-4">
       {/* A reorder is invisible to a screen reader otherwise: focus stays on
@@ -321,7 +299,6 @@ export function ItemsList({
                   productSpecs={readProductSpecs(item.specs)}
                   spec={(item.productionSpec ?? {}) as Record<string, unknown>}
                   hasOtherMachines={machineCount > 1}
-                  derivedRailLengthM={railsByItemId.get(item.id)?.lengthM ?? null}
                   rollFeedQty={item.lines
                     .filter((line) => line.kind === "OPTION" && line.role === "EL_ROLL_FEED")
                     .reduce((sum, line) => sum + line.qty, 0)}

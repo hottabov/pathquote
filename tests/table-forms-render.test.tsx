@@ -98,46 +98,32 @@ describe("the EasyLoader form", () => {
     expect(html).toContain(">1500</span>");
   });
 
-  it("prints the FabricPro rails when no FabricPro claimed this table", () => {
-    const unclaimed = elCtx({ fabricProCompatible: true }, [], {
-      rails: { tableId: "item1", tableCode: "EL-2420", lengthM: 7.2 },
-    });
-    expect(renderEl(unclaimed)).toContain("FabricPro rails");
-    expect(renderEl(unclaimed)).toContain("7.2 m");
-  });
-
-  it("stays silent when a FabricPro claimed this table -- that form prints them", () => {
-    expect(renderEl(elCtx({ fabricProCompatible: true }))).not.toContain("FabricPro rails");
-  });
-
-  it("prints no rails for a table nobody made FabricPro compatible", () => {
-    expect(renderEl()).not.toContain("FabricPro rails");
-  });
-});
-
-describe("the FabricPro form", () => {
-  /** The table this FabricPro was paired with -- one machine, one table. */
-  const rails = { rails: { tableId: "el", tableCode: "EL-2420", lengthM: 7.2 } };
-
-  it("takes both rail lengths from the table this machine runs over", () => {
-    const html = renderFp({}, rails);
+  it("prints both FabricPro rails at this table's own length when it is FabricPro compatible", () => {
+    const html = renderEl(elCtx({ fabricProCompatible: true }));
+    expect(html).toContain("Travel platform rail");
+    expect(html).toContain("Electrical power rail");
+    // 4.8 m + 2.4 m of table -> 7.2 m of each rail.
     expect(html.match(/>7\.2<\/span>/g)?.length).toBe(2);
   });
 
-  it("names the table the lengths came from, so nobody has to guess which", () => {
-    expect(renderFp({}, rails)).toContain("EL-2420");
-  });
-
-  it("prints empty rail rows when no table in the quote is FabricPro compatible", () => {
-    const html = renderFp();
+  it("prints the rail rows with a blank length before the table is laid out", () => {
+    const html = renderEl(elCtx({ fabricProCompatible: true, sections: [] }));
     expect(html).toContain("Travel platform rail");
     expect(html).not.toContain(">7.2</span>");
   });
 
-  it("lets a typed length override one rail without touching the other", () => {
-    const html = renderFp({ railLengthM: 9.6 }, rails);
-    expect(html).toContain(">9.6</span>");
-    expect(html).toContain(">7.2</span>");
+  it("prints no rails for a table nobody made FabricPro compatible", () => {
+    const html = renderEl();
+    expect(html).not.toContain("Travel platform rail");
+    expect(html).not.toContain("Electrical power rail");
+  });
+});
+
+describe("the FabricPro form", () => {
+  it("prints no rails -- they belong to the EasyLoader table's form", () => {
+    const html = renderFp();
+    expect(html).not.toContain("Travel platform rail");
+    expect(html).not.toContain("Electrical power rail");
   });
 
   // The delivery term is a commercial fact and the quote already states it;

@@ -1,6 +1,6 @@
 import type { FormContext } from "@/lib/production-forms/types";
 import { EndUserSection, FormSheet, provenance } from "./form-sheet";
-import { Footnote, InlineValue, OfficeUse, Section, SectionRow, Tick, TickGrid } from "./primitives";
+import { Footnote, OfficeUse, Section, SectionRow, Tick, TickGrid } from "./primitives";
 import { ScreenSideBlock, hasRole } from "./m-series-form";
 
 /**
@@ -19,11 +19,9 @@ import { ScreenSideBlock, hasRole } from "./m-series-form";
  *   no transformer option compatible with the FP series, so inventing a row
  *   of voltages here would be guessing. Tracked in the backlog.
  *
- * The two rail lengths are not typed on this form unless somebody overrides
- * them: they belong to the EasyLoader table this machine runs over -- the one
- * it was paired with, not every compatible table in the quote added together
- * (a FabricPro cannot straddle two tables). The pairing is `ctx.rails`; see
- * `rails.ts`.
+ * The travel platform rail and the electrical power rail are not on this
+ * form: they bolt to the EasyLoader table and print on every FabricPro
+ * compatible table's own form, at that table's length. See `rails.ts`.
  *
  * Freight is gone with the same reasoning as the priced options: Ex-Works is
  * a delivery term the quote states, and restating it on a build sheet invites
@@ -37,19 +35,8 @@ const MODELS = [
 ];
 
 export function FabricProForm({ ctx }: { ctx: FormContext }) {
-  const spec = ctx.item.spec as {
-    ui?: string;
-    railLengthM?: number;
-    powerRailLengthM?: number;
-  };
+  const spec = ctx.item.spec as { ui?: string };
   const side = spec.ui ?? "-Y";
-  const derived = ctx.rails?.lengthM ?? null;
-  const railM = spec.railLengthM ?? derived;
-  const powerRailM = spec.powerRailLengthM ?? derived;
-  // Named so the workshop can see which table the figure belongs to on a
-  // quote that carries several -- and so a wrong pairing is visible rather
-  // than silent.
-  const railSource = derived !== null && ctx.rails ? ctx.rails.tableCode : null;
 
   return (
     <FormSheet ctx={ctx} title="Fabric Pro Order Form">
@@ -93,20 +80,6 @@ export function FabricProForm({ ctx }: { ctx: FormContext }) {
           </Tick>
         </TickGrid>
 
-        <div className={railM ? "pf-optrow pf-on" : "pf-optrow"}>
-          <Tick on={Boolean(railM)}>
-            Travel platform rail
-            {railSource ? <span className="pf-desc"> — table {railSource}</span> : null}
-          </Tick>
-          <InlineValue label="Length" value={railM ?? ""} unit="metres" />
-        </div>
-        <div className={powerRailM ? "pf-optrow pf-on" : "pf-optrow"}>
-          <Tick on={Boolean(powerRailM)}>
-            Electrical power rail
-            {railSource ? <span className="pf-desc"> — table {railSource}</span> : null}
-          </Tick>
-          <InlineValue label="Length" value={powerRailM ?? ""} unit="metres" />
-        </div>
 
         <div className="pf-opts pf-one" style={{ marginTop: "0.6mm" }}>
           <Tick on={hasRole(ctx, "CRATE")}>

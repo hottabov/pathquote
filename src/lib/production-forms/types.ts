@@ -1,7 +1,6 @@
 import type { OptionRole, ProductKind, ProductionForm } from "@prisma/client";
 import type { z } from "zod";
 import type { ProductSpecs } from "@/lib/validation/product-specs";
-import type { RailAssignment } from "./rails";
 
 /** One option line on a quote item, joined to its catalogue row. */
 export type FormItemOption = {
@@ -62,19 +61,6 @@ export type FormContext = {
   software: Array<{ code: string; specs: ProductSpecs }>;
   /** @deprecated derived from `software` */
   softwareCodes: string[];
-  /**
-   * The EasyLoader table this form prints rail lengths off, or null when
-   * there is none to print.
-   *
-   * A FabricPro's rails belong to the table it travels over, and one machine
-   * travels over one table -- so this is a *pairing*, made once for the whole
-   * document in `assignRails` and read here rather than each form summing the
-   * tables itself (which gave two FabricPros the same doubled length). On a
-   * FabricPro context it is the table that machine was paired with; on an
-   * EasyLoader context it is the table itself, and only while no FabricPro
-   * claimed it. See `rails.ts`.
-   */
-  rails: RailAssignment | null;
   /**
    * The quote this form was made from, and where this page sits in it.
    * Printed in the meta strip and again in the footnote, so somebody holding

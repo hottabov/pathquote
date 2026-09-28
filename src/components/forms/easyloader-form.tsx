@@ -1,5 +1,6 @@
 import type { FormContext } from "@/lib/production-forms/types";
 import { easyLoaderPrintedWidth } from "@/lib/production-forms/specs/easyloader";
+import { railLengthM } from "@/lib/production-forms/rails";
 import { layoutTotals, MAX_SECTIONS, type Section as TableSection } from "@/lib/production-forms/table-sections";
 import { EndUserSection, FormSheet, provenance } from "./form-sheet";
 import { Footnote, InlineValue, OfficeUse, Section, SectionRow, Tick, TickGrid } from "./primitives";
@@ -15,10 +16,10 @@ import { ScreenSideBlock, hasRole } from "./m-series-form";
  * quote actually charges for (`layoutTotals`).
  *
  * The one thing printed here that the paper form never had is the FabricPro
- * rails, and only when the quote holds no FabricPro. The rails bolt to this
- * table, so their length is known here; with a FabricPro in the quote they
- * print on that form instead, because stores pick them for whoever builds it.
- * Printing both would have two sets picked. See `rails.ts`.
+ * rails: on every table marked FabricPro compatible, the travel platform rail
+ * and the electrical power rail, each as long as this table. They bolt to
+ * the table, so this is the one form that knows their length, and it prints
+ * them whether or not a FabricPro is on the same quote. See `rails.ts`.
  */
 
 const SECTION_NOTES = ["Drive section", "", ""];
@@ -42,11 +43,11 @@ export function EasyLoaderForm({ ctx }: { ctx: FormContext }) {
     .filter((option) => option.role === "EL_ROLL_FEED")
     .reduce((sum, option) => sum + option.qty, 0);
   const distances = spec.rollFeedDistancesMm ?? [];
-  // `ctx.rails` is set on a table's own form only while no FabricPro claimed
-  // it -- a customer who already owns the machine, or three tables sold with
-  // two. With a FabricPro in the quote the lengths print on that form, and
-  // two printed lengths would have stores pick two sets of rails.
-  const railM = ctx.rails?.lengthM ?? null;
+  // Printed on every compatible table, with a blank length until the table
+  // is laid out -- a blank is something to fill in, a missing row is a rail
+  // nobody picks.
+  const fabricProCompatible = spec.fabricProCompatible === true;
+  const railM = railLengthM(spec);
 
   return (
     <FormSheet ctx={ctx} title="EasyLoader Order Form">
@@ -174,17 +175,21 @@ export function EasyLoaderForm({ ctx }: { ctx: FormContext }) {
           </Tick>
         </div>
 
-        {railM !== null ? (
-          <div className="pf-optrow pf-on" style={{ marginTop: "1mm" }}>
-            <label className="pf-tick pf-on">
-              <span className="pf-bx" />
-              <span className="pf-tx">
-                FabricPro rails{" "}
-                <span className="pf-desc">— travel platform rail and electrical power rail</span>
-              </span>
-            </label>
-            <InlineValue value={railM} unit="metres each" />
-          </div>
+        {fabricProCompatible ? (
+          <>
+            <div className="pf-optrow pf-on" style={{ marginTop: "1mm" }}>
+              <Tick on>
+                Travel platform rail <span className="pf-desc">— FabricPro compatible</span>
+              </Tick>
+              <InlineValue label="Length" value={railM ?? ""} unit="metres" />
+            </div>
+            <div className="pf-optrow pf-on">
+              <Tick on>
+                Electrical power rail <span className="pf-desc">— FabricPro compatible</span>
+              </Tick>
+              <InlineValue label="Length" value={railM ?? ""} unit="metres" />
+            </div>
+          </>
         ) : null}
       </Section>
 

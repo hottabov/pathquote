@@ -199,10 +199,9 @@ export const fabricProSpecSchema = z.object({
   // `travelPlatform` is gone: it is fitted to every FabricPro, so it was a
   // question with one answer (Jeff, 2026-09-11 -- "you're not going to
   // provide it unless there's a FabricPro... every single one's gonna have a
-  // travel platform"). The form prints it as a standard; only its length is
-  // asked, and that comes from the EasyLoader table anyway (see rails.ts).
-  railLengthM: z.number().positive().max(99).optional(),
-  powerRailLengthM: z.number().positive().max(99).optional(),
+  // travel platform"). The form prints it as a standard. Its two rails print
+  // on the EasyLoader form at the table's length, so nothing is asked here
+  // (see rails.ts).
   // `exWorks` is gone too: the delivery term is stated on the quote, and a
   // second copy on a build sheet reads as something the workshop sets
   // (Vadym, 2026-09-11). `crate` is gone as well -- `Crate-FP` is a priced

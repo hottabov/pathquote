@@ -56,12 +56,7 @@ describe("the one-field-at-a-time writes ProductionSpecEditor sends", () => {
     ["drills answered first on an item with no spec yet", { drills: { required: false, detail: "" } }],
   ]);
 
-  // The same defect reached FabricPro through its required `travelPlatform`:
-  // its rail lengths sit below the screen side, so either of those saved
-  // first arrives without it.
-  accepts(fabricProSpecSchema, [
-    ["a rail length entered first on an item with no spec yet", { railLengthM: 4.5 }],
-  ]);
+  accepts(fabricProSpecSchema, [["a screen side changed first on an item with no spec yet", { ui: "+Y" }]]);
 
   it("still refuses a field that is present but wrong, whatever else is absent", () => {
     // Optional is not unvalidated: a knife size the price list has never

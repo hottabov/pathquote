@@ -250,7 +250,6 @@ export function formContext(overrides: Partial<FormContext> = {}): FormContext {
     contact: { fullName: "John Smith", position: "Manager", phone: "+61", email: "j@example.com" },
     software,
     softwareCodes: software.map((s) => s.code),
-    rails: null,
     // The meta strip every sheet prints. Fixed rather than `new Date()` so a
     // snapshot of a rendered form never changes under a test.
     documentNumber: "Q-AU-2026-001",
