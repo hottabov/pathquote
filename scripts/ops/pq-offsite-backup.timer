@@ -1,0 +1,11 @@
+[Unit]
+Description=PathQuote off-site backup, Saturdays 04:00 Melbourne time
+
+[Timer]
+# Melbourne local time, so the run stays at 04:00 across daylight saving.
+OnCalendar=Sat *-*-* 04:00:00 Australia/Melbourne
+# A run missed while the VPS was down happens at next boot instead.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

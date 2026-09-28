@@ -345,8 +345,36 @@ zcat /opt/backups/pq-$(date +%F).sql.gz | grep -c 'CREATE TABLE'   # expect ~19
 
 `/opt/backups` sits on the same disk as the database, so it protects against a
 bad migration or an accidental `DROP`, not against losing the VPS. Off-site
-copies (rclone to object storage) are still TODO — production is live, so this
-is now the single biggest operational risk.
+copies go to Google Drive weekly — see "Off-site backups" below.
+
+### Off-site backups (Google Drive)
+
+Set up 2026-09-29. Every Saturday at 04:00 Melbourne time (DST-aware)
+`pq-offsite-backup.timer` runs `/usr/local/bin/pq-offsite-backup.sh`
+(source: `scripts/ops/`). It takes a fresh `pg_dump` and a fresh tar of the
+`pathquote_uploads` volume, checks both (gzip integrity, at least 10
+`CREATE TABLE`s), uploads them with rclone to `gdrive:PathQuote/backups`
+(Google account pathfindermarketingdept@gmail.com, 15 GB), and deletes
+anything there older than 30 days — bypassing the Drive trash, which would
+otherwise keep counting against the quota. A run missed while the VPS was down
+happens at next boot (`Persistent=true`).
+
+```bash
+systemctl list-timers pq-offsite-backup.timer     # next run
+systemctl start pq-offsite-backup.service         # run now
+tail /var/log/pq-offsite-backup.log               # "offsite backup ok: ..."
+rclone lsl gdrive:PathQuote/backups               # what is on Drive
+```
+
+rclone config: `/root/.config/rclone/rclone.conf` (remote `gdrive`, mode
+600). It currently uses rclone's shared OAuth client_id, which Google is
+retiring during 2026; before it stops working, create an own client_id
+(https://rclone.org/drive/#making-your-own-client-id) and re-authorize with
+`rclone config reconnect gdrive:`. If the log stops saying "ok", check this
+first.
+
+Restore from Drive: `rclone copy gdrive:PathQuote/backups/<file> /tmp/`, then
+follow "Restore procedure" below.
 
 The two plain cron entries below are the minimal equivalent, kept for
 reference on a host without the script.
