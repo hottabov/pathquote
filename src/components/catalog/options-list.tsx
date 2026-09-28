@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
 import { Puzzle } from "lucide-react";
 import { EmptyState } from "@/components/ui-kit/empty-state";
 import {
@@ -23,12 +22,22 @@ import { cn } from "@/lib/utils";
  * /quotes and /clients (see @/components/ui-kit/list-table) — so clearing
  * the box brings the whole list straight back without a reload.
  *
- * `filters` is the server-rendered product chip row, passed in so it sits on
- * the same line as the search box. Picking a chip is still a navigation
- * (`?series=`): it changes which rows the server sends, and the search keeps
- * filtering whatever arrives.
+ * The product chips sit on the same line as the search box. Picking a chip is
+ * still a navigation (`?series=`): it changes which rows the server sends,
+ * and the search keeps filtering whatever arrives. The page passes the chips
+ * as data rather than as rendered JSX -- a server-built element tree handed
+ * to a client component loses React's "static children" marking, and the
+ * chip row then warns about missing keys.
  */
-export function OptionsList({ rows, filters }: { rows: OptionListItem[]; filters: ReactNode }) {
+export function OptionsList({
+  rows,
+  series,
+  activeSeries,
+}: {
+  rows: OptionListItem[];
+  series: Array<{ id: string; code: string }>;
+  activeSeries: string | null;
+}) {
   const { query, setQuery, visible, isFiltered } = useListTable<OptionListItem, "code">({
     rows,
     // Matches `listOptions`' own `code: "asc"`.
@@ -40,7 +49,16 @@ export function OptionsList({ rows, filters }: { rows: OptionListItem[]; filters
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        {filters}
+        <div
+          role="tablist"
+          aria-label="Filter options by product"
+          className="inline-flex w-fit flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1"
+        >
+          <FilterChip label="All products" href={seriesHref()} active={!activeSeries} />
+          {series.map((s) => (
+            <FilterChip key={s.id} label={s.code} href={seriesHref(s.code)} active={activeSeries === s.code} />
+          ))}
+        </div>
         <ListSearchInput
           value={query}
           onChange={setQuery}
@@ -162,6 +180,26 @@ function OptionCard({ option: o }: { option: OptionListItem }) {
         {o.description ? <p className="truncate text-xs text-slate-500">{o.description}</p> : null}
         <CompatBadges seriesCodes={o.compatSeriesCodes} />
       </div>
+    </Link>
+  );
+}
+
+function seriesHref(seriesCode?: string) {
+  return seriesCode ? `/catalog/options?series=${encodeURIComponent(seriesCode)}` : "/catalog/options";
+}
+
+function FilterChip({ label, href, active }: { label: string; href: string; active: boolean }) {
+  return (
+    <Link
+      href={href}
+      role="tab"
+      aria-selected={active}
+      className={cn(
+        "focus-ring rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+        active ? "bg-brand text-white" : "text-slate-500 hover:text-brand-dark"
+      )}
+    >
+      {label}
     </Link>
   );
 }

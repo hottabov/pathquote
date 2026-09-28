@@ -61,39 +61,10 @@ export default async function OptionsPage({
 
       <OptionsList
         rows={options}
-        filters={
-          <div
-            role="tablist"
-            aria-label="Filter options by product"
-            className="inline-flex w-fit flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-1"
-          >
-            <FilterChip label="All products" href={buildHref()} active={!seriesFilter} />
-            {visibleSeries.map((s) => (
-              <FilterChip key={s.id} label={s.code} href={buildHref(s.code)} active={seriesFilter === s.code} />
-            ))}
-          </div>
-        }
+        series={visibleSeries.map((s) => ({ id: s.id, code: s.code }))}
+        activeSeries={seriesFilter ?? null}
       />
     </div>
   );
 }
 
-function buildHref(seriesCode?: string) {
-  return seriesCode ? `/catalog/options?series=${encodeURIComponent(seriesCode)}` : "/catalog/options";
-}
-
-function FilterChip({ label, href, active }: { label: string; href: string; active: boolean }) {
-  return (
-    <Link
-      href={href}
-      role="tab"
-      aria-selected={active}
-      className={cn(
-        "focus-ring rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-        active ? "bg-brand text-white" : "text-slate-500 hover:text-brand-dark"
-      )}
-    >
-      {label}
-    </Link>
-  );
-}
