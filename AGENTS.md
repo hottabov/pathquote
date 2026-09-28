@@ -18,3 +18,20 @@ cloud/AD hardening, malware analysis, etc.), scan `skills/` for a matching
 `SKILL.md` (frontmatter has `name`, `description`, `tags`) and follow its
 Workflow/Verification steps. Claude Code also sees these via `.claude/skills/*`
 symlinks into this same directory — one copy, two entry points.
+
+# Production is live (since 2026-09-28)
+
+Production (`/opt/pathquote` on the VPS, see docs/runbook.md) holds real
+quotes, users and clients. Treat its database as irreplaceable:
+
+- Never drop, restore over, or purge the production database. There is no
+  "copy local to prod" step any more; `replace-prod-with-local.sh` is gone.
+- Catalogue changes ship as idempotent migrations keyed by code. Retire a
+  product or option with `active = false`, not `DELETE`.
+- No migration may delete or rewrite existing `Document` rows (quotes,
+  items, lines, revisions, signing requests) without an explicit decision
+  from Vadym and a backup taken first.
+- Images reach production with `scripts/push-images-to-prod.sh` (additive,
+  images only, never the database).
+- `npm run quotes:purge` is for a local database only and refuses anything
+  that is not localhost.

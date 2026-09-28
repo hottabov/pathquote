@@ -345,7 +345,8 @@ zcat /opt/backups/pq-$(date +%F).sql.gz | grep -c 'CREATE TABLE'   # expect ~19
 
 `/opt/backups` sits on the same disk as the database, so it protects against a
 bad migration or an accidental `DROP`, not against losing the VPS. Off-site
-copies (rclone to object storage) are still TODO.
+copies (rclone to object storage) are still TODO — production is live, so this
+is now the single biggest operational risk.
 
 The two plain cron entries below are the minimal equivalent, kept for
 reference on a host without the script.
@@ -405,130 +406,54 @@ editing the crontab directly via `crontab -e` the same escaping applies.)
    curl -fsS http://127.0.0.1:3010/api/health
    ```
 
-## 4b. Replacing production with your local database
+## 4b. Production is live — never replace its database
 
-Used while the tool is still being built and production holds nothing worth
-keeping: it makes production an exact copy of a local machine — catalogue,
-users, clients, quotes and uploaded files.
+Since 2026-09-28 production holds real quotes, users and clients. **Its
+database is never dropped, restored from a development machine, or purged.**
+`scripts/replace-prod-with-local.sh` (which did exactly that) is deleted; its
+last run also started a stale `:latest` image against the new schema and took
+every catalogue page down with `P2022` until the sha-tagged image was started.
 
-**This deletes everything currently on production**, including the accounts
-people sign in with. Afterwards the only logins that exist are the ones from
-the local database. If production ever holds a real quote or a real user,
-stop and copy only what is needed instead — `npm run db:seed` on the VPS
-already brings the catalogue across from the repository without touching a
-single user.
+How changes reach production now:
 
-### The command
+- **Code and schema** — push to `main`. The deploy workflow runs
+  `prisma migrate deploy` before starting the new image (§2b).
+- **Catalogue data** (new products, renamed options, prices, part numbers) —
+  a migration, like `z53_catalog_review_tools_and_l_series`. Keyed by code,
+  idempotent, safe to run on a database that already has live quotes.
+  Retire a product or option with `active = false` rather than `DELETE`:
+  quote lines keep their own snapshot, but price rows and compatibility
+  cascade away with the row, and a revision or re-quote may still need it.
+- **Anything that deletes or rewrites existing `Document` rows** — does not
+  ship. A migration that has to touch live quotes needs a backup taken first
+  (`/usr/local/bin/pq-backup.sh`) and an explicit decision, not a deploy.
+- **Images** — `scripts/push-images-to-prod.sh`, below.
 
-`scripts/replace-prod-with-local.sh` is every step below in one run. From the
-repository root, with the local Postgres container up:
-
-```bash
-docker compose up -d postgres
-VPS=root@74.208.106.34 SSH_PORT=3498 SSH_KEY=~/.ssh/pathfinder-key ./scripts/replace-prod-with-local.sh
-```
-
-One line, no backslash — a `\` only continues a line when the newline follows
-it immediately, and pasting the wrapped form into one line turns it into an
-escaped space that gets prepended to the script's path.
-
-**Deploy first.** The dump carries the local schema, so the VPS must already be
-running this commit; the script stops when the two `HEAD`s differ rather than
-restoring a schema the running image was never built against. Push, let the
-deploy workflow go green, then run this.
-
-It asks for `REPLACE` before touching anything, refuses to run quietly when
-the VPS is on a different commit than the local HEAD (see the last paragraph
-of this section for why), takes a backup of production first, and finishes on
-`/api/health`. `SSH_KEY` is only needed because the VPS is key-only and that
-key is not the one ssh picks by default; drop `SSH_PORT`/`SSH_KEY` entirely if
-`~/.ssh/config` already carries them for this host. `VPS_DIR` (default
-`/opt/pathquote`) and `UPLOADS_VOLUME` (default `pathquote_uploads`) are the
-other two knobs.
-
-Check the key reaches the box before a run that is going to drop a database:
+### Copying catalogue images to production
 
 ```bash
-ssh -p 3498 -i ~/.ssh/pathfinder-key -o IdentitiesOnly=yes root@74.208.106.34 "cd /opt/pathquote && git rev-parse --short HEAD"
+# dry run: lists the image files production does not have yet
+VPS=root@74.208.106.34 SSH_PORT=3498 SSH_KEY=~/.ssh/pathfinder-key ./scripts/push-images-to-prod.sh
+# copy them
+VPS=root@74.208.106.34 SSH_PORT=3498 SSH_KEY=~/.ssh/pathfinder-key ./scripts/push-images-to-prod.sh --yes
 ```
 
-### Clearing demo quotes first
+It copies only `png/jpg/jpeg/webp/svg` files from `data/uploads` that are not
+already in the `pathquote_uploads` volume. It never touches the database,
+never deletes a file and never overwrites one (upload names are random UUIDs,
+so an existing name is the same file), and never copies PDFs — the archived
+signed quotes live in the same volume — or the `derived/` thumbnail cache.
 
-Copying local over production copies the demo quotes too, and a deleted quote
-is not the same thing as an unreachable one: a signing link keeps working for
-as long as its `SigningRequest` row exists, and that row is invisible in the
-Quotes list to everyone but the quote's own author (`documentWhereForUser`,
-src/lib/scope.ts — ADMIN sees all, MANAGER sees own). A demo quote written by
-another account is therefore both gone from your list and live on the web.
+A copied image only shows up once a production row points at it. Uploading a
+product photo in the local admin sets `imageUrl` in the local database only,
+so ship that as part of the catalogue migration (or set it in the production
+admin).
 
-So purge locally, then copy:
+### Demo quotes on a development machine
 
-```bash
-npm run quotes:purge            # dry run — lists what would go
-npm run quotes:purge -- --yes   # delete
-```
-
-That removes every `Document` (cascading to items, lines, exclusions, signing
-requests and signatures), resets the per-region numbering, and deletes the
-files those rows owned — archived signed PDFs and frozen signature images.
-The catalogue, users, regions, settings, companies and contacts are untouched.
-
-Then run the copy below, which makes production an exact copy of that state.
-Do it in this order: purging production directly would need the script inside
-the deployed `tools` image, and would leave the two machines diverged anyway.
-
-### By hand
-
-Two things live in different places on the two machines, which is why this is
-not one command underneath:
-
-- **Postgres** is a container on both, so it dumps and restores the same way.
-- **Uploaded files** are a Docker volume on the VPS (`pathquote_uploads`,
-  mounted at `/data/uploads`), but on a development machine the app runs on
-  the host and `UPLOADS_DIR` is unset, so they sit in `data/uploads` inside
-  the repository.
-
-On the local machine:
-
-```bash
-cd "/path/to/PF Invoice"
-docker compose exec -T postgres pg_dump -U pathquote pathquote | gzip > /tmp/pq-local.sql.gz
-tar czf /tmp/uploads-local.tar.gz -C data/uploads .
-scp /tmp/pq-local.sql.gz /tmp/uploads-local.tar.gz USER@VPS:/tmp/
-```
-
-On the VPS:
-
-```bash
-sudo /usr/local/bin/pq-backup.sh          # back up what is about to be replaced
-cd /opt/pathquote
-docker compose stop app                   # nothing may hold a connection
-
-# WITH (FORCE) drops the database even though other sessions are attached;
-# without it the DROP simply blocks.
-docker compose exec -T postgres psql -U pathquote -d postgres \
-  -c "DROP DATABASE pathquote WITH (FORCE);" \
-  -c "CREATE DATABASE pathquote OWNER pathquote;"
-gunzip -c /tmp/pq-local.sql.gz | docker compose exec -T postgres psql -U pathquote -d pathquote
-
-# Confirm the volume name first — it follows the Compose project directory.
-docker volume ls | grep uploads
-docker run --rm -v pathquote_uploads:/data -v /tmp:/backup alpine \
-  sh -c "rm -rf /data/* && tar xzf /backup/uploads-local.tar.gz -C /data"
-
-docker compose up -d app
-curl -fsS http://127.0.0.1:3010/api/health
-```
-
-`.env` never leaves the VPS, so production keeps its own secrets and database
-password — only data is copied. The dump carries `_prisma_migrations` with it,
-so a `migrate deploy` afterwards is a no-op as long as both machines are on the
-same commit; if the local machine is behind, deploy the branch first and
-migrate there, then copy.
-
-Sign in immediately afterwards and confirm an account works. The only
-credentials that now exist are the local ones, and finding that out later
-means being locked out of production.
+`npm run quotes:purge` (dry run) / `npm run quotes:purge -- --yes` clears
+quotes and resets numbering on a **local** database. It refuses to run unless
+`DATABASE_URL` points at localhost.
 
 ## 5. Troubleshooting
 

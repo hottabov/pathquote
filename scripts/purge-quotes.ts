@@ -22,10 +22,9 @@
  *   npx tsx scripts/purge-quotes.ts            # dry run, prints what it would do
  *   npx tsx scripts/purge-quotes.ts --yes      # actually delete
  *
- * Afterwards, make production match by re-running
- * scripts/replace-prod-with-local.sh (docs/runbook.md §4b) — that is the
- * intended way to purge the VPS too, rather than running this against a
- * remote database.
+ * LOCAL ONLY. Production is live (docs/runbook.md §4b) and its quotes are
+ * never purged, so this refuses to run unless DATABASE_URL points at
+ * localhost.
  */
 import "dotenv/config";
 import { unlink } from "node:fs/promises";
@@ -43,7 +42,26 @@ function fileNameFromUrl(url: string): string | null {
   return name && name.length > 0 ? name : null;
 }
 
+/** Refuses any database that is not on this machine. */
+function assertLocalDatabase(): void {
+  const raw = process.env.DATABASE_URL ?? "";
+  let host = "";
+  try {
+    host = new URL(raw).hostname;
+  } catch {
+    // Unparseable is not provably local.
+  }
+  if (host !== "localhost" && host !== "127.0.0.1" && host !== "::1") {
+    console.error(
+      `Refusing to purge quotes: DATABASE_URL host is "${host || "(unset)"}", not localhost. ` +
+        "Production quotes are never purged (docs/runbook.md §4b)."
+    );
+    process.exit(1);
+  }
+}
+
 async function main() {
+  assertLocalDatabase();
   const documents = await db.document.findMany({
     select: {
       id: true,
