@@ -27,3 +27,26 @@ export function safeCallbackUrl(
     return undefined;
   }
 }
+
+/** Where a signed-in visitor has no business being sent: the sign-in page
+ * itself. Sending them there after a successful sign-in reads as "it didn't
+ * work", which is what every magic link did while the email carried
+ * callbackUrl=/login (the Referer next-auth falls back to). */
+function isSignInPage(path: string): boolean {
+  return path === "/login" || path.startsWith("/login?") || path.startsWith("/login/");
+}
+
+/**
+ * The relative-path-only form, for values that arrive from our own login
+ * form rather than from a URL: a same-origin path, or "/".
+ *
+ * Rejects "//host" and "/\host" (browsers read both as protocol-relative,
+ * i.e. another host) and the sign-in page itself, so that "after signing in,
+ * go to X" can never mean "go back to the login form".
+ */
+export function safeRelativeCallbackUrl(value: unknown): string {
+  if (typeof value !== "string") return "/";
+  if (!value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) return "/";
+  if (isSignInPage(value)) return "/";
+  return value;
+}

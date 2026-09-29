@@ -11,7 +11,7 @@ type ActionResult = { error?: string; success?: string; sentTo?: string };
 const initialState: ActionResult = {};
 
 type LoginFormProps = {
-  /** Same-origin relative path to send the user to after a successful password login. */
+  /** Same-origin relative path to send the user to after signing in, by either method. */
   callbackUrl?: string;
 };
 
@@ -46,6 +46,7 @@ export function LoginForm({ callbackUrl = "/" }: LoginFormProps) {
   return (
     <div className="flex flex-col gap-6">
       <form action={magicLinkAction} className="flex flex-col gap-4">
+        <input type="hidden" name="callbackUrl" value={callbackUrl} />
         <FieldRow label="Email" htmlFor="magic-email" error={magicLinkState.error}>
           <input
             id="magic-email"

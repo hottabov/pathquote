@@ -1,4 +1,7 @@
 import Image from "next/image";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
+import { safeRelativeCallbackUrl } from "@/lib/auth/safe-callback-url";
 import { LoginForm } from "./login-form";
 
 type LoginPageProps = {
@@ -11,17 +14,16 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     ? params.callbackUrl[0]
     : params.callbackUrl;
 
-  // Defense in depth: the server action (loginWithPassword) is the actual
-  // trust boundary and re-validates this value itself, since the hidden
-  // input below is client-controlled and could be tampered with regardless
-  // of what we render here. This just avoids echoing an unsafe value into
-  // the form in the first place. Same-origin relative paths only.
-  const callbackUrl =
-    typeof rawCallbackUrl === "string" &&
-    rawCallbackUrl.startsWith("/") &&
-    !rawCallbackUrl.startsWith("//")
-      ? rawCallbackUrl
-      : "/";
+  // Defense in depth: the server actions are the actual trust boundary and
+  // re-validate this value themselves, since the hidden inputs are
+  // client-controlled. This just avoids echoing an unsafe value into the form.
+  const callbackUrl = safeRelativeCallbackUrl(rawCallbackUrl);
+
+  // Someone who is already signed in has nothing to do here. Without this the
+  // form rendered regardless, so any sign-in that happened to land on /login
+  // looked exactly like a sign-in that had failed.
+  const session = await auth();
+  if (session?.user) redirect(callbackUrl);
 
   return (
     <div className="flex min-h-dvh flex-1 items-center justify-center bg-brand-dark px-4 py-12">

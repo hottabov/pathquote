@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { AuthError } from "next-auth";
 import { MAGIC_LINK_MAX_AGE_SECONDS, signIn, signOut } from "@/auth";
 import { withPendingChallenge } from "@/lib/auth/adapter";
+import { safeRelativeCallbackUrl } from "@/lib/auth/safe-callback-url";
 import {
   challengeCookieName,
   challengeCookieOptions,
@@ -42,6 +43,17 @@ function isRateLimited(
   return entry.count >= max;
 }
 
+/** Milliseconds until `key`'s current window closes; 0 when it has none. */
+function msUntilWindowResets(
+  attempts: Map<string, AttemptWindow>,
+  key: string,
+  windowMs: number
+): number {
+  const entry = attempts.get(key);
+  if (!entry) return 0;
+  return Math.max(0, entry.windowStart + windowMs - Date.now());
+}
+
 function recordAttempt(attempts: Map<string, AttemptWindow>, key: string, windowMs: number) {
   const now = Date.now();
   const entry = attempts.get(key);
@@ -50,19 +62,6 @@ function recordAttempt(attempts: Map<string, AttemptWindow>, key: string, window
   } else {
     entry.count += 1;
   }
-}
-
-// --- callbackUrl -------------------------------------------------------------
-
-// Only allow same-origin relative paths for post-login redirects: must start
-// with a single "/" and not "//" (a "//host/path" value is treated by
-// browsers — and by some redirect() implementations — as protocol-relative,
-// i.e. it navigates to an attacker-controlled external host). Anything else
-// falls back to "/".
-function safeCallbackUrl(value: FormDataEntryValue | null): string {
-  if (typeof value !== "string") return "/";
-  if (value.startsWith("/") && !value.startsWith("//")) return value;
-  return "/";
 }
 
 // --- Password login ----------------------------------------------------------
@@ -76,7 +75,7 @@ export async function loginWithPassword(formData: FormData): Promise<ActionResul
     .trim()
     .toLowerCase();
   const password = String(formData.get("password") ?? "");
-  const callbackUrl = safeCallbackUrl(formData.get("callbackUrl"));
+  const callbackUrl = safeRelativeCallbackUrl(formData.get("callbackUrl"));
 
   if (!email || !password) {
     return { error: GENERIC_ERROR };
@@ -143,12 +142,28 @@ export async function sendMagicLink(formData: FormData): Promise<ActionResult> {
   if (!email) return { error: MAGIC_LINK_NO_EMAIL };
 
   if (isRateLimited(magicLinkSends, email, MAGIC_LINK_MAX, MAGIC_LINK_WINDOW_MS)) {
-    // Report success rather than "slow down": the address is registered (we
-    // got here), a link was already sent within the window, and telling the
-    // user to check their email is both true and the action we want.
-    return { success: MAGIC_LINK_SENT, sentTo: email };
+    // Say so. This used to answer "check your email" while sending nothing,
+    // and a person waiting on a slow mail server (Microsoft 365 routinely
+    // holds a link for a minute or two while it scans it) reads that as "it
+    // worked", asks again, and ends up waiting for mail that was never sent.
+    //
+    // It reveals nothing about the account: the counter is keyed on whatever
+    // address was typed, registered or not, so an unknown address hits the
+    // same limit after the same number of tries.
+    const minutes = Math.max(
+      1,
+      Math.ceil(msUntilWindowResets(magicLinkSends, email, MAGIC_LINK_WINDOW_MS) / 60_000)
+    );
+    return {
+      error: `Too many sign-in links requested. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}, or sign in with your password.`,
+    };
   }
   recordAttempt(magicLinkSends, email, MAGIC_LINK_WINDOW_MS);
+
+  // Where the link lands once it is used. Without an explicit value next-auth
+  // falls back to the Referer — the login page itself — and every link sent
+  // people back to the form they had just signed in from.
+  const callbackUrl = safeRelativeCallbackUrl(formData.get("callbackUrl"));
 
   // Mint the challenge before asking @auth/core for a link. Only its hash
   // reaches the database, attached to the token row by the adapter wrapper;
@@ -161,7 +176,7 @@ export async function sendMagicLink(formData: FormData): Promise<ActionResult> {
 
   try {
     await withPendingChallenge(hashChallenge(challenge), () =>
-      signIn("nodemailer", { email, redirect: false })
+      signIn("nodemailer", { email, redirectTo: callbackUrl, redirect: false })
     );
   } catch (error) {
     if (!(error instanceof AuthError)) throw error;

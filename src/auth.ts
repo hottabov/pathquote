@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import Nodemailer from "next-auth/providers/nodemailer";
 import { createTransport } from "nodemailer";
 import { adapter } from "@/lib/auth/adapter";
+import { SIGN_IN_PATH } from "@/lib/auth/magic-verify-response";
 import { buildMagicLinkEmail } from "@/lib/email/magic-link";
 import { toConfirmUrl } from "@/lib/email/magic-link-url";
 import { resolveReplyTo } from "@/lib/email/reply-to";
@@ -54,7 +55,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     maxAge: 7 * 24 * 60 * 60, // 7 days
     updateAge: 60 * 60, // 1 hour
   },
-  pages: { signIn: "/login" },
+  pages: { signIn: SIGN_IN_PATH },
   providers: [
     Credentials({
       credentials: {

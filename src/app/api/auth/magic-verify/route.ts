@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handlers } from "@/auth";
-import { challengeCookieName, challengeCookieOptions } from "@/lib/auth/magic-challenge";
+import { challengeCookieName } from "@/lib/auth/magic-challenge";
+import { consumeResultFromLocation, grantedResponse } from "@/lib/auth/magic-verify-response";
 import { verifyMagicLink } from "@/lib/auth/verify-magic-link";
 import { db } from "@/lib/db";
 
@@ -61,7 +62,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "server_error" }, { status: 500 });
   }
 
-  const origin = request.nextUrl.origin;
+  // The public origin, not necessarily the one this request arrived on:
+  // behind the reverse proxy `request.nextUrl.origin` can be the container's
+  // own address, while the callbackUrl in the email is an absolute URL on the
+  // public one. Compared against an internal origin it would fail the
+  // same-origin check and every deep link would collapse to "/".
+  const origin = process.env.AUTH_URL ? new URL(process.env.AUTH_URL).origin : request.nextUrl.origin;
   const cookieName = challengeCookieName();
 
   // Set by `consume` below so the session cookies @auth/core minted can be
@@ -112,22 +118,7 @@ export async function POST(request: NextRequest) {
         });
 
         granted = await handlers.POST(forwarded);
-        const location = granted.headers.get("location") ?? "";
-
-        if (!location) return { ok: false, reason: "error" };
-        if (!location.includes("/api/auth/error")) return { ok: true, redirectTo: location };
-
-        // @auth/core routes every failure through the same error page, so the
-        // reason has to be read off the query string. Only `Verification`
-        // means the token itself was expired, spent or unknown; `AccessDenied`
-        // is the signIn callback refusing a deactivated account; anything else
-        // — `Configuration` most of all — is our problem, not the user's, and
-        // must not be reported as an expired link.
-        const reason = new URL(location, origin).searchParams.get("error");
-        if (reason === "Verification") return { ok: false, reason: "invalid" };
-        if (reason === "AccessDenied") return { ok: false, reason: "denied" };
-        console.error("[auth] magic-link verify failed:", reason);
-        return { ok: false, reason: "error" };
+        return consumeResultFromLocation(granted.headers.get("location") ?? "", origin);
       },
     }
   );
@@ -151,14 +142,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "server_error" }, { status: 500 });
   }
 
-  const response = NextResponse.json({ redirectTo: outcome.redirectTo }, { status: 200 });
-  for (const cookie of granted?.headers.getSetCookie() ?? []) {
-    response.headers.append("set-cookie", cookie);
-  }
-
-  // The token is spent, so its challenge is dead weight. Leaving it would let
-  // a stale nonce shadow the next sign-in from this browser.
-  response.cookies.set(cookieName, "", { ...challengeCookieOptions(0), maxAge: 0 });
-
-  return response;
+  return grantedResponse(outcome.redirectTo, granted?.headers.getSetCookie() ?? []);
 }
