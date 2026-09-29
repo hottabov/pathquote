@@ -334,9 +334,10 @@ ssh -p 3498 root@VPS 'chmod 700 /usr/local/bin/pq-backup*.sh && systemctl daemon
 ```
 
 rclone config: `/root/.config/rclone/rclone.conf`, remote `gdrive`, mode 600.
-If the OAuth client is still rclone's shared one, it stops working during
-2026; the Pathfinder Google Cloud client_id replaces it. The OAuth client must
-be of type **Desktop app** -- a "Web application" client fails with
+Since 2026-09-29 it uses Pathfinder's own Google Cloud OAuth client (Desktop
+app, project owned by pathfindermarketingdept@gmail.com), not rclone's shared
+one, which Google retires during 2026. If the token is ever revoked, the
+OAuth client must be of type **Desktop app** -- a "Web application" client fails with
 `Error 400: redirect_uri_mismatch`, because rclone listens on
 `http://127.0.0.1:53682/`. Re-authorize with
 `rclone authorize "drive" "<client_id>" "<secret>"` on a machine with a
