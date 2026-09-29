@@ -295,25 +295,32 @@ Certbot's systemd timer renews automatically; confirm it's active with
 
 ## 4. Backups
 
-One job, set up 2026-09-29 (source in `scripts/ops/`, installed on the VPS):
+Set up 2026-09-29 (source in `scripts/ops/`, installed on the VPS). One
+script, two schedules:
 
-| | |
-|---|---|
-| When | Saturdays 04:00 Australia/Melbourne (`pq-backup.timer`, DST-aware; a run missed while the VPS was down happens at next boot) |
-| What | fresh `pg_dump` + tar of the `pathquote_uploads` volume, each checked (gzip integrity, at least 10 `CREATE TABLE`s) before it gets its final name |
-| Local | `/opt/backups/pq-<UTC stamp>.sql.gz`, `/opt/backups/uploads-<UTC stamp>.tar.gz`, 30 days |
-| Off-site | `rclone sync` of `/opt/backups` to `gdrive:PathQuote/backups` (Google account pathfindermarketingdept@gmail.com): Drive holds exactly the local files, deletions skip the Drive trash, at most 6 deletions per run so an emptied `/opt/backups` cannot wipe Drive |
-| On failure | `pq-backup-alert.service` emails marketing@pathfindercut.com through the app's SMTP account (`SMTP_*`, `EMAIL_FROM` in `.env`) |
-| Log | `/var/log/pq-backup.log` ("backup ok: ...") |
+| | Database | Uploaded files |
+|---|---|---|
+| Unit | `pq-backup-db.timer` → `pq-backup.sh db` | `pq-backup-files.timer` → `pq-backup.sh files` |
+| When | daily 04:00 Australia/Melbourne | Saturdays 04:30 Australia/Melbourne |
+| File | `/opt/backups/pq-<UTC stamp>.sql.gz` | `/opt/backups/uploads-<UTC stamp>.tar.gz` |
+| Check | gzip integrity, at least 10 `CREATE TABLE`s | gzip integrity |
+| Kept | 30 days | 30 days |
 
-This replaced the old nightly cron job (14 days, local only)
-and the first off-site script. Weekly means up to a week of quotes can be lost
-if the VPS disk dies between runs: take a manual backup before anything risky.
+Both timers are DST-aware and catch up at next boot after a missed run; the
+two jobs share a lock and take turns. After each run `/opt/backups` is
+mirrored with `rclone sync` to `gdrive:PathQuote/backups` (Google account
+pathfindermarketingdept@gmail.com), so Drive holds exactly the local files and
+local rotation is Drive rotation. Deletions skip the Drive trash; at most 6
+per run, so an emptied `/opt/backups` cannot wipe Drive. A failed run starts
+`pq-backup-alert@<unit>.service`, which emails marketing@pathfindercut.com
+through the app's SMTP account (`SMTP_*`, `EMAIL_FROM` in `.env`). Log:
+`/var/log/pq-backup.log`.
 
 ```bash
-systemctl list-timers pq-backup.timer        # next run
-systemctl start pq-backup.service            # back up now (also before a risky migration)
-tail /var/log/pq-backup.log
+systemctl list-timers 'pq-backup*'           # next runs
+systemctl start pq-backup-db.service         # dump now (do this before a risky migration)
+systemctl start pq-backup-files.service      # uploads now
+tail /var/log/pq-backup.log                  # "db backup ok: ..." / "files backup ok: ..."
 rclone lsl gdrive:PathQuote/backups
 /usr/local/bin/pq-backup-alert.sh --test     # check the failure email still arrives
 ```
@@ -322,16 +329,19 @@ Installing or updating from the repository:
 
 ```bash
 scp -P 3498 scripts/ops/pq-backup.sh scripts/ops/pq-backup-alert.sh root@VPS:/usr/local/bin/
-scp -P 3498 scripts/ops/pq-backup*.service scripts/ops/pq-backup.timer root@VPS:/etc/systemd/system/
-ssh -p 3498 root@VPS 'chmod 700 /usr/local/bin/pq-backup*.sh && systemctl daemon-reload && systemctl enable --now pq-backup.timer'
+scp -P 3498 scripts/ops/pq-backup-*.service scripts/ops/pq-backup-*.timer root@VPS:/etc/systemd/system/
+ssh -p 3498 root@VPS 'chmod 700 /usr/local/bin/pq-backup*.sh && systemctl daemon-reload && systemctl enable --now pq-backup-db.timer pq-backup-files.timer'
 ```
 
 rclone config: `/root/.config/rclone/rclone.conf`, remote `gdrive`, mode 600.
 If the OAuth client is still rclone's shared one, it stops working during
-2026; the Pathfinder Google Cloud client_id replaces it (re-authorize with
+2026; the Pathfinder Google Cloud client_id replaces it. The OAuth client must
+be of type **Desktop app** -- a "Web application" client fails with
+`Error 400: redirect_uri_mismatch`, because rclone listens on
+`http://127.0.0.1:53682/`. Re-authorize with
 `rclone authorize "drive" "<client_id>" "<secret>"` on a machine with a
 browser, then put `client_id`, `client_secret` and the new `token` into the
-config). The Google Cloud OAuth consent screen must be **In production**, not
+config. The Google Cloud OAuth consent screen must be **In production**, not
 Testing — a Testing app's refresh token expires after 7 days, and every
 weekly run would fail.
 
@@ -394,7 +404,7 @@ How changes reach production now:
   cascade away with the row, and a revision or re-quote may still need it.
 - **Anything that deletes or rewrites existing `Document` rows** — does not
   ship. A migration that has to touch live quotes needs a backup taken first
-  (`systemctl start pq-backup.service`) and an explicit decision, not a deploy.
+  (`systemctl start pq-backup-db.service`) and an explicit decision, not a deploy.
 - **Images** — `scripts/push-images-to-prod.sh`, below.
 
 ### Copying catalogue images to production

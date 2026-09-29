@@ -1,0 +1,11 @@
+[Unit]
+Description=PathQuote backup: database dump, daily
+
+[Timer]
+# Melbourne local time, so the run keeps its hour across daylight saving.
+OnCalendar=*-*-* 04:00:00 Australia/Melbourne
+# A run missed while the VPS was down happens at next boot instead.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

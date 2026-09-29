@@ -1,8 +1,0 @@
-[Unit]
-Description=Email marketing@pathfindercut.com that the PathQuote backup failed
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/pq-backup-alert.sh
-StandardOutput=append:/var/log/pq-backup.log
-StandardError=append:/var/log/pq-backup.log

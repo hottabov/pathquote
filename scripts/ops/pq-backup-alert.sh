@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# Emails the tail of the backup log when pq-backup.service fails
-# (OnFailure=pq-backup-alert.service). Sends through the app's own SMTP
+# Emails the tail of the backup log when a backup unit fails
+# (OnFailure=pq-backup-alert@%n.service passes the failed unit's name). Sends through the app's own SMTP
 # account (SMTP_* and EMAIL_FROM in /opt/pathquote/.env -- Resend today).
 #
 # `pq-backup-alert.sh --test` sends a clearly marked test message.
@@ -9,6 +9,7 @@
 set -euo pipefail
 
 TO="${PQ_ALERT_TO:-marketing@pathfindercut.com}"
+UNIT="${1:-pq-backup}"
 ENV_FILE=/opt/pathquote/.env
 LOG=/var/log/pq-backup.log
 
@@ -21,14 +22,14 @@ PASS=$(env_value SMTP_PASS); FROM_HEADER=$(env_value EMAIL_FROM)
 FROM_ADDR=$(printf '%s' "$FROM_HEADER" | sed -n 's/.*<\(.*\)>.*/\1/p')
 FROM_ADDR=${FROM_ADDR:-$FROM_HEADER}
 
-if [ "${1:-}" = "--test" ]; then
+if [ "$UNIT" = "--test" ]; then
   SUBJECT="[PathQuote] TEST: backup alert works"
   INTRO="This is a test of the backup failure alert. Nothing is wrong."
 else
   SUBJECT="[PathQuote] Production backup FAILED on $(hostname)"
-  INTRO="The weekly production backup (pq-backup.service) failed at $(date -u '+%Y-%m-%d %H:%M UTC').
-Off-site copies in Google Drive (PathQuote/backups) were not updated.
-Check: systemctl status pq-backup.service ; tail -100 $LOG"
+  INTRO="The production backup $UNIT failed at $(date -u '+%Y-%m-%d %H:%M UTC').
+Off-site copies in Google Drive (PathQuote/backups) may not be up to date.
+Check: systemctl status $UNIT ; tail -100 $LOG"
 fi
 
 MSG=$(mktemp)

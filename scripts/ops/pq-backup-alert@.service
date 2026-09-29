@@ -1,0 +1,8 @@
+[Unit]
+Description=Email marketing@pathfindercut.com that %i failed
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pq-backup-alert.sh %i
+StandardOutput=append:/var/log/pq-backup.log
+StandardError=append:/var/log/pq-backup.log
