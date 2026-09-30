@@ -46,7 +46,7 @@ describe("signing query exposure", () => {
       .split("\n")
       .filter((line) => !line.trimStart().startsWith("*") && !line.trimStart().startsWith("//"))
       .join("\n");
-    for (const field of ["ownerId"]) {
+    for (const field of ["ownerId", "taxNote", "taxOverridden"]) {
       expect(inCode).not.toMatch(new RegExp(`\\b${field}\\s*:\\s*true`));
     }
   });
