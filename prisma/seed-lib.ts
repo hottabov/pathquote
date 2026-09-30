@@ -75,6 +75,7 @@ export interface RegionSeed {
   code: string;
   name: string;
   currency: string;
+  country: string;
   taxName: string;
   taxRate: number;
   entityName: string;
@@ -97,6 +98,7 @@ export const REGIONS: RegionSeed[] = [
   {
     code: "AU",
     name: "Australia",
+    country: "AU",
     currency: "AUD",
     taxName: "GST",
     taxRate: 10.0,
@@ -116,6 +118,7 @@ export const REGIONS: RegionSeed[] = [
   {
     code: "US",
     name: "United States",
+    country: "US",
     currency: "USD",
     taxName: "Sales Tax",
     taxRate: 0,
@@ -127,6 +130,7 @@ export const REGIONS: RegionSeed[] = [
   {
     code: "UK",
     name: "United Kingdom",
+    country: "GB",
     currency: "GBP",
     taxName: "VAT",
     taxRate: 20,

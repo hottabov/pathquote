@@ -70,6 +70,7 @@ async function main() {
       where: { code: r.code },
       update: {
         name: r.name,
+        country: r.country,
         currency: r.currency,
         taxName: r.taxName,
         taxRate: r.taxRate,
@@ -82,6 +83,7 @@ async function main() {
       create: {
         code: r.code,
         name: r.name,
+        country: r.country,
         currency: r.currency,
         taxName: r.taxName,
         taxRate: r.taxRate,

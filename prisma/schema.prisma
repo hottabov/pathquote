@@ -61,15 +61,24 @@ enum DiscountMode {
   AMOUNT
 }
 
-// An export sale collected at the factory door is not a domestic taxable
-// supply -- the meeting question left unanswered ("What if there's no GST?
-// If it's Ex Works?"). DELIVERED is the default so every existing document
-// keeps its current (taxed) behaviour; see the zero-tax rule applied in
-// recalcDocument (src/lib/actions/documents.ts), the single place a
-// document's effective tax rate is resolved.
-enum DeliveryTerms {
-  DELIVERED
-  EX_WORKS
+// The four Incoterms Pathfinder actually uses (Vadym, 2026-09-30). Together
+// with the seller's and the destination's country they drive the suggested
+// tax -- see src/lib/documents/tax-rules.ts.
+enum Incoterm {
+  EXW
+  DAP
+  DDP
+  FOB
+}
+
+// How a document's tax was arrived at, and what the quotation prints for it
+// (src/lib/documents/tax-print.ts). STANDARD/EXPORT/REVERSE_CHARGE come from
+// the suggestion; CUSTOM is the salesperson's own name and rate.
+enum TaxTreatment {
+  STANDARD
+  EXPORT
+  REVERSE_CHARGE
+  CUSTOM
 }
 
 // Whether a quote has been sent for signature and how far it got. A separate
@@ -223,6 +232,9 @@ model Region {
   id               String           @id @default(cuid())
   code             String           @unique // AU, US, UK
   name             String
+  /// ISO 3166-1 alpha-2 country of the selling entity ("GB" for the UK
+  /// region). The seller side of every tax suggestion.
+  country          String
   currency         String // AUD, USD, GBP
   /// What to PRINT in front of an amount, when the admin wants something
   /// other than what Intl derives from `currency`. Intl's en-AU narrow symbol
@@ -231,8 +243,8 @@ model Region {
   /// its own paperwork. Null means "whatever Intl says", which is the
   /// behaviour every region had before this column existed.
   currencySymbol   String?
-  taxName          String // GST, Sales Tax, VAT
-  taxRate          Decimal          @db.Decimal(5, 2) // 10.00
+  taxName          String // Standard domestic tax name: GST, Sales Tax, VAT
+  taxRate          Decimal          @db.Decimal(5, 2) // Standard domestic tax rate: 10.00
   entityName       String // Pathfinder Australia Pty Ltd
   entityLegalId    String? // ABN 64 072 458 667
   entityAddress    String?
@@ -804,13 +816,16 @@ model Document {
   currencySymbol    String?
   taxName           String
   taxRate           Decimal             @db.Decimal(5, 2)
-  // DELIVERED (default) or EX_WORKS -- an Ex Works quote's tax is zeroed by
-  // recalcDocument (src/lib/actions/documents.ts), the single caller that
-  // resolves a document's effective tax rate; taxName/taxRate above are left
-  // untouched (they're the region's nominal figures, unrelated to this
-  // per-document override). finalizeDocument freezes nothing new for this --
-  // the terms live on the document itself, not the entitySnapshot.
-  deliveryTerms     DeliveryTerms       @default(DELIVERED)
+  // taxName/taxRate above are the tax actually CHARGED (0 on an export), not
+  // the region's nominal rate. recalcDocument keeps an Auto draft's figures
+  // equal to the suggestion; taxOverridden = true means the salesperson's
+  // CUSTOM figures, which are never overwritten; FINAL freezes everything
+  // (src/lib/documents/tax.ts).
+  incoterm          Incoterm            @default(DAP)
+  taxTreatment      TaxTreatment        @default(STANDARD)
+  taxOverridden     Boolean             @default(false)
+  /// Why the salesperson chose a custom tax. Internal, never printed.
+  taxNote           String?
   entitySnapshot    Json? // frozen on finalize
   // A discount is a mode + value (see the DiscountMode enum comment above) —
   // discountValue is a plain percentage (0..100) when discountMode is
