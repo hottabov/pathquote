@@ -176,7 +176,8 @@ export async function getDocumentForSigning(tokenHash: string): Promise<Document
           currencySymbol: true,
           taxName: true,
           taxRate: true,
-          deliveryTerms: true,
+          incoterm: true,
+          taxTreatment: true,
           entitySnapshot: true,
           discountMode: true,
           discountValue: true,
@@ -219,6 +220,7 @@ export async function getDocumentForSigning(tokenHash: string): Promise<Document
               postcode: true,
               country: true,
               website: true,
+              taxId: true,
               deliverySameAsMain: true,
               deliveryStreet: true,
               deliveryCity: true,
@@ -420,6 +422,7 @@ export async function getDocumentForSigning(tokenHash: string): Promise<Document
         postcode: document.company.postcode,
         country: document.company.country,
         website: document.company.website,
+        taxId: document.company.taxId,
         // Same "flag AND actual data" rule the builder's own document read
         // applies — a company with the flag off but every delivery field
         // still blank has nothing to render as a separate block.
@@ -455,7 +458,8 @@ export async function getDocumentForSigning(tokenHash: string): Promise<Document
     currencySymbol: document.currencySymbol,
     taxName: document.taxName,
     taxRate: document.taxRate.toString(),
-    deliveryTerms: document.deliveryTerms,
+    incoterm: document.incoterm,
+    taxTreatment: document.taxTreatment,
     entitySnapshot: document.entitySnapshot,
     entityName: document.region.entityName,
     entityLegalId: document.region.entityLegalId,

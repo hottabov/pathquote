@@ -457,13 +457,22 @@ describe("toSheetData — totals passthrough", () => {
       taxRate: "0",
       taxAmount: "90.00",
       total: "990.00",
-      deliveryTerms: "DELIVERED",
+      incoterm: "DAP",
+      taxTreatment: "STANDARD",
+      customerTaxId: null,
     });
   });
 
-  it("carries deliveryTerms straight through, DELIVERED or EX_WORKS", () => {
-    expect(toSheetData(sheetDoc({ deliveryTerms: "DELIVERED" })).totals.deliveryTerms).toBe("DELIVERED");
-    expect(toSheetData(sheetDoc({ deliveryTerms: "EX_WORKS" })).totals.deliveryTerms).toBe("EX_WORKS");
+  it("carries incoterm and tax treatment straight through", () => {
+    const sheet = toSheetData(sheetDoc({ incoterm: "FOB", taxTreatment: "EXPORT" }));
+    expect(sheet.totals.incoterm).toBe("FOB");
+    expect(sheet.totals.taxTreatment).toBe("EXPORT");
+  });
+
+  it("puts the client's VAT ID beside the totals for the reverse-charge line", () => {
+    const sheet = toSheetData(sheetDoc({ company: sheetCompany({ taxId: "DE123456789" }) }));
+    expect(sheet.totals.customerTaxId).toBe("DE123456789");
+    expect(toSheetData(sheetDoc({ company: null })).totals.customerTaxId).toBeNull();
   });
 });
 

@@ -21,10 +21,14 @@
 // `entitySnapshot` so a later edit to the region never retroactively changes
 // an already-issued document; a DRAFT (which has no snapshot yet) falls back
 // to the region's live values. `currency`/`taxName`/`taxRate` are never
-// entity-snapshot-dependent — they're set once on the `Document` row itself
-// at creation (see `createDraft` in src/lib/actions/documents.ts) and never
-// change afterwards, for both DRAFT and FINAL.
+// entity-snapshot-dependent — they live on the `Document` row itself.
+// `currency` is set at creation (see `createDraft` in
+// src/lib/actions/documents.ts). An Auto-tax DRAFT's `taxName`/`taxRate`
+// follow the tax suggestion and are re-persisted by `recalcDocument` whenever
+// the quote's route or Incoterm changes; they freeze at finalize and never
+// change afterwards on a FINAL document.
 import { fromCents, toCents } from "./pricing";
+import type { Incoterm, TaxTreatment } from "@/lib/documents/tax-rules";
 import { formatDateAU } from "./format";
 import { displayCountry } from "./countries";
 import { identityResolver } from "./sheet-identity";
@@ -97,6 +101,8 @@ export type ToSheetCompanyInput = {
   postcode: string | null;
   country: string | null;
   website: string | null;
+  /** The client's tax/VAT ID. Printed only on a reverse-charge quote. */
+  taxId: string | null;
   /** Whether this company actually has a delivery address distinct from
    * the main one above — resolved server-side (see `BuilderCompany` in
    * src/lib/queries/documents.ts) as `!deliverySameAsMain` plus "at least
@@ -162,15 +168,11 @@ export type ToSheetDataDoc = {
   currencySymbol: string | null;
   taxName: string;
   taxRate: string;
-  /** DELIVERED (the default) or EX_WORKS — see the `DeliveryTerms` enum in
-   * schema.prisma. An EX_WORKS document's `taxAmount`/`total` below are
-   * already zero-tax (resolved once, at `recalcDocument`, src/lib/actions/
-   * documents.ts — the single source of truth for a document's effective
-   * tax rate); this field exists purely so `toSheetData` can swap the
-   * printed tax-rate line for the terms themselves (see `DocSheetTotals`) —
-   * an EX_WORKS quote must read as deliberate ("Ex Works"), not as a
-   * forgotten "GST 0%" line. */
-  deliveryTerms: "DELIVERED" | "EX_WORKS";
+  /** See `Incoterm`/`TaxTreatment` in src/lib/documents/tax-rules.ts. The
+   * totals below are already resolved (recalcDocument); these only decide
+   * the wording (src/lib/documents/tax-print.ts). */
+  incoterm: Incoterm;
+  taxTreatment: TaxTreatment;
   entitySnapshot: unknown;
   entityName: string;
   entityLegalId: string | null;
@@ -418,11 +420,12 @@ export type DocSheetTotals = {
   taxRate: string;
   taxAmount: string;
   total: string;
-  /** See `ToSheetDataDoc.deliveryTerms` — carried through so
-   * `quotation-sheet.tsx` can print "Ex Works" in place of a `{taxName} 0%`
-   * line, which would otherwise read as a mistake rather than a deliberate
-   * choice. */
-  deliveryTerms: "DELIVERED" | "EX_WORKS";
+  /** Wording inputs for src/lib/documents/tax-print.ts — see
+   * `ToSheetDataDoc.incoterm`. `customerTaxId` is `company.taxId`, printed
+   * only on a reverse-charge quote. */
+  incoterm: Incoterm;
+  taxTreatment: TaxTreatment;
+  customerTaxId: string | null;
 };
 
 export type DocSheetData = {
@@ -828,7 +831,9 @@ export function toSheetData(doc: ToSheetDataDoc, resolveImage: ImageResolver = i
       taxRate: doc.taxRate,
       taxAmount: doc.taxAmount,
       total: doc.total,
-      deliveryTerms: doc.deliveryTerms,
+      incoterm: doc.incoterm,
+      taxTreatment: doc.taxTreatment,
+      customerTaxId: doc.company?.taxId ?? null,
     },
     showSignature: true,
   };

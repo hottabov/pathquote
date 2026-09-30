@@ -12,6 +12,8 @@ import { db } from "@/lib/db";
 import { documentWhereForUser, type ScopeUser } from "@/lib/scope";
 import { computeTotals, type CommissionResult, type DocumentConcession, type EngineInput } from "@/lib/pricing";
 import { getQuoteValidityDays, getCommissionTiers } from "@/lib/queries/settings";
+import { destinationCountry, suggestTax, type Incoterm, type TaxSuggestion, type TaxTreatment } from "@/lib/documents/tax-rules";
+import { resolveDocumentTax } from "@/lib/documents/tax";
 
 /**
  * The builder's own read: one document, everything on it, priced. By some
@@ -38,6 +40,7 @@ export type BuilderCompany = {
   postcode: string | null;
   country: string | null;
   website: string | null;
+  taxId: string | null;
   /** Resolved server-side as `!deliverySameAsMain` AND at least one
    * delivery* field is actually set — see `toSheetData`'s
    * `ToSheetCompanyInput.hasDeliveryAddress`, which this feeds directly
@@ -268,14 +271,22 @@ export type DocumentForBuilder = {
   currencySymbol: string | null;
   taxName: string;
   taxRate: string;
-  /** DELIVERED (the default) or EX_WORKS — see the `DeliveryTerms` enum in
-   * schema.prisma and `setDeliveryTerms`/`recalcDocument` in
-   * src/lib/actions/documents.ts, which zeroes an EX_WORKS document's
-   * effective tax. Surfaced here so the builder's selector (see
-   * `DeliveryTermsField`) and the sheet renderers (see `ToSheetDataDoc`,
-   * which this structurally satisfies) both read it straight off the
-   * document. */
-  deliveryTerms: "DELIVERED" | "EX_WORKS";
+  incoterm: Incoterm;
+  /** The document's stored tax (Task 6 keeps an Auto draft equal to the
+   * suggestion, so these are what the totals were computed with). */
+  taxTreatment: TaxTreatment;
+  taxOverridden: boolean;
+  /** Internal reason for a custom tax. Never printed. */
+  taxNote: string | null;
+  /** What Auto would charge right now, with its one-line reason. The
+   * Delivery & tax card shows it under "Auto", and as "differs from
+   * suggestion" under Custom. */
+  taxSuggestion: TaxSuggestion;
+  /** Same value `recalcDocument` returns as `taxBlocker`. */
+  taxBlocker: string | null;
+  /** ISO codes for the card's "Route" line. */
+  sellerCountry: string;
+  destinationCountry: string | null;
   discountMode: "PERCENT" | "AMOUNT";
   discountValue: string | null;
   subtotal: string;
@@ -805,6 +816,26 @@ async function loadDocumentForBuilder(
         : null
       : totals.commission;
 
+  const destination = destinationCountry(document.company);
+  const taxSuggestion = suggestTax({
+    sellerCountry: document.region.country,
+    destinationCountry: destination,
+    incoterm: document.incoterm,
+    regionTax: { taxName: document.region.taxName, taxRate: document.region.taxRate.toString() },
+    customerTaxId: document.company?.taxId ?? null,
+  });
+  const taxBlocker = resolveDocumentTax({
+    status: document.status,
+    document: {
+      taxTreatment: document.taxTreatment,
+      taxName: document.taxName,
+      taxRate: document.taxRate.toString(),
+      taxOverridden: document.taxOverridden,
+      taxNote: document.taxNote,
+    },
+    suggestion: taxSuggestion,
+  }).blocker;
+
   return {
     id: document.id,
     status: document.status,
@@ -818,7 +849,14 @@ async function loadDocumentForBuilder(
     currencySymbol: document.currencySymbol,
     taxName: document.taxName,
     taxRate: document.taxRate.toString(),
-    deliveryTerms: document.deliveryTerms,
+    incoterm: document.incoterm,
+    taxTreatment: document.taxTreatment,
+    taxOverridden: document.taxOverridden,
+    taxNote: document.taxNote,
+    taxSuggestion,
+    taxBlocker,
+    sellerCountry: document.region.country,
+    destinationCountry: destination,
     discountMode: document.discountMode,
     discountValue: document.discountValue?.toString() ?? null,
     subtotal: document.subtotal.toString(),
@@ -861,6 +899,7 @@ async function loadDocumentForBuilder(
           postcode: document.company.postcode,
           country: document.company.country,
           website: document.company.website,
+          taxId: document.company.taxId,
           // "Distinct delivery address" needs both the flag AND actual data
           // — a company with `deliverySameAsMain` off but every delivery
           // field still blank (e.g. right after unchecking the box, before
