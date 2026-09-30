@@ -71,13 +71,20 @@ function rateText(rate: string): string {
  * Where the goods go: the delivery address's country when the company has a
  * separate one, else its main country. Legacy free-text countries are
  * normalised the same way the client form does it.
+ *
+ * The main country is a fallback only for a BLANK delivery country. A
+ * delivery country that is filled in but not recognised ("Nueva Zelanda")
+ * yields null, so the "Set the client's delivery country" blocker fires
+ * instead of the quote silently taking the main country's tax.
  */
 export function destinationCountry(
   company: { country: string | null; deliverySameAsMain: boolean; deliveryCountry: string | null } | null
 ): string | null {
   if (!company) return null;
-  const delivery = company.deliverySameAsMain ? null : normalizeCountryInput(company.deliveryCountry);
-  return delivery ?? normalizeCountryInput(company.country);
+  if (!company.deliverySameAsMain && company.deliveryCountry?.trim()) {
+    return normalizeCountryInput(company.deliveryCountry);
+  }
+  return normalizeCountryInput(company.country);
 }
 
 export function suggestTax(input: SuggestTaxInput): TaxSuggestion {

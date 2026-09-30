@@ -8,6 +8,15 @@
 -- 1. The selling entity's country. Region codes are ISO codes except UK.
 ALTER TABLE "Region" ADD COLUMN "country" TEXT;
 UPDATE "Region" SET "country" = CASE UPPER("code") WHEN 'UK' THEN 'GB' ELSE UPPER("code") END;
+-- Region codes may be 2-3 letters; a code that is not an ISO country
+-- (e.g. "USA", "EU") would make every sale look like an export. Fail the
+-- migration instead, so the region can be corrected before deploying.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM "Region" WHERE "country" !~ '^[A-Z]{2}$') THEN
+    RAISE EXCEPTION 'Region.country backfill: a region code is not a 2-letter ISO country. Fix "Region"."code" or extend the CASE before migrating.';
+  END IF;
+END $$;
 ALTER TABLE "Region" ALTER COLUMN "country" SET NOT NULL;
 
 -- 2. New enums and columns.

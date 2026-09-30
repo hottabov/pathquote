@@ -93,6 +93,21 @@ describe("suggestTax — EU to EU", () => {
   it("blocks reverse charge until the client's VAT ID is set", () => {
     expect(suggestTax({ ...lt, customerTaxId: "  " }).blocker).toBe("Add the client's VAT ID for reverse charge");
   });
+
+  it("treats an EU seller shipping outside the EU as an export", () => {
+    expect(suggestTax({ ...lt, destinationCountry: "US" })).toMatchObject({
+      treatment: "EXPORT",
+      taxName: "VAT",
+      taxRate: "0.00",
+      blocker: null,
+    });
+  });
+
+  it("lets DDP win over reverse charge inside the EU", () => {
+    const s = suggestTax({ ...lt, incoterm: "DDP" });
+    expect(s.treatment).toBe("STANDARD");
+    expect(s.blocker).toBe("DDP abroad: set Germany's tax with Custom");
+  });
 });
 
 describe("suggestTax — cases the app cannot decide", () => {
@@ -121,6 +136,15 @@ describe("destinationCountry", () => {
 
   it("falls back to the main country when the delivery country is blank", () => {
     expect(destinationCountry({ country: "AU", deliverySameAsMain: false, deliveryCountry: "" })).toBe("AU");
+  });
+
+  it("falls back to the main country when the delivery country is whitespace or null", () => {
+    expect(destinationCountry({ country: "AU", deliverySameAsMain: false, deliveryCountry: "  " })).toBe("AU");
+    expect(destinationCountry({ country: "AU", deliverySameAsMain: false, deliveryCountry: null })).toBe("AU");
+  });
+
+  it("is null, not the main country, when the delivery country is set but unrecognised", () => {
+    expect(destinationCountry({ country: "AU", deliverySameAsMain: false, deliveryCountry: "Nueva Zelanda" })).toBeNull();
   });
 
   it("normalises legacy free text", () => {

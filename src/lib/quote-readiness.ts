@@ -58,10 +58,7 @@ export type ReadinessRow = {
    * strict as the server: the client row is met once a company is chosen,
    * because that is all finalising requires. But a quote with a company and
    * no contact cannot be *sent*, and that is worth saying, so the row still
-   * asks to be seen. The reverse happens too: the delivery row is always
-   * met, and only asks to be seen on Ex Works, where it is reporting that
-   * the tax on the whole quote just went to zero. (That row is gone -- see
-   * `quoteReadiness` -- but the distinction it needed is not.)
+   * asks to be seen.
    */
   needsAttention: boolean;
 };

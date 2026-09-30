@@ -104,8 +104,6 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
     footerText: document.region.footerText,
     regionCode: document.region.code,
     currency: document.currency,
-    taxName: document.taxName,
-    taxRate: document.taxRate.toString(),
   };
 
   // Recalculation, validation, number allocation and the FINAL update all
@@ -316,12 +314,23 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
       // `documentsSnapshot` above — so the hash depends on content alone and a
       // no-op unfinalize→finalize hashes identically. Totals are read fresh
       // from the row `recalcDocument` just wrote, not from the pre-transaction
-      // `document` copy which predates the recalc.
-      const freshTotals = await tx.document.findUnique({
+      // `document` copy which predates the recalc. So are the tax fields
+      // (name, rate, treatment) and the incoterm: an Auto draft's suggestion
+      // is refreshed by that same recalc, and the snapshot must freeze what
+      // the totals were computed with.
+      const fresh = await tx.document.findUnique({
         where: { id: document.id },
-        select: { subtotal: true, taxAmount: true, total: true },
+        select: {
+          subtotal: true,
+          taxAmount: true,
+          total: true,
+          taxName: true,
+          taxRate: true,
+          taxTreatment: true,
+          incoterm: true,
+        },
       });
-      if (!freshTotals) throw new NotFinalizableError(NOT_FOUND_ERROR);
+      if (!fresh) throw new NotFinalizableError(NOT_FOUND_ERROR);
 
       // Resolve the included legal documents exactly as buildQuotationData
       // does (resolveQuoteDocuments → included-and-not-excluded → sortOrder),
@@ -337,9 +346,15 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
         .map((row) => ({ key: row.key, title: row.title, body: row.body }));
 
       const snapshotInput = documentToRevisionSnapshotInput({
-        document,
+        document: {
+          ...document,
+          taxName: fresh.taxName,
+          taxRate: fresh.taxRate,
+          taxTreatment: fresh.taxTreatment,
+          incoterm: fresh.incoterm,
+        },
         entity: entitySnapshot,
-        totals: freshTotals,
+        totals: fresh,
         validityDays,
         documents: resolvedDocuments,
       });
@@ -370,7 +385,7 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
             label,
             snapshot: snapshot as unknown as Prisma.InputJsonValue,
             snapshotHash,
-            total: freshTotals.total,
+            total: fresh.total,
             createdById: session.user.id,
           },
           select: { id: true },

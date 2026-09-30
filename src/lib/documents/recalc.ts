@@ -266,8 +266,10 @@ export async function recalcDocument(documentId: string, client: RecalcClient = 
       subtotal: totals.subtotal,
       taxAmount: totals.taxAmount,
       total: totals.total,
-      // Only ever present for a DRAFT whose region's tax has moved since the
-      // row was written (see `resolveDocumentTax`) — spread rather than set
+      // Only present when an Auto draft's suggested figures differ from the
+      // row (the region's rate moved, the incoterm or the client's country
+      // changed, or the quote was switched back to Auto; see
+      // `resolveDocumentTax`) — spread rather than set
       // unconditionally so a FINAL document's columns are not merely written
       // back with the same values, but genuinely never named in an update
       // issued from here.

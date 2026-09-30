@@ -1,6 +1,16 @@
 -- READ-ONLY. Run against production BEFORE deploying z59_tax_incoterms to
 -- list the drafts whose tax will change on their next recalc. Show the list
 -- to Vadym. Finalized quotes are frozen and never appear here.
+
+-- Query 1: the country each region will get. Every country must be a 2-letter
+-- ISO code, or the migration will refuse to run.
+SELECT code,
+       name,
+       CASE UPPER(code) WHEN 'UK' THEN 'GB' ELSE UPPER(code) END AS country_after_migration
+  FROM "Region"
+ ORDER BY code;
+
+-- Query 2: the drafts whose tax changes.
 WITH d AS (
   SELECT doc.id,
          doc."number",
@@ -8,7 +18,7 @@ WITH d AS (
          CASE UPPER(r.code) WHEN 'UK' THEN 'GB' ELSE UPPER(r.code) END AS seller,
          UPPER(TRIM(COALESCE(
            CASE WHEN c."deliverySameAsMain" THEN NULL ELSE NULLIF(TRIM(c."deliveryCountry"), '') END,
-           c.country
+           NULLIF(TRIM(c.country), '')
          ))) AS destination,
          c.name AS client,
          doc."deliveryTerms",

@@ -135,9 +135,6 @@ describe("quoteReadiness", () => {
     expect(row?.detail).toBe("2 items incomplete, starting with M-3220");
   });
 
-  // `Document.deliveryTerms` is an enum that can never be empty, so a
-  // "delivery chosen" blocker would always pass and mean nothing. The row
-  // earns its place by saying which terms, because Ex Works zeroes the tax.
   it("keeps the client row visible when a company is set but no contact is", () => {
     // `validateFinalizable` checks the company and nothing else, so the row
     // is met and the count says so -- but the quote cannot be emailed
@@ -207,6 +204,10 @@ describe("isFinalizable", () => {
   it("is false while a blocking row is unmet", () => {
     expect(isFinalizable(input({ items: [] }))).toBe(false);
     expect(isFinalizable(input({ items: [item({ productionSpec: {} })] }))).toBe(false);
+  });
+
+  it("is false while the tax is undecided, even with a company chosen", () => {
+    expect(isFinalizable(input({ hasCompany: true, taxBlocker: "Set the client's delivery country" }))).toBe(false);
   });
 
   it("does not block on the advisory documents row", () => {

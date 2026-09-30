@@ -3,10 +3,11 @@
 /**
  * How a draft presents itself: the image/price/notes display flags, the
  * record-keeping serial number, the per-quote validity window, and the
- * delivery & tax choice. All of them are single-statement writes that fold their
- * own `status: "DRAFT"` check into the `updateMany` (see the note in
- * _internal.ts) — the exceptions are `setIncoterm` and `setDocumentTax`, which move the
- * tax and so take the guarded transaction the pricing actions use.
+ * delivery & tax choice. All of them are single-statement writes that fold
+ * their own `status: "DRAFT"` check into the `updateMany` (see the note in
+ * _internal.ts) — the exceptions are `setIncoterm` and `setDocumentTax`,
+ * which move the tax and so take the guarded transaction the pricing
+ * actions use.
  */
 
 import { Prisma } from "@prisma/client";
