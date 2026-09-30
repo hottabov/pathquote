@@ -28,6 +28,7 @@ export default async function NewRegionPage() {
           defaultValues={{
             code: "",
             name: "",
+            country: "",
             currency: "",
             currencySymbol: "",
             taxName: "",

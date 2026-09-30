@@ -25,6 +25,7 @@ function isUniqueConstraintError(error: unknown): boolean {
 function readRegionForm(formData: FormData) {
   return {
     name: formData.get("name"),
+    country: formData.get("country"),
     currency: formData.get("currency"),
     currencySymbol: formData.get("currencySymbol"),
     taxName: formData.get("taxName"),
@@ -76,6 +77,7 @@ export async function createRegion(formData: FormData): Promise<ActionResult> {
       data: {
         code: parsed.data.code,
         name: parsed.data.name,
+        country: parsed.data.country,
         currency: parsed.data.currency,
         currencySymbol: parsed.data.currencySymbol ?? null,
         taxName: parsed.data.taxName,
@@ -136,6 +138,7 @@ export async function updateRegion(regionId: string, formData: FormData): Promis
     where: { id: regionId },
     data: {
       name: parsed.data.name,
+      country: parsed.data.country,
       currency: parsed.data.currency,
       currencySymbol: parsed.data.currencySymbol ?? null,
       taxName: parsed.data.taxName,

@@ -38,6 +38,7 @@ export type RegionAdminDetail = {
   id: string;
   code: string;
   name: string;
+  country: string;
   currency: string;
   /** Null means "derive it from `currency`" — see Region.currencySymbol. */
   currencySymbol: string | null;
@@ -91,6 +92,7 @@ export const getRegionAdmin = cache(async function getRegionAdmin(
     id: region.id,
     code: region.code,
     name: region.name,
+    country: region.country,
     currency: region.currency,
     currencySymbol: region.currencySymbol,
     taxName: region.taxName,

@@ -51,6 +51,7 @@ export default async function EditRegionPage({ params }: { params: Promise<Param
             defaultValues={{
               code: region.code,
               name: region.name,
+              country: region.country,
               currency: region.currency,
               currencySymbol: region.currencySymbol ?? "",
               taxName: region.taxName,

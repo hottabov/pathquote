@@ -2,7 +2,7 @@
 
 import { startTransition, useActionState, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { FieldRow, fieldInputClass } from "@/components/ui-kit";
+import { CountrySelect, FieldRow, fieldInputClass } from "@/components/ui-kit";
 import { cn } from "@/lib/utils";
 import { currencySymbol } from "@/lib/format";
 import { BankDetailsEditor } from "./bank-details-editor";
@@ -11,6 +11,7 @@ import type { ActionResult } from "@/lib/actions/regions";
 export type RegionFormValues = {
   code: string;
   name: string;
+  country: string;
   currency: string;
   currencySymbol: string;
   taxName: string;
@@ -119,6 +120,21 @@ export function RegionForm({
             minLength={2}
             maxLength={200}
             className={fieldInputClass}
+          />
+        </FieldRow>
+
+        <FieldRow
+          label="Country"
+          htmlFor="region-country"
+          required
+          hint="Where this region's legal entity sells from. Drives the tax suggested on quotes (the UK is United Kingdom, GB)."
+        >
+          <CountrySelect
+            id="region-country"
+            name="country"
+            value={values.country}
+            onChange={(country) => set("country", country)}
+            required
           />
         </FieldRow>
 
