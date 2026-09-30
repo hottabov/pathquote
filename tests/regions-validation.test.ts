@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   regionCodeSchema,
+  regionCountrySchema,
   currencyCodeSchema,
   regionNameSchema,
   taxNameSchema,
@@ -160,6 +161,7 @@ describe("createRegionSchema", () => {
   const base = {
     code: "AU",
     name: "Australia",
+    country: "AU",
     currency: "AUD",
     taxName: "GST",
     taxRate: "10.00",
@@ -234,6 +236,7 @@ describe("createRegionSchema", () => {
 describe("updateRegionSchema", () => {
   const base = {
     name: "Australia",
+    country: "AU",
     currency: "AUD",
     taxName: "GST",
     taxRate: "10.00",
@@ -259,4 +262,25 @@ describe("updateRegionSchema", () => {
     expect(result.success).toBe(true);
     if (result.success) expect((result.data as Record<string, unknown>).code).toBeUndefined();
   });
+});
+
+describe("regionCountrySchema", () => {
+  accepts(regionCountrySchema, [
+    ["an ISO code", "AU"],
+    ["a lowercase code, normalized to uppercase", "gb", "GB"],
+  ]);
+  rejects(regionCountrySchema, [
+    ["the non-ISO UK", "UK"],
+    ["blank", ""],
+    ["a name", "Australia"],
+  ]);
+});
+
+it("createRegionSchema requires a country", () => {
+  const withoutCountry = {
+    code: "AU", name: "Australia", currency: "AUD", taxName: "GST", taxRate: "10.00",
+    entityName: "Pathfinder Australia Pty Ltd", active: "on",
+  };
+  expect(createRegionSchema.safeParse(withoutCountry).success).toBe(false);
+  expect(createRegionSchema.safeParse({ ...withoutCountry, country: "AU" }).success).toBe(true);
 });

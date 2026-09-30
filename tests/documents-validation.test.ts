@@ -4,8 +4,10 @@ import {
   customLineSchema,
   discountModeSchema,
   discountValueSchema,
+  documentTaxSchema,
   exceedsPercentCeiling,
   idSchema,
+  incotermSchema,
   isPermutation,
   notesSchema,
   optionSelectionSchema,
@@ -349,4 +351,56 @@ describe("validity days", () => {
     ["a negative value", "-5"],
     ["anything beyond a year", "366"],
   ]);
+});
+
+describe("incotermSchema", () => {
+  accepts(incotermSchema, [
+    ["EXW", "EXW"],
+    ["DAP", "DAP"],
+    ["DDP", "DDP"],
+    ["FOB", "FOB"],
+  ]);
+  rejects(incotermSchema, [
+    ["the retired DELIVERED", "DELIVERED"],
+    ["the retired EX_WORKS", "EX_WORKS"],
+    ["an Incoterm we do not use", "CIF"],
+    ["blank", ""],
+  ]);
+});
+
+describe("documentTaxSchema", () => {
+  it("accepts Auto with nothing else", () => {
+    expect(documentTaxSchema.safeParse({ mode: "AUTO" }).success).toBe(true);
+  });
+
+  it("accepts a full Custom tax and trims it", () => {
+    const result = documentTaxSchema.safeParse({
+      mode: "CUSTOM",
+      taxName: " Sales Tax (Texas) ",
+      taxRate: "8.25",
+      taxNote: " Delivered to Austin ",
+    });
+    expect(result.success).toBe(true);
+    if (result.success && result.data.mode === "CUSTOM") {
+      expect(result.data.taxName).toBe("Sales Tax (Texas)");
+      expect(result.data.taxNote).toBe("Delivered to Austin");
+    }
+  });
+
+  it("saves a Custom tax whose reason is still blank (finalize blocks it, not save)", () => {
+    const result = documentTaxSchema.safeParse({ mode: "CUSTOM", taxName: "Tax exempt", taxRate: "0", taxNote: "" });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects Custom without a name or with a bad rate", () => {
+    expect(documentTaxSchema.safeParse({ mode: "CUSTOM", taxName: "", taxRate: "5", taxNote: "x" }).success).toBe(false);
+    expect(documentTaxSchema.safeParse({ mode: "CUSTOM", taxName: "VAT", taxRate: "-1", taxNote: "x" }).success).toBe(false);
+    expect(documentTaxSchema.safeParse({ mode: "CUSTOM", taxName: "VAT", taxRate: "8.255", taxNote: "x" }).success).toBe(false);
+  });
+
+  it("rejects a reason over 200 characters", () => {
+    expect(
+      documentTaxSchema.safeParse({ mode: "CUSTOM", taxName: "VAT", taxRate: "5", taxNote: "x".repeat(201) }).success
+    ).toBe(false);
+  });
 });

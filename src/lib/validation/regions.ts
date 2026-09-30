@@ -5,6 +5,7 @@
 // src/lib/actions/regions.ts). Mirrors the style of
 // src/lib/validation/users.ts and src/lib/validation/catalog.ts.
 import { z } from "zod";
+import { isValidCountryCode } from "@/lib/countries";
 import { maxDiscountPctSchema, maxMarkupPctSchema } from "./catalog";
 import { regionCodeSchema } from "./region-code";
 
@@ -70,6 +71,15 @@ export const taxRateSchema = z
   .refine((value) => Number(value) <= 99.99, {
     message: "Tax rate must be between 0 and 99.99",
   });
+
+/** The selling entity's country (ISO 3166-1 alpha-2) — the "seller" side of
+ * every tax suggestion (src/lib/documents/tax-rules.ts). Note the UK region's
+ * code is "UK" but its country is "GB". */
+export const regionCountrySchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .refine(isValidCountryCode, { message: "Choose the region's country" });
 
 export const entityNameSchema = z
   .string()
@@ -162,6 +172,7 @@ export const bankDetailsSchema = z
  * only ever set at create time. */
 const regionFormFields = {
   name: regionNameSchema,
+  country: regionCountrySchema,
   currency: currencyCodeSchema,
   currencySymbol: currencySymbolSchema,
   taxName: taxNameSchema,

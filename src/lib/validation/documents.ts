@@ -5,7 +5,9 @@
 // safe to import here too (see `customLineSchema.imageUrl` below): it's a
 // pure fs/path/crypto module with the same no-db/no-next discipline.
 import { z } from "zod";
+import { INCOTERMS } from "@/lib/documents/tax-rules";
 import { IMAGE_URL_PATTERN } from "@/lib/uploads";
+import { taxNameSchema, taxRateSchema } from "./regions";
 import { validityDayCountSchema } from "./validity-days";
 
 /** Every id in this app is a Prisma `cuid()` — 25 lowercase base36
@@ -160,6 +162,27 @@ export function exceedsPercentCeiling(mode: DiscountModeInput, value: DiscountVa
  * `discountModeSchema`'s shape one field over. */
 export const deliveryTermsSchema = z.enum(["DELIVERED", "EX_WORKS"]);
 export type DeliveryTermsInput = z.infer<typeof deliveryTermsSchema>;
+
+// --- delivery & tax ----------------------------------------------------------
+
+/** `setIncoterm`'s input — the four Incoterms Pathfinder actually uses
+ * (Vadym, 2026-09-30). Add more to `INCOTERMS` only when asked. */
+export const incotermSchema = z.enum(INCOTERMS);
+
+/** `setDocumentTax`'s input. AUTO hands the tax back to the suggestion
+ * (src/lib/documents/tax-rules.ts). CUSTOM is the salesperson's own name and
+ * rate; the reason may be saved blank while they are still typing — finalize
+ * refuses a blank reason (see `resolveDocumentTax`), save does not. */
+export const documentTaxSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("AUTO") }),
+  z.object({
+    mode: z.literal("CUSTOM"),
+    taxName: taxNameSchema,
+    taxRate: taxRateSchema,
+    taxNote: z.string().trim().max(200, "Reason must be at most 200 characters").default(""),
+  }),
+]);
+export type DocumentTaxInput = z.infer<typeof documentTaxSchema>;
 
 /** A non-negative decimal with at most 2 decimal places, up to 9 digits
  * before the point (same bound as `DISCOUNT_VALUE_REGEX`) — a hand-typed
