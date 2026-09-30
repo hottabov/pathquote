@@ -30,7 +30,7 @@
   --color-brand-accent-ink: #0e7490;
   --color-brand-dark: #2b304f;
   /* Dark green for the builder's internal-only "Your commission" line
-     (StickyFooter/DocumentTotals, src/components/builder/sticky-footer.tsx)
+     (DocumentTotals, src/components/builder/sticky-footer.tsx)
      — deliberately a distinct hue from every brand/status color above so a
      salesperson can't mistake it for a normal total or a success/error
      state. #146c43 clears WCAG AA for text on white (5.1:1), same

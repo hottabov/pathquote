@@ -1,9 +1,5 @@
-import { FileText } from "lucide-react";
-import type { DocumentStatus } from "@prisma/client";
 import { formatMoney } from "@/lib/format";
 import { toCents } from "@/lib/pricing";
-import { StatusBadge, STATUS_TONE } from "@/components/ui-kit";
-import { DeleteDraftButton } from "@/components/builder/delete-draft-button";
 
 type TotalsProps = {
   taxName: string;
@@ -30,12 +26,10 @@ type TotalsProps = {
 };
 
 /**
- * Pure subtotal → total breakdown, shared by the mobile sticky bar
- * (`StickyFooter`, below) and the desktop right-hand summary panel (see
- * `[documentId]/page.tsx`) so the two only ever differ in their
- * surrounding chrome, never in the numbers they show.
+ * Pure subtotal → total breakdown, rendered by the builder's summary panels
+ * (see `[documentId]/page.tsx`) so every one of them shows the same numbers.
  *
- * Both of those call sites are internal-only (behind the builder's own
+ * Every call site is internal-only (behind the builder's own
  * session check) — this component must never be reused on a customer-facing
  * surface (the quotation view/PDF go through an entirely separate pipeline,
  * `buildQuotationData` -> `QuotationSheet`, which has no `commission` field
@@ -69,7 +63,7 @@ export function DocumentTotals({
       ) : null}
       <div className="flex justify-between">
         <dt className="text-slate-500">
-          {taxName} ({taxRate}%)
+          {Number(taxRate) === 0 ? `${taxName} (none)` : `${taxName} (${taxRate}%)`}
           {taxOverridden ? (
             <span
               title={taxNote ?? "No reason given yet"}
@@ -96,61 +90,5 @@ export function DocumentTotals({
         </div>
       ) : null}
     </dl>
-  );
-}
-
-/**
- * Sticky bottom bar for the <lg builder layout: the document's status
- * badge, the live totals breakdown (recalculated server-side by every
- * mutating action — see recalcDocument in src/lib/actions/documents.ts),
- * and — for a DRAFT — the delete-draft control, which `status` alone decides:
- * only a draft can be deleted, so there is nothing for a caller to say about
- * it that this component cannot read off the status it is already given.
- * Stays visible while
- * scrolling the item list on a phone, which is the primary device this
- * builder targets; `pb-safe` keeps it clear of the home-indicator on
- * notched devices. Hidden at `lg+`, where the same totals live in the
- * sticky right-hand summary panel instead (see `[documentId]/page.tsx`).
- */
-export function StickyFooter({
-  documentId,
-  status,
-  taxName,
-  taxRate,
-  subtotal,
-  discountAmount,
-  taxAmount,
-  total,
-  currency,
-  currencySymbol,
-  commission,
-}: {
-  documentId: string;
-  status: DocumentStatus;
-} & TotalsProps) {
-  return (
-    <div className="pb-safe sticky bottom-0 -mx-4 border-t border-slate-200 bg-white px-4 py-3 sm:mx-0 sm:rounded-xl sm:border sm:px-6 lg:hidden">
-      <div className="flex items-center justify-between gap-3">
-        <StatusBadge tone={STATUS_TONE[status]} className="gap-1.5">
-          <FileText className="size-3.5" aria-hidden="true" />
-          {status === "DRAFT" ? "Draft" : "Final"}
-        </StatusBadge>
-        {status === "DRAFT" ? <DeleteDraftButton documentId={documentId} /> : null}
-      </div>
-
-      <div className="mt-2">
-        <DocumentTotals
-          taxName={taxName}
-          taxRate={taxRate}
-          subtotal={subtotal}
-          discountAmount={discountAmount}
-          taxAmount={taxAmount}
-          total={total}
-          currency={currency}
-          currencySymbol={currencySymbol}
-          commission={commission}
-        />
-      </div>
-    </div>
   );
 }

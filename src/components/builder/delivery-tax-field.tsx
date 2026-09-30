@@ -140,9 +140,12 @@ export function DeliveryTaxField({
       </div>
 
       <fieldset className="flex flex-col gap-2">
-        <legend className="mb-1 flex items-center gap-2 text-xs font-medium text-slate-500">
-          Tax <AutosaveIndicator status={taxSave.status} error={taxSave.error} />
-        </legend>
+        {/* The indicator sits outside the legend so the fieldset's accessible
+            name is just "Tax", not "Tax Saving…". */}
+        <legend className="mb-1 text-xs font-medium text-slate-500">Tax</legend>
+        <div className="flex items-center">
+          <AutosaveIndicator status={taxSave.status} error={taxSave.error} />
+        </div>
 
         <label className="flex items-start gap-2 text-sm">
           <input
@@ -150,7 +153,14 @@ export function DeliveryTaxField({
             name="tax-mode"
             value="AUTO"
             checked={mode === "AUTO"}
-            onChange={() => setMode("AUTO")}
+            onChange={() => {
+              setMode("AUTO");
+              // Back to the suggestion, so choosing Custom again starts from
+              // it rather than silently re-saving an old name, rate or reason.
+              setCustomName(suggestion.taxName);
+              setCustomRate(rateText(suggestion.taxRate));
+              setCustomNote("");
+            }}
             className="mt-1"
           />
           <span className="flex flex-col">
@@ -213,7 +223,7 @@ export function DeliveryTaxField({
       </fieldset>
 
       {blocker ? (
-        <p role="alert" className="text-xs font-medium text-amber-700">
+        <p role="status" className="text-xs font-medium text-amber-700">
           {blocker}
         </p>
       ) : null}
