@@ -157,7 +157,8 @@ export interface RevisionSnapshotInput {
   currencySymbol: string | null;
   taxName: string;
   taxRate: Money;
-  deliveryTerms: string;
+  incoterm: string;
+  taxTreatment: string;
   discountMode: string;
   discountValue: Money | null;
   subtotal: Money;
@@ -183,8 +184,13 @@ export interface RevisionSnapshotInput {
  * backwards-incompatible change to the projection's shape, so a reader can
  * tell an old snapshot from a new one — and so a shape change alone (which
  * legitimately changes what "the same content" hashes to) is visible in the
- * data rather than silently reshuffling every quote's hash. */
-export const REVISION_SNAPSHOT_VERSION = 1 as const;
+ * data rather than silently reshuffling every quote's hash.
+ *
+ * v2 (2026-09-30): `deliveryTerms` replaced by `incoterm` + `taxTreatment`.
+ * v1 snapshots stay in the database untouched; the only effect is that the
+ * first re-finalize of a v1 quote mints a new revision even if nothing
+ * changed. */
+export const REVISION_SNAPSHOT_VERSION = 2 as const;
 
 export interface RevisionSnapshot {
   version: typeof REVISION_SNAPSHOT_VERSION;
@@ -192,7 +198,8 @@ export interface RevisionSnapshot {
   currencySymbol: string | null;
   taxName: string;
   taxRate: Money;
-  deliveryTerms: string;
+  incoterm: string;
+  taxTreatment: string;
   discount: { mode: string; value: Money | null };
   totals: { subtotal: Money; taxAmount: Money; total: Money };
   notes: string | null;
@@ -250,7 +257,8 @@ export function buildRevisionSnapshot(input: RevisionSnapshotInput): RevisionSna
     currencySymbol: input.currencySymbol,
     taxName: input.taxName,
     taxRate: input.taxRate,
-    deliveryTerms: input.deliveryTerms,
+    incoterm: input.incoterm,
+    taxTreatment: input.taxTreatment,
     discount: { mode: input.discountMode, value: input.discountValue },
     totals: { subtotal: input.subtotal, taxAmount: input.taxAmount, total: input.total },
     notes: input.notes,
@@ -303,7 +311,8 @@ export interface DocumentRowForSnapshot {
   currencySymbol: string | null;
   taxName: string;
   taxRate: Decimalish;
-  deliveryTerms: string;
+  incoterm: string;
+  taxTreatment: string;
   discountMode: string;
   discountValue: Decimalish | null;
   notes: string | null;
@@ -424,7 +433,8 @@ export function documentToRevisionSnapshotInput(args: {
     currencySymbol: document.currencySymbol,
     taxName: document.taxName,
     taxRate: document.taxRate.toString(),
-    deliveryTerms: document.deliveryTerms,
+    incoterm: document.incoterm,
+    taxTreatment: document.taxTreatment,
     discountMode: document.discountMode,
     discountValue: document.discountValue?.toString() ?? null,
     subtotal: totals.subtotal.toString(),

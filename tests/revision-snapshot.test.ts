@@ -123,7 +123,8 @@ const base: RevisionSnapshotInput = {
   currencySymbol: "$",
   taxName: "GST",
   taxRate: "10.00",
-  deliveryTerms: "DELIVERED",
+  incoterm: "DAP",
+  taxTreatment: "STANDARD",
   discountMode: "PERCENT",
   discountValue: null,
   subtotal: "10100.00",
@@ -236,9 +237,10 @@ describe("hash sensitivity (must change for any real edit)", () => {
     expect(hashOf({ ...base, items: swapped })).not.toBe(hashOf({ ...base, items: [a, b] }));
   });
 
-  it("changes for the document-level discount, delivery terms, notes and price-display toggles", () => {
+  it("changes for the document-level discount, incoterm, tax treatment, notes and price-display toggles", () => {
     expect(hashOf({ ...base, discountValue: "5.00" })).not.toBe(hashOf(base));
-    expect(hashOf({ ...base, deliveryTerms: "EX_WORKS" })).not.toBe(hashOf(base));
+    expect(hashOf({ ...base, incoterm: "EXW" })).not.toBe(hashOf(base));
+    expect(hashOf({ ...base, taxTreatment: "EXPORT" })).not.toBe(hashOf(base));
     expect(hashOf({ ...base, notes: "Rush order" })).not.toBe(hashOf(base));
     expect(hashOf({ ...base, showOptionPrices: true })).not.toBe(hashOf(base));
   });
@@ -276,7 +278,8 @@ const docRow: DocumentRowForSnapshot = {
   currencySymbol: "$",
   taxName: "GST",
   taxRate: "10.00", // a plain string stands in for a Prisma.Decimal
-  deliveryTerms: "DELIVERED",
+  incoterm: "DAP",
+  taxTreatment: "STANDARD",
   discountMode: "PERCENT",
   discountValue: null,
   notes: "hello",
@@ -393,4 +396,12 @@ describe("documentToRevisionSnapshotInput", () => {
     const b = buildAndHashRevisionSnapshot(documentToRevisionSnapshotInput(reload)).snapshotHash;
     expect(a).toBe(b);
   });
+});
+
+it("is version 2 — incoterm and tax treatment replaced deliveryTerms", () => {
+  expect(REVISION_SNAPSHOT_VERSION).toBe(2);
+  const snapshot = buildRevisionSnapshot(base) as unknown as Record<string, unknown>;
+  expect(snapshot.incoterm).toBe("DAP");
+  expect(snapshot.taxTreatment).toBe("STANDARD");
+  expect("deliveryTerms" in snapshot).toBe(false);
 });
