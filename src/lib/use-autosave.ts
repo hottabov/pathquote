@@ -34,6 +34,12 @@ const SAVED_LINGER_MS = 2000;
  * and pausing again retries the save rather than silently giving up).
  * `enabled: false` (e.g. a read-only document) suppresses saving entirely
  * without needing the caller to conditionally call the hook.
+ *
+ * Tests: this repo has no React test renderer (no @testing-library/react in
+ * package.json; vitest runs in a plain node environment), so the hook's
+ * timing is not unit-tested. The "value returns to the last saved value
+ * while a save is pending" path is a two-line state transition in the
+ * effect below, covered by reading it rather than by a mocked-timer harness.
  */
 export function useAutosave<T>({
   value,
@@ -56,6 +62,10 @@ export function useAutosave<T>({
   // Guards against a stale save's result landing after a newer save already
   // started (e.g. delay=800 and the user changes the value twice quickly).
   const saveToken = useRef(0);
+  // True from scheduling a save until its debounce timer fires. The effect
+  // cleanup clears the timer on every value change, so `saveTimer.current`
+  // cannot say whether one was pending when the value moved back.
+  const savePending = useRef(false);
 
   useEffect(() => {
     if (isFirstRender.current) {
@@ -63,15 +73,31 @@ export function useAutosave<T>({
       lastSavedValue.current = value;
       return;
     }
-    if (!enabled || value === lastSavedValue.current) return;
+    if (!enabled) return;
+    if (value === lastSavedValue.current) {
+      // The value came back to what is already saved (Auto → Custom → Auto
+      // inside the debounce window). The cleanup below already cancelled the
+      // timer, but the "saving" status it set would otherwise stay forever:
+      // cancel the pending save for good and settle back to idle. A save
+      // already in flight is not pending and is left to finish.
+      if (savePending.current) {
+        savePending.current = false;
+        saveToken.current++;
+        setStatus("idle");
+        setError(null);
+      }
+      return;
+    }
 
     if (saveTimer.current) clearTimeout(saveTimer.current);
 
     const token = ++saveToken.current;
     setStatus("saving");
     setError(null);
+    savePending.current = true;
 
     saveTimer.current = setTimeout(() => {
+      savePending.current = false;
       void (async () => {
         try {
           const result = await onSave(value);
