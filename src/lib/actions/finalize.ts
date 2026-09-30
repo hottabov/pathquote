@@ -142,7 +142,7 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
       // validity-fields task), not this one's. `commission` — the same
       // `RecalcResult.commission` `getDocumentForBuilder` shows live for a
       // draft — is what gets frozen onto the document below.
-      const { violations, documentConcession, commission } = await recalcDocument(document.id, tx);
+      const { violations, documentConcession, commission, taxBlocker } = await recalcDocument(document.id, tx);
 
       // Eligibility is judged on the document as it stands *under* the lock
       // the recalc above just took, not on the copy loaded before the
@@ -172,6 +172,11 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
         document.currencySymbol
       );
       if (validationError) throw new NotFinalizableError(validationError);
+
+      // The tax the app could not decide (DDP abroad, reverse charge without
+      // a VAT ID, no delivery country, a custom tax with no reason). Same
+      // rule the readiness panel shows before the click.
+      if (taxBlocker) throw new NotFinalizableError(taxBlocker);
 
       // Production readiness: nothing becomes FINAL while an item's order
       // form would print incomplete (a missing knife size, drills ticked with

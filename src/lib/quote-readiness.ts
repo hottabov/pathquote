@@ -31,7 +31,7 @@ import {
  * Pure on purpose: no React, no Prisma client, no money formatting. The caller
  * passes a summary of what it already has in hand and gets rows back.
  */
-export type ReadinessKey = "client" | "items" | "spec" | "documents" | "pathworks";
+export type ReadinessKey = "client" | "items" | "spec" | "documents" | "pathworks" | "tax";
 
 export type ReadinessRow = {
   key: ReadinessKey;
@@ -87,6 +87,10 @@ export type ReadinessInput = {
    *  `pathWorksModulesWithoutHost`. Computed by the caller, which has the
    *  product specs; this module stays free of that dependency. */
   pathWorksModulesWithoutHost: boolean;
+  /** `RecalcResult.taxBlocker` / `DocumentForBuilder.taxBlocker` — why the
+   *  quote's tax cannot be finalized, or null. Mirrors the refusal in
+   *  `finalizeDocument` one for one. */
+  taxBlocker: string | null;
 };
 
 /**
@@ -109,6 +113,9 @@ export function quoteReadiness(input: ReadinessInput): ReadinessRow[] {
     itemsRow(input),
     specRow(input),
     documentsRow(input),
+    // Only once a company is chosen: before that the client row already
+    // blocks, and "set the delivery country" would just repeat it.
+    ...(input.hasCompany && input.taxBlocker ? [taxRow(input.taxBlocker)] : []),
     // Last, and only when there is something to say. Every other row is
     // always present because its absence would itself be information ("is
     // the client set? the panel does not say"); this one is a remark about
@@ -116,6 +123,19 @@ export function quoteReadiness(input: ReadinessInput): ReadinessRow[] {
     // be noise on the great majority of quotes that carry no modules at all.
     ...(input.pathWorksModulesWithoutHost ? [pathWorksRow()] : []),
   ];
+}
+
+function taxRow(blocker: string): ReadinessRow {
+  return {
+    key: "tax",
+    label: "Delivery & tax",
+    met: false,
+    needsAttention: true,
+    detail: blocker,
+    targetTab: "settings",
+    targetItemId: null,
+    blocking: true,
+  };
 }
 
 /**

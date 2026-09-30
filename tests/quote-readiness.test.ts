@@ -33,6 +33,7 @@ function input(over: Partial<ReadinessInput> = {}): ReadinessInput {
     capExceeded: false,
     exceedsMarkupCap: false,
     pathWorksModulesWithoutHost: false,
+    taxBlocker: null,
     ...over,
   };
 }
@@ -215,5 +216,28 @@ describe("isFinalizable", () => {
   it("is false over the discount cap or the markup ceiling, which are not rows", () => {
     expect(isFinalizable(input({ capExceeded: true }))).toBe(false);
     expect(isFinalizable(input({ exceedsMarkupCap: true }))).toBe(false);
+  });
+});
+
+describe("quoteReadiness — delivery & tax", () => {
+  it("adds no tax row when the tax is settled", () => {
+    expect(quoteReadiness(input()).some((row) => row.key === "tax")).toBe(false);
+  });
+
+  it("adds a blocking tax row pointing at the Setup tab", () => {
+    const row = quoteReadiness(input({ taxBlocker: "DDP abroad: set Canada's tax with Custom" })).find((r) => r.key === "tax");
+    expect(row).toMatchObject({
+      label: "Delivery & tax",
+      met: false,
+      needsAttention: true,
+      blocking: true,
+      targetTab: "settings",
+      detail: "DDP abroad: set Canada's tax with Custom",
+    });
+  });
+
+  it("stays quiet until a company is chosen — the client row already says so", () => {
+    const rows = quoteReadiness(input({ hasCompany: false, taxBlocker: "Set the client's delivery country" }));
+    expect(rows.some((row) => row.key === "tax")).toBe(false);
   });
 });
