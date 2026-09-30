@@ -11,6 +11,7 @@ import {
   type EngineViolation,
 } from "@/lib/pricing";
 import { resolveDocumentTax } from "./tax";
+import { destinationCountry, suggestTax } from "./tax-rules";
 
 /**
  * The recalculation half of the document builder, deliberately kept OUT of
@@ -99,6 +100,10 @@ export type RecalcResult = {
    * (`getDocumentForBuilder`, src/lib/queries/documents.ts) is what
    * chooses between this live figure (DRAFT) and the frozen one (FINAL). */
   commission: CommissionResult | null;
+  /** Why this document's tax cannot be finalized as it stands (DDP abroad,
+   * missing VAT ID or delivery country, a custom tax with no reason), or
+   * null. `finalizeDocument` refuses on it; saving is never blocked by it. */
+  taxBlocker: string | null;
 };
 
 /**
@@ -135,6 +140,9 @@ export async function recalcDocument(documentId: string, client: RecalcClient = 
       items: { include: { lines: true, product: { select: { isCredit: true, noCommission: true } } } },
       lines: { where: { itemId: null } },
       region: true,
+      // The destination side of the tax suggestion, and the VAT ID reverse
+      // charge needs (./tax-rules.ts).
+      company: { select: { country: true, deliverySameAsMain: true, deliveryCountry: true, taxId: true } },
     },
   });
   if (!document) {
@@ -145,6 +153,7 @@ export async function recalcDocument(documentId: string, client: RecalcClient = 
       concessionMessage: null,
       markupMessage: null,
       commission: null,
+      taxBlocker: null,
     };
   }
 
@@ -182,19 +191,28 @@ export async function recalcDocument(documentId: string, client: RecalcClient = 
   const regionMaxDiscountPct = document.region.maxDiscountPct ? Number(document.region.maxDiscountPct) : null;
   const regionMaxMarkupPct = document.region.maxMarkupPct ? Number(document.region.maxMarkupPct) : null;
 
-  // The document's effective tax, with both of its rules — the FINAL freeze
-  // and the DRAFT refresh — decided in one dependency-free place (./tax.ts,
-  // whose header comment carries the full reasoning). The region is already
-  // joined above for its discount caps, so resolving this costs no extra
-  // query. When `refresh` comes back non-null the label and rate are written
-  // back to the row in the same update as the totals below, keeping the
-  // "GST 10%" every reader prints and the `taxAmount` it sits beside two
-  // views of the same figure rather than two independently stale ones.
+  // The document's tax: FINAL frozen, CUSTOM kept, an Auto draft following
+  // the suggestion (./tax.ts and ./tax-rules.ts carry the reasoning). When
+  // `refresh` is non-null the figures are written back in the same update
+  // as the totals below, so "GST 10%" and the taxAmount beside it are two
+  // views of one figure.
+  const suggestion = suggestTax({
+    sellerCountry: document.region.country,
+    destinationCountry: destinationCountry(document.company),
+    incoterm: document.incoterm,
+    regionTax: { taxName: document.region.taxName, taxRate: document.region.taxRate.toString() },
+    customerTaxId: document.company?.taxId ?? null,
+  });
   const tax = resolveDocumentTax({
     status: document.status,
-    deliveryTerms: document.deliveryTerms,
-    document: { taxName: document.taxName, taxRate: document.taxRate.toString() },
-    region: { taxName: document.region.taxName, taxRate: document.region.taxRate.toString() },
+    document: {
+      taxTreatment: document.taxTreatment,
+      taxName: document.taxName,
+      taxRate: document.taxRate.toString(),
+      taxOverridden: document.taxOverridden,
+      taxNote: document.taxNote,
+    },
+    suggestion,
   });
 
   const engineInput: EngineInput = {
@@ -218,7 +236,7 @@ export async function recalcDocument(documentId: string, client: RecalcClient = 
     documentDiscountValue: document.discountValue !== null ? document.discountValue.toString() : null,
     regionMaxDiscountPct,
     regionMaxMarkupPct,
-    taxRate: tax.engineTaxRate,
+    taxRate: Number(tax.taxRate),
     commissionTiers,
   };
 
@@ -253,7 +271,13 @@ export async function recalcDocument(documentId: string, client: RecalcClient = 
       // unconditionally so a FINAL document's columns are not merely written
       // back with the same values, but genuinely never named in an update
       // issued from here.
-      ...(tax.refresh ? { taxName: tax.refresh.taxName, taxRate: new Prisma.Decimal(tax.refresh.taxRate) } : {}),
+      ...(tax.refresh
+        ? {
+            taxTreatment: tax.refresh.taxTreatment,
+            taxName: tax.refresh.taxName,
+            taxRate: new Prisma.Decimal(tax.refresh.taxRate),
+          }
+        : {}),
     },
   });
 
@@ -264,6 +288,7 @@ export async function recalcDocument(documentId: string, client: RecalcClient = 
     concessionMessage,
     markupMessage,
     commission: totals.commission,
+    taxBlocker: tax.blocker,
   };
 }
 
