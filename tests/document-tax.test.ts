@@ -1,211 +1,152 @@
 import { describe, it, expect } from "vitest";
 import { resolveDocumentTax, type ResolveTaxInput } from "@/lib/documents/tax";
+import type { TaxSuggestion } from "@/lib/documents/tax-rules";
 import { computeTotals } from "@/lib/pricing";
 
 /**
- * Coverage for the rule that decides which tax rate a quote is charged at —
- * the FINAL freeze and the DRAFT refresh (see src/lib/documents/tax.ts).
- *
- * The bug these exist to prevent is a specific and expensive one: GST was
- * configured on the region after a draft had already been created, so the
- * draft carried the 0% it was born with, the summary showed no tax line at
- * all, and nothing in the app could ever move it. The mirror-image failure
- * is just as bad — a region's rate changing after a quote was issued and
- * silently rewriting the tax on a document a customer is already holding —
- * so both directions are pinned here rather than only the reported one.
+ * The rule that decides which tax a quote carries: a FINAL document is
+ * frozen, a Custom tax is never overwritten, and an Auto draft follows the
+ * suggestion (src/lib/documents/tax-rules.ts). Both directions of the old
+ * freeze/refresh bug stay pinned: a draft must pick up a region rate
+ * configured after it was created, and an issued quote must never be
+ * rewritten by a later region edit.
  */
+
+const gst: TaxSuggestion = {
+  treatment: "STANDARD",
+  taxName: "GST",
+  taxRate: "10.00",
+  reason: "Sale within Australia → GST 10%",
+  hint: null,
+  blocker: null,
+};
+
+const exportSuggestion: TaxSuggestion = {
+  treatment: "EXPORT",
+  taxName: "GST",
+  taxRate: "0.00",
+  reason: "Goods leave Australia → export, no GST",
+  hint: null,
+  blocker: null,
+};
 
 const base: ResolveTaxInput = {
   status: "DRAFT",
-  deliveryTerms: "DELIVERED",
-  document: { taxName: "GST", taxRate: "10.00" },
-  region: { taxName: "GST", taxRate: "10.00" },
+  document: { taxTreatment: "STANDARD", taxName: "GST", taxRate: "10.00", taxOverridden: false, taxNote: null },
+  suggestion: gst,
 };
 
-describe("resolveDocumentTax — a DRAFT follows its region", () => {
+describe("resolveDocumentTax — an Auto draft follows the suggestion", () => {
   it("adopts a rate configured after the draft was created", () => {
-    const tax = resolveDocumentTax({
-      ...base,
-      document: { taxName: "GST", taxRate: "0.00" },
-      region: { taxName: "GST", taxRate: "10.00" },
-    });
+    const tax = resolveDocumentTax({ ...base, document: { ...base.document, taxRate: "0.00" } });
     expect(tax.taxRate).toBe("10.00");
-    expect(tax.engineTaxRate).toBe(10);
-    expect(tax.refresh).toEqual({ taxName: "GST", taxRate: "10.00" });
+    expect(tax.refresh).toEqual({ taxTreatment: "STANDARD", taxName: "GST", taxRate: "10.00" });
   });
 
-  it("follows a rate downwards too, not only upwards", () => {
-    const tax = resolveDocumentTax({
-      ...base,
-      document: { taxName: "VAT", taxRate: "20.00" },
-      region: { taxName: "VAT", taxRate: "17.50" },
-    });
-    expect(tax.engineTaxRate).toBe(17.5);
-    expect(tax.refresh).toEqual({ taxName: "VAT", taxRate: "17.50" });
-  });
-
-  it("carries the label along with the rate so the two can never disagree", () => {
-    const tax = resolveDocumentTax({
-      ...base,
-      document: { taxName: "Sales Tax", taxRate: "0.00" },
-      region: { taxName: "GST", taxRate: "10.00" },
-    });
-    expect(tax.taxName).toBe("GST");
-    expect(tax.refresh).toEqual({ taxName: "GST", taxRate: "10.00" });
-  });
-
-  it("renames without a rate change", () => {
-    const tax = resolveDocumentTax({
-      ...base,
-      document: { taxName: "GST", taxRate: "10.00" },
-      region: { taxName: "GST/HST", taxRate: "10.00" },
-    });
-    expect(tax.refresh).toEqual({ taxName: "GST/HST", taxRate: "10.00" });
+  it("switches treatment when the destination becomes foreign", () => {
+    const tax = resolveDocumentTax({ ...base, suggestion: exportSuggestion });
+    expect(tax.taxTreatment).toBe("EXPORT");
+    expect(tax.taxRate).toBe("0.00");
+    expect(tax.refresh).toEqual({ taxTreatment: "EXPORT", taxName: "GST", taxRate: "0.00" });
   });
 
   it("asks for no write when the row already agrees", () => {
     expect(resolveDocumentTax(base).refresh).toBeNull();
   });
 
-  it("treats a differently-rendered Decimal as agreement, not as a change", () => {
-    const tax = resolveDocumentTax({
-      ...base,
-      document: { taxName: "GST", taxRate: "10" },
-      region: { taxName: "GST", taxRate: "10.00" },
-    });
-    expect(tax.engineTaxRate).toBe(10);
+  it("treats a differently-rendered Decimal as agreement", () => {
+    const tax = resolveDocumentTax({ ...base, document: { ...base.document, taxRate: "10" } });
     expect(tax.refresh).toBeNull();
+  });
+
+  it("passes the suggestion's blocker through", () => {
+    const tax = resolveDocumentTax({ ...base, suggestion: { ...gst, blocker: "DDP abroad: set Canada's tax with Custom" } });
+    expect(tax.blocker).toBe("DDP abroad: set Canada's tax with Custom");
+  });
+});
+
+describe("resolveDocumentTax — a Custom draft is the salesperson's", () => {
+  const custom: ResolveTaxInput = {
+    ...base,
+    document: {
+      taxTreatment: "CUSTOM",
+      taxName: "Sales Tax (Texas)",
+      taxRate: "8.25",
+      taxOverridden: true,
+      taxNote: "Delivered to Austin, TX",
+    },
+    suggestion: exportSuggestion,
+  };
+
+  it("keeps the custom figures whatever the suggestion says", () => {
+    const tax = resolveDocumentTax(custom);
+    expect(tax).toMatchObject({ taxTreatment: "CUSTOM", taxName: "Sales Tax (Texas)", taxRate: "8.25", refresh: null, blocker: null });
+  });
+
+  it("ignores the suggestion's blocker — Custom is how a blocker is resolved", () => {
+    const tax = resolveDocumentTax({ ...custom, suggestion: { ...gst, blocker: "DDP abroad: set Canada's tax with Custom" } });
+    expect(tax.blocker).toBeNull();
+  });
+
+  it("blocks a custom tax with no reason", () => {
+    expect(resolveDocumentTax({ ...custom, document: { ...custom.document, taxNote: "  " } }).blocker).toBe(
+      "Give a reason for the custom tax"
+    );
+    expect(resolveDocumentTax({ ...custom, document: { ...custom.document, taxNote: null } }).blocker).toBe(
+      "Give a reason for the custom tax"
+    );
   });
 });
 
 describe("resolveDocumentTax — a FINAL document is frozen", () => {
-  it("keeps the rate it was issued with when the region moves", () => {
-    const tax = resolveDocumentTax({
-      ...base,
-      status: "FINAL",
-      document: { taxName: "GST", taxRate: "10.00" },
-      region: { taxName: "GST", taxRate: "12.50" },
-    });
+  it("keeps the rate it was issued with", () => {
+    const tax = resolveDocumentTax({ ...base, status: "FINAL", suggestion: { ...gst, taxRate: "12.50" } });
     expect(tax.taxRate).toBe("10.00");
-    expect(tax.engineTaxRate).toBe(10);
     expect(tax.refresh).toBeNull();
   });
 
-  it("keeps a 0% issued document at 0% even once the region configures a rate", () => {
+  it("keeps an issued export quote at 0% even when the suggestion now says STANDARD", () => {
     const tax = resolveDocumentTax({
       ...base,
       status: "FINAL",
-      document: { taxName: "Sales Tax", taxRate: "0.00" },
-      region: { taxName: "GST", taxRate: "10.00" },
+      document: { ...base.document, taxTreatment: "EXPORT", taxRate: "0.00" },
     });
-    expect(tax.taxName).toBe("Sales Tax");
-    expect(tax.engineTaxRate).toBe(0);
-    expect(tax.refresh).toBeNull();
+    expect(tax.taxTreatment).toBe("EXPORT");
+    expect(tax.taxRate).toBe("0.00");
+  });
+
+  it("never blocks — the document is already issued", () => {
+    const tax = resolveDocumentTax({ ...base, status: "FINAL", suggestion: { ...gst, blocker: "x" } });
+    expect(tax.blocker).toBeNull();
   });
 
   it("never proposes a write for an unrecognised status either", () => {
-    const tax = resolveDocumentTax({
-      ...base,
-      status: "SOMETHING_ADDED_LATER",
-      document: { taxName: "GST", taxRate: "10.00" },
-      region: { taxName: "GST", taxRate: "12.50" },
-    });
-    expect(tax.engineTaxRate).toBe(10);
-    expect(tax.refresh).toBeNull();
-  });
-});
-
-describe("resolveDocumentTax — Ex Works", () => {
-  it("charges no tax while still carrying the region's nominal rate", () => {
-    const tax = resolveDocumentTax({
-      ...base,
-      deliveryTerms: "EX_WORKS",
-      document: { taxName: "GST", taxRate: "10.00" },
-      region: { taxName: "GST", taxRate: "10.00" },
-    });
-    expect(tax.engineTaxRate).toBe(0);
-    // The document is not rewritten to 0% — the sheet renders "Ex Works"
-    // from the terms, and keeps the real rate for the Delivered case.
-    expect(tax.taxRate).toBe("10.00");
-  });
-
-  it("still refreshes a stale draft's stored rate, which the sheet prints", () => {
-    const tax = resolveDocumentTax({
-      ...base,
-      deliveryTerms: "EX_WORKS",
-      document: { taxName: "GST", taxRate: "0.00" },
-      region: { taxName: "GST", taxRate: "10.00" },
-    });
-    expect(tax.engineTaxRate).toBe(0);
-    expect(tax.refresh).toEqual({ taxName: "GST", taxRate: "10.00" });
-  });
-
-  it("zeroes a FINAL Ex Works document's charge from its frozen rate", () => {
-    const tax = resolveDocumentTax({
-      ...base,
-      status: "FINAL",
-      deliveryTerms: "EX_WORKS",
-      document: { taxName: "GST", taxRate: "10.00" },
-      region: { taxName: "GST", taxRate: "12.50" },
-    });
-    expect(tax.engineTaxRate).toBe(0);
+    const tax = resolveDocumentTax({ ...base, status: "SOMETHING_ADDED_LATER", suggestion: { ...gst, taxRate: "12.50" } });
     expect(tax.refresh).toBeNull();
   });
 });
 
 describe("the resolved rate reaches the engine as money", () => {
-  // The end-to-end shape of the reported bug: a $10,000 quote on a region
-  // configured at 10% GST must show $1,000 of tax, not nothing.
-  it("produces a GST line on a draft whose region configured GST after creation", () => {
-    const tax = resolveDocumentTax({
-      status: "DRAFT",
-      deliveryTerms: "DELIVERED",
-      document: { taxName: "GST", taxRate: "0.00" },
-      region: { taxName: "GST", taxRate: "10.00" },
-    });
-    const totals = computeTotals({
-      items: [{ unitPrice: 10000, lines: [] }],
-      extraLines: [],
-      documentDiscountValue: null,
-      taxRate: tax.engineTaxRate,
-    });
+  const priceOf = (taxRate: string) =>
+    computeTotals({ items: [{ unitPrice: 10000, lines: [] }], extraLines: [], documentDiscountValue: null, taxRate: Number(taxRate) });
+
+  it("charges GST on a domestic quote", () => {
+    const totals = priceOf(resolveDocumentTax(base).taxRate);
     expect(totals.taxAmount).toBe(1000);
     expect(totals.total).toBe(11000);
   });
 
-  it("leaves that same quote untaxed under Ex Works terms", () => {
-    const tax = resolveDocumentTax({
-      status: "DRAFT",
-      deliveryTerms: "EX_WORKS",
-      document: { taxName: "GST", taxRate: "0.00" },
-      region: { taxName: "GST", taxRate: "10.00" },
-    });
-    const totals = computeTotals({
-      items: [{ unitPrice: 10000, lines: [] }],
-      extraLines: [],
-      documentDiscountValue: null,
-      taxRate: tax.engineTaxRate,
-    });
+  it("charges nothing on an export", () => {
+    const totals = priceOf(resolveDocumentTax({ ...base, suggestion: exportSuggestion }).taxRate);
     expect(totals.taxAmount).toBe(0);
     expect(totals.total).toBe(10000);
   });
 
-  it("taxes a fractional rate on the discounted base, not the gross", () => {
+  it("charges a custom fractional rate", () => {
     const tax = resolveDocumentTax({
-      status: "DRAFT",
-      deliveryTerms: "DELIVERED",
-      document: { taxName: "VAT", taxRate: "0.00" },
-      region: { taxName: "VAT", taxRate: "17.50" },
+      ...base,
+      document: { taxTreatment: "CUSTOM", taxName: "Sales Tax", taxRate: "8.25", taxOverridden: true, taxNote: "TX" },
     });
-    const totals = computeTotals({
-      items: [{ unitPrice: 1000, lines: [] }],
-      extraLines: [],
-      documentDiscountMode: "PERCENT",
-      documentDiscountValue: "10",
-      taxRate: tax.engineTaxRate,
-    });
-    expect(totals.taxableBase).toBe(900);
-    expect(totals.taxAmount).toBe(157.5);
-    expect(totals.total).toBe(1057.5);
+    expect(priceOf(tax.taxRate).taxAmount).toBe(825);
   });
 });
