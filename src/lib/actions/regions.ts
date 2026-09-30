@@ -1,9 +1,10 @@
 "use server";
 
-import { revalidateRegion, revalidateRegionList } from "@/lib/revalidate";
+import { revalidateDocument, revalidateRegion, revalidateRegionList } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { recalcDocument } from "@/lib/documents/recalc";
 import { requireAdmin } from "@/lib/authz";
 import { idSchema } from "@/lib/validation/documents";
 import { createRegionSchema, updateRegionSchema } from "@/lib/validation/regions";
@@ -154,6 +155,29 @@ export async function updateRegion(regionId: string, formData: FormData): Promis
       active: parsed.data.active,
     },
   });
+
+  // The region's country, tax name and rate feed every open quote's suggested
+  // tax. Skip the recalc (and the `updatedAt` bump it causes) unless one of
+  // them moved; Custom-tax drafts keep their figures, so they are filtered out.
+  const taxInputsChanged =
+    existing.country !== parsed.data.country ||
+    existing.taxName !== parsed.data.taxName ||
+    !new Prisma.Decimal(existing.taxRate).equals(new Prisma.Decimal(parsed.data.taxRate));
+  if (taxInputsChanged) {
+    const drafts = await db.document.findMany({
+      where: { regionId, status: "DRAFT", taxOverridden: false },
+      select: { id: true },
+    });
+    for (const draft of drafts) {
+      // One draft failing must not leave the rest on a stale tax.
+      try {
+        await recalcDocument(draft.id);
+        revalidateDocument(draft.id);
+      } catch (error) {
+        console.error(`Failed to re-price draft ${draft.id} after region ${regionId} changed`, error);
+      }
+    }
+  }
 
   revalidateRegionPaths(regionId);
   return {};

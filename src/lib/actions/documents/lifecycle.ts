@@ -20,7 +20,7 @@ import { idSchema, optionalIdSchema } from "@/lib/validation/documents";
 import { canDeleteDocument } from "@/lib/signing/state";
 import { IMAGE_URL_PATTERN, resolveSignedPdfPath, resolveUploadPath } from "@/lib/uploads";
 import { NOT_FOUND_ERROR } from "../_shared";
-import type { ActionResult } from "./_internal";
+import { assertStillDraft, mapDraftWriteError, type ActionResult } from "./_internal";
 
 /**
  * Creates a DRAFT quote and redirects straight into its builder — the
@@ -341,16 +341,23 @@ export async function setDocumentClient(
     resolvedContactId = primaryContact?.id ?? null;
   }
 
-  const updated = await db.document.updateMany({
-    where: { id: document.id, status: "DRAFT" },
-    data: { companyId: company.id, contactId: resolvedContactId },
-  });
-  if (updated.count !== 1) return { error: NOT_FOUND_ERROR };
-
   // The client decides the destination country and VAT ID the tax
   // suggestion reads (src/lib/documents/tax-rules.ts), so a new client can
-  // move the tax. Pre-tax totals are unaffected, so no cap can trip here.
-  await recalcDocument(document.id);
+  // move the tax. Assign and re-price in one transaction so a failed recalc
+  // never leaves the new client on a quote still carrying the old tax.
+  // Pre-tax totals are unaffected, so no cap can trip here.
+  try {
+    await db.$transaction(async (tx) => {
+      await assertStillDraft(tx, document.id);
+      await tx.document.update({
+        where: { id: document.id },
+        data: { companyId: company.id, contactId: resolvedContactId },
+      });
+      await recalcDocument(document.id, tx);
+    });
+  } catch (error) {
+    return mapDraftWriteError(error);
+  }
 
   revalidateDocument(document.id);
   return {};

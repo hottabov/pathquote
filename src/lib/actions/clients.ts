@@ -169,15 +169,31 @@ export async function updateCompany(companyId: string, formData: FormData): Prom
   });
 
   // Country, delivery country and VAT ID drive every open quote's suggested
-  // tax. FINAL quotes are frozen and skipped by the status filter; a draft
-  // with a Custom tax is recalculated but keeps its figures (tax.ts).
-  const drafts = await db.document.findMany({
-    where: { companyId, status: "DRAFT" },
-    select: { id: true },
-  });
-  for (const draft of drafts) {
-    await recalcDocument(draft.id);
-    revalidateDocument(draft.id);
+  // tax, so a change to any of them re-prices the company's open drafts.
+  // Nothing else on this form reaches the tax, and a recalc touches
+  // `Document.updatedAt` (which orders the quote list), so an edit that
+  // leaves all four alone must not recalc. FINAL quotes are frozen and a
+  // Custom-tax draft keeps its figures, so both are filtered out up front.
+  const norm = (value: string | null | undefined) => (value ?? "").trim();
+  const taxInputsChanged =
+    norm(existing.country) !== norm(parsed.data.country) ||
+    existing.deliverySameAsMain !== parsed.data.deliverySameAsMain ||
+    norm(existing.deliveryCountry) !== norm(parsed.data.deliveryCountry) ||
+    norm(existing.taxId) !== norm(parsed.data.taxId);
+  if (taxInputsChanged) {
+    const drafts = await db.document.findMany({
+      where: { companyId, status: "DRAFT", taxOverridden: false },
+      select: { id: true },
+    });
+    for (const draft of drafts) {
+      // One draft failing must not leave the rest on a stale tax.
+      try {
+        await recalcDocument(draft.id);
+        revalidateDocument(draft.id);
+      } catch (error) {
+        console.error(`Failed to re-price draft ${draft.id} after company ${companyId} changed`, error);
+      }
+    }
   }
 
   revalidateCompanyList();

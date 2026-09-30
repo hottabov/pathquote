@@ -42,6 +42,10 @@ const ALLOWLIST = new Map<string, string>([
     "getUserFootprint counts every company and document belonging to one user, across every owner, on purpose — it answers 'what does this person leave behind', and an owner-scoped count would answer it wrong. Its only caller is the ADMIN-only user editor, which is also the only screen allowed to see it.",
   ],
   [
+    "src/lib/actions/regions.ts",
+    "updateRegion re-prices every open draft in the region it just changed — a region's whole footprint, not one owner's rows, so scoping to the acting user would leave drafts on a stale tax. The action is behind requireAdmin(), and an admin is unscoped by definition.",
+  ],
+  [
     "src/lib/actions/signing-client.ts",
     "Unauthenticated client actions reached only via a signing token — there is no session to call documentWhereForUser with. Every db.document read/write here is instead re-scoped by loadLiveRequest, which re-resolves the token through getDocumentForSigning and resolveLinkState before any of it runs (see this file's own header comment). The token is the authorization boundary, not a User.",
   ],
