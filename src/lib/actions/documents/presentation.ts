@@ -3,12 +3,13 @@
 /**
  * How a draft presents itself: the image/price/notes display flags, the
  * record-keeping serial number, the per-quote validity window, and the
- * delivery terms. All of them are single-statement writes that fold their
+ * delivery & tax choice. All of them are single-statement writes that fold their
  * own `status: "DRAFT"` check into the `updateMany` (see the note in
- * _internal.ts) — the one exception is `setDeliveryTerms`, which moves the
- * tax and so takes the guarded transaction the pricing actions use.
+ * _internal.ts) — the exceptions are `setIncoterm` and `setDocumentTax`, which move the
+ * tax and so take the guarded transaction the pricing actions use.
  */
 
+import { Prisma } from "@prisma/client";
 import { revalidateDocument } from "@/lib/revalidate";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/authz";
@@ -16,8 +17,9 @@ import { documentWhereForUser } from "@/lib/scope";
 import { recalcAndEnforce } from "@/lib/documents/recalc";
 import { isHtmlContent, sanitizeRichText } from "@/lib/rich-text";
 import {
-  deliveryTermsSchema,
+  documentTaxSchema,
   idSchema,
+  incotermSchema,
   notesSchema,
   priceDisplaySchema,
   serialNumberSchema,
@@ -254,31 +256,22 @@ export async function setValidityDays(documentId: string, formData: FormData): P
   return {};
 }
 
-// --- delivery terms (Ex Works carries no GST) -------------------------------
+// --- delivery & tax -----------------------------------------------------------
 
 /**
- * Sets `Document.deliveryTerms` — DELIVERED (the default) or EX_WORKS, an
- * export sale collected at the factory door, which is not a domestic taxable
- * supply (the meeting question left unanswered: "What if there's no GST? If
- * it's Ex Works?"). Unlike the purely-display fields above (`setItemShowImage`/
- * `setPriceDisplay`/`setDocumentNotes`/`setValidityDays`), this one *does*
- * change what's owed — `recalcDocument` resolves an EX_WORKS document's
- * effective tax rate to zero (see its own doc comment) — so this follows the
- * same guarded-transaction + `recalcAndEnforce` pattern as every
- * money-affecting mutation in this directory, even though toggling terms alone
- * can never itself trip `negativeSubtotal` or either concession cap (both are
- * computed pre-tax) — same "no special-casing a 'safe' mutation" reasoning
- * `addItem`'s own comment gives. DRAFT-only and scoped like every other
- * document mutation here.
+ * Sets `Document.incoterm`. It moves the suggested tax (a domestic EXW is
+ * taxed, a foreign FOB is not — src/lib/documents/tax-rules.ts), so it takes
+ * the same guarded transaction + `recalcAndEnforce` as every money-affecting
+ * mutation here. DRAFT-only, scoped like every other document mutation.
  */
-export async function setDeliveryTerms(documentId: string, formData: FormData): Promise<ActionResult> {
+export async function setIncoterm(documentId: string, formData: FormData): Promise<ActionResult> {
   const session = await requireSession();
 
   const parsedDocumentId = idSchema.safeParse(documentId);
   if (!parsedDocumentId.success) return { error: NOT_FOUND_ERROR };
 
-  const parsedTerms = deliveryTermsSchema.safeParse(formData.get("deliveryTerms"));
-  if (!parsedTerms.success) return { error: flattenZodError(parsedTerms.error) };
+  const parsedIncoterm = incotermSchema.safeParse(formData.get("incoterm"));
+  if (!parsedIncoterm.success) return { error: flattenZodError(parsedIncoterm.error) };
 
   const document = await db.document.findFirst({
     where: { id: parsedDocumentId.data, status: "DRAFT", ...documentWhereForUser(session.user) },
@@ -289,7 +282,61 @@ export async function setDeliveryTerms(documentId: string, formData: FormData): 
   try {
     await db.$transaction(async (tx) => {
       await assertStillDraft(tx, document.id);
-      await tx.document.update({ where: { id: document.id }, data: { deliveryTerms: parsedTerms.data } });
+      await tx.document.update({ where: { id: document.id }, data: { incoterm: parsedIncoterm.data } });
+      concessionWarning = (await recalcAndEnforce(document.id, tx, session.user.role)).warning;
+    });
+  } catch (error) {
+    return mapDraftWriteError(error);
+  }
+
+  revalidateDocument(document.id);
+  return concessionWarning ? { warning: concessionWarning } : {};
+}
+
+/**
+ * Chooses the document's tax: AUTO hands it back to the suggestion (the
+ * next recalc writes the suggested figures), CUSTOM stores the
+ * salesperson's own name, rate and reason and marks them overridden so no
+ * recalc touches them (src/lib/documents/tax.ts). Free for anyone who may
+ * edit the draft; the reason is what makes an override visible (Vadym,
+ * 2026-09-30). A blank reason saves and blocks finalize instead.
+ */
+export async function setDocumentTax(documentId: string, formData: FormData): Promise<ActionResult> {
+  const session = await requireSession();
+
+  const parsedDocumentId = idSchema.safeParse(documentId);
+  if (!parsedDocumentId.success) return { error: NOT_FOUND_ERROR };
+
+  const parsed = documentTaxSchema.safeParse({
+    mode: formData.get("mode"),
+    taxName: formData.get("taxName") ?? undefined,
+    taxRate: formData.get("taxRate") ?? undefined,
+    taxNote: formData.get("taxNote") ?? undefined,
+  });
+  if (!parsed.success) return { error: flattenZodError(parsed.error) };
+  const input = parsed.data;
+
+  const document = await db.document.findFirst({
+    where: { id: parsedDocumentId.data, status: "DRAFT", ...documentWhereForUser(session.user) },
+  });
+  if (!document) return { error: NOT_FOUND_ERROR };
+
+  const data =
+    input.mode === "AUTO"
+      ? { taxOverridden: false, taxNote: null }
+      : {
+          taxOverridden: true,
+          taxTreatment: "CUSTOM" as const,
+          taxName: input.taxName,
+          taxRate: new Prisma.Decimal(input.taxRate),
+          taxNote: input.taxNote === "" ? null : input.taxNote,
+        };
+
+  let concessionWarning: string | undefined;
+  try {
+    await db.$transaction(async (tx) => {
+      await assertStillDraft(tx, document.id);
+      await tx.document.update({ where: { id: document.id }, data });
       concessionWarning = (await recalcAndEnforce(document.id, tx, session.user.role)).warning;
     });
   } catch (error) {

@@ -76,7 +76,7 @@ export async function setQuoteTerms(documentId: string, input: unknown): Promise
  * create the ones it does. Two statements means the `status: "DRAFT"` check
  * cannot ride along in a single `where` the way `setQuoteTerms` above manages
  * — hence the guarded transaction (`assertStillDraft` +
- * `mapDraftWriteError`), the same shape `setDeliveryTerms` and every
+ * `mapDraftWriteError`), the same shape `setIncoterm` and every
  * money-affecting mutation in this directory use. The guard is not
  * ceremonial: `finalizeDocument` committing between the pre-read and these
  * writes would otherwise change what an already-numbered quote prints.

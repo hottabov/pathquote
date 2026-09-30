@@ -152,17 +152,6 @@ export function exceedsPercentCeiling(mode: DiscountModeInput, value: DiscountVa
   return mode === "PERCENT" && value !== null && Number(value) > 100;
 }
 
-// --- delivery terms (Ex Works carries no GST) -------------------------------
-
-/** `setDeliveryTerms`'s input — DELIVERED (the domestic default) or
- * EX_WORKS (an export sale collected at the factory door, not a domestic
- * taxable supply — see the `DeliveryTerms` enum in schema.prisma). No
- * `null`/empty collapsing (unlike `discountValueSchema`): there is no "clear
- * it" state, only a choice between the two terms, mirroring
- * `discountModeSchema`'s shape one field over. */
-export const deliveryTermsSchema = z.enum(["DELIVERED", "EX_WORKS"]);
-export type DeliveryTermsInput = z.infer<typeof deliveryTermsSchema>;
-
 // --- delivery & tax ----------------------------------------------------------
 
 /** `setIncoterm`'s input — the four Incoterms Pathfinder actually uses

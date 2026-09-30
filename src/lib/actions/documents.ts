@@ -46,6 +46,7 @@ export {
   setDocumentNotes,
   setDocumentHeroImage,
   setValidityDays,
-  setDeliveryTerms,
+  setIncoterm,
+  setDocumentTax,
 } from "./documents/presentation";
 export { setQuoteTerms, setDocumentExclusions } from "./documents/terms";
