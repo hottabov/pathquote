@@ -270,7 +270,7 @@ export const SHEET_CSS = `
     font-size: 10px;
     color: #b9c2e8;
   }
-  /* The expiry sits on the dark banner beside the muted "(incl. GST)" note,
+  /* The expiry sits on the dark banner beside the muted incoterm-and-tax note,
      but is not a footnote — it carries the deadline, so it gets full white
      and its own weight. Pushed to the end of the flex row so it reads as a
      statement of its own rather than a continuation of the tax note. */
@@ -823,6 +823,12 @@ export const SHEET_CSS = `
     font-size: 14px;
     font-weight: 700;
     color: #243478;
+  }
+  .pq-totals-note {
+    margin: 6px 0 0;
+    font-size: 9px;
+    line-height: 1.35;
+    color: #555555;
   }
   .pq-footer {
     margin-top: 28px;

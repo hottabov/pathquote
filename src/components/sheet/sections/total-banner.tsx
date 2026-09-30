@@ -1,4 +1,5 @@
 import { formatMoney } from "@/lib/format";
+import { taxBannerNote } from "@/lib/documents/tax-print";
 import type { QuotationData } from "@/lib/quotation-data";
 
 /**
@@ -21,10 +22,8 @@ export function TotalBanner({
         {formatMoney(totals.total, totals.currency, totals.currencySymbol)} {totals.currency}
       </span>
       <span className="pq-total-banner-note">
-        {/* The delivery term, plainly (owner: "just Ex Works or Delivered"). */}
-        {totals.deliveryTerms === "EX_WORKS"
-          ? "(Ex Works)"
-          : `(Delivered, incl. ${totals.taxName} ${totals.taxRate}%)`}
+        {/* Incoterm and tax in one line (src/lib/documents/tax-print.ts). */}
+        {taxBannerNote(totals)}
       </span>
       {/* Repeats the header's expiry right next to the price it applies
           to (owner: "put the valid-to in this total investment line, so

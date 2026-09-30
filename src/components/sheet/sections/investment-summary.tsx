@@ -1,5 +1,6 @@
 import { formatMoney, isNegativeAmount } from "@/lib/format";
 import type { QuotationData } from "@/lib/quotation-data";
+import { printsTaxRow, reverseChargeNote, taxRowLabel } from "@/lib/documents/tax-print";
 import { ItemBreakdownRows } from "@/components/sheet/item-breakdown";
 
 /**
@@ -135,24 +136,21 @@ export function InvestmentSummary({
             <span>-{formatMoney(totals.discountAmount, totals.currency, totals.currencySymbol)}</span>
           </div>
         ) : null}
-        {totals.deliveryTerms === "EX_WORKS" ? (
-          // No tax line at all: a `{taxName} 0%` row would read as a
-          // mistake, and the banner already says the quote is Ex Works.
-          null
-        ) : (
+        {/* A 0% tax prints no row: "GST 0%" reads as a mistake, and the
+            banner already says why (export, reverse charge, exempt). */}
+        {printsTaxRow(totals) ? (
           <div className="pq-totals-row">
-            <span>
-              {totals.taxName} {totals.taxRate}%
-            </span>
+            <span>{taxRowLabel(totals)}</span>
             <span>{formatMoney(totals.taxAmount, totals.currency, totals.currencySymbol)}</span>
           </div>
-        )}
+        ) : null}
         <div className="pq-totals-row pq-totals-final">
           <span>TOTAL</span>
           <span>
             {formatMoney(totals.total, totals.currency, totals.currencySymbol)} {totals.currency}
           </span>
         </div>
+        {reverseChargeNote(totals) ? <p className="pq-totals-note">{reverseChargeNote(totals)}</p> : null}
       </div>
     </section>
   );

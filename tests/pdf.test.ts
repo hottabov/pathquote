@@ -82,7 +82,9 @@ function baseQuotationData(overrides: Partial<QuotationData> = {}): QuotationDat
       taxRate: "10",
       taxAmount: "100.00",
       total: "1100.00",
-      deliveryTerms: "DELIVERED",
+      incoterm: "DAP",
+      taxTreatment: "STANDARD",
+      customerTaxId: null,
     },
     documents: [],
     showSignature: true,
@@ -830,38 +832,66 @@ describe("renderQuotationHtml — Notes section placement", () => {
   });
 });
 
-describe("renderQuotationHtml — Ex Works delivery terms", () => {
-  it("prints the terms in the total-investment banner and the totals block instead of a GST rate, and never a '0%' tax line", async () => {
-    const html = await renderQuotationHtml(
-      baseQuotationData({
-        totals: {
-          currency: "AUD",
-          currencySymbol: null,
-          subtotal: "1000.00",
-          discountMode: "PERCENT",
-          discountValue: null,
-          discountAmount: "0.00",
-          taxName: "GST",
-          taxRate: "10",
-          // Already zeroed by recalcDocument (src/lib/actions/documents.ts)
-          // for an EX_WORKS document.
-          taxAmount: "0.00",
-          total: "1000.00",
-          deliveryTerms: "EX_WORKS",
-        },
-      })
-    );
-    expect(html).toContain("(Ex Works)");
-    expect(html).not.toContain("applicable");
-    expect(html).not.toContain("GST 0%");
-    expect(html).not.toContain("GST 10%");
-    expect(html).not.toContain("(incl. GST 10%)");
+describe("renderQuotationHtml — delivery & tax wording", () => {
+  const totalsWith = (over: Record<string, unknown>) => ({
+    currency: "AUD",
+    currencySymbol: null,
+    subtotal: "1000.00",
+    discountMode: "PERCENT" as const,
+    discountValue: null,
+    discountAmount: "0.00",
+    taxName: "GST",
+    taxRate: "10",
+    taxAmount: "100.00",
+    total: "1100.00",
+    incoterm: "DAP" as const,
+    taxTreatment: "STANDARD" as const,
+    customerTaxId: null,
+    ...over,
   });
 
-  it("still prints the ordinary tax-rate line when DELIVERED — unchanged from before this feature", async () => {
-    const html = await renderQuotationHtml(baseQuotationData());
-    expect(html).toContain("incl. GST 10%");
-    expect(html).not.toContain("Ex Works");
+  it("prints the incoterm and the charged tax on a standard quote", async () => {
+    const html = await renderQuotationHtml(baseQuotationData({ totals: totalsWith({}) }));
+    expect(html).toContain("(DAP, incl. GST 10%)");
+    expect(html).toContain("GST 10%");
+  });
+
+  it("prints an export with no tax row and no 'GST 0%'", async () => {
+    const html = await renderQuotationHtml(
+      baseQuotationData({
+        totals: totalsWith({ incoterm: "EXW", taxTreatment: "EXPORT", taxRate: "0.00", taxAmount: "0.00", total: "1000.00" }),
+      })
+    );
+    expect(html).toContain("(EXW, export — no GST)");
+    expect(html).not.toContain("GST 0%");
+    expect(html).not.toContain("incl. GST");
+  });
+
+  it("prints the reverse-charge line with the client's VAT ID", async () => {
+    const html = await renderQuotationHtml(
+      baseQuotationData({
+        totals: totalsWith({
+          taxName: "VAT",
+          taxTreatment: "REVERSE_CHARGE",
+          taxRate: "0.00",
+          taxAmount: "0.00",
+          total: "1000.00",
+          customerTaxId: "DE123456789",
+        }),
+      })
+    );
+    expect(html).toContain("(DAP, VAT reverse charge)");
+    expect(html).toContain("Reverse charge: VAT to be accounted for by the recipient. Customer VAT ID: DE123456789.");
+  });
+
+  it("prints a custom tax by its own name", async () => {
+    const html = await renderQuotationHtml(
+      baseQuotationData({
+        totals: totalsWith({ incoterm: "DDP", taxTreatment: "CUSTOM", taxName: "Sales Tax (Texas)", taxRate: "8.25", taxAmount: "82.50", total: "1082.50" }),
+      })
+    );
+    expect(html).toContain("(DDP, incl. Sales Tax (Texas) 8.25%)");
+    expect(html).toContain("Sales Tax (Texas) 8.25%");
   });
 });
 
@@ -884,7 +914,9 @@ describe("renderQuotationHtml — an explicit zero discount must not print", () 
           taxRate: "10",
           taxAmount: "100.00",
           total: "1100.00",
-          deliveryTerms: "DELIVERED",
+          incoterm: "DAP",
+          taxTreatment: "STANDARD",
+          customerTaxId: null,
         },
       })
     );
@@ -904,7 +936,9 @@ describe("renderQuotationHtml — an explicit zero discount must not print", () 
           taxRate: "10",
           taxAmount: "90.00",
           total: "990.00",
-          deliveryTerms: "DELIVERED",
+          incoterm: "DAP",
+          taxTreatment: "STANDARD",
+          customerTaxId: null,
         },
       })
     );
@@ -1006,7 +1040,9 @@ describe("renderQuotationHtml — commission never appears in the rendered quota
           taxRate: "0",
           taxAmount: "0.00",
           total: "49200.00",
-          deliveryTerms: "DELIVERED",
+          incoterm: "DAP",
+          taxTreatment: "STANDARD",
+          customerTaxId: null,
         },
       })
     );
