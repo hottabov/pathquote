@@ -200,9 +200,10 @@ One Prisma migration, no row deletions:
 3. Add `taxTreatment`, `taxOverridden`, `taxNote`. Former `EX_WORKS` rows get
    `taxTreatment = EXPORT, taxRate = 0`. Their `taxAmount` is already 0, so
    totals of finalized quotes do not change. All others get STANDARD.
-4. Rewrite `deliveryTerms` inside stored revision-snapshot JSON the same way
-   (`DELIVERED→DAP`, `EX_WORKS→EXW`, key renamed to `incoterm`), so old
-   revisions read without legacy code paths.
+4. Stored revision snapshots are left untouched. `REVISION_SNAPSHOT_VERSION`
+   becomes 2 (`incoterm` + `taxTreatment` replace `deliveryTerms`). The first
+   re-finalize of a quote finalized before this deploy mints one extra `-R`
+   revision even if nothing changed. Accepted: only a handful of quotes exist.
 5. Drafts pick up the new rules on their next recalc. Before deploying, list
    the drafts whose totals will change (e.g. Australian EXW drafts) and show
    them to Vadym.
