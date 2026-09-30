@@ -22,6 +22,11 @@ type TotalsProps = {
    * configured, in which case this renders nothing at all — never a
    * misleading $0.00. */
   commission?: { ratePct: number; amount: string } | null;
+  /** A salesperson's custom tax: shown as a "custom" badge beside the tax
+   * line, with the reason as its tooltip. Only the people who can open the
+   * builder see it (author, Regional manager, Admin, Developer). */
+  taxOverridden?: boolean;
+  taxNote?: string | null;
 };
 
 /**
@@ -47,6 +52,8 @@ export function DocumentTotals({
   currency,
   currencySymbol,
   commission,
+  taxOverridden,
+  taxNote,
 }: TotalsProps) {
   return (
     <dl className="flex flex-col gap-1.5 text-sm">
@@ -63,6 +70,14 @@ export function DocumentTotals({
       <div className="flex justify-between">
         <dt className="text-slate-500">
           {taxName} ({taxRate}%)
+          {taxOverridden ? (
+            <span
+              title={taxNote ?? "No reason given yet"}
+              className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-800"
+            >
+              custom
+            </span>
+          ) : null}
         </dt>
         <dd className="tabular-nums text-slate-700">{formatMoney(taxAmount, currency, currencySymbol)}</dd>
       </div>

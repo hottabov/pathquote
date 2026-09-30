@@ -48,7 +48,7 @@ import { PriceDisplayToggles } from "@/components/builder/price-display-toggles"
 import { NotesSection } from "@/components/builder/notes-section";
 import { TermsDocumentsPanel } from "@/components/builder/terms-documents-panel";
 import { ValidityDaysField } from "@/components/builder/validity-days-field";
-import { DeliveryTermsField } from "@/components/builder/delivery-terms-field";
+import { DeliveryTaxField } from "@/components/builder/delivery-tax-field";
 import { ProductionFormsSection } from "@/components/documents/production-forms-section";
 import { DocumentTotals } from "@/components/builder/sticky-footer";
 import { FinalizeButton } from "@/components/builder/finalize-button";
@@ -291,6 +291,7 @@ export default async function DocumentBuilderPage({
         .filter((item) => item.kind === "SOFTWARE")
         .map((item) => ({ specs: readProductSpecs(item.specs) }))
     ),
+    taxBlocker: document.taxBlocker,
   });
 
   // Revision + send history: the History tab's content, and its count in
@@ -441,14 +442,22 @@ export default async function DocumentBuilderPage({
               them and has moved to Build: a discount is money on the quote,
               and it belongs beside the machines it comes off. */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {/* An export sale collected at the factory door is not a domestic
-                taxable supply (the meeting question left unanswered: "What if
-                there's no GST? If it's Ex Works?") — this is what lets a quote
-                show no tax without hand-editing the tax rate. */}
-            <SectionCard title="Delivery terms" icon={<Truck className="size-5" />}>
-              <DeliveryTermsField
+            {/* Incoterm + tax for this quote. The app suggests the tax from
+                the seller's and the client's countries; the salesperson may
+                replace it with a Custom tax and a reason (Vadym, 2026-09-30). */}
+            <SectionCard title="Delivery & tax" icon={<Truck className="size-5" />}>
+              <DeliveryTaxField
                 documentId={document.id}
-                deliveryTerms={document.deliveryTerms}
+                incoterm={document.incoterm}
+                taxTreatment={document.taxTreatment}
+                taxName={document.taxName}
+                taxRate={document.taxRate}
+                taxOverridden={document.taxOverridden}
+                taxNote={document.taxNote}
+                suggestion={document.taxSuggestion}
+                blocker={document.taxBlocker}
+                sellerCountry={document.sellerCountry}
+                destinationCountry={document.destinationCountry}
                 readOnly={!isDraft}
               />
             </SectionCard>
@@ -589,6 +598,8 @@ export default async function DocumentBuilderPage({
                     currency={document.currency}
                     currencySymbol={document.currencySymbol}
                     commission={document.commission}
+                    taxOverridden={document.taxOverridden}
+                    taxNote={document.taxNote}
                   />
                 </div>
                 <div className="flex flex-col gap-2 border-t border-divider pt-4">

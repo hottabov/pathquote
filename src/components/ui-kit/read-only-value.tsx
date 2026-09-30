@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
  *
  * Six components each invented their own shape for this, so a read-only quote
  * looked like six documents stapled together: PriceDisplayToggles collapsed to
- * one sentence, DeliveryTermsField to "Delivered.", ValidityDaysField to
+ * one sentence, DeliveryTaxField to its one-line summary, ValidityDaysField to
  * "Valid for N days.", NotesSection to prose or "No notes.",
  * TermsDocumentsPanel to a <dl> plus a bullet list, and ClientSection to a
  * bare line of text.
