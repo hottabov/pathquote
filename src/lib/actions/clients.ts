@@ -1,8 +1,9 @@
 "use server";
 
-import { revalidateCompany, revalidateCompanyList } from "@/lib/revalidate";
+import { revalidateCompany, revalidateCompanyList, revalidateDocument } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import { recalcDocument } from "@/lib/documents/recalc";
 import { requireSession } from "@/lib/authz";
 import { companyWhereForUser } from "@/lib/scope";
 import { companySchema, contactSchema } from "@/lib/validation/clients";
@@ -166,6 +167,18 @@ export async function updateCompany(companyId: string, formData: FormData): Prom
       deliveryNotes: parsed.data.deliveryNotes ?? null,
     },
   });
+
+  // Country, delivery country and VAT ID drive every open quote's suggested
+  // tax. FINAL quotes are frozen and skipped by the status filter; a draft
+  // with a Custom tax is recalculated but keeps its figures (tax.ts).
+  const drafts = await db.document.findMany({
+    where: { companyId, status: "DRAFT" },
+    select: { id: true },
+  });
+  for (const draft of drafts) {
+    await recalcDocument(draft.id);
+    revalidateDocument(draft.id);
+  }
 
   revalidateCompanyList();
   revalidateCompany(companyId);

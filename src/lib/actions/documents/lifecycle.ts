@@ -3,14 +3,16 @@
 /**
  * A document's existence and who it is for: creating a draft, deleting one
  * (or, for an ADMIN, a finalized document), and assigning the client. None
- * of these touches money, so none of them recalculates — everything that
- * does lives in the sibling modules.
+ * of these touches pre-tax money, so only assigning the client recalculates
+ * (the client's countries move the tax); everything else that does lives in
+ * the sibling modules.
  */
 
 import { unlink } from "fs/promises";
 import { revalidateDocument, revalidateDocumentList } from "@/lib/revalidate";
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import { recalcDocument } from "@/lib/documents/recalc";
 import { requireRegion, requireSession } from "@/lib/authz";
 import { isAdminRole } from "@/lib/roles";
 import { companyWhereForUser, documentWhereForUser, REGION_REQUIRED_ERROR } from "@/lib/scope";
@@ -344,6 +346,11 @@ export async function setDocumentClient(
     data: { companyId: company.id, contactId: resolvedContactId },
   });
   if (updated.count !== 1) return { error: NOT_FOUND_ERROR };
+
+  // The client decides the destination country and VAT ID the tax
+  // suggestion reads (src/lib/documents/tax-rules.ts), so a new client can
+  // move the tax. Pre-tax totals are unaffected, so no cap can trip here.
+  await recalcDocument(document.id);
 
   revalidateDocument(document.id);
   return {};
