@@ -1727,7 +1727,7 @@
     {
       "code": "MTS",
       "name": "Machine Transfer System",
-      "description": "Machine Transfer System - Not available for Mx390. For more than 9 mtrs of travel see additional price.",
+      "description": "Machine Transfer System - Not available for Mx390. For more than 6 mtrs of travel see additional price.",
       "price": 15000,
       "needsReview": false,
       "compatibleSeries": [
@@ -2112,13 +2112,12 @@
       "description": "EasyLoader installation (Drive Module + Additional Modules) with Cutter installation.",
       "price": 0,
       "needsReview": true,
-      "compatibleSeries": [],
-      "role": "INSTALL",
+      "compatibleSeries": [
+        "EL"
+      ],
+      "role": "EL_INSTALL",
       "parentProductCode": null,
-      "unitLengthM": null,
-      "compatibleProducts": [
-        "SERVICE"
-      ]
+      "unitLengthM": null
     },
     {
       "code": "SVC-FP-INSTALL",

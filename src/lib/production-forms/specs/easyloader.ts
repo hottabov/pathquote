@@ -42,6 +42,9 @@ export const easyLoaderSpec: HtmlFormSpec = {
 
   covers: ["EL_ROLL_FEED", "EL_ROLL_HOLDER", "CRATE"],
   // The modules have no box of their own: the section rows and the total
-  // table length are how the form states them.
-  coversOptions: [...EL_MODULE_ROLE_LIST],
+  // table length are how the form states them. The installation
+  // (el-install.ts) is a service, not something the workshop builds, so it
+  // stays off the Additional items sheet -- as it did while it was sold on
+  // the Service item, which has no form at all.
+  coversOptions: [...EL_MODULE_ROLE_LIST, "EL_INSTALL"],
 };

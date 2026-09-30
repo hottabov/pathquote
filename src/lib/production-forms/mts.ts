@@ -3,7 +3,7 @@
  * what it costs.
  *
  * An MTS is a rail that carries a cutter between tables. The `MTS` option is
- * the system, and its price covers a travel distance of up to nine metres.
+ * the system, and its price covers a travel distance of up to six metres.
  * Past that the extra rail is sold by the metre as `MTS-M` (role
  * `MTS_TRAVEL`, `unitLengthM` 1).
  *
@@ -40,7 +40,7 @@ export const MTS_METRES_FIELD = {
 } as const;
 
 /** Travel distance, in metres, the MTS option's own price already covers. */
-export const MTS_INCLUDED_M = 9;
+export const MTS_INCLUDED_M = 6;
 
 /**
  * How many `MTS-M` metres an MTS run of `metres` needs on top of the system
@@ -49,7 +49,7 @@ export const MTS_INCLUDED_M = 9;
  * rail.
  *
  * Rounded up: `MTS-M` is sold per whole metre (`unitLengthM` 1), so a 12.5
- * metre run buys four extra metres, not three and a half.
+ * metre run buys seven extra metres, not six and a half.
  */
 export function mtsTravelMetres(metres: unknown): number {
   const length = typeof metres === "number" ? metres : Number(metres);

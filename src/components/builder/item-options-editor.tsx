@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState, fieldInputClass } from "@/components/ui-kit";
 import { formatMoney } from "@/lib/format";
 import { formatMetres } from "@/lib/option-length";
+import { formatInstallHours } from "@/lib/production-forms/el-install";
 import {
   MTS_INCLUDED_M,
   MTS_METRES_FIELD,
@@ -213,7 +214,9 @@ function buildSelections(
         // extra metres are their own line. The server forces this too; it is
         // here so the number sent matches the row on screen, which offers no
         // quantity at all.
-        qty: option.role === "MTS" ? 1 : state.qty,
+        // The EasyLoader's installation is one line priced by the hour from
+        // the table (el-install.ts); the server forces this too.
+        qty: option.role === "MTS" || option.role === "EL_INSTALL" ? 1 : state.qty,
         attributes:
           metres === undefined
             ? undefined
@@ -234,6 +237,7 @@ export function ItemOptionsEditor({
   showOptionIcons = true,
   readOnly = false,
   lockedRoles,
+  installHours,
 }: {
   itemId: string;
   /** Titles the sheet. Once the options live in a panel of their own rather
@@ -254,6 +258,10 @@ export function ItemOptionsEditor({
    * are inert -- and `save` re-submits them untouched, so opening this panel
    * and saving can never drop them. */
   lockedRoles?: ReadonlySet<OptionRole>;
+  /** Hours to install this EasyLoader's table as drawn (see
+   * `easyLoaderInstallHours`). Set for an EasyLoader only; the `EL_INSTALL`
+   * row shows it in place of a quantity, since the price follows from it. */
+  installHours?: number;
   /** "ui.showOptionIcons" app setting (see `getShowOptionIcons`,
    * src/lib/queries/settings.ts), read server-side and threaded down through
    * ItemsList/ItemsSection. Gates only the small per-option icon in this
@@ -571,6 +579,7 @@ export function ItemOptionsEditor({
                   const disabledReason = isOptionDisabled(option.price, conflictingWith);
                   const priced = disabledReason === null || disabledReason.type !== "unpriced";
                   const isMts = option.role === "MTS";
+                  const isInstall = option.role === "EL_INSTALL";
                   const unitLength = option.unitLengthM;
 
                   return (
@@ -611,6 +620,7 @@ export function ItemOptionsEditor({
                           ) : priced ? (
                             <span className="text-xs text-slate-500">
                               {formatMoney(option.price!.amount, currency, currencySymbol)}
+                              {isInstall ? " / hr" : null}
                             </span>
                           ) : (
                             <span className="mt-0.5 w-fit rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
@@ -633,7 +643,7 @@ export function ItemOptionsEditor({
                       {/* An MTS is one system of whatever length, so it has
                           no quantity worth showing: what the salesperson
                           sets is how far it travels, and the price follows
-                          from that (MTS up to 9 m, MTS-M per metre after).
+                          from that (MTS up to 6 m, MTS-M per metre after).
                           A "Qty" stepper beside a "Travel (m)" box invited
                           exactly the wrong number to be typed. */}
                       {checked && !locked && isMts ? (
@@ -646,7 +656,22 @@ export function ItemOptionsEditor({
                         </div>
                       ) : null}
 
-                      {checked && !locked && !isMts ? (
+                      {/* The EasyLoader's installation: ticked, never
+                          counted. Its price is the hours the table takes
+                          (el-install.ts) at the rate above. */}
+                      {checked && !locked && isInstall ? (
+                        <div className="mt-2 pl-[1.875rem] text-xs text-slate-500 tabular-nums">
+                          {installHours === undefined
+                            ? "Priced from the EasyLoader table layout"
+                            : `${formatInstallHours(installHours)} × ${formatMoney(option.price!.amount, currency, currencySymbol)} = ${formatMoney(
+                                (Number(option.price!.amount) * installHours).toFixed(2),
+                                currency,
+                                currencySymbol
+                              )} — calculated from the table layout`}
+                        </div>
+                      ) : null}
+
+                      {checked && !locked && !isMts && !isInstall ? (
                         <div className="mt-2 flex flex-wrap items-center gap-3 pl-[1.875rem]">
                           <div className="flex items-center gap-1.5">
                             <span className="text-xs text-slate-500">Qty</span>

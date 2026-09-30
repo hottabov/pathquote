@@ -1582,7 +1582,7 @@
       "action": "keep",
       "code": "MTS",
       "name": "Machine Transfer System",
-      "description": "Machine Transfer System - Not available for Mx390. For more than 9 mtrs of travel see additional price.",
+      "description": "Machine Transfer System - Not available for Mx390. For more than 6 mtrs of travel see additional price.",
       "prices": {
         "AU": 15000.0,
         "US": 10446.43
@@ -3328,11 +3328,11 @@
         "AU": 0.0
       },
       "noCommission": false,
-      "compatSeries": [],
-      "compatProducts": [
-        "SERVICE"
+      "compatSeries": [
+        "EL"
       ],
-      "role": "INSTALL",
+      "compatProducts": [],
+      "role": "EL_INSTALL",
       "contentBlockKey": null
     },
     {

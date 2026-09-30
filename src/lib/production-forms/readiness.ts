@@ -16,7 +16,7 @@ import { missingRequirements, resolveForm } from "./resolve";
  * - the form's `requires` keys (`missingRequirements`), e.g. knife size, or
  *   drills ticked with no detail;
  * - an MTS with no travel distance. The distance decides both the price
- *   (MTS-M past nine metres) and what the workshop builds, so an MTS
+ *   (MTS-M past six metres) and what the workshop builds, so an MTS
  *   without one is not an answer.
  */
 

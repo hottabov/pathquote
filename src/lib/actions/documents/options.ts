@@ -26,7 +26,9 @@ import {
   deriveEasyLoaderOptions,
   EL_MODULE_ROLE_LIST,
   isEasyLoaderModuleRole,
+  type Section,
 } from "@/lib/production-forms/table-sections";
+import { easyLoaderInstallHours } from "@/lib/production-forms/el-install";
 import { consumableChoice, consumableRequiredMessage, type ConsumableLink } from "@/lib/consumables";
 import { MTS_METRES_REQUIRED, mtsMetresValid, normaliseMtsSelections } from "@/lib/production-forms/mts";
 import { idSchema, optionSelectionSchema, type OptionSelectionInput } from "@/lib/validation/documents";
@@ -161,7 +163,7 @@ async function withDerivedEasyLoaderModules(
  * own length calls for.
  *
  * Two rules, and they are the same rule from either end: per-metre rail is
- * never picked by hand, and an MTS longer than the nine metres its price
+ * never picked by hand, and an MTS longer than the six metres its price
  * covers always bills for the rest. So every `MTS_TRAVEL` selection is
  * dropped on the way in, and one is added back -- with `MTS`'s
  * `attributes.metres` deciding the quantity -- only when there is an `MTS`
@@ -229,7 +231,16 @@ async function writeItemOptions(
   user: ScopeUser,
   itemId: string,
   selections: OptionSelectionInput[],
-  alsoWrite?: (tx: Prisma.TransactionClient) => Promise<void>
+  {
+    alsoWrite,
+    layout,
+  }: {
+    alsoWrite?: (tx: Prisma.TransactionClient) => Promise<void>;
+    /** The EasyLoader table the `EL_INSTALL` line is priced from, when the
+     * caller is about to store a new one (`setEasyLoaderLayout`) and the
+     * item's own `productionSpec` is therefore not yet the right answer. */
+    layout?: Section[];
+  } = {}
 ): Promise<ActionResult> {
   const parsedItemId = idSchema.safeParse(itemId);
   if (!parsedItemId.success) return { error: NOT_FOUND_ERROR };
@@ -346,6 +357,23 @@ async function writeItemOptions(
     return { error: `${a} conflicts with ${b} — remove one before saving` };
   }
 
+  // The EasyLoader's installation is priced from its own table: the option's
+  // regional price is the hourly rate, the hours come from the modules
+  // (src/lib/production-forms/el-install.ts). Always one line of it.
+  const installSelected = options.some((option) => option.role === "EL_INSTALL");
+  let installHours = 0;
+  if (installSelected) {
+    const sections =
+      layout ??
+      (item.product.form === "EASYLOADER"
+        ? easyLoaderSpecSchema.safeParse(item.productionSpec ?? {}).data?.sections
+        : undefined);
+    if (sections === undefined) {
+      return { error: "EasyLoader installation is priced from the table layout — draw the table first" };
+    }
+    installHours = easyLoaderInstallHours(sections);
+  }
+
   // Every tool that takes a consumable goes on the quote with exactly one
   // (src/lib/consumables.ts). Resolved here, after every check on the tools
   // themselves, so the manager is told about a missing blade only once the
@@ -396,6 +424,10 @@ async function writeItemOptions(
       for (const [index, selection] of parsedSelections.data.entries()) {
         const option = optionById.get(selection.optionId)!;
         const price = option.prices[0]!;
+        const isInstall = option.role === "EL_INSTALL";
+        // Hours x the hourly rate, to the cent. A layout redrawn or an
+        // options save re-derives it, like every other derived line here.
+        const amount = isInstall ? price.amount.mul(installHours).toDecimalPlaces(2) : price.amount;
         const lineId = randomUUID();
         data.push({
           id: lineId,
@@ -406,14 +438,14 @@ async function writeItemOptions(
           code: option.code,
           name: option.name,
           description: option.shortDescription,
-          qty: selection.qty,
-          unitPrice: price.amount,
+          qty: isInstall ? 1 : selection.qty,
+          unitPrice: amount,
           // Snapshot the catalogue price too — see setItemUnitPrice's
           // comment. A freshly (re)selected option always starts equal to
           // its list price; any prior manual edit to this option line is
           // gone anyway once selections are resaved (this whole-set
           // replace deletes and recreates every OPTION line).
-          listPrice: price.amount,
+          listPrice: amount,
           attributes: selection.attributes as Prisma.InputJsonValue | undefined,
           sortOrder: data.length,
         });
@@ -590,12 +622,14 @@ export async function setMachineVoltage(itemId: string, voltage: string): Promis
   const transformerIds = new Set(transformers.map((option) => option.id));
   const kept = selectionsFromItemLines(item.lines, (optionId) => transformerIds.has(optionId));
 
-  return writeItemOptions(session.user, item.id, [...kept, ...derived.selections], async (tx) => {
-    const written = await tx.documentItem.updateMany({
-      where: { id: item.id, document: { status: "DRAFT" } },
-      data: { productionSpec: spec.data as object },
-    });
-    if (written.count !== 1) abortDraftWrite();
+  return writeItemOptions(session.user, item.id, [...kept, ...derived.selections], {
+    alsoWrite: async (tx) => {
+      const written = await tx.documentItem.updateMany({
+        where: { id: item.id, document: { status: "DRAFT" } },
+        data: { productionSpec: spec.data as object },
+      });
+      if (written.count !== 1) abortDraftWrite();
+    },
   });
 }
 
@@ -706,16 +740,21 @@ export async function setEasyLoaderLayout(itemId: string, spec: unknown): Promis
   // used to leave priced option lines standing against the previous layout,
   // so the quote charged for one table and the builder drew another, with
   // nothing on either side to reveal the mismatch.
-  const written = await writeItemOptions(session.user, item.id, [...kept, ...derivedSelections], async (tx) => {
-    const specWritten = await tx.documentItem.updateMany({
-      where: { id: item.id, document: { status: "DRAFT" } },
-      data: { productionSpec: parsed.data as object },
-    });
-    // `assertStillDraft` already holds the document row by now, so a miss
-    // here means the item itself is gone -- the same "not found" the
-    // caller's own pre-read would have given, but it has to be raised rather
-    // than returned to take the option lines down with it.
-    if (specWritten.count !== 1) abortDraftWrite();
+  // The installation line, if ticked, is repriced from this new layout
+  // rather than the stored one it is about to replace.
+  const written = await writeItemOptions(session.user, item.id, [...kept, ...derivedSelections], {
+    layout: parsed.data.sections,
+    alsoWrite: async (tx) => {
+      const specWritten = await tx.documentItem.updateMany({
+        where: { id: item.id, document: { status: "DRAFT" } },
+        data: { productionSpec: parsed.data as object },
+      });
+      // `assertStillDraft` already holds the document row by now, so a miss
+      // here means the item itself is gone -- the same "not found" the
+      // caller's own pre-read would have given, but it has to be raised rather
+      // than returned to take the option lines down with it.
+      if (specWritten.count !== 1) abortDraftWrite();
+    },
   });
 
   // `writeItemOptions` has already revalidated on success; on failure there

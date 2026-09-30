@@ -179,6 +179,7 @@ export const OPTION_ROLES = [
   "TPL",
   "INSTALL",
   "TRAINING",
+  "EL_INSTALL",
   "SOFTWARE",
   "PTW_I",
   "PRA",

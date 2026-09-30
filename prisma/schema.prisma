@@ -196,6 +196,9 @@ enum OptionRole {
   // Services sold as option lines
   INSTALL
   TRAINING
+  // EasyLoader installation, priced per hour from the table's modules
+  // (src/lib/production-forms/el-install.ts)
+  EL_INSTALL
   // Software mistakenly sold as an option (PTW, PRA-L) -- retired in
   // catalogue v2, role kept so the rows can be identified until then
   SOFTWARE

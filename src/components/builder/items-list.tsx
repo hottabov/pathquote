@@ -23,6 +23,8 @@ import { cn } from "@/lib/utils";
 import { formHasScreenSide } from "@/lib/production-forms/resolve";
 import { itemMissing } from "@/lib/production-forms/readiness";
 import { EL_MODULE_ROLES } from "@/lib/production-forms/table-sections";
+import { easyLoaderInstallHours } from "@/lib/production-forms/el-install";
+import { easyLoaderSpecSchema } from "@/lib/validation/production-spec";
 import type { OptionRole } from "@prisma/client";
 import { readProductSpecs } from "@/lib/validation/product-specs";
 import { reorderItems, setItemSerialNumber } from "@/lib/actions/documents";
@@ -277,6 +279,13 @@ export function ItemsList({
                 showOptionIcons={showOptionIcons}
                 readOnly={readOnly}
                 lockedRoles={isEasyLoader ? EASYLOADER_LOCKED_ROLES : DERIVED_ROLES}
+                installHours={
+                  isEasyLoader
+                    ? easyLoaderInstallHours(
+                        easyLoaderSpecSchema.safeParse(item.productionSpec ?? {}).data?.sections ?? []
+                      )
+                    : undefined
+                }
               />
             </div>
           ),

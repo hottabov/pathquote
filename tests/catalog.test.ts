@@ -286,7 +286,7 @@ describe("catalog.json: options", () => {
   });
 
   it("service options are scoped to the SERVICE product and carry an INSTALL/TRAINING role", () => {
-    const svc = options.filter((o) => o.code.startsWith("SVC-"));
+    const svc = options.filter((o) => o.code.startsWith("SVC-") && o.role !== "EL_INSTALL");
     expect(svc.length).toBeGreaterThan(0);
     for (const o of svc) {
       expect(o.compatibleProducts, o.code).toEqual(["SERVICE"]);
@@ -295,7 +295,16 @@ describe("catalog.json: options", () => {
     expect(svc.map((o) => o.code)).toEqual(expect.arrayContaining(["SVC-L-INSTALL-S", "SVC-L-INSTALL-L", "SVC-EF-INSTALL"]));
   });
 
-  it("JTP is the one JetPen", () => {
+  it("the EasyLoader installation is one option, fitted to every EasyLoader", () => {
+    // Sold on the EasyLoader item and priced per hour from its table
+    // (src/lib/production-forms/el-install.ts), so not a Service option.
+    const install = options.filter((o) => o.role === "EL_INSTALL");
+    expect(install).toHaveLength(1);
+    expect(install[0].compatibleSeries).toEqual(["EL"]);
+    expect(install[0].compatibleProducts ?? []).toEqual([]);
+  });
+
+    it("JTP is the one JetPen", () => {
     expect(options.filter((o) => o.role === "JTP").map((o) => o.code)).toEqual(["JTP"]);
     expect(options.find((o) => o.code === "JTP")?.price).toBe(7500);
   });

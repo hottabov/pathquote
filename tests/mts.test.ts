@@ -8,18 +8,18 @@ import {
 
 describe("mtsTravelMetres", () => {
   it("charges nothing up to the distance the MTS price covers", () => {
-    expect(MTS_INCLUDED_M).toBe(9);
-    for (const metres of [0, 1, 8, 9]) expect(mtsTravelMetres(metres)).toBe(0);
+    expect(MTS_INCLUDED_M).toBe(6);
+    for (const metres of [0, 1, 5, 6]) expect(mtsTravelMetres(metres)).toBe(0);
   });
 
   it("charges per metre past it", () => {
-    expect(mtsTravelMetres(10)).toBe(1);
-    expect(mtsTravelMetres(14)).toBe(5);
+    expect(mtsTravelMetres(7)).toBe(1);
+    expect(mtsTravelMetres(14)).toBe(8);
   });
 
   it("rounds a part metre up — MTS-M is sold whole", () => {
-    expect(mtsTravelMetres(12.5)).toBe(4);
-    expect(mtsTravelMetres(9.1)).toBe(1);
+    expect(mtsTravelMetres(12.5)).toBe(7);
+    expect(mtsTravelMetres(6.1)).toBe(1);
   });
 
   it("charges nothing for a length nobody typed", () => {
@@ -27,7 +27,7 @@ describe("mtsTravelMetres", () => {
   });
 
   it("reads a length typed as a string, as the attribute inputs send it", () => {
-    expect(mtsTravelMetres("14")).toBe(5);
+    expect(mtsTravelMetres("14")).toBe(8);
   });
 });
 
@@ -60,11 +60,11 @@ describe("normaliseMtsSelections", () => {
   });
 
   it("asks for the metres past the included distance", () => {
-    expect(normaliseMtsSelections([sel("mts", 1, { metres: 12 })], roleOf).travelMetres).toBe(3);
+    expect(normaliseMtsSelections([sel("mts", 1, { metres: 12 })], roleOf).travelMetres).toBe(6);
   });
 
   it("asks for nothing when the run fits the MTS price", () => {
-    expect(normaliseMtsSelections([sel("mts", 1, { metres: 7 })], roleOf).travelMetres).toBe(0);
+    expect(normaliseMtsSelections([sel("mts", 1, { metres: 5 })], roleOf).travelMetres).toBe(0);
   });
 
   it("asks for nothing when the MTS itself was not selected", () => {
