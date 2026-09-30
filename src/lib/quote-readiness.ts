@@ -1,6 +1,6 @@
 import {
-  itemMissing,
-  REQUIREMENT_LABELS,
+  describeIssues,
+  productionIssues,
   type ReadinessItem,
 } from "@/lib/production-forms/readiness";
 
@@ -28,10 +28,26 @@ import {
  * real EasyLoader, which is built entirely out of options and has no base
  * price, and then a deliberately free SERVICE line, as blockers.
  *
+ * Every refusal `finalizeDocument` can return is a row here -- the region
+ * caps and per-item discount limits included. They used to live outside the
+ * list (a separate badge, a separate prop on the Finalize button), which is
+ * how a per-item discount over the limit ended up shown nowhere at all: the
+ * button stayed live and the refusal only arrived as a toast after the click.
+ *
  * Pure on purpose: no React, no Prisma client, no money formatting. The caller
- * passes a summary of what it already has in hand and gets rows back.
+ * passes a summary of what it already has in hand -- the cap messages already
+ * formatted -- and gets rows back.
  */
-export type ReadinessKey = "client" | "items" | "spec" | "documents" | "pathworks" | "tax";
+export type ReadinessKey =
+  | "client"
+  | "items"
+  | "spec"
+  | "itemDiscount"
+  | "discountCap"
+  | "markupCap"
+  | "tax"
+  | "documents"
+  | "pathworks";
 
 export type ReadinessRow = {
   key: ReadinessKey;
@@ -40,10 +56,6 @@ export type ReadinessRow = {
   met: boolean;
   /** One short line naming what is missing, or null when the row is met. */
   detail: string | null;
-  /** Which builder tab the fix lives on, so the panel can link to it. */
-  targetTab: "build" | "settings";
-  /** The machine to expand and scroll to, when the fix is inside one. */
-  targetItemId: string | null;
   /**
    * False for an advisory row: counted nowhere, never blocks Finalize. The
    * documents and PathWorks rows are advisory.
@@ -76,10 +88,15 @@ export type ReadinessInput = {
   extraLineCount: number;
   /** How many legal documents this quote will print. */
   printedDocumentCount: number;
-  /** Over the region's discount cap. A hard stop, deliberately not a row. */
-  capExceeded: boolean;
-  /** Over the region's markup ceiling. Same. */
-  exceedsMarkupCap: boolean;
+  /** Items whose own discount is above the region's limit -- the engine's
+   *  per-item `violations`, which `validateFinalizable` refuses on. */
+  discountViolations: Array<{ code: string; allowedPct: number }>;
+  /** `concessionCapMessage(...)` while the whole quote's concession is over
+   *  the region's discount cap, else null. */
+  discountCapMessage: string | null;
+  /** `markupCapMessage(...)` while the quote is priced above the region's
+   *  markup ceiling, else null. */
+  markupCapMessage: string | null;
   /** PathWorks modules on the quote with no licence to host them -- see
    *  `pathWorksModulesWithoutHost`. Computed by the caller, which has the
    *  product specs; this module stays free of that dependency. */
@@ -90,36 +107,49 @@ export type ReadinessInput = {
   taxBlocker: string | null;
 };
 
-/**
- * Whether the panel has anything to say -- and so whether it is drawn at
- * all.
- *
- * The panel used to be permanent, and on a finished quote that meant five
- * green ticks holding the top of the narrowest, most valuable column to
- * report that there was nothing to do. Its absence now carries that: the
- * card exists only when something is missing, unusual or incompatible, and
- * the Finalize button going live is what says the rest is fine.
- */
-export function readinessNeedsAttention(rows: ReadinessRow[]): boolean {
-  return rows.some((row) => row.needsAttention);
-}
-
 export function quoteReadiness(input: ReadinessInput): ReadinessRow[] {
   return [
     clientRow(input),
     itemsRow(input),
     specRow(input),
+    // The limits and the tax appear only while they refuse Finalize: a
+    // permanent "discount within limit" line would be noise on every quote.
+    ...(input.discountViolations.length > 0 ? [itemDiscountRow(input.discountViolations)] : []),
+    ...(input.discountCapMessage ? [limitRow("discountCap", "Discount limit", input.discountCapMessage)] : []),
+    ...(input.markupCapMessage ? [limitRow("markupCap", "Price ceiling", input.markupCapMessage)] : []),
+    // Shown with or without a company. It used to wait for one, on the
+    // grounds that "set the delivery country" repeats the client row -- but
+    // the same gate also hid "give a reason for the custom tax", which has
+    // nothing to do with the client.
+    ...(input.taxBlocker ? [taxRow(input.taxBlocker)] : []),
     documentsRow(input),
-    // Only once a company is chosen: before that the client row already
-    // blocks, and "set the delivery country" would just repeat it.
-    ...(input.hasCompany && input.taxBlocker ? [taxRow(input.taxBlocker)] : []),
-    // Last, and only when there is something to say. Every other row is
-    // always present because its absence would itself be information ("is
+    // Last, and only when there is something to say. The four standing rows
+    // are always present because its absence would itself be information ("is
     // the client set? the panel does not say"); this one is a remark about
     // an unusual combination, and a permanent "PathWorks — fine" line would
     // be noise on the great majority of quotes that carry no modules at all.
     ...(input.pathWorksModulesWithoutHost ? [pathWorksRow()] : []),
   ];
+}
+
+/** Per-item discounts over the region's limit. Named by item code, which is
+ *  what the reader sees on the Build tab -- not the server's "item 2". */
+function itemDiscountRow(violations: ReadinessInput["discountViolations"]): ReadinessRow {
+  return {
+    key: "itemDiscount",
+    label: "Item discount",
+    met: false,
+    needsAttention: true,
+    detail: violations.map((v) => `${v.code}: above the ${v.allowedPct}% limit`).join("; "),
+    blocking: true,
+  };
+}
+
+/** The region's whole-quote discount cap or markup ceiling. Not something
+ *  the user completes, a limit they come back under -- but it refuses
+ *  Finalize like any other row, so it is said in the same list. */
+function limitRow(key: "discountCap" | "markupCap", label: string, message: string): ReadinessRow {
+  return { key, label, met: false, needsAttention: true, detail: message, blocking: true };
 }
 
 function taxRow(blocker: string): ReadinessRow {
@@ -129,8 +159,6 @@ function taxRow(blocker: string): ReadinessRow {
     met: false,
     needsAttention: true,
     detail: blocker,
-    targetTab: "settings",
-    targetItemId: null,
     blocking: true,
   };
 }
@@ -148,8 +176,6 @@ function pathWorksRow(): ReadinessRow {
     met: false,
     needsAttention: true,
     detail: "Modules on this quote with no licence to host them — fine if the client already owns one",
-    targetTab: "build",
-    targetItemId: null,
     blocking: false,
   };
 }
@@ -170,8 +196,6 @@ function clientRow(input: ReadinessInput): ReadinessRow {
       : input.hasContact
         ? null
         : "No contact yet. One is needed to send the quote.",
-    targetTab: "build",
-    targetItemId: null,
     blocking: true,
   };
 }
@@ -196,35 +220,22 @@ function itemsRow(input: ReadinessInput): ReadinessRow {
         ? `plus ${input.extraLineCount} extra ${input.extraLineCount === 1 ? "line" : "lines"}`
         : null
       : "Nothing on this quote yet",
-    targetTab: "build",
-    targetItemId: null,
     blocking: true,
   };
 }
 
 function specRow(input: ReadinessInput): ReadinessRow {
-  // `itemMissing` is the per-item check `finalizeDocument` enforces through
-  // `productionIssues`. Calling it here is what keeps the rail and the server
-  // from drifting apart.
-  const incomplete = input.items
-    .map((item) => ({ item, missing: itemMissing(item) }))
-    .filter((entry) => entry.missing.length > 0);
-
-  const detail =
-    incomplete.length === 0
-      ? null
-      : incomplete.length === 1
-        ? `${incomplete[0].item.code}: ${describeMissing(incomplete[0].missing)}`
-        : `${incomplete.length} items incomplete, starting with ${incomplete[0].item.code}`;
-
+  // The same `productionIssues`/`describeIssues` pair `finalizeDocument`
+  // refuses with, so the row and the server name the same items in the same
+  // words. Every incomplete item is listed: the row is the only pointer the
+  // reader gets to which ones need filling in.
+  const issues = productionIssues(input.items);
   return {
     key: "spec",
     label: "Production spec",
-    met: incomplete.length === 0,
-    needsAttention: incomplete.length > 0,
-    detail,
-    targetTab: "build",
-    targetItemId: incomplete[0]?.item.id ?? null,
+    met: issues.length === 0,
+    needsAttention: issues.length > 0,
+    detail: issues.length === 0 ? null : describeIssues(issues),
     blocking: true,
   };
 }
@@ -237,8 +248,6 @@ function documentsRow(input: ReadinessInput): ReadinessRow {
     met: count > 0,
     needsAttention: count === 0,
     detail: count > 0 ? `${count} will print` : "None will print",
-    targetTab: "settings",
-    targetItemId: null,
     // Advisory. A quote that prints no legal documents is unusual but
     // `finalizeDocument` does not refuse it, so neither does this. Showing it
     // anyway is the point: it is exactly the omission nobody notices until
@@ -247,17 +256,11 @@ function documentsRow(input: ReadinessInput): ReadinessRow {
   };
 }
 
-/** "knife size, MTS travel (m)" -- the same labels the finalize error uses. */
-function describeMissing(missing: string[]): string {
-  return missing.map((key) => REQUIREMENT_LABELS[key] ?? key).join(", ");
-}
-
 /**
- * The single verdict Finalize is gated on, so the button and the rail cannot
- * disagree. The cap checks are not rows because they are not something the
- * user completes; they are a limit they have to come back under.
+ * The rows that refuse Finalize right now. The button is disabled while this
+ * is non-empty, and it reads the same rows the Summary panel draws, so the
+ * two cannot disagree.
  */
-export function isFinalizable(input: ReadinessInput): boolean {
-  if (input.capExceeded || input.exceedsMarkupCap) return false;
-  return quoteReadiness(input).every((row) => !row.blocking || row.met);
+export function unmetBlockers(rows: ReadinessRow[]): ReadinessRow[] {
+  return rows.filter((row) => row.blocking && !row.met);
 }

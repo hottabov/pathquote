@@ -1,10 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  isFinalizable,
-  quoteReadiness,
-  readinessNeedsAttention,
-  type ReadinessInput,
-} from "../src/lib/quote-readiness";
+import { quoteReadiness, unmetBlockers, type ReadinessInput } from "../src/lib/quote-readiness";
 
 // Pure module: no Prisma client, no DATABASE_URL, same discipline as
 // tests/production-readiness.test.ts, which covers the per-item check this
@@ -23,6 +18,16 @@ function item(over: Partial<ReadinessInput["items"][number]> = {}): ReadinessInp
   };
 }
 
+/** Whether Finalize would be allowed -- what the button is gated on. */
+function finalizable(i: ReadinessInput): boolean {
+  return unmetBlockers(quoteReadiness(i)).length === 0;
+}
+
+/** Whether the Summary panel draws anything at all. */
+function needsAttention(i: ReadinessInput): boolean {
+  return quoteReadiness(i).some((row) => row.needsAttention);
+}
+
 function input(over: Partial<ReadinessInput> = {}): ReadinessInput {
   return {
     hasCompany: true,
@@ -30,8 +35,9 @@ function input(over: Partial<ReadinessInput> = {}): ReadinessInput {
     items: [item()],
     extraLineCount: 0,
     printedDocumentCount: 3,
-    capExceeded: false,
-    exceedsMarkupCap: false,
+    discountViolations: [],
+    discountCapMessage: null,
+    markupCapMessage: null,
     pathWorksModulesWithoutHost: false,
     taxBlocker: null,
     ...over,
@@ -64,7 +70,7 @@ describe("quoteReadiness", () => {
     const row = quoteReadiness(input({ hasContact: false })).find((r) => r.key === "client");
     expect(row?.met).toBe(true);
     expect(row?.detail).toBe("No contact yet. One is needed to send the quote.");
-    expect(isFinalizable(input({ hasContact: false }))).toBe(true);
+    expect(finalizable(input({ hasContact: false }))).toBe(true);
   });
 
   it("blocks on a missing company", () => {
@@ -87,7 +93,7 @@ describe("quoteReadiness", () => {
   it("accepts a quote with no machines but an extra line", () => {
     const rows = quoteReadiness(input({ items: [], extraLineCount: 1 }));
     expect(rows.find((r) => r.key === "items")?.met).toBe(true);
-    expect(isFinalizable(input({ items: [], extraLineCount: 1 }))).toBe(true);
+    expect(finalizable(input({ items: [], extraLineCount: 1 }))).toBe(true);
   });
 
   it("counts the items in the row label, and the extras in its detail", () => {
@@ -109,7 +115,7 @@ describe("quoteReadiness", () => {
   it("does not invent a price requirement the server does not enforce", () => {
     const easyLoader = item({ id: "el", code: "EL-3220" });
     const freeService = item({ id: "svc", code: "SERVICE", form: null });
-    expect(isFinalizable(input({ items: [easyLoader, freeService] }))).toBe(true);
+    expect(finalizable(input({ items: [easyLoader, freeService] }))).toBe(true);
   });
 
   it("names the machine and the missing fields on an incomplete production spec", () => {
@@ -117,10 +123,11 @@ describe("quoteReadiness", () => {
     const row = rows.find((r) => r.key === "spec");
     expect(row?.met).toBe(false);
     expect(row?.detail).toBe("M-7220: knife size, voltage");
-    expect(row?.targetItemId).toBe("i1");
   });
 
-  it("points at the first incomplete machine when several are", () => {
+  // No link to the item any more, so the row itself has to say which ones:
+  // every incomplete item, in the finalize error's own words.
+  it("lists every incomplete machine when several are", () => {
     const rows = quoteReadiness(
       input({
         items: [
@@ -131,8 +138,7 @@ describe("quoteReadiness", () => {
       })
     );
     const row = rows.find((r) => r.key === "spec");
-    expect(row?.targetItemId).toBe("i2");
-    expect(row?.detail).toBe("2 items incomplete, starting with M-3220");
+    expect(row?.detail).toBe("M-3220: knife size, voltage; L-220: knife size, voltage");
   });
 
   it("keeps the client row visible when a company is set but no contact is", () => {
@@ -162,17 +168,17 @@ describe("quoteReadiness", () => {
     // Finalize.
     expect(row?.blocking).toBe(false);
     expect(row?.needsAttention).toBe(true);
-    expect(isFinalizable(input({ pathWorksModulesWithoutHost: true }))).toBe(true);
+    expect(finalizable(input({ pathWorksModulesWithoutHost: true }))).toBe(true);
   });
 });
 
-describe("readinessNeedsAttention", () => {
+describe("panel visibility", () => {
   it("is false for a quote with nothing missing, unusual or incompatible", () => {
-    expect(readinessNeedsAttention(quoteReadiness(input()))).toBe(false);
+    expect(needsAttention(input())).toBe(false);
   });
 
   it("is true while a blocking row is unmet", () => {
-    expect(readinessNeedsAttention(quoteReadiness(input({ hasCompany: false })))).toBe(true);
+    expect(needsAttention(input({ hasCompany: false }))).toBe(true);
   });
 
   it("is true for an advisory row alone, with every blocking row met", () => {
@@ -180,7 +186,7 @@ describe("readinessNeedsAttention", () => {
     // nothing is wrong, something is unusual.
     const rows = quoteReadiness(input({ printedDocumentCount: 0 }));
     expect(rows.every((row) => !row.blocking || row.met)).toBe(true);
-    expect(readinessNeedsAttention(rows)).toBe(true);
+    expect(rows.some((row) => row.needsAttention)).toBe(true);
   });
 
   // A quote with no legal documents attached is unusual but not refused by
@@ -191,32 +197,33 @@ describe("readinessNeedsAttention", () => {
     expect(row?.blocking).toBe(false);
   });
 
-  it("does not turn the discount cap into a row", () => {
-    expect(quoteReadiness(input({ capExceeded: true })).every((r) => r.met)).toBe(true);
-  });
 });
 
-describe("isFinalizable", () => {
+describe("unmetBlockers", () => {
   it("is true when every blocking row is met", () => {
-    expect(isFinalizable(input())).toBe(true);
+    expect(finalizable(input())).toBe(true);
   });
 
   it("is false while a blocking row is unmet", () => {
-    expect(isFinalizable(input({ items: [] }))).toBe(false);
-    expect(isFinalizable(input({ items: [item({ productionSpec: {} })] }))).toBe(false);
+    expect(finalizable(input({ items: [] }))).toBe(false);
+    expect(finalizable(input({ items: [item({ productionSpec: {} })] }))).toBe(false);
   });
 
   it("is false while the tax is undecided, even with a company chosen", () => {
-    expect(isFinalizable(input({ hasCompany: true, taxBlocker: "Set the client's delivery country" }))).toBe(false);
+    expect(finalizable(input({ hasCompany: true, taxBlocker: "Set the client's delivery country" }))).toBe(false);
   });
 
   it("does not block on the advisory documents row", () => {
-    expect(isFinalizable(input({ printedDocumentCount: 0 }))).toBe(true);
+    expect(finalizable(input({ printedDocumentCount: 0 }))).toBe(true);
   });
 
-  it("is false over the discount cap or the markup ceiling, which are not rows", () => {
-    expect(isFinalizable(input({ capExceeded: true }))).toBe(false);
-    expect(isFinalizable(input({ exceedsMarkupCap: true }))).toBe(false);
+  it("is false over the discount cap or the markup ceiling", () => {
+    expect(finalizable(input({ discountCapMessage: "Concessions total 25%" }))).toBe(false);
+    expect(finalizable(input({ markupCapMessage: "Priced 40% above list" }))).toBe(false);
+  });
+
+  it("is false while an item's own discount is over the limit", () => {
+    expect(finalizable(input({ discountViolations: [{ code: "M-7220", allowedPct: 15 }] }))).toBe(false);
   });
 });
 
@@ -225,20 +232,58 @@ describe("quoteReadiness — delivery & tax", () => {
     expect(quoteReadiness(input()).some((row) => row.key === "tax")).toBe(false);
   });
 
-  it("adds a blocking tax row pointing at the Setup tab", () => {
+  it("adds a blocking tax row", () => {
     const row = quoteReadiness(input({ taxBlocker: "DDP abroad: set Canada's tax with Custom" })).find((r) => r.key === "tax");
     expect(row).toMatchObject({
       label: "Delivery & tax",
       met: false,
       needsAttention: true,
       blocking: true,
-      targetTab: "settings",
       detail: "DDP abroad: set Canada's tax with Custom",
     });
   });
 
-  it("stays quiet until a company is chosen — the client row already says so", () => {
-    const rows = quoteReadiness(input({ hasCompany: false, taxBlocker: "Set the client's delivery country" }));
-    expect(rows.some((row) => row.key === "tax")).toBe(false);
+  // It used to wait for a company, which also hid "give a reason for the
+  // custom tax" -- a refusal that has nothing to do with the client.
+  it("is shown with or without a company", () => {
+    const rows = quoteReadiness(input({ hasCompany: false, taxBlocker: "Give a reason for the custom tax" }));
+    expect(rows.find((row) => row.key === "tax")?.detail).toBe("Give a reason for the custom tax");
+  });
+});
+
+// Every refusal `finalizeDocument` can return has a row. The per-item
+// discount was the one that did not: saved with a one-off toast, shown
+// nowhere after, and refused only once Finalize was clicked.
+describe("quoteReadiness — limits", () => {
+  it("adds no limit rows while the quote is within them", () => {
+    const keys = quoteReadiness(input()).map((row) => row.key);
+    expect(keys).not.toContain("itemDiscount");
+    expect(keys).not.toContain("discountCap");
+    expect(keys).not.toContain("markupCap");
+  });
+
+  it("names every item whose own discount is over the limit", () => {
+    const row = quoteReadiness(
+      input({
+        discountViolations: [
+          { code: "M-7220", allowedPct: 15 },
+          { code: "L-220", allowedPct: 15 },
+        ],
+      })
+    ).find((r) => r.key === "itemDiscount");
+    expect(row).toMatchObject({ met: false, blocking: true, needsAttention: true });
+    expect(row?.detail).toBe("M-7220: above the 15% limit; L-220: above the 15% limit");
+  });
+
+  it("carries the region cap and ceiling messages as blocking rows", () => {
+    const cap = quoteReadiness(input({ discountCapMessage: "Concessions total 25%" })).find(
+      (r) => r.key === "discountCap"
+    );
+    expect(cap).toMatchObject({ label: "Discount limit", detail: "Concessions total 25%", blocking: true });
+
+    const ceiling = quoteReadiness(input({ markupCapMessage: "Priced 40% above list" })).find(
+      (r) => r.key === "markupCap"
+    );
+    expect(ceiling).toMatchObject({ label: "Price ceiling", detail: "Priced 40% above list", blocking: true });
   });
 });

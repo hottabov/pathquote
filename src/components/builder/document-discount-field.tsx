@@ -39,8 +39,8 @@ export function DocumentDiscountField({
   // See ItemDiscountField's doc comment for why mode+value share one
   // composite autosave value, and for where the ADMIN-only concession-cap
   // `warning` this save can come back with is surfaced these days (the
-  // Summary panel's persistent badge plus a one-time transition toast —
-  // see ConcessionCapBadge/ConcessionCapToast — rather than a toast fired
+  // Summary panel's persistent readiness row plus a one-time transition
+  // toast — see quoteReadiness/ConcessionCapToast — rather than a toast fired
   // from every field that happens to touch money).
   const { status, error } = useAutosave({
     value: `${mode}|${value}`,

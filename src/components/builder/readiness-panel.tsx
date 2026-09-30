@@ -1,6 +1,3 @@
-"use client";
-
-import Link from "next/link";
 import { Info, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReadinessRow } from "@/lib/quote-readiness";
@@ -10,9 +7,10 @@ import type { ReadinessRow } from "@/lib/quote-readiness";
  * pressed rather than after.
  *
  * It had a card of its own and does not any more. It lives at the top of
- * Summary, beside the over-the-cap message, which was already the one place
- * this quote told the reader something was wrong -- two places saying that,
- * in two visual languages, one of them a progress meter, was one too many.
+ * Summary, the one place this quote tells the reader something is wrong --
+ * the over-the-cap message included, which used to be a separate badge
+ * beside it. Two places saying that, in two visual languages, was one too
+ * many.
  * Only rows that ask for attention are drawn, and on a quote with nothing to
  * report this renders nothing at all: the Finalize button going live says
  * the rest, where the decision is made.
@@ -21,12 +19,13 @@ import type { ReadinessRow } from "@/lib/quote-readiness";
  * refused, which made "why can I not finalize this" the last question the
  * screen answered instead of the first. The rows come from `quoteReadiness`,
  * the same function the button's own disabled state is derived from, so this
- * panel cannot claim a quote is ready while the action would refuse it.
+ * panel cannot claim a quote is ready while the action would refuse it --
+ * the region caps and per-item discount limits included, which are rows too.
  *
- * Revealing a machine goes through a `CustomEvent` rather than lifting the
- * item list's expansion state up to the page. The list owns which machines
- * are open, nothing above it needs to know, and an event keeps that boundary
- * where it is instead of threading a setter through three components.
+ * Messages only, no links. The rows used to carry "Open Build" / "Go and
+ * fill it in", but they landed on the tab rather than the thing to fix (the
+ * reveal event had no listener at all), so a link that went nowhere useful
+ * was worse than none. Each row's detail names the item or setting instead.
  */
 export function ReadinessPanel({ rows }: { rows: ReadinessRow[] }) {
   const shown = rows.filter((row) => row.needsAttention);
@@ -35,8 +34,8 @@ export function ReadinessPanel({ rows }: { rows: ReadinessRow[] }) {
   return (
     <ul className="flex flex-col gap-2">
       {shown.map((row) => {
-        // A row that actually stops Finalize is amber, the same warning
-        // colour the over-the-cap message beside it uses. An advisory one
+        // A row that actually stops Finalize is amber, the app's warning
+        // colour. An advisory one
         // is neither a warning nor a tick: it is a fact the reader may want
         // to act on, and dressing it in amber would put "no legal documents
         // will print" on the same footing as "this quote cannot be
@@ -57,37 +56,10 @@ export function ReadinessPanel({ rows }: { rows: ReadinessRow[] }) {
             <div className="min-w-0 flex-1">
               <p className="font-medium">{row.label}</p>
               {row.detail ? <p className="mt-0.5">{row.detail}</p> : null}
-              {stops ? <Reveal row={row} /> : null}
             </div>
           </li>
         );
       })}
     </ul>
-  );
-}
-
-function Reveal({ row }: { row: ReadinessRow }) {
-  const className =
-    "focus-ring mt-1 inline-block rounded text-xs font-semibold underline-offset-2 md:hover:underline";
-
-  if (row.targetItemId) {
-    return (
-      <button
-        type="button"
-        className={className}
-        onClick={() =>
-          window.dispatchEvent(
-            new CustomEvent("builder:reveal-item", { detail: { itemId: row.targetItemId } })
-          )
-        }
-      >
-        Go and fill it in
-      </button>
-    );
-  }
-  return (
-    <Link href={row.targetTab === "build" ? "?" : `?tab=${row.targetTab}`} scroll={false} className={className}>
-      {row.targetTab === "settings" ? "Open Quote setup" : "Open Build"}
-    </Link>
   );
 }

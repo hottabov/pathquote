@@ -1045,8 +1045,8 @@ export function computeTotals(input: EngineInput): PricingTotals {
  * — `effectivePct`/`DocumentConcession.effectivePct` are floats that can
  * carry rounding noise (e.g. `19.999999999999996`), which would look wrong
  * printed straight into a user-facing message. Shared by
- * `concessionCapMessage` below, by the builder's persistent over-cap badge
- * (`ConcessionCapBadge`, via that same message), and by `formatEffectivePct`
+ * `concessionCapMessage` below, by the builder's persistent over-cap readiness
+ * row (`quoteReadiness`, via that same message), and by `formatEffectivePct`
  * in src/lib/actions/documents.ts (which predates this export and formats
  * the unrelated per-item/per-document discount-cap message — not merged
  * with this one to avoid an unrelated cross-file behavior change). Exported
@@ -1074,7 +1074,7 @@ function joinParts(phrases: string[]): string {
  * src/lib/validation/finalize.ts), so it lives here rather than in either of
  * those (neither imports the other, and this module is the one thing both
  * already depend on), and by the builder's Summary panel (see
- * `ConcessionCapBadge`/`ConcessionCapToast`). Pulls in `formatMoney` from
+ * `quoteReadiness`/`ConcessionCapToast`). Pulls in `formatMoney` from
  * src/lib/format.ts — a plain, dependency-free formatter, so this stays safe
  * to import from a `@/lib/db`-free unit test the same as the rest of this
  * module — purely for that reason, despite this file's usual "no formatting
@@ -1140,7 +1140,7 @@ export function concessionCapMessage(
  * (Ross: "he's got a minimum selling price. And a maximum selling price. And
  * those rules apply to the LLC as well."). Shares `concessionCapMessage`'s
  * caller (`recalcAndEnforce` in src/lib/actions/documents.ts) and UI
- * surfacing (`ConcessionCapBadge`/`ConcessionCapToast`) rather than a
+ * surfacing (`quoteReadiness`/`ConcessionCapToast`) rather than a
  * parallel mechanism of its own — see `DocumentConcession.exceedsMarkupCap`.
  *
  * Deliberately kept in the same shape `concessionCapMessage` reads in — the

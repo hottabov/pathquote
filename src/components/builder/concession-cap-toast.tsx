@@ -11,7 +11,7 @@ import { useToast } from "@/components/ui-kit/client";
  * returns the same `warning` from `recalcAndEnforce` while `exceedsCap`
  * stays true, and every field that touched money used to toast it
  * unconditionally). The persistent state itself now lives in
- * `ConcessionCapBadge` in the Summary panel, on screen for as long as it's
+ * the readiness rows in the Summary panel, on screen for as long as it's
  * true — a toast is only for the moment it *became* true.
  *
  * `[documentId]/page.tsx` (a server component) re-renders and re-passes new

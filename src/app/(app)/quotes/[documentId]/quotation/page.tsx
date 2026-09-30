@@ -174,8 +174,8 @@ export default async function QuotationPreviewPage({ params }: { params: Promise
       {/* Draft-only: a FINAL quote must show exactly what the customer sees,
           so this never renders once `isDraft` is false — see
           `strippedTokens`'s own doc comment in quotation-data.ts. Same
-          amber/TriangleAlert language as `ConcessionCapBadge`, the other
-          persistent admin-facing notice in this app: not an error to fix
+          amber/TriangleAlert language as the builder's Summary readiness
+          rows, the other persistent admin-facing notice in this app: not an error to fix
           before saving (there's nothing to save here), a still-true fact
           about this quote. */}
       {quotationData.isDraft && hasStripped ? (

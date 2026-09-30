@@ -6,7 +6,7 @@ import { CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useConfirm, useToast } from "@/components/ui-kit/client";
 import { finalizeDocument } from "@/lib/actions/finalize";
-import type { ReadinessRow } from "@/lib/quote-readiness";
+import { unmetBlockers, type ReadinessRow } from "@/lib/quote-readiness";
 
 /**
  * Turns a DRAFT into a numbered FINAL document. Finalizing is a one-way
@@ -22,31 +22,24 @@ import type { ReadinessRow } from "@/lib/quote-readiness";
 export function FinalizeButton({
   documentId,
   rows,
-  capBlocker = null,
 }: {
   documentId: string;
   /**
    * Every readiness row for this quote, from `quoteReadiness`. The button
    * reads the same rows the rail's ReadinessPanel renders, which is the
    * whole point of them existing: the panel cannot say "ready" while this
-   * button refuses, because there is only one answer. The server enforces
-   * the same state regardless of what arrives here.
+   * button refuses, because there is only one answer. The region caps and
+   * per-item discount limits are rows too. The server enforces the same
+   * state regardless of what arrives here.
    */
   rows: ReadinessRow[];
-  /**
-   * The region discount-cap / markup-ceiling message when the quote is over
-   * it, or null. A hard stop for every role -- see `validateFinalizable`.
-   * Not a readiness row: it is not something you complete, it is a limit you
-   * have to come back under.
-   */
-  capBlocker?: string | null;
 }) {
   const router = useRouter();
   const confirm = useConfirm();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
 
-  const unmet = rows.filter((row) => row.blocking && !row.met);
+  const unmet = unmetBlockers(rows);
 
   async function handleClick() {
     const confirmed = await confirm({
@@ -70,30 +63,28 @@ export function FinalizeButton({
     });
   }
 
-  // What is stopping this quote is said once, in the Summary panel, beside
-  // the concession-cap message — not a second time under this button. The
+  // What is stopping this quote is said once, in the Summary panel — not a
+  // second time under this button. The
   // button lives in the quote bar, whose height every tab inherits, so a
   // one- or two-line explanation here pushed the whole header down for as
   // long as the quote was unfinished, which is most of a quote's life. The
   // reason survives as the disabled state and as the button's title, for a
   // hover on the control itself.
   const blockedReason =
-    capBlocker !== null
-      ? `Can’t finalize — ${capBlocker} Bring it within the limit first.`
-      : unmet.length === 0
-        ? undefined
-        : unmet.length === 1
-          ? // The row's `detail` is the specific problem ("EL-3220 has no
-            // price"); its `label` is only the heading ("13 machines
-            // priced"), which reads as nonsense in a sentence.
-            `Left to do: ${unmet[0].detail ?? unmet[0].label.toLowerCase()}.`
-          : `${unmet.length} things left before this can be finalized — see the Summary panel.`;
+    unmet.length === 0
+      ? undefined
+      : unmet.length === 1
+        ? // The row's `detail` is the specific problem ("M-7220: knife
+          // size"); its `label` is only the heading, which reads as nonsense
+          // in a sentence.
+          `Left to do: ${unmet[0].detail ?? unmet[0].label.toLowerCase()}`
+        : `${unmet.length} things left before this can be finalized — see the Summary panel.`;
 
   return (
     <Button
       type="button"
       onClick={handleClick}
-      disabled={pending || unmet.length > 0 || capBlocker !== null}
+      disabled={pending || unmet.length > 0}
       title={blockedReason}
       variant="brand"
       size="touch"

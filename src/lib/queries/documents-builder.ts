@@ -305,6 +305,12 @@ export type DocumentForBuilder = {
    * it (e.g. an "exceeds cap" banner) without a second `computeTotals` run;
    * always present, `exceedsCap` is what a caller actually branches on. */
   documentConcession: DocumentConcession;
+  /** Items whose own discount is above the region's limit — the engine's
+   * per-item `violations` from the same `computeTotals` run, named by item
+   * code. `finalizeDocument` refuses on these (`validateFinalizable`), and
+   * saving does not, so without this the builder had no way to say so
+   * before the click. */
+  discountViolations: Array<{ code: string; allowedPct: number }>;
   /** The salesperson's commission on this document — see `CommissionResult`
    * in src/lib/pricing.ts. For a DRAFT, computed live every read (same
    * engine call as everything else here); for a FINAL document, read back
@@ -329,7 +335,7 @@ export type DocumentForBuilder = {
    * so the builder can build the same "... above the X% limit for
    * <region>" message `concessionCapMessage` produces server-side elsewhere
    * (`recalcDocument`'s `concessionMessage`) without a second query; see
-   * `ConcessionCapBadge`/`ConcessionCapToast`. */
+   * the Summary panel's readiness rows and `ConcessionCapToast`. */
   regionName: string;
   /** `Document.entitySnapshot` exactly as stored (an opaque `Json?` column,
    * frozen by `finalizeDocument` — see its doc comment for the shape it
@@ -864,6 +870,12 @@ async function loadDocumentForBuilder(
     summarySubtotal: totals.grossSubtotal.toString(),
     summaryDiscountAmount: totals.totalDiscountAmount.toString(),
     documentConcession: totals.documentConcession,
+    // `itemIndex` indexes `engineInput.items`, which maps `document.items`
+    // one for one and in order.
+    discountViolations: totals.violations.map((violation) => ({
+      code: document.items[violation.itemIndex].code,
+      allowedPct: violation.allowedPct,
+    })),
     commission,
     taxAmount: document.taxAmount.toString(),
     total: document.total.toString(),

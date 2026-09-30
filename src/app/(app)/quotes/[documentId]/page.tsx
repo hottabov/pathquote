@@ -65,7 +65,6 @@ import { SignButton } from "@/components/builder/sign-button";
 import { SendToClientButton } from "@/components/builder/send-to-client-button";
 import { RevokeSigningLinkButton } from "@/components/builder/revoke-signing-link-button";
 import { DeleteDraftButton } from "@/components/builder/delete-draft-button";
-import { ConcessionCapBadge } from "@/components/builder/concession-cap-badge";
 import { ConcessionCapToast } from "@/components/builder/concession-cap-toast";
 import { quoteReadiness } from "@/lib/quote-readiness";
 import { Tooltip } from "@/components/ui-kit/client";
@@ -134,12 +133,12 @@ export default async function DocumentBuilderPage({
 
   // Same message every mutating server action already builds (see
   // recalcDocument's own concessionMessage) — reused here for both the
-  // persistent Summary-panel badge and the one-time transition toast (see
-  // ConcessionCapBadge/ConcessionCapToast) rather than a shorter paraphrase
+  // persistent Summary-panel readiness row and the one-time transition toast
+  // (see quoteReadiness/ConcessionCapToast) rather than a shorter paraphrase
   // that could drift from it. `null` whenever the document isn't over the
   // cap, which is also what makes both of those components render nothing.
   //
-  // The markup ceiling (Region.maxMarkupPct) shares this exact badge/toast
+  // The markup ceiling (Region.maxMarkupPct) shares this exact row/toast
   // surfacing rather than a parallel mechanism of its own — see
   // recalcAndEnforce's own doc comment on why exceedsCap/exceedsMarkupCap
   // can never both be true for the same document at once, so at most one of
@@ -281,8 +280,12 @@ export default async function DocumentBuilderPage({
     printedDocumentCount: panelDocuments.filter(
       (row) => row.includedByDefault && !document.excludedDocumentKeys.includes(row.key)
     ).length,
-    capExceeded,
-    exceedsMarkupCap: document.documentConcession.exceedsMarkupCap,
+    discountViolations: document.discountViolations,
+    // `capMessageText` is one or the other (both can never be true at once
+    // — see its own comment above); split back here so the row is labelled
+    // for the limit it is actually about.
+    discountCapMessage: document.documentConcession.exceedsCap ? capMessageText : null,
+    markupCapMessage: document.documentConcession.exceedsMarkupCap ? capMessageText : null,
     // The same test the order forms apply, run here so the remark reaches
     // the manager while the quote is still a draft rather than after
     // finalisation, on a page they only open once the decision is made.
@@ -316,20 +319,7 @@ export default async function DocumentBuilderPage({
         tabCounts={{ build: document.items.length, history: historyCount }}
       >
         {isDraft ? (
-          <FinalizeButton
-            documentId={document.id}
-            // Over the region's discount cap or markup ceiling: a hard stop
-            // at finalize for every role (validateFinalizable), shown up
-            // front rather than on refusal.
-            capBlocker={
-              capExceeded
-                ? document.documentConcession.exceedsMarkupCap
-                  ? "the price is above the region\u2019s markup ceiling."
-                  : "the discount is above the region\u2019s limit."
-                : null
-            }
-            rows={readinessRows}
-          />
+          <FinalizeButton documentId={document.id} rows={readinessRows} />
         ) : null}
       </QuoteBar>
 
@@ -579,13 +569,9 @@ export default async function DocumentBuilderPage({
                     width, and this card repeating them was half of the
                     duplication this layout set out to remove. */}
                 {/* Everything this quote has to say about itself, in one
-                    place. The over-the-cap message was already here, and a
-                    second card above it carrying the rest -- in its own
-                    visual language, behind its own heading, under a
-                    progress meter -- meant the answer to "why can't I
-                    finalise this" was split across two boxes that did not
-                    look related. */}
-                {capMessageText ? <ConcessionCapBadge message={capMessageText} /> : null}
+                    place: every refusal Finalize can return, the region
+                    caps and per-item discount limits included, plus the
+                    advisory remarks. See `quoteReadiness`. */}
                 <ReadinessPanel rows={readinessRows} />
                 <div className="border-t border-divider pt-4">
                   <DocumentTotals

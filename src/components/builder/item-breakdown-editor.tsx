@@ -402,8 +402,8 @@ function EditablePrice({
       // concession over the region cap (ADMIN-only — a MANAGER's would
       // come back as `error` instead, handled above) — no longer toasted
       // per field. That state now lives in the Summary panel's persistent
-      // badge plus a one-time transition toast; see
-      // `ConcessionCapBadge`/`ConcessionCapToast` in `[documentId]/page.tsx`.
+      // readiness row plus a one-time transition toast; see
+      // `quoteReadiness`/`ConcessionCapToast` in `[documentId]/page.tsx`.
     });
   }
 

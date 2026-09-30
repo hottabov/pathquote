@@ -32,8 +32,8 @@ import type { DiscountMode } from "@/lib/pricing";
  * comes back with `warning` set — no longer surfaced here as a toast on
  * every such save (that was the "shouting on every save" the owner flagged;
  * this field just drops it now). The *document-level* concession the save
- * pushed things toward is instead the Summary panel's persistent badge plus
- * a one-time transition toast — see `ConcessionCapBadge`/`ConcessionCapToast`
+ * pushed things toward is instead the Summary panel's persistent readiness
+ * row plus a one-time transition toast — see `quoteReadiness`/`ConcessionCapToast`
  * in `[documentId]/page.tsx` — which is state that belongs on screen, not a
  * per-field message that disappears.
  */
