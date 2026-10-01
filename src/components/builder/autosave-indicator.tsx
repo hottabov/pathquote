@@ -4,6 +4,10 @@ import type { AutosaveStatus } from "@/lib/use-autosave";
 const STATUS_LABEL: Record<Exclude<AutosaveStatus, "error">, string> = {
   idle: "",
   saving: "Saving…",
+  // Past SLOW_SAVE_MS (use-autosave.ts). A plain "Saving…" for a minute reads
+  // as a frozen app; this says the save is still going and points at the
+  // usual culprit, without suggesting anything was lost.
+  slow: "Still saving… slow connection?",
   saved: "Saved",
 };
 

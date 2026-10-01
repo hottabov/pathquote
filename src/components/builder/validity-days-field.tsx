@@ -41,6 +41,7 @@ export function ValidityDaysField({
   const [value, setValue] = useState(validityDays !== null ? String(validityDays) : "");
 
   const { status, error } = useAutosave({
+    label: "validity-days",
     value,
     enabled: !readOnly,
     onSave: async (next) => {

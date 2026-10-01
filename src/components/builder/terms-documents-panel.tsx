@@ -126,6 +126,7 @@ export function TermsDocumentsPanel({
   // group parses. `enabled` gating means an invalid value never advances the
   // hook's last-saved marker either, so fixing it saves rather than settling.
   const { status, error } = useAutosave({
+    label: "quote-terms",
     value: serialized,
     enabled: !readOnly && !hasError,
     onSave: async (next) => setQuoteTerms(documentId, JSON.parse(next) as TermDrafts),

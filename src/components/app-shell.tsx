@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Image from "next/image";
-import Link from "next/link";
+import { HoverPrefetchLink } from "@/components/hover-prefetch-link";
 import { LogOut } from "lucide-react";
 import { logout } from "@/lib/actions/auth";
 import { Button } from "@/components/ui/button";
@@ -37,7 +37,7 @@ export function AppShell({ user, children }: AppShellProps) {
       {/* Desktop / tablet sidebar */}
       <aside className="sticky top-0 z-30 hidden h-dvh w-16 shrink-0 flex-col bg-brand-dark md:flex lg:w-60">
         <div className="flex h-16 shrink-0 items-center justify-center border-b border-white/10 px-2 lg:justify-start lg:px-5">
-          <Link
+          <HoverPrefetchLink
             href="/"
             className="focus-ring-dark flex items-center gap-2.5 rounded-sm text-lg font-semibold tracking-tight text-white"
           >
@@ -59,7 +59,7 @@ export function AppShell({ user, children }: AppShellProps) {
             <span className="hidden lg:inline">
               Path<span className="text-brand-accent">Quote</span>
             </span>
-          </Link>
+          </HoverPrefetchLink>
         </div>
 
         {/* `scroll-region` is not styling: it is how globals.css finds the
@@ -113,7 +113,7 @@ export function AppShell({ user, children }: AppShellProps) {
       <div className="@container flex min-w-0 flex-1 flex-col">
         {/* Mobile top bar */}
         <header className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:hidden">
-          <Link
+          <HoverPrefetchLink
             href="/"
             className="focus-ring flex items-center gap-2 rounded-sm text-lg font-semibold text-brand"
           >
@@ -126,7 +126,7 @@ export function AppShell({ user, children }: AppShellProps) {
               className="size-8 shrink-0 rounded-lg object-cover"
             />
             PathQuote
-          </Link>
+          </HoverPrefetchLink>
           <div className="flex items-center gap-2">
             <StatusBadge tone={roleTone}>{roleLabel(user.role)}</StatusBadge>
             <form action={logout}>

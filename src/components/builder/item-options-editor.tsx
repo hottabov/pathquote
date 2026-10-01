@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import type { OptionRole } from "@prisma/client";
 import { ChevronRight, Minus, Plus, SearchX, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -279,7 +278,6 @@ export function ItemOptionsEditor({
   const [selected, setSelected] = useState<Map<string, SelectionState>>(() =>
     selectionsFromLines(currentLines)
   );
-  const router = useRouter();
   const [search, setSearch] = useState("");
 
   // Only the count survives -- it rides on the button. The chips this used
@@ -435,14 +433,14 @@ export function ItemOptionsEditor({
   const autosaveKey = JSON.stringify(selections);
   const autosave = useAutosave({
     value: autosaveKey,
+    label: "item-options",
     enabled: open && !readOnly && !mtsWithoutLength && toolsWithoutConsumable.length === 0,
-    // Deliberately no router.refresh() here. Nothing in this app's document
-    // actions calls revalidatePath, so the refresh has to happen somewhere,
-    // but doing it per save would re-render the page on every checkbox and,
-    // worse, could not terminate: the server normalises a selection set (it
-    // derives the MTS travel line and the EasyLoader's modules), the new
-    // lines come back as props, the effective set changes, and that is
-    // another save. The refresh happens once, when the sheet closes.
+    // `setItemOptions` revalidates the quote, so the card's breakdown and the
+    // totals follow each save without a refresh from here. The loop that
+    // could cause is closed on this side: `selected` is seeded from the
+    // item's lines only when the sheet opens (`openPanel`), so the server's
+    // normalised lines (MTS travel, EasyLoader modules) coming back as props
+    // do not change what this hook is saving.
     onSave: async () => {
       const result = await setItemOptions(itemId, selections);
       if (result?.error) return { error: result.error };
@@ -450,12 +448,14 @@ export function ItemOptionsEditor({
   });
 
   function closePanel() {
+    // A tick made less than the debounce before Done/Escape used to be
+    // dropped: closing disables the autosave, which cancelled the pending
+    // save, while the checkbox had looked ticked. Send it now. It runs on its
+    // own and revalidates the quote when it lands, so the sheet can close
+    // straight away.
+    void autosave.flush();
     setOpen(false);
-    // Pull the card's breakdown and the quote total back in line with what
-    // was just written.
-    router.refresh();
   }
-
 
   // No compatible options for this product at all — there's nothing to add
   // and nothing useful to say about that, so the whole block (heading,

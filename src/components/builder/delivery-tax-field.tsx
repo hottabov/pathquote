@@ -81,6 +81,7 @@ export function DeliveryTaxField({
   const [customNote, setCustomNote] = useState(taxNote ?? "");
 
   const incotermSave = useAutosave({
+    label: "incoterm",
     value: incoterm,
     enabled: !readOnly,
     onSave: async (next) => {
@@ -97,6 +98,7 @@ export function DeliveryTaxField({
       : JSON.stringify({ mode, taxName: customName, taxRate: customRate, taxNote: customNote });
 
   const taxSave = useAutosave({
+    label: "tax",
     value: taxPayload,
     enabled: !readOnly,
     onSave: async (payload) => {

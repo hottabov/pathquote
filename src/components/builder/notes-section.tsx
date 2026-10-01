@@ -63,6 +63,7 @@ export function NotesSection({
 }) {
   const [body, setBody] = useState(() => toEditorHtml(notes ?? ""));
   const { status, error } = useAutosave({
+    label: "notes",
     value: body,
     enabled: !readOnly,
     onSave: async (html) => {

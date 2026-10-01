@@ -43,6 +43,7 @@ export function DocumentDiscountField({
   // toast — see quoteReadiness/ConcessionCapToast — rather than a toast fired
   // from every field that happens to touch money).
   const { status, error } = useAutosave({
+    label: "document-discount",
     value: `${mode}|${value}`,
     enabled: !readOnly,
     onSave: async (composite) => {

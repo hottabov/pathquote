@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import { HoverPrefetchLink } from "@/components/hover-prefetch-link";
 import { usePathname } from "next/navigation";
 import { NAV_ITEMS } from "@/lib/nav-items";
 import { cn } from "@/lib/utils";
@@ -32,7 +32,7 @@ export function AppNav({ variant }: AppNavProps) {
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
           const active = isActive(pathname, href);
           return (
-            <Link
+            <HoverPrefetchLink
               key={label}
               href={href}
               title={label}
@@ -44,7 +44,7 @@ export function AppNav({ variant }: AppNavProps) {
             >
               <Icon className="size-5 shrink-0" aria-hidden="true" />
               <span className="hidden truncate lg:inline">{label}</span>
-            </Link>
+            </HoverPrefetchLink>
           );
         })}
       </nav>
@@ -61,7 +61,7 @@ export function AppNav({ variant }: AppNavProps) {
       {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
         const active = isActive(pathname, href);
         return (
-          <Link
+          <HoverPrefetchLink
             key={label}
             href={href}
             aria-current={active ? "page" : undefined}
@@ -69,7 +69,7 @@ export function AppNav({ variant }: AppNavProps) {
           >
             <Icon className={cn("size-5", active ? "text-brand-accent-ink" : "text-brand")} aria-hidden="true" />
             <span className={cn(active && "font-semibold text-brand-accent-ink")}>{label}</span>
-          </Link>
+          </HoverPrefetchLink>
         );
       })}
     </nav>

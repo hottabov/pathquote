@@ -2,9 +2,27 @@
 
 import { useEffect, useRef, useState } from "react";
 
-export type AutosaveStatus = "idle" | "saving" | "saved" | "error";
+export type AutosaveStatus = "idle" | "saving" | "slow" | "saved" | "error";
 
-export type AutosaveState = { status: AutosaveStatus; error: string | null };
+export type AutosaveState = {
+  status: AutosaveStatus;
+  error: string | null;
+  /** Runs a pending save right now instead of waiting out the debounce, and
+   * resolves once it has landed. A no-op when nothing is pending. For a
+   * caller that is about to disable the hook (closing the options sheet) and
+   * would otherwise drop the last change on the floor. */
+  flush: () => Promise<void>;
+};
+
+/** How long a save may run before the indicator admits it is slow ("Still
+ * saving…") instead of showing a "Saving…" that looks frozen. */
+const SLOW_SAVE_MS = 8000;
+
+/** A save that takes at least this long is reported to the server log
+ * (`reportSlowSave`), so the next "it hung" has a number and a field name
+ * behind it. Kept well below SLOW_SAVE_MS: the point is to see the trend
+ * before anyone notices. */
+const REPORT_SLOW_SAVE_MS = 3000;
 
 /** How long a "Saved" status lingers before fading back to "idle" (the
  * "Saving…" / "Saved" pair the owner asked for — see the hook's own doc
@@ -46,11 +64,14 @@ export function useAutosave<T>({
   onSave,
   delay = 800,
   enabled = true,
+  label = "field",
 }: {
   value: T;
   onSave: (value: T) => Promise<{ error?: string } | void>;
   delay?: number;
   enabled?: boolean;
+  /** Names the field in the slow-save report (see `reportSlowSave`). */
+  label?: string;
 }): AutosaveState {
   const [status, setStatus] = useState<AutosaveStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +88,50 @@ export function useAutosave<T>({
   // cannot say whether one was pending when the value moved back.
   const savePending = useRef(false);
 
+  // The save the debounce timer will run, so `flush` can run it early.
+  const pendingRun = useRef<(() => Promise<void>) | null>(null);
+  const slowTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  async function runSave(saving: T, token: number): Promise<void> {
+    savePending.current = false;
+    pendingRun.current = null;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    if (slowTimer.current) clearTimeout(slowTimer.current);
+    slowTimer.current = setTimeout(() => {
+      if (token === saveToken.current) setStatus("slow");
+    }, SLOW_SAVE_MS);
+    const startedAt = Date.now();
+    try {
+      const result = await onSave(saving);
+      const ms = Date.now() - startedAt;
+      if (ms >= REPORT_SLOW_SAVE_MS) reportSlowSave(label, ms);
+      if (token !== saveToken.current) return; // superseded by a later save
+      if (result && "error" in result && result.error) {
+        setStatus("error");
+        setError(result.error);
+        return;
+      }
+      lastSavedValue.current = saving;
+      setStatus("saved");
+      setError(null);
+      if (savedLingerTimer.current) clearTimeout(savedLingerTimer.current);
+      savedLingerTimer.current = setTimeout(() => {
+        if (token === saveToken.current) setStatus("idle");
+      }, SAVED_LINGER_MS);
+    } catch (err) {
+      if (token !== saveToken.current) return;
+      setStatus("error");
+      setError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      if (token === saveToken.current && slowTimer.current) clearTimeout(slowTimer.current);
+    }
+  }
+
+  async function flush(): Promise<void> {
+    const run = pendingRun.current;
+    if (run) await run();
+  }
+
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
@@ -82,6 +147,7 @@ export function useAutosave<T>({
       // already in flight is not pending and is left to finish.
       if (savePending.current) {
         savePending.current = false;
+        pendingRun.current = null;
         saveToken.current++;
         setStatus("idle");
         setError(null);
@@ -96,30 +162,9 @@ export function useAutosave<T>({
     setError(null);
     savePending.current = true;
 
+    pendingRun.current = () => runSave(value, token);
     saveTimer.current = setTimeout(() => {
-      savePending.current = false;
-      void (async () => {
-        try {
-          const result = await onSave(value);
-          if (token !== saveToken.current) return; // superseded by a later save
-          if (result && "error" in result && result.error) {
-            setStatus("error");
-            setError(result.error);
-            return;
-          }
-          lastSavedValue.current = value;
-          setStatus("saved");
-          setError(null);
-          if (savedLingerTimer.current) clearTimeout(savedLingerTimer.current);
-          savedLingerTimer.current = setTimeout(() => {
-            if (token === saveToken.current) setStatus("idle");
-          }, SAVED_LINGER_MS);
-        } catch (err) {
-          if (token !== saveToken.current) return;
-          setStatus("error");
-          setError(err instanceof Error ? err.message : "Save failed");
-        }
-      })();
+      void pendingRun.current?.();
     }, delay);
 
     return () => {
@@ -132,9 +177,26 @@ export function useAutosave<T>({
     () => () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
       if (savedLingerTimer.current) clearTimeout(savedLingerTimer.current);
+      if (slowTimer.current) clearTimeout(slowTimer.current);
     },
     []
   );
 
-  return { status, error };
+  return { status, error, flush };
+}
+
+/** Fire-and-forget: tells the server a save took `ms`, so it lands in the
+ * app log next to nginx's own request time (`rt=`). The two together say
+ * where a slow save spent its time — on the server, on the wire, or queued
+ * in the browser behind another save (Next sends server actions one at a
+ * time). Never throws; a failed report is not worth bothering anyone with. */
+function reportSlowSave(label: string, ms: number): void {
+  try {
+    const body = JSON.stringify({ label, ms, path: window.location.pathname });
+    if (!navigator.sendBeacon?.("/api/client-timing", new Blob([body], { type: "application/json" }))) {
+      void fetch("/api/client-timing", { method: "POST", body, keepalive: true }).catch(() => {});
+    }
+  } catch {
+    // Reporting is best-effort.
+  }
 }

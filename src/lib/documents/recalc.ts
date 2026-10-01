@@ -176,16 +176,19 @@ export async function recalcDocument(documentId: string, client: RecalcClient = 
         .map((line) => line.refId)
     )
   );
-  // Fetched alongside the option lookup (one round trip, not two) — the
-  // admin-editable commission-rate table needed to resolve
-  // `totals.commission` below. Read through `client`, not the `db` singleton
+  // The option flags, then the admin-editable commission-rate table needed to
+  // resolve `totals.commission` below. One after the other, not in a
+  // `Promise.all`: `client` is usually a transaction, which is a single
+  // Postgres connection, so the two could never run in parallel anyway --
+  // pg only queued them, and logged "Calling client.query() when the client
+  // is already executing a query is deprecated" in production (it becomes an
+  // error in pg@9). Read through `client`, not the `db` singleton
   // `getCommissionTiers` defaults to, for the reason `RecalcClient` gives.
-  const [optionRows, commissionTiers] = await Promise.all([
+  const optionRows =
     optionRefIds.length > 0
-      ? client.option.findMany({ where: { id: { in: optionRefIds } }, select: { id: true, noCommission: true } })
-      : Promise.resolve([]),
-    getCommissionTiers(client),
-  ]);
+      ? await client.option.findMany({ where: { id: { in: optionRefIds } }, select: { id: true, noCommission: true } })
+      : [];
+  const commissionTiers = await getCommissionTiers(client);
   const optionNoCommissionMap = new Map(optionRows.map((o) => [o.id, o.noCommission]));
 
   const regionMaxDiscountPct = document.region.maxDiscountPct ? Number(document.region.maxDiscountPct) : null;

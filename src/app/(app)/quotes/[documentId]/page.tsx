@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import type { Metadata } from "next";
 import {
   Download,
@@ -68,6 +67,7 @@ import { DeleteDraftButton } from "@/components/builder/delete-draft-button";
 import { ConcessionCapToast } from "@/components/builder/concession-cap-toast";
 import { quoteReadiness } from "@/lib/quote-readiness";
 import { Tooltip } from "@/components/ui-kit/client";
+import { HoverPrefetchLink } from "@/components/hover-prefetch-link";
 import { pathWorksModulesWithoutHost } from "@/lib/production-forms/pathworks";
 import { readProductSpecs } from "@/lib/validation/product-specs";
 
@@ -821,13 +821,13 @@ function DocumentActions({
           three rows of a column that is the tallest thing on the page. */}
       <div className="grid grid-cols-3 gap-2">
         <Tooltip label="Preview the quotation">
-          <Link
+          <HoverPrefetchLink
             href={`/quotes/${document.id}/quotation`}
             aria-label="Preview the quotation"
             className={actionIconClass}
           >
             <Eye className="size-4" aria-hidden="true" />
-          </Link>
+          </HoverPrefetchLink>
         </Tooltip>
 
         <Tooltip label="Download the quotation PDF">

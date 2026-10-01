@@ -62,6 +62,7 @@ export function ItemDiscountField({
   // separator: DiscountMode is a fixed enum and a discount value only ever
   // contains digits and a decimal point (see discountValueSchema).
   const { status, error } = useAutosave({
+    label: "item-discount",
     value: `${mode}|${value}`,
     enabled: !readOnly,
     onSave: async (composite) => {
