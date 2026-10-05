@@ -46,6 +46,25 @@ Error codes documented by the API: `401` unauthorized, `403` forbidden, `4030` A
 
 Tokens are signed with `BearerKey` from `C:\Program Files\ACT\Act.Web.API\web.config`.
 
+### Permissions the integration account needs
+
+`GET /api/users/{userId}/permissions` returns the effective list, which is the fastest way to diagnose a refusal. An administrator has 93 permissions; a standard user has 31.
+
+| Permission | Why |
+|---|---|
+| **Web API Access** | Without it `/authorize` returns `4032` regardless of the password. This is the literal name of the permission. |
+| **Access All Non-Private Data** | Without it the sync sees only records where the service account is itself the Record Manager — effectively nothing. |
+| **Manage Other Users Contacts** | PathQuote fills empty fields on contacts owned by salespeople. |
+| **Manage Other Users Companies** | The same for companies, including the shipping address. |
+| **Link/Unlink Other Users Contacts from Company records** | Linking someone else's contact to a company. |
+| **Manage Other Users Opportunities** | Write-back against opportunities owned by others. |
+
+That set corresponds to the **Manager** role. Standard is not enough: it carries only the "My" variants of each permission.
+
+Administrator is deliberately not used. It adds `Manage Users`, `Define Fields`, `Delete Database`, `Restore Database`, `Password Policy Management` and the whole Act! Marketing Automation block. If the credentials ever leak, the difference between Manager and Administrator is the difference between damaged data and a destroyed database.
+
+**`Define Fields` is never granted to the service account.** It is needed exactly once, to create the five `PQ ` fields; do that under an administrator login and leave the service account unable to alter the schema.
+
 ## 3. Endpoints in use
 
 | Purpose | Endpoint |
