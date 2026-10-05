@@ -87,6 +87,18 @@ Administrator is deliberately not used. It adds `Manage Users`, `Define Fields`,
 
 OData query options work on collection endpoints. Verified: `$top`, `$filter`, `$orderby`.
 
+### Response shape is not consistent
+
+`/api/contacts` and `/api/companies` return `{ "value": [...], "Count": n }`. `/api/users` and `/api/users/{id}/permissions` return a bare array. The client must handle both rather than assume a common envelope — silently reading `.value` off a bare array yields nothing and looks exactly like a permissions failure.
+
+`Count` on a paged response is the size of the page, not the total. There is no total without paging to the end.
+
+`$top` caps out: a request for 5000 returns at most 5000, so two different accounts both hitting the ceiling prove nothing about their relative access. Compare them on a window narrow enough to come in under the cap.
+
+### Verified access, 2026-10-05
+
+Admin and service account compared over `edited gt 2026-06-01`: 2042 records for the administrator, 2040 for the service account. The difference is exactly the two private contacts in that window, which the integration excludes anyway. Cross-owner reads work; the service account sees everything it needs and nothing it should not.
+
 ## 4. Field mapping — Contact
 
 The Act! display name is not the API key. Several stock "user" slots were renamed years ago, so `Industry` lives in `user6`. Always resolve through `GET /api/metadata/contact/fields`, never by guessing.
