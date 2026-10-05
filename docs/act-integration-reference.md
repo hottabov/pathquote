@@ -262,44 +262,85 @@ Filters applied by the client:
 
 ## 11. Infrastructure
 
+Built and verified 2026-10-05.
+
+**Base URL for the integration:** `https://pf-sql.tail01aa0f.ts.net/act.web.api`
+
 ### Private network
 
-The API must not be exposed to the internet. The server already publishes `act.pathfinderaus.com.au` for Act! sync; nothing new is added to that surface.
+The API is not exposed to the internet. The server already publishes `act.pathfinderaus.com.au` for Act! sync; nothing was added to that surface.
 
-A Tailscale overlay joins the Act! server and the VPS that runs PathQuote and n8n. No firewall rules, no port forwarding, works through NAT.
+A Tailscale overlay joins the two machines:
 
-**On the Act! server**
+| Machine | Tailscale address | Role |
+|---|---|---|
+| `pf-sql` | `100.97.78.35` | Windows Server 2019, ACT! and IIS |
+| `ubuntu` | `100.76.123.107` | VPS running PathQuote and n8n |
 
-1. Install the Tailscale Windows package.
-2. `tailscale up --unattended` — the `--unattended` flag is required, otherwise the connection drops when no user is logged in.
-3. Note the assigned `100.x.y.z` address and the MagicDNS name, `<machine>.<tailnet>.ts.net`.
+Tailnet: `tail01aa0f.ts.net`.
 
-**On the VPS**
+**Windows server.** Install the package, then `tailscale up --unattended` — without `--unattended` the connection drops as soon as nobody is logged in, and the nightly sync fails silently.
+
+Two traps on Windows. The CLI is not added to `PATH`: it lives at `C:\Program Files\Tailscale\tailscale.exe`. And the local API is bound to the user running the GUI, so the CLI must run in a **non-elevated** shell as that user — an elevated prompt gets `401 Unauthorized: Tailscale already in use`.
+
+Browser sign-in on Windows Server tends to fail against Google. Use a pre-authorised key from the admin console instead: `tailscale up --unattended --authkey=tskey-auth-…`.
+
+**VPS.** `curl -fsSL https://tailscale.com/install.sh | sh`, then `tailscale up`.
+
+### DNS
+
+MagicDNS does not work on this VPS. `systemd-resolved` reports the interface as managed by something else, and Tailscale's health check says so plainly: `setLinkDNS: Link tailscale0 is managed`.
+
+Rather than fight it, the single hostname is pinned:
 
 ```bash
-curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up
+echo "100.97.78.35 pf-sql.tail01aa0f.ts.net" | sudo tee -a /etc/hosts
+sudo tailscale up --accept-dns=false
 ```
 
-**Access control** — in the Tailscale admin console, restrict the policy so the VPS can reach the Act! server on port 443 only, and nothing else reaches it at all.
+Tailscale addresses are stable for the life of the node, and `--accept-dns=false` stops it retrying something this system will not allow, which also clears the health warning. The hostname still matters — it is what the certificate is issued for.
 
 ### HTTPS
 
-Tailscale issues real Let's Encrypt certificates for MagicDNS names, so no self-signed certificate and no internal CA is needed.
+Tailscale issues real Let's Encrypt certificates for MagicDNS names, so there is no self-signed certificate and no internal CA. MagicDNS and HTTPS Certificates must both be enabled in the admin console first.
 
 ```powershell
-tailscale cert <machine>.<tailnet>.ts.net
+tailscale cert pf-sql.tail01aa0f.ts.net          # non-elevated, as the GUI user
+openssl pkcs12 -export -out act.pfx -inkey pf-sql.…key -in pf-sql.…crt
 ```
 
-This writes a `.crt` and a `.key`. Convert to PFX for IIS:
+Then, **elevated**:
 
 ```powershell
-openssl pkcs12 -export -out act.pfx -inkey <name>.key -in <name>.crt
+$cert = Import-PfxCertificate -FilePath C:\Temp\act.pfx `
+  -CertStoreLocation Cert:\LocalMachine\My -Password $pw
+New-WebBinding -Name "Default Web Site" -Protocol https -Port 443 `
+  -HostHeader "pf-sql.tail01aa0f.ts.net" -SslFlags 1
+Get-Item "Cert:\LocalMachine\My\$($cert.Thumbprint)" |
+  New-Item -Path "IIS:\SslBindings\!443!pf-sql.tail01aa0f.ts.net" -SSLFlags 1
 ```
 
-Import into the Windows certificate store (Local Computer → Personal), then add an IIS https binding on port 443 for the Tailscale address, with **Require Server Name Indication** enabled — port 443 is already in use by the Act! sync site, and SNI is what lets both coexist.
+`SslFlags 1` is SNI, and it is not optional: port 443 already belongs to the Act! sync site, and SNI is what lets the two bindings coexist.
 
-Certificates last 90 days. Schedule the renewal; a quarterly outage of the integration because a certificate quietly expired is the classic failure here.
+Current certificate thumbprint: `84C71E6B7F4503A3D2491D019597054580542079`.
+
+Delete `act.pfx`, the `.key` and the `.crt` afterwards. The private key is in the Windows store; a plaintext copy in `C:\Temp` is risk without benefit.
+
+**Certificates last 90 days.** Schedule the renewal. An integration that quietly dies once a quarter because a certificate expired is the classic failure of this design.
+
+### Access control
+
+Once HTTPS is confirmed, narrow the Tailscale policy so the VPS reaches only what it needs:
+
+```json
+{
+  "acls": [
+    { "action": "accept", "src": ["100.76.123.107"], "dst": ["100.97.78.35:443"] }
+  ]
+}
+```
+
+Add a rule for the administrator's own machine covering 443 and 3389 before applying this, and confirm RDP still works before closing the session.
 
 ### Credentials
 

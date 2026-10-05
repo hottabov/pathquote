@@ -366,8 +366,8 @@ Three specs, in order of dependency:
 
 | Item | Owner | Blocks |
 |---|---|---|
-| Tailscale overlay between VPS and Act! server, HTTPS on the Act! side | Pathfinder | everything |
-| `PathQuote Service` account created, licence seat available, `4032` permission confirmed | Pathfinder | everything |
+| ~~Tailscale overlay and HTTPS~~ — done 2026-10-05, verified end to end | — | — |
+| ~~Integration account and permissions~~ — done 2026-10-05, Manager role on `Marketing` | — | — |
 | Territory → Record Manager routing table | Pathfinder sales | lead assignment on create |
 | Create the five `PQ ` fields via the metadata endpoint | implementation | push |
 
