@@ -301,7 +301,9 @@ Five, created through `POST /api/metadata/contact/fields` — see the reference 
 
 ## Telling automatic records from human ones
 
-History written through the API carries the authenticating user. The integration authenticates as a dedicated Act! account, `PathQuote Service`, so a human touch is any history record whose creator is **not** that account. No text convention, nothing to remember to set, and it works retroactively over everything the integration has ever written.
+History written through the API carries the authenticating user. The integration authenticates as its own Act! account — `Marketing`, a dormant account reused for its licence seat and promoted to Manager — so a human touch is any history record whose creator is **not** that account. No text convention, nothing to remember to set, and it works retroactively over everything the integration has ever written.
+
+The name is unhelpful and will read oddly on a quote history line. It is a cosmetic problem, not a functional one: the mechanism keys on the account, not its label. Renaming is deferred.
 
 This is the whole reason the integration does not run under a salesperson's login. Authenticating as a person would attribute robot writes to them, tie the integration to their password, and make "which leads has nobody worked?" and "time to first human contact" unanswerable.
 

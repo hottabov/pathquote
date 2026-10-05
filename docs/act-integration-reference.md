@@ -42,6 +42,8 @@ Act-Database-Name: Pathfinder
 
 The username is the Act! **display name**, exactly as it appears in `Tools → Manage Users` — `John Hollo`, not `john`. A wrong username or an unregistered database name both return a bare `401` with no body, so the two are indistinguishable from the response alone.
 
+**The integration account is `Marketing`**, id `d90f208e-6468-4251-89d8-4937b0c70182`, promoted to the Manager role on 2026-10-05. The name is historical — it was a dormant account reused for its licence seat — and it is what will appear as the author of every history record and note the integration writes. Renaming it to something self-explanatory is deferred, not rejected; the credentials live in configuration, so a rename is a one-line change on our side.
+
 Error codes documented by the API: `401` unauthorized, `403` forbidden, `4030` Act! incompatibility, `4031` subscription required, `4032` API access permission required.
 
 Tokens are signed with `BearerKey` from `C:\Program Files\ACT\Act.Web.API\web.config`.
