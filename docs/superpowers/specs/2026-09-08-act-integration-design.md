@@ -1,8 +1,8 @@
 # ACT! Integration — Design
 
-**Date:** 2026-09-08 (revised 2026-09-09)
+**Date:** 2026-09-08 · revised 2026-10-05
 **Status:** Approved, ready for implementation planning
-**Vendor-facing companion:** `docs/act-integration-vendor-spec.md` — a bare field list. All reasoning lives here; the vendor was explicit that he wants the mapping and nothing else.
+**API reference:** `docs/act-integration-reference.md` — field mappings, endpoints, infrastructure, all verified against the live system
 
 ---
 
@@ -11,8 +11,6 @@
 Inbound enquiries from pathfindercut.com arrive by email and are retyped into ACT! by hand. Nothing is scored or enriched, and a salesperson cannot tell a buyer from a student without reading every message.
 
 Separately, PathQuote has no client data. A salesperson who has closed a deal by phone retypes the client before issuing a quote, even though the client already exists in ACT! with a full address.
-
-The root cause is that ACT! Premium Desktop has no programmatic interface here. There is no API to call and no supported way to write.
 
 ## Goal
 
@@ -26,7 +24,7 @@ ACT! is the system of record for client data. Everything else reads from it or r
 ## Non-goals
 
 - Automatic field-level merge. Conflicts are refused and shown to a person, never resolved by the system.
-- Replacing ACT!. PathQuote edits client identity and addresses — what a quote needs. Pipeline, history, and activities stay read-only.
+- Replacing ACT!. PathQuote edits client identity and addresses — what a quote needs. Pipeline, history and activities stay read-only.
 - Modelling sales pipeline state in PathQuote.
 
 ---
@@ -38,9 +36,9 @@ ACT! is the system of record for client data. Everything else reads from it or r
   ┌──────────────┐     ┌─────────────────────────────┐
   │ pathfindercut│     │            n8n              │
   │  .com        │────▶│ spam → route → enrich →     │
-  │ Gravity Forms│     │ score → history + activity  │
+  │ Gravity Forms│     │ score → note + activity     │
   └──────────────┘     └──────────────┬──────────────┘
-                                      │  upsert
+                                      │  Act! Web API
                                       ▼
                          ╔═════════════════════════╗
                          ║          ACT!           ║
@@ -49,8 +47,8 @@ ACT! is the system of record for client data. Everything else reads from it or r
                          ║  126 companies          ║
                          ╚═══╤═════════════════▲═══╝
             delta read       │                 │  create · fill · edit
-            EDITDATE >       │                 │  history · opportunity
-            modifiedSince    ▼                 │
+            $filter=         │                 │  history · opportunity
+            edited gt …      ▼                 │
                          ┌─────────────────────┴───┐
                          │       PathQuote         │
                          │  search → quote → PDF   │
@@ -58,13 +56,19 @@ ACT! is the system of record for client data. Everything else reads from it or r
                     FLOW 2 — round trip
 ```
 
-The two flows meet only inside ACT!. n8n never writes to PathQuote; PathQuote never talks to the website or to n8n.
+Both flows meet only inside ACT!. n8n never writes to PathQuote; PathQuote never talks to the website or to n8n.
 
 A lead created by n8n at 10:00 does not reach PathQuote until the nightly sync — which is why the manual "Load contacts" button exists.
 
-### Transport
+### Transport: the Act! Web API, already installed
 
-ACT! Premium Desktop is licensed here without the web tier, so the built-in Act! Web API does not exist in this installation. The vendor chooses the mechanism; the field contract is the same either way. Direct SQL writes are the one option we will not accept: they bypass the ACT! business layer, are not enqueued for remote-database replication, and void supportability. Whether remote databases exist is an open question to the vendor, and it decides how severe that is.
+The project was scoped on the understanding that Act! Premium Desktop here had no web tier, which would have meant either a custom .NET service on the Act! SDK or a direct-SQL path with the risks that carries. Both are moot: **Act! Premium for Web and the Act! Web API v1.1.524.0 are installed and serving the production database.** Nobody was using them.
+
+What that removes: no C# service, no SQL login, no reverse-engineering of the schema, and no third-party developer. What remains is configuration and our own client code.
+
+Direct SQL writes stay excluded on principle — the database is a sync publisher with managers' laptops subscribed to it, and writes outside the business layer never reach them. The API is the only write path.
+
+`act.webhook.notifications` is installed too, so ACT! can push change events rather than being polled. Not used in v1; it would turn the nightly sync into a near-real-time one later.
 
 ---
 
@@ -77,17 +81,17 @@ Both ACT! entities carry overlapping data. The split is fixed:
 | Company | name, main address, billing address, shipping address, website, industry, territory |
 | Contact | first name, surname, position, email, phone |
 
-Consequence: ACT! Company `Phone`, `Toll-Free Phone`, and `Fax Phone` are not read at all. A quote takes its addresses from the company and its human details from the contact.
+So ACT! Company `phone`, `tollFreePhone` and `fax` are not read at all. A quote takes its addresses from the company and its human details from the contact.
 
-This resolved the delivery-address question. ACT! Contact has no shipping block, but ACT! Company has stock `Billing *` and `Shipping *` field groups — seven fields each, `Shipping` empty in all 126 companies, `Billing` populated in one. No new address fields are needed.
+This settled the delivery-address question: ACT! Company has stock `billingAddress` and `shippingAddress` objects, three lines each. No new address fields are needed anywhere.
 
 ### The 126-company problem
 
-There are 126 company records against 17,373 contacts. The Company entity is effectively unused; almost every contact carries a company name as free text and is linked to nothing.
+126 company records against 17,373 contacts. The Company entity is effectively unused; almost every contact carries a company name as free text with an empty `companyID`.
 
-So billing and shipping addresses barely exist today. Rather than a migration nobody will run, the Company entity grows from real work: **when a salesperson first prepares a quote and learns the delivery address, PathQuote creates or fills the ACT! Company record.** In a year there will be exactly as many companies as there have been deals.
+Rather than a migration nobody will run, the Company entity grows from real work: **when a salesperson first prepares a quote and learns the delivery address, PathQuote creates or fills the ACT! Company record.** In a year there will be exactly as many companies as there have been deals.
 
-Contacts with no `COMPANYID` are grouped into PathQuote companies by normalised name — lowercased, legal suffixes stripped (`Ltd`, `Pty Ltd`, `GmbH`, `Inc`, `LLC`, `BV`, `SA`, `AB`, `Oy`), whitespace collapsed, punctuation removed.
+Contacts with no `companyID` are grouped into PathQuote companies by normalised name — lowercased, legal suffixes stripped (`Ltd`, `Pty Ltd`, `GmbH`, `Inc`, `LLC`, `BV`, `SA`, `AB`, `Oy`), whitespace collapsed, punctuation removed.
 
 ### Address mapping
 
@@ -95,11 +99,11 @@ ACT! Company has three addresses, PathQuote has two. PathQuote's main address is
 
 | PathQuote | Source |
 |---|---|
-| `street`, `city`, `state`, `postcode`, `country` | `Billing *` when populated, otherwise `Address 1..3` + `City`/`State`/`Postcode`/`Country` |
-| `delivery*` | `Shipping *` |
-| `deliverySameAsMain` | derived — `true` when the `Shipping *` block is empty |
+| `street`, `city`, `state`, `postcode`, `country` | `billingAddress/*` when populated, otherwise `address/*` |
+| `delivery*` | `shippingAddress/*` |
+| `deliverySameAsMain` | derived — `true` when `shippingAddress` is empty |
 
-`Country` in the company export is dirty (`USA` and `United States` both occur). Normalise before converting to ISO 3166-1 alpha-2 via `src/lib/countries.ts`.
+`country` arrives as a full name and is converted to ISO 3166-1 alpha-2 via `src/lib/countries.ts`. Company country data is dirty (`USA` and `United States` both occur); normalise before converting.
 
 ---
 
@@ -109,10 +113,10 @@ ACT! Company has three addresses, PathQuote has two. PathQuote's main address is
 
 | Column | Type | Purpose |
 |---|---|---|
-| `actCompanyId` | `String?` `@unique` | ACT! `COMPANYID` |
-| `actRecordManager` | `String?` | Owning salesperson's ACT! login |
-| `actStatus` | `String?` | ACT! `ID/Status`, promoted out of the snapshot because it drives list filtering |
-| `actEditDateAtSync` | `DateTime?` | Concurrency token — the `EDITDATE` seen at last sync |
+| `actCompanyId` | `String?` `@unique` | ACT! company `id` |
+| `actRecordManagerId` | `String?` | ACT! `recordManagerID` (uuid, stable) |
+| `actStatus` | `String?` | ACT! `idStatus`, promoted out of the snapshot because it drives list filtering |
+| `actEditedAtSync` | `DateTime?` | Concurrency token — `edited` as seen at last sync |
 | `actSnapshot` | `Json?` | Last-seen ACT! payload |
 | `actSyncedAt` | `DateTime?` | |
 
@@ -120,9 +124,9 @@ ACT! Company has three addresses, PathQuote has two. PathQuote's main address is
 
 | Column | Type | Purpose |
 |---|---|---|
-| `actContactId` | `String?` `@unique` | ACT! `CONTACTID` |
+| `actContactId` | `String?` `@unique` | ACT! contact `id` |
 | `actSyncState` | `enum ActSyncState` | `SYNCED` / `PENDING` / `CONFLICT` |
-| `actEditDateAtSync` | `DateTime?` | Concurrency token |
+| `actEditedAtSync` | `DateTime?` | Concurrency token |
 | `actSnapshot` | `Json?` | |
 | `actSyncedAt` | `DateTime?` | |
 
@@ -131,7 +135,7 @@ ACT! Company has three addresses, PathQuote has two. PathQuote's main address is
 | State | Meaning |
 |---|---|
 | `SYNCED` | Has an ACT! id and matches the last snapshot |
-| `PENDING` | Created or edited locally, write queued — the VPN was unreachable or the write has not run yet |
+| `PENDING` | Created or edited locally, write queued — the overlay was unreachable or the write has not run yet |
 | `CONFLICT` | Either the snapshot diverged after a sync, or a write was refused because ACT! changed first |
 
 `CONFLICT` shows both versions side by side and a person chooses. Nothing merges automatically.
@@ -140,25 +144,25 @@ ACT! Company has three addresses, PathQuote has two. PathQuote's main address is
 
 ## Pull
 
-One operation, two callers: a nightly cron and the manual button, both passing a `modifiedSince` cursor. There is no separate full-import path after the first run.
+One operation, two callers: a nightly cron and the manual button, both passing an `edited gt <cursor>` filter. There is no separate full-import path after the first run.
 
-**Scopes.** An admin pulls everything non-private. A manager pulls their own records plus public records. Mirrors the existing manager-permissions model (`2026-09-06-manager-permissions-design.md`).
+**Scopes.** An admin pulls everything non-private. A manager pulls their own records plus public records, mirroring the existing manager-permissions model (`2026-09-06-manager-permissions-design.md`).
 
-**Filters, applied on the ACT! side.** `Contact Type = 'Contact'`; not `Private` unless owned by the caller; `ID/Status` in `Customer`, `Prospect`, `Prospect-Distributor`, `Suspect`. Contacts with an empty status are excluded — a business decision, about 1,393 records. The filtered set is 12,094 contacts.
+**Filters.** `contactType eq 'Contact'`; not `isPrivate` unless owned by the caller; `idStatus` in `Customer`, `Prospect`, `Prospect-Distributor`, `Suspect`. Contacts with an empty status are excluded — a business decision, about 1,393 records. The filtered set is 12,094 contacts.
 
 **Merge policy is fill-only-empty.** A sync writes into a PathQuote field only when that field is null or blank. What a salesperson typed is never silently replaced. The full ACT! payload lands in `actSnapshot`, so a divergence can be shown without destroying either version.
 
-**Rate limiting.** The manual button is one call per five minutes per user. The ACT! database is slow and this button is the obvious way to hammer it.
+**Rate limiting.** The manual button is one call per five minutes per user.
 
 ### Fields deliberately not pulled
 
-The first draft of this design asked for roughly sixty contact fields. Most had nowhere to go: PathQuote's `Contact` has six columns and `Company` has about twenty. Everything else would have landed in `actSnapshot` and been read by nobody.
+PathQuote's `Contact` has six columns and `Company` about twenty. Pulling ACT!'s full surface would land most of it in `actSnapshot` to be read by nobody.
 
-Cut: `Salutation`, `Contact`, `Middle Name`, `Name Prefix/Suffix` (duplicate first/last name) · `E-Mail 2`, `Phone 2`, `Alt Phone`, `Fax`, `Phone Ext-` (PathQuote has one email and one phone, deliberately) · `Address 3`, `Website 2`, `Department` · `Account Mgr`, `Record Creator`, `Last Edited By`, `Owner` (one owner, `Record Manager`) · `Stage`, `Priority`, `Referred By` (pipeline, not managed here) · `Last Reach`, `Last Attempt`, `Last Meeting`, `Last E-mail`, `Last Results` (activity, not displayed) · `CAD User`, `CAD 2/3`, `Cutter 2..5`, `Install Date 1..5`, `Warranty 1..5`, `PF Product 1..5`, `Serial 1..5` (equipment profile — no PathQuote screen shows it, and parts enquiries go to support, not sales).
+Cut: `salutation`, `fullName`, `middleName`, `namePrefix`, `nameSuffix` (duplicate first/last name) · `customFields/email_2_email`, `customFields/phone_2_phone`, `alternatePhone`, `faxPhone` (PathQuote has one email and one phone, deliberately) · `address/line3`, `customFields/website_2`, `department` · `customFields/rep`, `recordOwner`, `editedBy`, `customFields/owner` (one owner, `recordManager`) · `messengerID` (Stage), `customFields/priority`, `referredBy` (pipeline, not managed here) · `lastReach`, `lastAttempt`, `lastMeeting`, `lastEmail`, `lastResults` (activity, not displayed) · the whole equipment profile — `customFields/user2` (Cutter User), `cutter_2..5`, `cad_2/3`, `pf_product_1..5`, `serial_1..5`, `intall_date_1`, `install_date_2..5`, `warranty_1..5`.
 
-`Cutter User` is still **written** by the enrichment pipeline even though it is not read. ACT! gets richer; PathQuote just does not use it. The vendor document flags this so it does not look like a mistake.
+`customFields/user2` (Cutter User) is still **written** by the enrichment pipeline even though it is not read. ACT! gets richer; PathQuote just does not use it.
 
-`PQ Lead Score` and `PQ Lead Source` are also not pulled — PathQuote has no column for them. Marketing reporting reads them from ACT! directly.
+`PQ Lead Score` and `PQ Lead Source` are not pulled either — PathQuote has no column for them, and marketing reporting reads them from ACT! directly.
 
 ### Phone normalisation
 
@@ -173,15 +177,15 @@ PathQuote stores E.164. ACT! stores whatever twenty years of typing produced: `0
 | `770 928 3915` | US | `+17709283915` |
 | `770 928 3915` | — | fails |
 
-The region comes from the contact's own `Country` field, per row — not a global default. `src/lib/phone.ts` already takes `defaultRegion`; `src/lib/countries.ts` already maps names to ISO-2.
+The region comes from the contact's own `businessAddress/country`, per row — not a global default. `src/lib/phone.ts` already takes `defaultRegion`; `src/lib/countries.ts` already maps names to ISO-2.
 
 The ladder, in order:
 
 1. Number begins with `+` → parse as-is.
-2. Contact's `Country` maps to ISO-2 → parse with that region.
+2. Contact's country maps to ISO-2 → parse with that region.
 3. Otherwise leave `Contact.phone` null, keep the raw string in the snapshot, flag the contact.
 
-`Mobile Phone` is read only as a fallback when `Phone` is empty; it is never written. Without it, 874 active contacts would arrive with no number at all.
+`mobilePhone` is read only as a fallback when `businessPhone` is empty; it is never written. Without it, 874 active contacts would arrive with no number at all.
 
 Measured over the 12,094 active contacts:
 
@@ -197,13 +201,13 @@ The third row is mostly a wrong country, not a broken number: `061 0759 9550` on
 
 A useful side effect: PathQuote becomes a data-quality indicator for ACT!. Those 942 contacts are a list nobody can see today. A salesperson opens the card, sees "phone not recognised", and fixes it in ACT!.
 
-Bulk normalisation of the 10,740 parsed numbers back into ACT! is deliberately out of scope for v1. It is a one-off job with a dry run and a reviewed diff, worth doing once the write channel has been proven.
+Bulk normalisation of the 10,740 parsed numbers back into ACT! is out of scope for v1 — a one-off job with a dry run and a reviewed diff, worth doing once the write channel has been proven.
 
 ### Industry resolution
 
-Already solved in this repository, and better than the first draft of this design assumed.
+Already solved in this repository. `scripts/data/act-industries.json` holds 31 canonical segments and 352 aliases; `resolveActIndustry()` in `scripts/import-act-industries.ts` is exported specifically for this import. Checked against the company export: 17 distinct spellings, all covered.
 
-`scripts/data/act-industries.json` holds 31 canonical segments and 352 aliases; `resolveActIndustry()` in `scripts/import-act-industries.ts` is exported specifically for this import. Checked against the company export: 17 distinct spellings, all covered.
+In ACT! the contact-level field is `customFields/user6`, backed by the `Industry` picklist; the company-level field is `industry`, same picklist.
 
 The importer must:
 
@@ -216,41 +220,43 @@ The importer must:
 
 ## Push
 
-PathQuote writes to ACT!. This was the largest design change: the earlier rule was "creates but never edits", and it broke on the first real scenario — a salesperson learns the delivery address while sitting in PathQuote, and telling them to go and type it into ACT! guarantees it lives only in PathQuote.
+PathQuote writes to ACT!. The earlier rule was "creates but never edits", and it broke on the first real scenario — a salesperson learns the delivery address while sitting in PathQuote, and telling them to go and type it into ACT! guarantees it lives only in PathQuote.
 
-The reasoning for allowing edits: the dangerous operation is not writing, it is *silently overwriting*. That is solvable without automatic merge.
+The dangerous operation is not writing, it is *silently overwriting*. That is solvable without automatic merge.
 
 ### Four guardrails
 
-**Whitelist.** The write endpoints accept only the fields PathQuote displays and edits — roughly twenty. `Record Manager`, `ID/Status`, `Stage`, `Priority`, `Referred By`, and every marketing-automation field are unwritable by construction, not by agreement.
+**Whitelist.** The client sends only the fields PathQuote displays and edits — roughly twenty. `recordManager`, `idStatus`, `messengerID`, `customFields/priority`, `referredBy` and every marketing-automation field are never in a payload.
 
-**Optimistic concurrency.** PathQuote stores the `EDITDATE` seen at last sync and sends it with every edit. If it no longer matches, the write is refused and current values are returned. The salesperson sees both versions and chooses. No update is ever lost silently.
+**Optimistic concurrency.** PathQuote stores `edited` as seen at last sync and re-reads the record before writing. If `edited` has moved, the write is abandoned and the salesperson sees both versions. The API has no `If-Match` equivalent, so this is a compare-then-write with a narrow window rather than a true atomic check — acceptable at this volume, and far better than blind overwrites.
 
-**No deletes.** No delete endpoint exists. A wrong record is removed in ACT! by hand.
+**No deletes.** PathQuote never calls `DELETE`.
 
-**History trail.** Every write from PathQuote leaves a history record naming the person, the time, and what changed. Nothing changes invisibly and anything can be rolled back by reading the history.
+**Audit trail.** Every write from PathQuote leaves a history record naming what changed.
 
-The rule becomes: **PathQuote creates, fills what is empty, and edits whitelisted fields under optimistic locking. It never deletes and never overwrites blindly.**
+The rule: **PathQuote creates, fills what is empty, and edits whitelisted fields under optimistic concurrency. It never deletes and never overwrites blindly.**
 
 ### Deduplication
 
-Evaluated in order, first match wins. Handled on the ACT! side in one operation, so two concurrent submissions cannot race into duplicates.
+Evaluated in order, first match wins.
 
 | Step | Rule | Action |
 |---|---|---|
 | 0 | `PQ Web Entry ID` already present | return the existing id, write nothing |
-| 1 | exact case-insensitive `E-mail` match among `Contact Type = 'Contact'` | update |
+| 1 | exact case-insensitive `emailAddress` match among `contactType eq 'Contact'` | update |
 | 2 | exact E.164 phone match | update |
-| 3 | normalised company name and surname match | create, flag the possible duplicate in history, raise a review activity |
+| 3 | normalised company name and surname match | create, flag the possible duplicate in a note, raise a review activity |
 | 4 | no match | create |
 
-The same ladder protects contacts a salesperson types into PathQuote: an existing client returns their existing `CONTACTID` and a warning naming the current owner, so PathQuote filters duplicates rather than producing them.
+Unlike the earlier design, this ladder runs in our client rather than inside a single server-side transaction, so two simultaneous submissions could in principle both create. At 23 qualified leads a month the risk is negligible, and step 0 catches the realistic case — n8n retrying after a timeout.
+
+The same ladder protects contacts a salesperson types into PathQuote: an existing client returns their existing id and a warning naming the current owner, so PathQuote filters duplicates rather than producing them.
 
 ### Strategic consequence
 
 If entering a client is easier in PathQuote, salespeople will do it in PathQuote — always, not sometimes. PathQuote becomes the de facto entry interface and ACT! becomes storage and reporting.
 
-Two things follow. Data quality in ACT! now depends on PathQuote's screens, so validation, required fields, duplicate warnings, and country and phone normalisation have to be good — that is scope on our side, not the vendor's. And there will be pressure to add the rest of the CRM to PathQuote: a note, then call history, then a task. The boundary that prevents a second CRM is the whitelist, which is enforced in the endpoint rather than written in a document.
+Two things follow. Data quality in ACT! now depends on PathQuote's screens, so validation, required fields, duplicate warnings, and country and phone normalisation have to be good — scope on our side. And there will be pressure to add the rest of the CRM to PathQuote: a note, then call history, then a task. The boundary that prevents a second CRM is the write whitelist.
 
 ---
 
@@ -270,7 +276,7 @@ The website form offers five enquiry types. Only two reach ACT!.
 
 Because support and parts never reach ACT!, the `Machine Model` and `Serial Number` form fields are out of the push mapping entirely.
 
-The `Region` field has six values, not the four visible in the export: `USA` and `Canada` → North America, `Europe` and `United Kingdom` → Europe, `Australia` → Australia, `Other` → empty plus a review flag.
+`Region` has six values: `USA` and `Canada` → North America, `Europe` and `United Kingdom` → Europe, `Australia` → Australia, `Other` → empty plus a review flag.
 
 ---
 
@@ -279,39 +285,42 @@ The `Region` field has six values, not the four visible in the export: `USA` and
 | Output | Destination |
 |---|---|
 | Overall score, 0–10 | `PQ Lead Score` — filterable and sortable |
-| Six sub-scores, narrative, enrichment findings | history record body |
+| Six sub-scores, narrative, enrichment findings | **a Note** (`POST /api/notes`) |
 | Recommended action | activity, type Call, due today, when score ≥ 8 |
-| Qualification signals | existing fields `Industry`, `Cutter User`, `Interested in`, `Priority` |
+| Qualification signals | `customFields/user6` (Industry), `customFields/user2` (Cutter User), `customFields/user3` (Interested in) |
+
+The narrative goes in a Note rather than a History record. In ACT! a history entry records something that happened — a call, a meeting, an email. A note is commentary about the contact. The AI write-up is the second, and keeping it out of History also keeps the response-time metrics clean.
 
 The six sub-scores get no fields. Nobody filters on them, and six extra columns in the contact layout would be scrolled past daily.
 
-`Cutter User` holds what equipment the client already runs — `Lectra`, `Gerber`, `hand cutting` — populated on 24% of contacts. That is exactly the enrichment signal the pipeline discovers, and it already has a home.
-
 ### New ACT! fields
 
-Five, all prefixed `PQ `: `PQ Web Entry ID` (indexed, the idempotency key), `PQ Lead Score`, `PQ Enquiry Type`, `PQ Lead Source`, `PQ Landing Page`.
-
-`AMA Score` is empty across all 17,373 records and was briefly attractive as a free slot. It belongs to Act! Marketing Automation, which is inactive rather than absent, and would be reclaimed the moment that module is switched on. Same for `AEM Opt Out`, `AEM Bounce Back`, `Bounced`, `Email 2 Bounced`.
+Five, created through `POST /api/metadata/contact/fields` — see the reference document. `amaScore` is a first-class API field belonging to Act! Marketing Automation and is never touched.
 
 ---
 
-## The `[AUTO]` marker
+## Telling automatic records from human ones
 
-Every automatic history record must be distinguishable from one a person wrote — a dedicated history type, or a `Regarding` line that always begins with `[AUTO]`.
+History written through the API carries the authenticating user. The integration authenticates as a dedicated Act! account, `PathQuote Service`, so a human touch is any history record whose creator is **not** that account. No text convention, nothing to remember to set, and it works retroactively over everything the integration has ever written.
 
-Without it, every lead has a history record from its first second, written by the robot. The question "which leads has nobody worked?" then returns nothing, forever, and "time to first human contact" is measured against a machine.
+This is the whole reason the integration does not run under a salesperson's login. Authenticating as a person would attribute robot writes to them, tie the integration to their password, and make "which leads has nobody worked?" and "time to first human contact" unanswerable.
 
-This has to be in place from the first record written. Six months of history in which the robot is indistinguishable from a salesperson cannot be repaired.
+Contacts the integration creates still get their real owner: `recordManagerID` is set explicitly from the territory routing table, so the service account authors the record without owning it.
 
 ---
 
 ## Write-back
 
-On quote finalisation PathQuote writes a history record — `Quote Q-AU-2026-014 sent`, with total, currency, line items, validity, PDF link — and creates or updates an opportunity.
+On quote finalisation PathQuote writes a history record of type **`Quote`** (id 62, "A Quote has been produced for an Opportunity") — `Quote Q-AU-2026-014 sent`, with total, currency, line items, validity, PDF link — and creates or updates an opportunity.
 
-Opportunity stage mapping is deliberately unresolved. ACT! opportunities run their own process with their own stage list, and the `Stage` field on the contact is a different entity. The vendor supplies the real list and the mapping is agreed then; guessing produces a mapping that fails silently.
+Stage mapping is per region, because two processes are live:
 
-Quote line items go across as free-form product entries, not linked to the ACT! product catalogue. The authoritative catalogue lives in PathQuote, and a second copy in ACT! would be a second source of truth for pricing.
+| PathQuote region | Process | Stage on "quote sent" |
+|---|---|---|
+| Australia | Pathfinder Sales Cycle | Proposal (40%) |
+| North America | Pathfinder US Sales Process | Engage (40%) |
+
+Quote line items go to `/api/opportunities/{id}/products` as free-form entries, not linked to the ACT! product catalogue. The authoritative catalogue lives in PathQuote, and a second copy in ACT! would be a second source of truth for pricing.
 
 ---
 
@@ -321,41 +330,33 @@ Marketing and management reporting queries **ACT!, not PathQuote.**
 
 PathQuote holds a deliberately narrowed copy: active statuses only, sales-relevant fields only, fill-only-empty merge. Leads scored 2 and filtered out, `Accounts` enquiries, and locally edited contacts are all absent or different. Reports built on it would produce numbers that look right and are not, with no visible signal that they are wrong.
 
-Two read-only operations cover what is wanted, over the same channel and the same login:
+The API covers it directly: `GET /api/contacts` with `$filter` for lead volume by period, source and region; `GET /api/contacts/{id}/history` for touches; and `/api/activities/analytics/activity-by-user` for the weekly manager digest. History types identify what counts as a human touch (Call Completed, Meeting Held, E-mail Sent), and the creating account separates automatic records from real ones — subject to the service-account caveat above.
 
-| Operation | Returns |
-|---|---|
-| Activity summary, per period | manager, activity type, count — for the Monday team digest |
-| Lead response metrics, per period | one row per contact created: id, company, create date, record manager, territory, lead source, lead score, enquiry type, first human touch date and type, human touch count |
-
-From the second, `GROUP BY` answers everything asked so far: volume by week and source and region, share touched within 24 or 48 hours or never, median time to first touch by manager, and eventually whether the AI score correlates with what salespeople actually pursue — the measurement that says whether the scoring is worth paying for.
-
-Both need the history-type list from the vendor to know what counts as a human touch, and both depend on logging discipline: a manager who calls and records nothing looks identical to one who ignored the lead. That distorts response metrics; it does not affect lead-volume metrics, which count leads rather than reactions.
-
-These are not in the vendor document — he asked for the field mapping only — but they are worth requesting verbally in the same engagement. A third read procedure while he is already in the read layer costs hours; the same request in six months is a fresh negotiation.
+Volume metrics are unaffected by logging discipline. Response-time metrics are: a manager who calls and records nothing looks identical to one who ignored the lead.
 
 ---
 
 ## Risks
 
-**Remote databases.** Unconfirmed. If they exist, no direct-SQL write shortcut is acceptable under any time pressure.
+**Licence seat.** The service account consumes an Act! user licence. Seven are active; if all purchased seats are in use, one must be bought or freed before the integration can authenticate.
 
-**Slow database.** Keyset-paginated deltas on an indexed `EDITDATE`. No offset pagination, no `SELECT *` across 147 columns, no full scans in steady state.
+**Act! upgrades.** The API is versioned, which is why it is safer than the schema. `GET /api/system` reports both API and SDK version; log it on every sync so a surprise upgrade is visible in our own logs before it is visible as a bug.
 
-**Missing contact ids.** No export we hold contains `CONTACTID`. Without it the integration degrades to a one-off import matched on email, which covers 79% of contacts. This is the hardest requirement in the vendor document.
+**Certificate expiry.** Tailscale certificates last 90 days. An unrenewed certificate is the classic quarterly outage.
 
-**Scope creep toward a second CRM.** Contained by the write whitelist, which is code rather than policy.
+**Token lifetime.** 65 minutes. The client re-authenticates on `401` rather than assuming a token lives forever.
+
+**Scope creep toward a second CRM.** Contained by the write whitelist.
 
 ---
 
 ## Decomposition
 
-This document covers the ACT! interface contract. Two further specs follow:
+Three specs, in order of dependency:
 
-1. **n8n lead pipeline** — spam filtering, routing, enrichment sources, the scoring rubric, cost controls, retry and dead-letter handling.
-2. **PathQuote sync and client UI** — sync worker, the "Load contacts" button, search, the conflict view, and the `PENDING` / `CONFLICT` states in the interface.
-
-The vendor work is on the critical path for both.
+1. **PathQuote sync and client UI** — API client, sync worker, the "Load contacts" button, search, the conflict view, `PENDING` / `CONFLICT` in the interface. Depends on nothing but network access.
+2. **n8n lead pipeline** — spam filtering, routing, enrichment sources, the scoring rubric, cost controls, retry and dead-letter handling.
+3. **Write-back and opportunities** — quote history, opportunity creation, stage mapping.
 
 ---
 
@@ -363,8 +364,9 @@ The vendor work is on the critical path for both.
 
 | Item | Owner | Blocks |
 |---|---|---|
-| Do synchronised remote ACT! databases exist? | ACT! vendor | Transport choice |
-| Opportunity process and stage list | ACT! vendor | Write-back stage mapping |
-| History type list | ACT! vendor | `[AUTO]` marker method, reporting |
-| ACT! user list with logins and emails | ACT! vendor | ACT! user → PathQuote user mapping |
-| Territory → Record Manager routing table | Pathfinder sales | Lead assignment on create |
+| Tailscale overlay between VPS and Act! server, HTTPS on the Act! side | Pathfinder | everything |
+| `PathQuote Service` account created, licence seat available, `4032` permission confirmed | Pathfinder | everything |
+| Territory → Record Manager routing table | Pathfinder sales | lead assignment on create |
+| Create the five `PQ ` fields via the metadata endpoint | implementation | push |
+
+Everything previously marked as a question for the ACT! vendor is closed: remote databases exist, the opportunity processes and stages are known, the history types are known, and the user list is known. No third-party development is required.
