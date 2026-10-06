@@ -262,89 +262,74 @@ Filters applied by the client:
 
 ## 11. Infrastructure
 
-Built and verified 2026-10-05.
+State as of 2026-10-06. **Not yet working end to end** — one routing change is outstanding with the IT provider.
 
-**Base URL for the integration:** `https://pf-sql.tail01aa0f.ts.net/act.web.api`
+### Topology
 
-### Private network
-
-The API is not exposed to the internet. The server already publishes `act.pathfinderaus.com.au` for Act! sync; nothing was added to that surface.
-
-A Tailscale overlay joins the two machines:
-
-| Machine | Tailscale address | Role |
-|---|---|---|
-| `pf-sql` | `100.97.78.35` | Windows Server 2019, ACT! and IIS |
-| `ubuntu` | `100.76.123.107` | VPS running PathQuote and n8n |
-
-Tailnet: `tail01aa0f.ts.net`.
-
-**Windows server.** Install the package, then `tailscale up --unattended` — without `--unattended` the connection drops as soon as nobody is logged in, and the nightly sync fails silently.
-
-Two traps on Windows. The CLI is not added to `PATH`: it lives at `C:\Program Files\Tailscale\tailscale.exe`. And the local API is bound to the user running the GUI, so the CLI must run in a **non-elevated** shell as that user — an elevated prompt gets `401 Unauthorized: Tailscale already in use`.
-
-Browser sign-in on Windows Server tends to fail against Google. Use a pre-authorised key from the admin console instead: `tailscale up --unattended --authkey=tskey-auth-…`.
-
-**VPS.** `curl -fsSL https://tailscale.com/install.sh | sh`, then `tailscale up`.
-
-### DNS
-
-MagicDNS does not work on this VPS. `systemd-resolved` reports the interface as managed by something else, and Tailscale's health check says so plainly: `setLinkDNS: Link tailscale0 is managed`.
-
-Rather than fight it, the single hostname is pinned:
-
-```bash
-echo "100.97.78.35 pf-sql.tail01aa0f.ts.net" | sudo tee -a /etc/hosts
-sudo tailscale up --accept-dns=false
+```
+                    internet
+                        |
+                        v
+            180.181.193.49          one public IP, NAT on the office router
+                        |  443 ->
+                        v
+            172.25.1.11             ARR reverse proxy (IIS + Application Request Routing)
+            routes by host header
+                        |
+            +-----------+-----------+
+            v                       v
+    remote.pathfinderaus.com.au   actapi.pathfindercut.com
+    -> a backend                  -> no rule yet -> 404
+                        
+            172.25.1.13             Act! server: IIS, Act! Web API, Act! sync
+            isolated segment
 ```
 
-Tailscale addresses are stable for the life of the node, and `--accept-dns=false` stops it retrying something this system will not allow, which also clears the health warning. The hostname still matters — it is what the certificate is issued for.
+All three public names — `act.pathfinderaus.com.au`, `remote.pathfinderaus.com.au`, `actapi.pathfindercut.com` — resolve to `180.181.193.49`. Port 443 there is answered by the ARR proxy, not by the Act! server. Internally, split-horizon DNS resolves `remote.` to `172.25.1.11` and `act.` to `172.25.1.13`.
 
-### HTTPS
+The Act! server cannot reach the proxy at all (`DestinationHostUnreachable` — no route between the segments). That isolation is deliberate and is why every inbound path has to go through the provider.
 
-Tailscale issues real Let's Encrypt certificates for MagicDNS names, so there is no self-signed certificate and no internal CA. MagicDNS and HTTPS Certificates must both be enabled in the admin console first.
+Outbound from the Act! server works and NATs to the same `180.181.193.49`.
 
-```powershell
-tailscale cert pf-sql.tail01aa0f.ts.net          # non-elevated, as the GUI user
-openssl pkcs12 -export -out act.pfx -inkey pf-sql.…key -in pf-sql.…crt
-```
+### Why Tailscale was removed
 
-Then, **elevated**:
+A Tailscale overlay was built and verified working on 2026-10-05: HTTPS from the VPS to the Act! server, real certificate, token returned. It was removed the next day because it broke the Aussie Time Sheets system on the same server — almost certainly by taking over DNS resolution, which `--accept-dns=false` would have prevented. The provider's position is that no VPN client goes on that server, and that stands.
 
-```powershell
-$cert = Import-PfxCertificate -FilePath C:\Temp\act.pfx `
-  -CertStoreLocation Cert:\LocalMachine\My -Password $pw
-New-WebBinding -Name "Default Web Site" -Protocol https -Port 443 `
-  -HostHeader "pf-sql.tail01aa0f.ts.net" -SslFlags 1
-Get-Item "Cert:\LocalMachine\My\$($cert.Thumbprint)" |
-  New-Item -Path "IIS:\SslBindings\!443!pf-sql.tail01aa0f.ts.net" -SSLFlags 1
-```
+Worth keeping in mind if a VPN is ever reconsidered: on Windows the Tailscale CLI is not on `PATH` (`C:\Program Files\Tailscale\tailscale.exe`) and its local API is bound to the user running the GUI, so an elevated shell gets `401`.
 
-`SslFlags 1` is SNI, and it is not optional: port 443 already belongs to the Act! sync site, and SNI is what lets the two bindings coexist.
+### What is in place
 
-Current certificate thumbprint: `84C71E6B7F4503A3D2491D019597054580542079`.
+| | |
+|---|---|
+| Certificate | Let's Encrypt for `actapi.pathfindercut.com`, DNS-01 via Cloudflare, issued on the VPS |
+| | Imported on the Act! server, thumbprint `838B0EBFD912D54D3AACEFF9E2380DB88BA30BC5` |
+| | Bound to `actapi.pathfindercut.com:443` with SNI — port 443 already belongs to the Act! sync site, so SNI is not optional |
+| DNS | `actapi.pathfindercut.com` A record to `180.181.193.49`, DNS-only (not proxied through Cloudflare) |
+| IIS access control | `Web-IP-Security` role installed; `ipSecurity` on the `act.web.api` application with `allowUnlisted=false` |
+| Allowed sources | `74.208.106.34` (VPS), `172.25.1.11` (ARR proxy), `127.0.0.1`, `::1` |
 
-Delete `act.pfx`, the `.key` and the `.crt` afterwards. The private key is in the Windows store; a plaintext copy in `C:\Temp` is risk without benefit.
+Rules are written into `applicationHost.config` under a `<location>` tag rather than the application's own `web.config`, so an Act! upgrade cannot overwrite them and the section stays locked for every other site.
 
-**Certificates last 90 days.** Schedule the renewal. An integration that quietly dies once a quarter because a certificate expired is the classic failure of this design.
+Verified: a request from an unlisted address returns `403`, `localhost` returns `200`.
 
-### Access control
+### What is outstanding
 
-Once HTTPS is confirmed, narrow the Tailscale policy so the VPS reaches only what it needs:
+The ARR proxy has no rule for `actapi.pathfindercut.com`, so external requests get the proxy's default certificate for `remote.pathfinderaus.com.au` and fail on a name mismatch. Requested from the provider:
 
-```json
-{
-  "acls": [
-    { "action": "accept", "src": ["100.76.123.107"], "dst": ["100.97.78.35:443"] }
-  ]
-}
-```
+- publish `actapi.pathfindercut.com` on `172.25.1.11`, backend `172.25.1.13`, path `/act.web.api`
+- restrict to source `74.208.106.34`
+- terminate TLS at the proxy with their own certificate
 
-Add a rule for the administrator's own machine covering 443 and 3389 before applying this, and confirm RDP still works before closing the session.
+Because ARR terminates TLS and re-originates the connection, the Act! server sees the proxy's address rather than the real client. Source-IP filtering therefore belongs on the proxy; the `ipSecurity` rule on the Act! server only has to admit `172.25.1.11`.
 
-### Credentials
+### Fallback if the routing request stalls
 
-The API username and password live in configuration, never in code, so the service account can be swapped without a deployment. Separate credentials for PathQuote and n8n if the API ever supports more than one account.
+Invert the direction. Outbound from the Act! server works without any perimeter change, so a scheduled task running a PowerShell script can read the API over `localhost` and push to PathQuote.
+
+No installed software, no VPN, no firewall change — but three real costs. The "Sync now" button stops being immediate, because PathQuote cannot reach in to trigger anything: it would set a flag the script polls, so a manual sync takes up to a minute instead of a second. The n8n write path breaks the same way and would need the script to pull a job queue from PathQuote and execute it locally. And our code would live on a server the provider maintains, which they may object to on the same grounds as the VPN.
+
+Preferred only if the routing change does not happen.
+
 
 ## 12. Source files
 
