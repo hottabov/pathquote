@@ -366,7 +366,7 @@ Three specs, in order of dependency:
 
 | Item | Owner | Blocks |
 |---|---|---|
-| ~~Tailscale overlay and HTTPS~~ — done 2026-10-05, verified end to end | — | — |
+| ~~Network path and HTTPS~~ — done 2026-10-06, source-IP NAT rule, verified end to end | — | — |
 | ~~Integration account and permissions~~ — done 2026-10-05, Manager role on `Marketing` | — | — |
 | Territory → Record Manager routing table | Pathfinder sales | lead assignment on create |
 | Create the five `PQ ` fields via the metadata endpoint | implementation | push |

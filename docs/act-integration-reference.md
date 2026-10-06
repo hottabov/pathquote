@@ -262,73 +262,75 @@ Filters applied by the client:
 
 ## 11. Infrastructure
 
-State as of 2026-10-06. **Not yet working end to end** — one routing change is outstanding with the IT provider.
+**Working end to end as of 2026-10-06.** Verified from the VPS: `GET /act.web.api/` returns `200` and `/authorize` returns a token, over HTTPS on the public hostname.
+
+**Base URL:** `https://actapi.pathfindercut.com/act.web.api`
 
 ### Topology
 
 ```
-                    internet
-                        |
-                        v
-            180.181.193.49          one public IP, NAT on the office router
-                        |  443 ->
-                        v
-            172.25.1.11             ARR reverse proxy (IIS + Application Request Routing)
-            routes by host header
-                        |
-            +-----------+-----------+
-            v                       v
-    remote.pathfinderaus.com.au   actapi.pathfindercut.com
-    -> a backend                  -> no rule yet -> 404
-                        
-            172.25.1.13             Act! server: IIS, Act! Web API, Act! sync
-            isolated segment
+            VPS 74.208.106.34                    everyone else
+            PathQuote, n8n, website                    |
+                        |                              |
+                        v                              v
+            180.181.193.49  one public IP, NAT on the office router
+                        |                              |
+            source-IP NAT rule                    default path
+            (higher priority)                          |
+                        |                              v
+                        |                   172.25.1.11  IIS + ARR reverse proxy
+                        |                              |
+                        +--------------+---------------+
+                                       v
+                            172.25.1.13  Act! server
+                            IIS, Act! Web API, Act! sync
 ```
 
-All three public names — `act.pathfinderaus.com.au`, `remote.pathfinderaus.com.au`, `actapi.pathfindercut.com` — resolve to `180.181.193.49`. Port 443 there is answered by the ARR proxy, not by the Act! server. Internally, split-horizon DNS resolves `remote.` to `172.25.1.11` and `act.` to `172.25.1.13`.
+`act.pathfinderaus.com.au`, `remote.pathfinderaus.com.au` and `actapi.pathfindercut.com` all resolve to `180.181.193.49`. Internally, split-horizon DNS resolves `remote.` to `172.25.1.11` and `act.` to `172.25.1.13`.
 
-The Act! server cannot reach the proxy at all (`DestinationHostUnreachable` — no route between the segments). That isolation is deliberate and is why every inbound path has to go through the provider.
+The provider solved the routing with a **source-IP NAT rule rather than a proxy entry**: traffic arriving from `74.208.106.34` on 443 is sent straight to the Act! server, bypassing the ARR proxy entirely. Everyone else still lands on the proxy, where `/act.web.api` does not exist.
+
+That turned out better than the reverse-proxy rule originally requested. TLS is not re-originated, so the Act! server sees the real client address and the existing `ipSecurity` rule works unchanged. The `172.25.1.11` entry in that rule is now redundant but harmless.
+
+The Act! server cannot reach the proxy at all — no route between the segments. That isolation is deliberate and is why every inbound path had to go through the provider.
 
 Outbound from the Act! server works and NATs to the same `180.181.193.49`.
 
-### Why Tailscale was removed
-
-A Tailscale overlay was built and verified working on 2026-10-05: HTTPS from the VPS to the Act! server, real certificate, token returned. It was removed the next day because it broke the Aussie Time Sheets system on the same server — almost certainly by taking over DNS resolution, which `--accept-dns=false` would have prevented. The provider's position is that no VPN client goes on that server, and that stands.
-
-Worth keeping in mind if a VPN is ever reconsidered: on Windows the Tailscale CLI is not on `PATH` (`C:\Program Files\Tailscale\tailscale.exe`) and its local API is bound to the user running the GUI, so an elevated shell gets `401`.
-
-### What is in place
+### Access control
 
 | | |
 |---|---|
-| Certificate | Let's Encrypt for `actapi.pathfindercut.com`, DNS-01 via Cloudflare, issued on the VPS |
-| | Imported on the Act! server, thumbprint `838B0EBFD912D54D3AACEFF9E2380DB88BA30BC5` |
-| | Bound to `actapi.pathfindercut.com:443` with SNI — port 443 already belongs to the Act! sync site, so SNI is not optional |
-| DNS | `actapi.pathfindercut.com` A record to `180.181.193.49`, DNS-only (not proxied through Cloudflare) |
-| IIS access control | `Web-IP-Security` role installed; `ipSecurity` on the `act.web.api` application with `allowUnlisted=false` |
-| Allowed sources | `74.208.106.34` (VPS), `172.25.1.11` (ARR proxy), `127.0.0.1`, `::1` |
+| IIS role | `Web-IP-Security` installed 2026-10-06 |
+| Scope | `ipSecurity` on the `act.web.api` application, `allowUnlisted=false` |
+| Allowed | `74.208.106.34` (VPS), `172.25.1.11` (proxy, now redundant), `127.0.0.1`, `::1` |
 
-Rules are written into `applicationHost.config` under a `<location>` tag rather than the application's own `web.config`, so an Act! upgrade cannot overwrite them and the section stays locked for every other site.
+Rules live in `applicationHost.config` under a `<location>` tag, not in the application's own `web.config`, so an Act! upgrade cannot overwrite them and the configuration section stays locked for every other site on the server.
 
-Verified: a request from an unlisted address returns `403`, `localhost` returns `200`.
+Verified: a request from an unlisted address returns `403`; `localhost` returns `200`.
 
-### What is outstanding
+### Certificates
 
-The ARR proxy has no rule for `actapi.pathfindercut.com`, so external requests get the proxy's default certificate for `remote.pathfinderaus.com.au` and fail on a name mismatch. Requested from the provider:
+The endpoint presents a wildcard `*.pathfindercut.com`, thumbprint `ED3679726AB41E7986BAC3D7BB2A024ED725A7CC`, expiring 4 January 2027. The provider issued it and replaced the server's certificate store and bindings in the process — the `actapi.pathfindercut.com` certificate we had installed, and the expired `act.pathfinderaus.com.au` one, are both gone.
 
-- publish `actapi.pathfindercut.com` on `172.25.1.11`, backend `172.25.1.13`, path `/act.web.api`
-- restrict to source `74.208.106.34`
-- terminate TLS at the proxy with their own certificate
+A wildcard for this domain can only have been issued through DNS-01 validation on `pathfindercut.com`, whose DNS we manage. Where that validation runs is an open question with the provider, along with whether renewal is automated. Whoever holds the key can impersonate any host under the domain, including PathQuote itself at `q.pathfindercut.com`, so it is worth knowing.
 
-Because ARR terminates TLS and re-originates the connection, the Act! server sees the proxy's address rather than the real client. Source-IP filtering therefore belongs on the proxy; the `ipSecurity` rule on the Act! server only has to admit `172.25.1.11`.
+Our own `actapi.pathfindercut.com` certificate is kept on the VPS and renewed by certbot even though it is currently unused. If the provider's wildcard ever lapses, rebinding ours takes minutes. The deploy hook that rebuilds the PFX on renewal is worth keeping in place for the same reason.
 
-### Fallback if the routing request stalls
+### Why Tailscale was removed
 
-Invert the direction. Outbound from the Act! server works without any perimeter change, so a scheduled task running a PowerShell script can read the API over `localhost` and push to PathQuote.
+An overlay was built and verified working on 2026-10-05, then removed the next day because it broke the Aussie Time Sheets system on the same server.
 
-No installed software, no VPN, no firewall change — but three real costs. The "Sync now" button stops being immediate, because PathQuote cannot reach in to trigger anything: it would set a flag the script polls, so a manual sync takes up to a minute instead of a second. The n8n write path breaks the same way and would need the script to pull a job queue from PathQuote and execute it locally. And our code would live on a server the provider maintains, which they may object to on the same grounds as the VPN.
+The cause, per the provider, was not DNS as first assumed: the virtual adapter came up with a **lower interface metric**, which stopped local devices seeing broadcast traffic from the server, so the discovery protocols that time clocks and client devices rely on stopped finding it. `--accept-dns=false` would not have fixed that; it would have needed the interface metric adjusted.
 
-Preferred only if the routing change does not happen.
+Their position that no VPN client goes on that server is sound, and the NAT rule they built instead is a better answer anyway.
+
+### Fallback, if the NAT rule is ever withdrawn
+
+Invert the direction. Outbound from the Act! server works without any perimeter change, so a scheduled task running a PowerShell script could read the API over `localhost` and push to PathQuote.
+
+No installed software, no VPN, no firewall change — but three real costs. The "Sync now" button stops being immediate, because PathQuote cannot reach in to trigger anything: it would set a flag the script polls, making a manual sync take up to a minute instead of a second. The n8n write path breaks the same way and would need the script to pull a job queue and execute it locally. And our code would live on a server the provider maintains, which they may object to on the same grounds as the VPN.
+
+Recorded in case it is needed; not the current design.
 
 
 ## 12. Source files
