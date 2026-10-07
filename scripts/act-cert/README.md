@@ -58,6 +58,12 @@ Generate a token and put it where nginx can read it but git cannot:
 ```bash
 openssl rand -hex 32
 sudo tee /etc/nginx/conf.d/actapi-token.conf >/dev/null <<'EOF'
+# "Bearer " plus a 64-character token is 71 bytes, and nginx refuses to build
+# a map whose longest key exceeds the bucket size, which defaults to 64:
+#   nginx: [emerg] could not build map_hash, you should increase
+#   map_hash_bucket_size: 64
+map_hash_bucket_size 128;
+
 map $http_authorization $actapi_token_ok {
     "Bearer <paste the token>"  1;
     default                     0;
