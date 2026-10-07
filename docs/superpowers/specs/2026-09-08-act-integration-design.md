@@ -177,8 +177,7 @@ nobody would ever open 95% of them.
 | `actCompanyId` | `String?` `@unique` | ACT! company `id` |
 | `actRecordManagerId` | `String?` | ACT! `recordManagerID` (uuid, stable) |
 | `actStatus` | `String?` | ACT! `idStatus`, promoted out of the snapshot because it drives list filtering |
-| `actEditedAtSync` | `DateTime?` | Concurrency token — `edited` as seen at last sync |
-| `actSnapshot` | `Json?` | Last-seen ACT! payload |
+| `actSourceEditedAt` | `DateTime?` | Concurrency token — `edited` as ACT! reported it at the last sync, not when the sync ran |
 | `actSyncedAt` | `DateTime?` | |
 
 ### Contact
@@ -187,8 +186,7 @@ nobody would ever open 95% of them.
 |---|---|---|
 | `actContactId` | `String?` `@unique` | ACT! contact `id` |
 | `actSyncState` | `enum ActSyncState` | `SYNCED` / `PENDING` / `CONFLICT` |
-| `actEditedAtSync` | `DateTime?` | Concurrency token |
-| `actSnapshot` | `Json?` | |
+| `actSyncedAt` | `DateTime?` | When the sync last touched the row |
 | `actSyncedAt` | `DateTime?` | |
 
 ### Sync state machine
@@ -215,7 +213,7 @@ One operation, two callers: a nightly cron and the manual button, both passing a
 
 **Field metadata is read at the start of every sync, never cached between runs.** A contact-level `shipping_adress` field appeared in the database two days after the metadata snapshot was taken for this design — the director added it while rebuilding a layout. A snapshot of the schema is a photograph of a moving thing.
 
-**Merge policy is fill-only-empty.** A sync writes into a PathQuote field only when that field is null or blank. What a salesperson typed is never silently replaced. The full ACT! payload lands in `actSnapshot`, so a divergence can be shown without destroying either version.
+**Merge policy is fill-only-empty.** A sync writes into a PathQuote field only when that field is null or blank. What a salesperson typed is never silently replaced. The full ACT! payload lands in the `ActSnapshot` side table — not a column on `Contact` or `Company`, so a query wanting a company name never drags a payload with it — and a divergence can be shown without destroying either version.
 
 **Rate limiting.** The manual button is one call per five minutes per user.
 
@@ -270,7 +268,7 @@ migration, not a re-import.
 
 ### Fields deliberately not pulled
 
-PathQuote's `Contact` has six columns and `Company` about twenty. Pulling ACT!'s full surface would land most of it in `actSnapshot` to be read by nobody.
+PathQuote's `Contact` has six columns and `Company` about twenty. Pulling ACT!'s full surface would land most of it in `ActSnapshot` to be read by nobody.
 
 Cut: `salutation`, `fullName`, `middleName`, `namePrefix`, `nameSuffix` (duplicate first/last name) · `customFields/email_2_email`, `customFields/phone_2_phone`, `alternatePhone`, `faxPhone` (PathQuote has one email and one phone, deliberately) · `address/line3`, `customFields/website_2`, `department` · `recordOwner`, `editedBy`, `customFields/owner` (one owner, `recordManager`; `customFields/rep` **is** kept — visibility depends on it) · `messengerID` (Stage), `customFields/priority`, `referredBy` (pipeline, not managed here) · `lastReach`, `lastAttempt`, `lastMeeting`, `lastEmail`, `lastResults` (activity, not displayed) · the whole equipment profile — `customFields/user2` (Cutter User), `cutter_2..5`, `cad_2/3`, `pf_product_1..5`, `serial_1..5`, `intall_date_1`, `install_date_2..5`, `warranty_1..5`.
 

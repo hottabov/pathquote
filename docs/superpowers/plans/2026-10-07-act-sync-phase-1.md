@@ -82,13 +82,6 @@ In `model Company`, before `@@index([ownerId])`:
   /// ACT! idStatus, promoted out of the snapshot because the client list
   /// filters on it.
   actStatus         String?
-  /// The mapped payload this company was derived from, kept whole so a
-  /// divergence can be shown to a person without either version being
-  /// destroyed -- fill-only-empty never overwrites what someone typed.
-  /// Rewritten wholesale on each sync, never edited locally, and large: it is
-  /// omitted globally in src/lib/db.ts so ordinary queries do not drag it
-  /// along.
-  actSnapshot       Json?
   /// When this sync last touched the row. Distinct from the source record's
   /// own edited time, which a derived company does not have.
   actSyncedAt       DateTime?
@@ -108,12 +101,6 @@ In `model Contact`, before `@@index([companyId])`:
   /// the source record's own clock, not ours. actSyncedAt is when we ran.
   /// Phase 2 sends this back as a concurrency token; phase 1 only records it.
   actSourceEditedAt DateTime?
-  /// The full ACT! contact payload as received, kept whole so a divergence can
-  /// be shown to a person without either version being destroyed --
-  /// fill-only-empty never overwrites what someone typed. Rewritten wholesale
-  /// on each sync, never edited locally, and large: it is omitted globally in
-  /// src/lib/db.ts so ordinary queries do not drag it along.
-  actSnapshot       Json?
   /// When this sync last touched the row.
   actSyncedAt       DateTime?
   /// ACT! "Account Mgr" (customFields/rep). Visibility is decided on this,
@@ -163,14 +150,12 @@ ALTER TABLE "Company"
   ADD COLUMN "actCompanyKey"      TEXT,
   ADD COLUMN "actRecordManagerId" TEXT,
   ADD COLUMN "actStatus"          TEXT,
-  ADD COLUMN "actSnapshot"        JSONB,
   ADD COLUMN "actSyncedAt"        TIMESTAMP(3);
 
 ALTER TABLE "Contact"
   ADD COLUMN "actContactId"      TEXT,
   ADD COLUMN "actSyncState"      "ActSyncState",
   ADD COLUMN "actSourceEditedAt" TIMESTAMP(3),
-  ADD COLUMN "actSnapshot"       JSONB,
   ADD COLUMN "actSyncedAt"       TIMESTAMP(3),
   ADD COLUMN "actAccountMgr"     TEXT;
 
@@ -189,54 +174,87 @@ CREATE UNIQUE INDEX "Company_actCompanyId_key"  ON "Company"("actCompanyId");
 CREATE UNIQUE INDEX "Company_actCompanyKey_key" ON "Company"("actCompanyKey");
 CREATE UNIQUE INDEX "Contact_actContactId_key"  ON "Contact"("actContactId");
 CREATE UNIQUE INDEX "User_actUserId_key"        ON "User"("actUserId");
+
+-- The ACT! payload sits in its own table so it is never selected alongside a
+-- company name. One row per contact or company, never both, which Prisma
+-- cannot express and a CHECK can.
+CREATE TABLE "ActSnapshot" (
+  "id"        TEXT  NOT NULL,
+  "contactId" TEXT,
+  "companyId" TEXT,
+  "payload"   JSONB NOT NULL,
+
+  CONSTRAINT "ActSnapshot_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "ActSnapshot_one_owner" CHECK (
+    ("contactId" IS NOT NULL) <> ("companyId" IS NOT NULL)
+  )
+);
+
+CREATE UNIQUE INDEX "ActSnapshot_contactId_key" ON "ActSnapshot"("contactId");
+CREATE UNIQUE INDEX "ActSnapshot_companyId_key" ON "ActSnapshot"("companyId");
+
+ALTER TABLE "ActSnapshot"
+  ADD CONSTRAINT "ActSnapshot_contactId_fkey" FOREIGN KEY ("contactId")
+    REFERENCES "Contact"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT "ActSnapshot_companyId_fkey" FOREIGN KEY ("companyId")
+    REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ```
 
-- [ ] **Step 3: Keep `actSnapshot` out of ordinary queries**
+`prisma migrate diff` will not generate the CHECK — Prisma has no syntax for
+it. That is expected and is why these migrations are hand-written; CI compares
+columns and indexes, not constraints.
 
-Prisma selects every scalar column unless told otherwise, and several existing
-queries read whole `Contact` and `Company` rows with `include` rather than
-`select` — `src/lib/queries/documents-pickers.ts` loads every visible company
-with all of its contacts on each client-picker load, and
-`src/lib/queries/documents-builder.ts` does the same for the builder and the
-PDF routes. After the first sync each of those rows carries a full ACT!
-payload, so the picker query alone would start moving tens of megabytes.
+The ACT! payload does **not** go on `Contact` or `Company`. Add a side table,
+after the other models:
 
-In `src/lib/db.ts`, pass a global `omit` when constructing the client:
-
-```typescript
-  return new PrismaClient({
-    adapter: new PrismaPg({ connectionString: url }),
-    // Prisma selects every scalar unless told otherwise, and several queries
-    // read whole Contact and Company rows with `include`. actSnapshot is a
-    // full ACT! payload per row, so leaving it in the default selection would
-    // put tens of megabytes through the client picker. The sync writes it and
-    // nothing reads it; a future reader opts back in per query with
-    // `omit: { actSnapshot: false }`.
-    omit: {
-      contact: { actSnapshot: true },
-      company: { actSnapshot: true },
-    },
-  });
+```prisma
+/// The raw ACT! payload behind a synced record.
+///
+/// It lives here rather than as a column on Contact and Company because
+/// Prisma selects every scalar unless told otherwise, and several existing
+/// queries read whole rows with `include` rather than `select` --
+/// src/lib/queries/documents-pickers.ts loads every visible company with all
+/// of its contacts on each client-picker load. A full ACT! payload per row
+/// would put tens of megabytes through that query.
+///
+/// A global Prisma `omit` was the other way to stop that, and it was tried and
+/// rejected: `omit` changes the client's type parameter, so `PrismaClient`
+/// stops being assignable to itself and the breakage lands in auth, recalc and
+/// catalog code that has no interest in this column. Keeping the blob out of
+/// the row needs no cleverness and cannot leak into a new query by default.
+///
+/// Phase 2 reads this to show a person what diverged under fill-only-empty;
+/// phase 1 only writes it. Exactly one of contactId and companyId is set --
+/// see the CHECK constraint in the migration.
+model ActSnapshot {
+  id        String   @id @default(cuid())
+  contactId String?  @unique
+  companyId String?  @unique
+  payload   Json
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
 ```
 
-Note the export is `db`, not `prisma`.
+Add the back-relations: `actSnapshot ActSnapshot?` on both `model Contact` and
+`model Company`.
 
-- [ ] **Step 4: Check the schema parses and matches the migration**
+- [ ] **Step 3: Check the schema parses and matches the migration**
 
 Run: `npx prisma validate && npx prisma format --check`
 Expected: `The schema at prisma/schema.prisma is valid`
 
 Note: this sandbox has no Postgres, so `prisma migrate diff` cannot run here. CI runs it against a Postgres service container and fails if the schema and migrations disagree — see `docs/runbook.md`. A mismatch surfaces there.
 
-- [ ] **Step 5: Typecheck**
+- [ ] **Step 4: Typecheck**
 
 Run: `npm run typecheck`
 Expected: PASS. Prisma's client is regenerated by `postinstall`; if `tsc` complains that the new fields do not exist on the model types, run `npx prisma generate` first.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add prisma/schema.prisma prisma/migrations/z60_act_sync/migration.sql src/lib/db.ts
+git add prisma/schema.prisma prisma/migrations/z60_act_sync/migration.sql
 git commit -m "feat: ACT! sync columns on Company, Contact and User
 
 Additive and nullable, so it applies to live data without a backup window.
@@ -996,7 +1014,7 @@ Create `src/lib/act/merge.ts`:
 //
 // It may not. A sync fills blanks and nothing else: what a salesperson typed
 // into PathQuote is never silently replaced by what ACT! happens to hold. The
-// full ACT! payload is stored alongside in actSnapshot, so a divergence can be
+// full ACT! payload is kept in the ActSnapshot table, so a divergence can be
 // shown to a person without either version being destroyed.
 //
 // Kept as one tiny function rather than inlined at each call site so that
@@ -1646,6 +1664,25 @@ async function writeCursor(editedAt: Date): Promise<void> {
 }
 
 /**
+ * Store the ACT! payload behind a row.
+ *
+ * It lives in its own table rather than as a column so that a query wanting a
+ * company name never drags a full ACT! payload with it -- see the ActSnapshot
+ * model's comment. Nothing in phase 1 reads it back.
+ */
+async function writeSnapshot(
+  owner: { contactId: string } | { companyId: string },
+  payload: unknown,
+): Promise<void> {
+  const data = payload as object;
+  await db.actSnapshot.upsert({
+    where: owner,
+    create: { ...owner, payload: data },
+    update: { payload: data },
+  });
+}
+
+/**
  * Find or create the PathQuote company for a mapped contact.
  *
  * A contact linked to a real ACT! Company wins on `actCompanyId`; everyone
@@ -1685,10 +1722,10 @@ async function resolveCompany(
         actCompanyKey: company.actCompanyKey,
         actStatus: company.actStatus,
         actRecordManagerId: company.actRecordManagerId,
-        actSnapshot: company as unknown as object,
         actSyncedAt: new Date(),
       },
     });
+    await writeSnapshot({ companyId: created.id }, company);
     counters.companiesCreated += 1;
     return created.id;
   }
@@ -1713,10 +1750,10 @@ async function resolveCompany(
       ...patch,
       actStatus: company.actStatus,
       actRecordManagerId: company.actRecordManagerId,
-      actSnapshot: company as unknown as object,
       actSyncedAt: new Date(),
     },
   });
+  await writeSnapshot({ companyId: existing.id }, company);
   return existing.id;
 }
 
@@ -1795,7 +1832,7 @@ export async function syncContacts(
       });
 
       if (!existing) {
-        await db.contact.create({
+        const created = await db.contact.create({
           data: {
             companyId,
             firstName: mapped.contact.firstName,
@@ -1807,10 +1844,10 @@ export async function syncContacts(
             actAccountMgr: mapped.contact.actAccountMgr,
             actSyncState: "SYNCED",
             actSourceEditedAt: mapped.contact.actEditedAt,
-            actSnapshot: mapped.contact.snapshot as unknown as object,
             actSyncedAt: new Date(),
           },
         });
+        await writeSnapshot({ contactId: created.id }, mapped.contact.snapshot);
         result.contactsCreated += 1;
       } else {
         const patch = fillOnlyEmpty(
@@ -1830,10 +1867,10 @@ export async function syncContacts(
             actAccountMgr: mapped.contact.actAccountMgr,
             actSyncState: "SYNCED",
             actSourceEditedAt: mapped.contact.actEditedAt,
-            actSnapshot: mapped.contact.snapshot as unknown as object,
             actSyncedAt: new Date(),
           },
         });
+        await writeSnapshot({ contactId: existing.id }, mapped.contact.snapshot);
         result.contactsUpdated += 1;
       }
 
