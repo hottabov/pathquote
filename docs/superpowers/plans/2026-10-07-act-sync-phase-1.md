@@ -68,11 +68,11 @@ In `model Company`, before `@@index([ownerId])`:
   /// this holds that id. Null for the rest, whose company PathQuote derives
   /// from the contact's free-text company name -- see the spec's "Company is
   /// derived, not imported".
-  actCompanyId      String?       @unique
+  actCompanyId       String?      @unique
   /// Normalised company name + ISO country. Unique because it IS the identity
   /// of a derived company, so the guarantee is only as strong as the
   /// normalisation in src/lib/act/company-key.ts.
-  actCompanyKey     String?       @unique
+  actCompanyKey      String?      @unique
   /// recordManagerID of whichever contact the sync happened to process last
   /// for this company. Last-writer-wins and not authoritative: a derived
   /// company can have contacts under several managers. Kept as a uuid rather
@@ -81,10 +81,10 @@ In `model Company`, before `@@index([ownerId])`:
   actRecordManagerId String?
   /// ACT! idStatus, promoted out of the snapshot because the client list
   /// filters on it.
-  actStatus         String?
+  actStatus          String?
   /// When this sync last touched the row. Distinct from the source record's
   /// own edited time, which a derived company does not have.
-  actSyncedAt       DateTime?
+  actSyncedAt        DateTime?
 ```
 
 In `model Contact`, before `@@index([companyId])`:
