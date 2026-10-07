@@ -794,7 +794,7 @@ Create `tests/act-industries.test.ts`:
 
 ```typescript
 import { describe, it, expect } from "vitest";
-import { buildIndustryResolver } from "../src/lib/act/industries";
+import { buildIndustryResolver, loadActIndustries } from "../src/lib/act/industries";
 
 describe("buildIndustryResolver", () => {
   const resolve = buildIndustryResolver();
@@ -825,10 +825,7 @@ describe("buildIndustryResolver", () => {
   });
 
   it("resolves every canonical segment to itself", () => {
-    const { canonical } = require("../scripts/data/act-industries.json") as {
-      canonical: string[];
-    };
-    for (const name of canonical) {
+    for (const name of loadActIndustries().canonical) {
       expect(resolve(name)).toBe(name);
     }
   });
@@ -845,8 +842,7 @@ Expected: FAIL — `Failed to resolve import "../src/lib/act/industries"`
 Create `src/lib/act/industries.ts`:
 
 ```typescript
-import { readFileSync } from "node:fs";
-import path from "node:path";
+import actIndustries from "../../../scripts/data/act-industries.json";
 import { normalizeIndustryName } from "@/lib/validation/industries";
 
 // ACT!'s Industry field is free text and twenty years of it produced 335
@@ -871,10 +867,20 @@ export type ActIndustries = {
   aliases: Record<string, string | null>;
 };
 
-const DATA_PATH = path.join(process.cwd(), "scripts", "data", "act-industries.json");
+/** Where the mapping lives, for error messages. Not used to read the file. */
+export const ACT_INDUSTRIES_PATH = "scripts/data/act-industries.json";
 
+/**
+ * The mapping, as data.
+ *
+ * Imported statically rather than read with `readFileSync`: `resolveJsonModule`
+ * is on, so this needs no filesystem at runtime and no assumption about the
+ * working directory. The script this moved from used `import.meta.dirname`,
+ * which does not survive Next's bundler, and `process.cwd()` would have made
+ * the sync depend on being run from the repo root.
+ */
 export function loadActIndustries(): ActIndustries {
-  return JSON.parse(readFileSync(DATA_PATH, "utf8")) as ActIndustries;
+  return actIndustries as ActIndustries;
 }
 
 /**
@@ -914,27 +920,70 @@ Expected: PASS, 6 tests
 
 - [ ] **Step 5: Point the seeding script at the moved resolver**
 
-In `scripts/import-act-industries.ts`, delete the local `ActIndustries` type, `DATA_PATH`, `loadActIndustries` and `resolveActIndustry`, and the now-unused `readFileSync`/`path` imports. Add at the top of the imports:
+Three files import from the old location, so all three move with it.
+
+**`scripts/import-act-industries.ts`.** Delete the local `ActIndustries` type,
+`DATA_PATH`, `loadActIndustries` and `resolveActIndustry`, and the now-unused
+`readFileSync` and `path` imports. Import from the new home instead:
 
 ```typescript
 import {
-  loadActIndustries,
+  ACT_INDUSTRIES_PATH,
   buildIndustryResolver,
+  loadActIndustries,
   type ActIndustries,
 } from "../src/lib/act/industries";
 ```
 
-Keep `resolveActIndustry` working for any existing caller by re-exporting the new resolver's behaviour:
+`DATA_PATH` appeared in one error message; use `ACT_INDUSTRIES_PATH` there:
 
 ```typescript
-/** Kept as a named export for callers that resolve one value at a time.
- * Prefer `buildIndustryResolver` when resolving more than a handful. */
-export function resolveActIndustry(aliases: ActIndustries["aliases"], raw: string): string | null {
-  return buildIndustryResolver({ canonical: [], aliases })(raw);
-}
+    console.error(`invalid names in ${ACT_INDUSTRIES_PATH}: ${invalid.join(", ")}`);
 ```
 
-and add `buildIndustryResolver` to the same import.
+The one internal caller of `resolveActIndustry` is the `--merge` scan. Build
+the resolver once before that loop rather than per row:
+
+```typescript
+  const resolveIndustry = buildIndustryResolver(data);
+
+  const toMerge: { from: (typeof existing)[number]; to: string }[] = [];
+  for (const row of existing) {
+    const key = normalizeIndustryName(row.name);
+    if (canonicalKeys.has(key)) continue;
+    const target = resolveIndustry(row.name);
+    if (target && normalizeIndustryName(target) !== key) {
+      toMerge.push({ from: row, to: target });
+    }
+  }
+```
+
+`resolveActIndustry` is **not** re-exported. Nothing outside this file ever
+called it — the only caller was the loop above — so a compatibility shim would
+be dead code on arrival. Its module docstring currently promises the opposite
+("`resolveActIndustry` below is exported for it"); correct that sentence to
+point at `src/lib/act/industries.ts`, and likewise the two trailing comments
+near the bottom of the file that name it.
+
+**`scripts/seed-industry-aliases.ts`** imports `loadActIndustries` and
+`type ActIndustries` from `./import-act-industries`. Repoint it:
+
+```typescript
+import { loadActIndustries, type ActIndustries } from "../src/lib/act/industries";
+```
+
+Its header comment also mentions `resolveActIndustry`; leave the sense intact
+but point at the new module.
+
+**`tests/industry-alias-seed.test.ts`** imports `loadActIndustries` from
+`../scripts/import-act-industries`. Repoint it the same way:
+
+```typescript
+import { loadActIndustries } from "../src/lib/act/industries";
+```
+
+That test must keep passing unchanged otherwise — it is the existing guard on
+this data file.
 
 - [ ] **Step 6: Run the whole suite**
 
@@ -944,7 +993,9 @@ Expected: PASS. `tests/industry-alias-seed.test.ts` exercises this data and must
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/lib/act/industries.ts scripts/import-act-industries.ts tests/act-industries.test.ts
+git add src/lib/act/industries.ts scripts/import-act-industries.ts \
+  scripts/seed-industry-aliases.ts tests/industry-alias-seed.test.ts \
+  tests/act-industries.test.ts
 git commit -m "refactor: move the ACT! industry resolver into src and index it
 
 Its own comment said the contact import would need it, and importing from
@@ -953,7 +1004,12 @@ by normalised key instead of scanned per lookup: 352 aliases times 12,000
 contacts was 4.2 million normalisations to answer 12,000 questions.
 
 Canonical segments now resolve to themselves, which the old table did not
-guarantee for every one of the 31."
+guarantee for every one of the 31. The data file is a static import rather than
+a readFileSync, so resolving it no longer depends on the working directory.
+
+resolveActIndustry is gone rather than re-exported: its only caller was the
+--merge scan in the same file, which now builds the resolver once instead of
+rescanning 352 aliases per existing row."
 ```
 
 ---
