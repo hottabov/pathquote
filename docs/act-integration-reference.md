@@ -310,11 +310,21 @@ Verified: a request from an unlisted address returns `403`; `localhost` returns 
 
 ### Certificates
 
-The endpoint presents a wildcard `*.pathfindercut.com`, thumbprint `ED3679726AB41E7986BAC3D7BB2A024ED725A7CC`, expiring 4 January 2027. The provider issued it and replaced the server's certificate store and bindings in the process — the `actapi.pathfindercut.com` certificate we had installed, and the expired `act.pathfinderaus.com.au` one, are both gone.
+Two certificates coexist on port 443, and neither depends on the other.
 
-A wildcard for this domain can only have been issued through DNS-01 validation on `pathfindercut.com`, whose DNS we manage. Where that validation runs is an open question with the provider, along with whether renewal is automated. Whoever holds the key can impersonate any host under the domain, including PathQuote itself at `q.pathfindercut.com`, so it is worth knowing.
+| Binding | Certificate | Owner |
+|---|---|---|
+| `actapi.pathfindercut.com:443` (SNI) | `CN=actapi.pathfindercut.com`, `838B0E…BA30BC5` | ours, Let's Encrypt via certbot on the VPS |
+| `0.0.0.0:443` (catch-all) | `CN=*.pathfindercut.com`, `ED3679…D725A7CC` | the provider's |
 
-Our own `actapi.pathfindercut.com` certificate is kept on the VPS and renewed by certbot even though it is currently unused. If the provider's wildcard ever lapses, rebinding ours takes minutes. The deploy hook that rebuilds the PFX on renewal is worth keeping in place for the same reason.
+A hostname-specific SNI binding wins over the catch-all, so the integration uses ours and everything else — Act! sync included — continues on theirs. **The catch-all binding is never touched**; every manager's laptop syncs through it.
+
+The wildcard appeared when the provider set up the NAT rule: they issued it and replaced the server's certificate store in the process, removing both the certificate we had installed and the long-expired `act.pathfinderaus.com.au` one. A wildcard for this domain can only come from DNS-01 validation on a zone we manage, so where that validation runs is worth asking them — whoever holds that key can impersonate any host under the domain, PathQuote at `q.pathfindercut.com` included.
+
+Rebinding ours removed the dependency either way. Renewal is automated end to end, because the Act! server is LAN-only: nobody outside the office can renew it by hand, so leaving it manual would mean the integration dies the first time one person is on leave. Certbot renews on the VPS, a deploy hook publishes the PFX, and a weekly scheduled task on the Act! server fetches it over an outbound connection and rebinds only when the thumbprint has changed.
+
+Setup, operation and failure modes: `scripts/act-cert/README.md`. The warning that matters is Application event `9002` on the Act! server — fewer than 21 days left and the published copy has not been renewed. The sync worker logs observed expiry as well, so the warning arrives by two independent paths.
+
 
 ### Why Tailscale was removed
 
