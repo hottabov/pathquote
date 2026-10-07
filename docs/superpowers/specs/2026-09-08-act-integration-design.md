@@ -74,38 +74,99 @@ Direct SQL writes stay excluded on principle — the database is a sync publishe
 
 ## Entity ownership
 
-Both ACT! entities carry overlapping data. The split is fixed:
+The first version of this design assumed the ACT! Company record was the source
+of client addresses. Measuring the data killed that assumption.
 
-| Entity | Owns |
+| | |
 |---|---|
-| Company | name, main address, billing address, shipping address, website, industry, territory |
-| Contact | first name, surname, position, email, phone |
+| Active contacts | 12 094 |
+| Carrying a company name as free text | 12 088 — **100%** |
+| Distinct names after normalisation | 9 622 |
+| Names with exactly **one** contact | 8 259 — **85.8%** |
+| Names with five or more | 121 |
+| ACT! Company records | 125 |
+| Names matching a Company record | **103 of 9 622**, covering 307 contacts — **2.5%** |
 
-So ACT! Company `phone`, `tollFreePhone` and `fax` are not read at all. A quote takes its addresses from the company and its human details from the contact.
+And on those 125 company records: 93 have a main address, **one** has a billing
+address, and **none has a shipping address**. Company `idStatus` is 59 blanks,
+and one record's status is the string `John Hollo-`.
 
-This settled the delivery-address question: ACT! Company has stock `billingAddress` and `shippingAddress` objects, three lines each. No new address fields are needed anywhere.
+The address data lives on the contact: street 93.6%, city 95.6%, email 85.1%.
 
-### The 126-company problem
+So the Company entity in ACT! is not a source of truth, it is an artefact. The
+design inverts accordingly.
 
-126 company records against 17,373 contacts. The Company entity is effectively unused; almost every contact carries a company name as free text with an empty `companyID`.
+### Company is derived, not imported
 
-Rather than a migration nobody will run, the Company entity grows from real work: **when a salesperson first prepares a quote and learns the delivery address, PathQuote creates or fills the ACT! Company record.** In a year there will be exactly as many companies as there have been deals.
+PathQuote groups contacts into companies by **normalised name plus country**,
+and seeds the company address from the contact's own `businessAddress`.
 
-Contacts with no `companyID` are grouped into PathQuote companies by normalised name — lowercased, legal suffixes stripped (`Ltd`, `Pty Ltd`, `GmbH`, `Inc`, `LLC`, `BV`, `SA`, `AB`, `Oy`), whitespace collapsed, punctuation removed.
+Country is part of the key because 119 names (1.24%, 470 contacts) appear in
+more than one country. Some of that is dirt — `USA` against `United States`,
+which normalising the country to ISO-2 resolves — but `adient` genuinely has
+offices in five countries and `adidas` in two. A quote to Mexico and a quote to
+Romania are different addresses and different terms, so they must not collapse
+into one company.
 
-### Address mapping
+Normalisation: lowercase, strip punctuation, strip legal suffixes (`Ltd`,
+`Pty Ltd`, `GmbH`, `Inc`, `LLC`, `BV`, `SA`, `AB`, `Oy`, `Corp`, `Group`,
+`Holdings`, `International`), collapse whitespace. On the current data this
+merges 273 of 9 895 raw spellings.
 
-ACT! Company has three addresses, PathQuote has two. PathQuote's main address is the billing/office address (see the schema comment on `Company.deliverySameAsMain`), and `delivery*` is the manufacturing site.
+Where a contact does carry a `companyID` — the 2.5% — the ACT! Company record
+wins, and `Company.actCompanyId` is set. Everywhere else it stays null.
+
+### Addresses
 
 | PathQuote | Source |
 |---|---|
-| `street`, `city`, `state`, `postcode`, `country` | `billingAddress/*` when populated, otherwise `address/*` |
-| `delivery*` | `shippingAddress/*` |
-| `deliverySameAsMain` | derived — `true` when `shippingAddress` is empty |
+| `street`, `city`, `state`, `postcode`, `country` | the contact's `businessAddress`; `billingAddress` of the linked ACT! Company when one exists |
+| `delivery*` | `shippingAddress` of the linked ACT! Company — empty for everyone today |
+| `deliverySameAsMain` | derived: `true` while the delivery block is empty |
 
-`country` arrives as a full name and is converted to ISO 3166-1 alpha-2 via `src/lib/countries.ts`. Company country data is dirty (`USA` and `United States` both occur); normalise before converting.
+Delivery addresses therefore do not arrive from ACT!. They are captured in
+PathQuote at quote time, which is the first moment anyone has a verified one.
 
----
+### Search is contact-first
+
+With 85.8% of companies holding a single contact, "find the company" and "find
+the person" are the same operation. Making a salesperson pick a company before
+a contact adds a step that decides nothing in six cases out of seven.
+
+One search box over first name, surname, company text, email and phone,
+returning contacts with their company and city:
+
+```
+Sarah Harkin · Integral-T · Melbourne, AU
+Geoff Smith  · GSE Solutions · Sydney, AU
+```
+
+This also matches how the business actually works: the director and the
+salespeople look for people, not for companies.
+
+### Clusters
+
+Eleven ACT! companies are flagged as having divisions, all at hierarchy level 0
+— the divisions themselves are not in the export. Too few to design around now.
+`Company.parentId` exists in the model and stays null until there is a real
+case.
+
+When a salesperson types a company name, PathQuote shows every near match with
+its city, country and contact count, and offers three answers: this is it, this
+is a different company with the same name, this is a division of that one. The
+third is how a cluster gets recorded — by the person who knows, not by the
+normaliser guessing.
+
+### How this repairs ACT!
+
+Not by instruction. A quote cannot be issued without a confirmed legal name and
+a delivery address, so that is the moment the data becomes real — and the moment
+PathQuote creates or fills the ACT! Company record and links the contact to it.
+
+In a year ACT! holds as many good company records as there have been deals.
+Bulk-creating 9 622 companies would turn a sparse mess into a large one, and
+nobody would ever open 95% of them.
+
 
 ## Data model changes in PathQuote
 
@@ -146,19 +207,72 @@ ACT! Company has three addresses, PathQuote has two. PathQuote's main address is
 
 One operation, two callers: a nightly cron and the manual button, both passing an `edited gt <cursor>` filter. There is no separate full-import path after the first run.
 
-**Scopes.** An admin pulls everything non-private. A manager pulls their own records plus public records, mirroring the existing manager-permissions model (`2026-09-06-manager-permissions-design.md`).
+**Scope.** One pull, everything non-private, under the service account's `Access All Non-Private Data`. Visibility is decided inside PathQuote, not by fetching different subsets per user — see below.
 
-**Filters.** `contactType eq 'Contact'`; not `isPrivate` unless owned by the caller; `idStatus` in `Customer`, `Prospect`, `Prospect-Distributor`, `Suspect`. Contacts with an empty status are excluded — a business decision, about 1,393 records. The filtered set is 12,094 contacts.
+**Filters.** `contactType eq 'Contact'`; not `isPrivate`; `idStatus` in `Customer`, `Prospect`, `Prospect-Distributor`, `Suspect`. Contacts with an empty status are excluded — a business decision, about 1,393 records. The filtered set is 12,094 contacts.
+
+**`Personal` contacts never leave ACT!.** They are the director's own, and he does not share them. The status filter already excludes them, but that is one condition in one query: the importer also drops any record whose `idStatus` is `Personal`, whatever the API returned. The redundancy is deliberate. If someone later widens the status list and forgets this case, the second barrier holds.
+
+**Field metadata is read at the start of every sync, never cached between runs.** A contact-level `shipping_adress` field appeared in the database two days after the metadata snapshot was taken for this design — the director added it while rebuilding a layout. A snapshot of the schema is a photograph of a moving thing.
 
 **Merge policy is fill-only-empty.** A sync writes into a PathQuote field only when that field is null or blank. What a salesperson typed is never silently replaced. The full ACT! payload lands in `actSnapshot`, so a divergence can be shown without destroying either version.
 
 **Rate limiting.** The manual button is one call per five minutes per user.
 
+### Who sees what
+
+ACT! has no permission model. What a manager sees is a side effect of
+replication: a Sync Set lists criteria, and matching contacts are copied to
+their laptop. Twelve such sets exist, maintained by hand in a wizard.
+
+They all have the same shape. Brandon's reads:
+
+```
+ID/Status != Personal
+AND (Country = United States OR Canada OR Mexico)
+OR  Account Mgr = Brandon Clark
+```
+
+Only two things vary: a list of countries, and the manager's name in
+`Account Mgr` — which is `customFields/rep`, populated on 97% of contacts.
+Note that visibility runs on **Account Mgr**, not on Record Manager.
+
+Copying twelve rule sets into PathQuote would put the policy in two places,
+and the one in ACT! is edited in a GUI by someone who will not think to update
+ours. They would drift, and the failure is silent: somebody sees a contact they
+should not, or stops seeing one they should.
+
+So PathQuote expresses the same policy once, parameterised per user:
+
+| Field on `User` | Example |
+|---|---|
+| `actAccountMgr` | `Brandon Clark` |
+| `visibleCountries` | `["United States", "Canada", "Mexico"]` |
+
+A manager sees a contact when `customFields/rep` matches them, or the contact's
+country is in their list. Admin and developer see everything. Twelve rows of
+configuration instead of twelve implementations of the same idea, and a change
+to a Sync Set is a change to a list of countries.
+
+**The cost, stated plainly.** Today Brandon's laptop physically holds only
+Brandon's contacts; if it is stolen the rest of the database is not on it. In
+PathQuote all 12 094 sit in one database behind application-level checks, so a
+bug in the filter or a compromised admin account exposes everything. That
+property is being given up knowingly. It was never a security design in ACT! —
+it is what replication happens to do — and twelve laptops carrying copies of a
+CRM is its own larger risk.
+
+**None of this is built yet.** PathQuote has one user and that user is an
+admin, so the two fields and the filter are deferred. What the sync must do now
+is *keep the inputs*: `customFields/rep` and the contact's country are imported
+and stored from day one, so switching visibility on later is a filter and a
+migration, not a re-import.
+
 ### Fields deliberately not pulled
 
 PathQuote's `Contact` has six columns and `Company` about twenty. Pulling ACT!'s full surface would land most of it in `actSnapshot` to be read by nobody.
 
-Cut: `salutation`, `fullName`, `middleName`, `namePrefix`, `nameSuffix` (duplicate first/last name) · `customFields/email_2_email`, `customFields/phone_2_phone`, `alternatePhone`, `faxPhone` (PathQuote has one email and one phone, deliberately) · `address/line3`, `customFields/website_2`, `department` · `customFields/rep`, `recordOwner`, `editedBy`, `customFields/owner` (one owner, `recordManager`) · `messengerID` (Stage), `customFields/priority`, `referredBy` (pipeline, not managed here) · `lastReach`, `lastAttempt`, `lastMeeting`, `lastEmail`, `lastResults` (activity, not displayed) · the whole equipment profile — `customFields/user2` (Cutter User), `cutter_2..5`, `cad_2/3`, `pf_product_1..5`, `serial_1..5`, `intall_date_1`, `install_date_2..5`, `warranty_1..5`.
+Cut: `salutation`, `fullName`, `middleName`, `namePrefix`, `nameSuffix` (duplicate first/last name) · `customFields/email_2_email`, `customFields/phone_2_phone`, `alternatePhone`, `faxPhone` (PathQuote has one email and one phone, deliberately) · `address/line3`, `customFields/website_2`, `department` · `recordOwner`, `editedBy`, `customFields/owner` (one owner, `recordManager`; `customFields/rep` **is** kept — visibility depends on it) · `messengerID` (Stage), `customFields/priority`, `referredBy` (pipeline, not managed here) · `lastReach`, `lastAttempt`, `lastMeeting`, `lastEmail`, `lastResults` (activity, not displayed) · the whole equipment profile — `customFields/user2` (Cutter User), `cutter_2..5`, `cad_2/3`, `pf_product_1..5`, `serial_1..5`, `intall_date_1`, `install_date_2..5`, `warranty_1..5`.
 
 `customFields/user2` (Cutter User) is still **written** by the enrichment pipeline even though it is not read. ACT! gets richer; PathQuote just does not use it.
 
@@ -223,6 +337,23 @@ The importer must:
 PathQuote writes to ACT!. The earlier rule was "creates but never edits", and it broke on the first real scenario — a salesperson learns the delivery address while sitting in PathQuote, and telling them to go and type it into ACT! guarantees it lives only in PathQuote.
 
 The dangerous operation is not writing, it is *silently overwriting*. That is solvable without automatic merge.
+
+### What the API actually does, verified
+
+Create, update and delete were all exercised against the live database on
+2026-10-07 and the test record removed afterwards.
+
+| | |
+|---|---|
+| `POST /api/contacts` | returns the **whole contact object**, not an id string |
+| `PATCH /api/contacts/{id}` | needs `id` **in the body as well as the path**; without it, `400` with an empty response |
+| `PUT /api/contacts/{id}` | takes the full object; read-modify-write works |
+| `DELETE /api/contacts/{id}` | `204`; the service account may delete only records it manages |
+
+The empty-bodied `400` is worth remembering: it looks like a malformed payload
+and is actually a missing field the path already carries. Read-modify-write via
+`PUT` is the safer default anyway, since optimistic concurrency re-reads the
+record before writing regardless.
 
 ### Four guardrails
 
