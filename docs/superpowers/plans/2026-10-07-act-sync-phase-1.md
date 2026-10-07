@@ -50,9 +50,10 @@ In `prisma/schema.prisma`, next to the other enums:
 
 ```prisma
 /// Where a PathQuote record stands against its ACT! counterpart.
-/// PENDING and CONFLICT are written by phase 2 (writes back to ACT!); phase 1
-/// only ever produces SYNCED, and the values exist now so the column does not
-/// need a second migration later.
+/// Phase 1 only ever writes SYNCED. PENDING and CONFLICT exist now because the
+/// spec fixes the state machine, so freezing all three here keeps phase 2 from
+/// inventing a different vocabulary later -- not to avoid a migration, which
+/// z56_el_install_role shows is a one-line file.
 enum ActSyncState {
   SYNCED
   PENDING
@@ -63,39 +64,61 @@ enum ActSyncState {
 In `model Company`, before `@@index([ownerId])`:
 
 ```prisma
-  /// ACT! company id, when this company is one of the ~2.5% of contacts
-  /// actually linked to a Company record. Null for the rest, which PathQuote
-  /// derives from the contact's company name -- see the spec's "Company is
+  /// ACT! links only ~2.5% of contacts to a real Company record; for those,
+  /// this holds that id. Null for the rest, whose company PathQuote derives
+  /// from the contact's free-text company name -- see the spec's "Company is
   /// derived, not imported".
   actCompanyId      String?       @unique
-  /// Normalised company name + ISO country, the key contacts are grouped by.
-  /// Unique because it IS the identity of a derived company.
+  /// Normalised company name + ISO country. Unique because it IS the identity
+  /// of a derived company, so the guarantee is only as strong as the
+  /// normalisation in src/lib/act/company-key.ts.
   actCompanyKey     String?       @unique
-  /// ACT! recordManagerID of the contact this company was derived from. Kept
-  /// as a uuid rather than a name because names change.
+  /// recordManagerID of whichever contact the sync happened to process last
+  /// for this company. Last-writer-wins and not authoritative: a derived
+  /// company can have contacts under several managers. Kept as a uuid rather
+  /// than a name because names change, and intended as the hint that maps a
+  /// company to a PathQuote owner via User.actUserId.
   actRecordManagerId String?
   /// ACT! idStatus, promoted out of the snapshot because the client list
   /// filters on it.
   actStatus         String?
-  actEditedAtSync   DateTime?
+  /// The mapped payload this company was derived from, kept whole so a
+  /// divergence can be shown to a person without either version being
+  /// destroyed -- fill-only-empty never overwrites what someone typed.
+  /// Rewritten wholesale on each sync, never edited locally, and large: it is
+  /// omitted globally in src/lib/db.ts so ordinary queries do not drag it
+  /// along.
   actSnapshot       Json?
+  /// When this sync last touched the row. Distinct from the source record's
+  /// own edited time, which a derived company does not have.
   actSyncedAt       DateTime?
 ```
 
 In `model Contact`, before `@@index([companyId])`:
 
 ```prisma
+  /// The ACT! contact this row mirrors. Null for contacts created in
+  /// PathQuote and never matched to ACT!, and it is the authoritative answer
+  /// to "does ACT! know about this contact?".
   actContactId      String?       @unique
+  /// Null means the same thing actContactId null means: this contact has no
+  /// ACT! counterpart. Set only alongside actContactId.
   actSyncState      ActSyncState?
-  /// The `edited` value seen at the last sync. Phase 2 sends this back as a
-  /// concurrency token; phase 1 only records it.
-  actEditedAtSync   DateTime?
+  /// The `edited` timestamp ACT! reported for this contact at the last sync --
+  /// the source record's own clock, not ours. actSyncedAt is when we ran.
+  /// Phase 2 sends this back as a concurrency token; phase 1 only records it.
+  actSourceEditedAt DateTime?
+  /// The full ACT! contact payload as received, kept whole so a divergence can
+  /// be shown to a person without either version being destroyed --
+  /// fill-only-empty never overwrites what someone typed. Rewritten wholesale
+  /// on each sync, never edited locally, and large: it is omitted globally in
+  /// src/lib/db.ts so ordinary queries do not drag it along.
   actSnapshot       Json?
+  /// When this sync last touched the row.
   actSyncedAt       DateTime?
   /// ACT! "Account Mgr" (customFields/rep). Visibility is decided on this,
-  /// not on Record Manager -- see the spec's "Who sees what". Nothing reads it
-  /// yet; it is imported from day one so switching visibility on later is a
-  /// filter, not a re-import.
+  /// not on Record Manager -- see the spec's "Who sees what". Imported from
+  /// day one so switching visibility on later is a filter, not a re-import.
   actAccountMgr     String?
 ```
 
@@ -108,16 +131,17 @@ In `model User`, after `active`:
   /// This user's name as it appears in ACT!'s "Account Mgr" field.
   actAccountMgr     String?
   /// Countries whose contacts this user may see, mirroring their ACT! Sync
-  /// Set. Empty means "no country grant" -- they still see contacts where
-  /// actAccountMgr matches them.
+  /// Set. ISO 3166-1 alpha-2, the same vocabulary as Company.country and the
+  /// country half of Company.actCompanyKey, so a visibility filter can compare
+  /// them directly. Empty means "no country grant" -- they still see contacts
+  /// where actAccountMgr matches them.
   visibleCountries  String[]      @default([])
 ```
 
-Add indexes at the end of `model Contact`:
-
-```prisma
-  @@index([actAccountMgr])
-```
+No index on `actAccountMgr` yet. Nothing reads it in this phase, and the
+visibility rule it would eventually serve is `actAccountMgr = me OR country IN
+(...)` — an OR this index does not answer on its own. It also costs on every
+write during a 12,000-row import. Add it with the query that needs it.
 
 - [ ] **Step 2: Write the migration**
 
@@ -127,9 +151,10 @@ Create `prisma/migrations/z60_act_sync/migration.sql`:
 -- ACT! read-only sync, phase 1
 -- (docs/superpowers/specs/2026-09-08-act-integration-design.md).
 --
--- Additive only: new nullable columns and one new enum. No existing row is
--- read or rewritten, so this is safe to run against live data without a
--- backup window.
+-- Additive only: new nullable columns and one new enum. No data is modified --
+-- there is no backfill, no UPDATE and no drop. The index builds do scan every
+-- row and take a brief write lock on Company and Contact. Whether that needs a
+-- backup window is the approver's call, not this file's.
 
 CREATE TYPE "ActSyncState" AS ENUM ('SYNCED', 'PENDING', 'CONFLICT');
 
@@ -138,22 +163,23 @@ ALTER TABLE "Company"
   ADD COLUMN "actCompanyKey"      TEXT,
   ADD COLUMN "actRecordManagerId" TEXT,
   ADD COLUMN "actStatus"          TEXT,
-  ADD COLUMN "actEditedAtSync"    TIMESTAMP(3),
   ADD COLUMN "actSnapshot"        JSONB,
   ADD COLUMN "actSyncedAt"        TIMESTAMP(3);
 
 ALTER TABLE "Contact"
-  ADD COLUMN "actContactId"    TEXT,
-  ADD COLUMN "actSyncState"    "ActSyncState",
-  ADD COLUMN "actEditedAtSync" TIMESTAMP(3),
-  ADD COLUMN "actSnapshot"     JSONB,
-  ADD COLUMN "actSyncedAt"     TIMESTAMP(3),
-  ADD COLUMN "actAccountMgr"   TEXT;
+  ADD COLUMN "actContactId"      TEXT,
+  ADD COLUMN "actSyncState"      "ActSyncState",
+  ADD COLUMN "actSourceEditedAt" TIMESTAMP(3),
+  ADD COLUMN "actSnapshot"       JSONB,
+  ADD COLUMN "actSyncedAt"       TIMESTAMP(3),
+  ADD COLUMN "actAccountMgr"     TEXT;
 
 ALTER TABLE "User"
   ADD COLUMN "actUserId"        TEXT,
   ADD COLUMN "actAccountMgr"    TEXT,
-  ADD COLUMN "visibleCountries" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];
+  -- No NOT NULL: this is what `prisma migrate diff` generates for a
+  -- `String[] @default([])`, and CI compares the two.
+  ADD COLUMN "visibleCountries" TEXT[] DEFAULT ARRAY[]::TEXT[];
 
 -- Unique rather than plain indexes: each of these IS an identity. Two
 -- PathQuote companies claiming the same ACT! company, or the same derived
@@ -163,27 +189,54 @@ CREATE UNIQUE INDEX "Company_actCompanyId_key"  ON "Company"("actCompanyId");
 CREATE UNIQUE INDEX "Company_actCompanyKey_key" ON "Company"("actCompanyKey");
 CREATE UNIQUE INDEX "Contact_actContactId_key"  ON "Contact"("actContactId");
 CREATE UNIQUE INDEX "User_actUserId_key"        ON "User"("actUserId");
-
--- Visibility filters on this once phase 1's data is in place.
-CREATE INDEX "Contact_actAccountMgr_idx" ON "Contact"("actAccountMgr");
 ```
 
-- [ ] **Step 3: Check the schema parses and matches the migration**
+- [ ] **Step 3: Keep `actSnapshot` out of ordinary queries**
+
+Prisma selects every scalar column unless told otherwise, and several existing
+queries read whole `Contact` and `Company` rows with `include` rather than
+`select` — `src/lib/queries/documents-pickers.ts` loads every visible company
+with all of its contacts on each client-picker load, and
+`src/lib/queries/documents-builder.ts` does the same for the builder and the
+PDF routes. After the first sync each of those rows carries a full ACT!
+payload, so the picker query alone would start moving tens of megabytes.
+
+In `src/lib/db.ts`, pass a global `omit` when constructing the client:
+
+```typescript
+  return new PrismaClient({
+    adapter: new PrismaPg({ connectionString: url }),
+    // Prisma selects every scalar unless told otherwise, and several queries
+    // read whole Contact and Company rows with `include`. actSnapshot is a
+    // full ACT! payload per row, so leaving it in the default selection would
+    // put tens of megabytes through the client picker. The sync writes it and
+    // nothing reads it; a future reader opts back in per query with
+    // `omit: { actSnapshot: false }`.
+    omit: {
+      contact: { actSnapshot: true },
+      company: { actSnapshot: true },
+    },
+  });
+```
+
+Note the export is `db`, not `prisma`.
+
+- [ ] **Step 4: Check the schema parses and matches the migration**
 
 Run: `npx prisma validate && npx prisma format --check`
 Expected: `The schema at prisma/schema.prisma is valid`
 
 Note: this sandbox has no Postgres, so `prisma migrate diff` cannot run here. CI runs it against a Postgres service container and fails if the schema and migrations disagree — see `docs/runbook.md`. A mismatch surfaces there.
 
-- [ ] **Step 4: Typecheck**
+- [ ] **Step 5: Typecheck**
 
 Run: `npm run typecheck`
 Expected: PASS. Prisma's client is regenerated by `postinstall`; if `tsc` complains that the new fields do not exist on the model types, run `npx prisma generate` first.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add prisma/schema.prisma prisma/migrations/z60_act_sync/migration.sql
+git add prisma/schema.prisma prisma/migrations/z60_act_sync/migration.sql src/lib/db.ts
 git commit -m "feat: ACT! sync columns on Company, Contact and User
 
 Additive and nullable, so it applies to live data without a backup window.
@@ -1534,7 +1587,7 @@ No unit test: orchestration around Prisma. Its decisions are in `map.ts` and `me
 Create `src/lib/act/sync.ts`:
 
 ```typescript
-import { prisma } from "@/lib/db";
+import { db } from "@/lib/db";
 import { ActClient } from "@/lib/act/client";
 import { buildIndustryResolver } from "@/lib/act/industries";
 import { mapContact } from "@/lib/act/map";
@@ -1579,13 +1632,13 @@ function emptySkips(): Record<SkipReason, number> {
 }
 
 export async function readCursor(): Promise<Date | null> {
-  const row = await prisma.setting.findUnique({ where: { key: CURSOR_KEY } });
+  const row = await db.setting.findUnique({ where: { key: CURSOR_KEY } });
   const value = row?.value as { editedAt?: string } | null;
   return value?.editedAt ? new Date(value.editedAt) : null;
 }
 
 async function writeCursor(editedAt: Date): Promise<void> {
-  await prisma.setting.upsert({
+  await db.setting.upsert({
     where: { key: CURSOR_KEY },
     create: { key: CURSOR_KEY, value: { editedAt: editedAt.toISOString() } },
     update: { value: { editedAt: editedAt.toISOString() } },
@@ -1607,17 +1660,17 @@ async function resolveCompany(
   if (!company.name) return null;
 
   const existing = company.actCompanyId
-    ? await prisma.company.findUnique({ where: { actCompanyId: company.actCompanyId } })
+    ? await db.company.findUnique({ where: { actCompanyId: company.actCompanyId } })
     : company.actCompanyKey
-      ? await prisma.company.findUnique({ where: { actCompanyKey: company.actCompanyKey } })
+      ? await db.company.findUnique({ where: { actCompanyKey: company.actCompanyKey } })
       : null;
 
   const industryId = company.industry
-    ? (await prisma.industry.findFirst({ where: { name: company.industry } }))?.id ?? null
+    ? (await db.industry.findFirst({ where: { name: company.industry } }))?.id ?? null
     : null;
 
   if (!existing) {
-    const created = await prisma.company.create({
+    const created = await db.company.create({
       data: {
         name: company.name,
         street: company.street,
@@ -1654,7 +1707,7 @@ async function resolveCompany(
     ["street", "city", "state", "postcode", "country", "website", "industryId"],
   );
 
-  await prisma.company.update({
+  await db.company.update({
     where: { id: existing.id },
     data: {
       ...patch,
@@ -1689,7 +1742,7 @@ export async function syncContacts(
   // a salesperson moves the few that are wrong.
   // Check what Region is actually keyed on in prisma/schema.prisma before
   // writing this line; order by whichever field makes "first" deterministic.
-  const defaultRegion = await prisma.region.findFirst({ orderBy: { code: "asc" } });
+  const defaultRegion = await db.region.findFirst({ orderBy: { code: "asc" } });
   if (!defaultRegion) throw new Error("no Region rows: seed the database first");
 
   const result: SyncResult = {
@@ -1737,12 +1790,12 @@ export async function syncContacts(
         continue;
       }
 
-      const existing = await prisma.contact.findUnique({
+      const existing = await db.contact.findUnique({
         where: { actContactId: mapped.contact.actContactId },
       });
 
       if (!existing) {
-        await prisma.contact.create({
+        await db.contact.create({
           data: {
             companyId,
             firstName: mapped.contact.firstName,
@@ -1753,7 +1806,7 @@ export async function syncContacts(
             actContactId: mapped.contact.actContactId,
             actAccountMgr: mapped.contact.actAccountMgr,
             actSyncState: "SYNCED",
-            actEditedAtSync: mapped.contact.actEditedAt,
+            actSourceEditedAt: mapped.contact.actEditedAt,
             actSnapshot: mapped.contact.snapshot as unknown as object,
             actSyncedAt: new Date(),
           },
@@ -1770,13 +1823,13 @@ export async function syncContacts(
           },
           ["lastName", "email", "phone", "position"],
         );
-        await prisma.contact.update({
+        await db.contact.update({
           where: { id: existing.id },
           data: {
             ...patch,
             actAccountMgr: mapped.contact.actAccountMgr,
             actSyncState: "SYNCED",
-            actEditedAtSync: mapped.contact.actEditedAt,
+            actSourceEditedAt: mapped.contact.actEditedAt,
             actSnapshot: mapped.contact.snapshot as unknown as object,
             actSyncedAt: new Date(),
           },
