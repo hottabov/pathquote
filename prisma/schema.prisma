@@ -114,6 +114,16 @@ enum SignerRole {
   CLIENT
 }
 
+/// Where a PathQuote record stands against its ACT! counterpart.
+/// PENDING and CONFLICT are written by phase 2 (writes back to ACT!); phase 1
+/// only ever produces SYNCED, and the values exist now so the column does not
+/// need a second migration later.
+enum ActSyncState {
+  SYNCED
+  PENDING
+  CONFLICT
+}
+
 // What a catalogue product *is*, stated outright instead of being inferred
 // from its code. Until migration z31_catalog_identity every "is this a
 // machine?", "which order form?", "how wide?" question was answered by a
@@ -291,6 +301,15 @@ model User {
   regionId          String?
   region            Region?             @relation(fields: [regionId], references: [id])
   active            Boolean             @default(true)
+  /// ACT! user id, the join between an ACT! Record Manager and a PathQuote
+  /// user. Null until someone maps them.
+  actUserId         String?             @unique
+  /// This user's name as it appears in ACT!'s "Account Mgr" field.
+  actAccountMgr     String?
+  /// Countries whose contacts this user may see, mirroring their ACT! Sync
+  /// Set. Empty means "no country grant" -- they still see contacts where
+  /// actAccountMgr matches them.
+  visibleCountries  String[]            @default([])
   documents         Document[]
   accounts          Account[]
   sessions          Session[]
@@ -730,6 +749,24 @@ model Company {
   documents  Document[]
   createdAt  DateTime   @default(now())
 
+  /// ACT! company id, when this company is one of the ~2.5% of contacts
+  /// actually linked to a Company record. Null for the rest, which PathQuote
+  /// derives from the contact's company name -- see the spec's "Company is
+  /// derived, not imported".
+  actCompanyId       String?   @unique
+  /// Normalised company name + ISO country, the key contacts are grouped by.
+  /// Unique because it IS the identity of a derived company.
+  actCompanyKey      String?   @unique
+  /// ACT! recordManagerID of the contact this company was derived from. Kept
+  /// as a uuid rather than a name because names change.
+  actRecordManagerId String?
+  /// ACT! idStatus, promoted out of the snapshot because the client list
+  /// filters on it.
+  actStatus          String?
+  actEditedAtSync    DateTime?
+  actSnapshot        Json?
+  actSyncedAt        DateTime?
+
   @@index([ownerId])
   @@index([industryId]) // renaming an industry shows an affected-company count first ("Used by 14 companies"), counted by industryId
 }
@@ -747,7 +784,21 @@ model Contact {
   documents       Document[]
   signingRequests SigningRequest[]
 
+  actContactId    String?       @unique
+  actSyncState    ActSyncState?
+  /// The `edited` value seen at the last sync. Phase 2 sends this back as a
+  /// concurrency token; phase 1 only records it.
+  actEditedAtSync DateTime?
+  actSnapshot     Json?
+  actSyncedAt     DateTime?
+  /// ACT! "Account Mgr" (customFields/rep). Visibility is decided on this,
+  /// not on Record Manager -- see the spec's "Who sees what". Nothing reads it
+  /// yet; it is imported from day one so switching visibility on later is a
+  /// filter, not a re-import.
+  actAccountMgr   String?
+
   @@index([companyId])
+  @@index([actAccountMgr])
 }
 
 // Lookup table rather than free text on Company: the list is bulk-imported
