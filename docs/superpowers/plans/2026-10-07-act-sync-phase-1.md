@@ -2143,6 +2143,16 @@ creating them -- auto-creating is what produced 335 spellings of 31 trades."
 
 ---
 
+> **Note, added after implementation.** Tasks 1-10 are done. Review then found
+> four defects that changed the design, so the code blocks above are no longer a
+> faithful transcript of what shipped — read `src/lib/act/` for that. What
+> changed, and why, is in the commits on this branch: the ACT! payload moved to
+> an `ActSnapshot` side table, the company-identity decision became a pure
+> tested module (`company-identity.ts`) after the original version crashed every
+> run on a unique-key collision, the cursor is checkpointed per page and never
+> by a limited run, and the CLI refuses unknown flags. Task 11 below has been
+> amended to match.
+
 ### Task 11: First run against the real database
 
 **Files:** none — this is verification.

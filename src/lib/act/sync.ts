@@ -271,8 +271,13 @@ export async function syncContacts(
 
   // Called after each fully processed page. Never once a contact has failed:
   // see the note at the top of this file.
+  //
+  // A limited run never checkpoints either. `--limit` reads the oldest records
+  // first, so the newest `edited` it sees is older than a stored cursor, and
+  // saving it would rewind the cursor and make the next delta run re-read
+  // everything in between. A limited run is a sample, not a sync.
   async function checkpoint(): Promise<void> {
-    if (options.dryRun || result.failed > 0 || !newestEdited) return;
+    if (options.dryRun || options.limit || result.failed > 0 || !newestEdited) return;
     if (checkpointed && newestEdited <= checkpointed) return;
     await writeCursor(newestEdited);
     checkpointed = newestEdited;
