@@ -65,8 +65,37 @@ map $http_authorization $actapi_token_ok {
 EOF
 ```
 
-Add `nginx-actapi-cert.conf` into the server block that already answers for the
-VPS, then `sudo nginx -t && sudo systemctl reload nginx`.
+Then wire the two locations into nginx. Find the server block that already
+answers on HTTPS for a hostname with a valid certificate — `q.pathfindercut.com`
+is the obvious one, since PathQuote is the thing fetching this anyway:
+
+```bash
+ls /etc/nginx/sites-enabled/ /etc/nginx/conf.d/
+sudo nginx -T | grep -nE "server_name|listen 443"
+```
+
+Install the snippet and include it from inside that `server { … }` block:
+
+```bash
+sudo mkdir -p /etc/nginx/snippets
+sudo cp nginx-actapi-cert.conf /etc/nginx/snippets/actapi-cert.conf
+sudo nano /etc/nginx/sites-enabled/<the file you found>
+```
+
+Add one line anywhere inside the block, beside the existing `location`
+directives:
+
+```nginx
+include /etc/nginx/snippets/actapi-cert.conf;
+```
+
+Both locations use `location = …`, an exact match, which nginx resolves before
+any prefix or regex location. A catch-all `location /` that proxies to
+PathQuote will not shadow them.
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
 
 Check it refuses strangers and accepts the office:
 

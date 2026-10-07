@@ -22,6 +22,7 @@ DOMAIN=actapi.pathfindercut.com
 LIVE=/etc/letsencrypt/live/$DOMAIN
 OUTDIR=/var/www/actapi-cert
 PASSFILE=/root/.secrets/pfxpass
+WEBGROUP=www-data
 
 # Certbot runs deploy hooks for every renewed certificate, so ignore the
 # ones that are not ours.
@@ -32,7 +33,10 @@ fi
 [ -f "$LIVE/fullchain.pem" ] || { echo "no certificate at $LIVE"; exit 1; }
 [ -f "$PASSFILE" ] || { echo "missing $PASSFILE"; exit 1; }
 
+# nginx reads these as www-data, so the group has to be able to get in.
+# Anything wider would leave a private key world-readable.
 mkdir -p "$OUTDIR"
+chown root:"$WEBGROUP" "$OUTDIR"
 chmod 750 "$OUTDIR"
 
 TMP=$(mktemp "$OUTDIR/.actapi.XXXXXX.pfx")
@@ -46,6 +50,7 @@ openssl pkcs12 -export \
   -passout "pass:$(cat "$PASSFILE")"
 
 # Move into place in one step so a fetch can never see a half-written file.
+chown root:"$WEBGROUP" "$TMP"
 chmod 640 "$TMP"
 mv -f "$TMP" "$OUTDIR/actapi.pfx"
 trap - EXIT
