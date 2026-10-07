@@ -40,6 +40,7 @@ function emptySkips(): Record<SkipReason, number> {
     personal: 0,
     "inactive-status": 0,
     "no-name": 0,
+    "no-company": 0,
   };
 }
 
@@ -208,6 +209,15 @@ export async function syncContacts(
         newestEdited = mapped.contact.actEditedAt;
       }
 
+      // PathQuote's Contact requires a company, and a contact with no company
+      // name is six records out of 12,094. Decided from the mapped value rather
+      // than from resolveCompany returning null, so a dry run reports the same
+      // count a real run does.
+      if (!mapped.company.name) {
+        result.skipped["no-company"] += 1;
+        continue;
+      }
+
       if (options.dryRun) continue;
 
       const industryId = mapped.company.industry
@@ -215,9 +225,10 @@ export async function syncContacts(
         : null;
       const companyId = await resolveCompany(mapped.company, industryId, result);
       if (!companyId) {
-        // PathQuote's Contact requires a company. A contact with no company
-        // name is six records out of 12,094 and is left in ACT!.
-        result.skipped["no-name"] += 1;
+        // Unreachable today: the only null resolveCompany returns is for a
+        // missing name, refused above. Kept so that giving resolveCompany a
+        // second reason to decline cannot silently drop a contact instead.
+        result.skipped["no-company"] += 1;
         continue;
       }
 

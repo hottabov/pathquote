@@ -163,7 +163,12 @@ export class ActClient {
         $orderby: "edited",
       });
       if (since) {
-        params.set("$filter", `edited gt ${since.toISOString()}`);
+        // `ge`, not `gt`. The cursor is the newest `edited` this sync stored,
+        // and a --limit run stops mid-stream: another record can carry that
+        // same timestamp and never have been reached. `gt` would skip it
+        // permanently. `ge` re-reads the boundary record instead, which
+        // fill-only-empty turns into a no-op.
+        params.set("$filter", `edited ge ${since.toISOString()}`);
       }
 
       const page = this.rows<ActContact>(await this.get(`/api/contacts?${params}`));

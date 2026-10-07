@@ -95,7 +95,11 @@ export type SkipReason =
   | "private"
   | "personal"
   | "inactive-status"
-  | "no-name";
+  | "no-name"
+  /** Has a name but no company name. PathQuote's Contact requires a company,
+   * so there is nothing to attach it to. Decided by the worker, not the
+   * mapper. */
+  | "no-company";
 
 /** Statuses the sync imports. Everything else stays in ACT!. */
 export const ACTIVE_STATUSES = [
