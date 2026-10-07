@@ -2155,67 +2155,224 @@ creating them -- auto-creating is what produced 335 spellings of 31 trades."
 
 ### Task 11: First run against the real database
 
-**Files:** none — this is verification.
+**Files:** none until the last step — this is a procedure, and it is the only
+task that touches production.
 
-- [ ] **Step 1: Run the whole suite**
+It was rewritten after Tasks 1-10 were built, because review found four
+defects that changed what this run has to check. The original five steps were
+not safe: they had no rehearsal, no backup, no reconciliation of companies
+PathQuote already holds, and their "run it twice" step was not actually an
+idempotency test.
 
-Run: `npm test`
-Expected: PASS, including the five new files.
+**Where this runs.** On the VPS, in the `tools` container. The Act! API is
+IP-allowlisted to the VPS (`docs/act-integration-reference.md` §11), so a run
+from a laptop gets a 403 — or worse, succeeds against whatever database the
+local `.env` points at. Note that `docker compose run` does not forward
+`export`ed variables; pass them with `-e`.
 
-- [ ] **Step 2: Dry run, small**
+- [ ] **Step 1: Green locally**
 
-```bash
-export ACT_BASE=https://actapi.pathfindercut.com/act.web.api
-export ACT_DB=Pathfinder
-export ACT_USER='Marketing'
-read -rs -p "ACT password: " ACT_PASS; export ACT_PASS; echo
-
-npm run act:sync -- --dry-run --limit 50
+```
+npm test && npm run typecheck && npm run lint
 ```
 
-Expected: the API version line, 50 scanned, a skip breakdown, and no database writes. If authorize fails, the account needs `Web API Access` — see `docs/act-integration-reference.md`.
+- [ ] **Step 2: Rehearse on a scratch copy**
 
-- [ ] **Step 3: Dry run, everything**
+This costs an hour and is the step that makes everything after it boring.
+Restore the newest dump into a *separate* database on the VPS, apply the
+migration there, and run steps 5 through 11 against it.
 
-Run: `npm run act:sync -- --dry-run --full`
+```bash
+gunzip -c /opt/backups/pq-<stamp>.sql.gz | psql -d pq_rehearsal
+DATABASE_URL=...pq_rehearsal docker compose run --rm -e DATABASE_URL tools \
+  npx prisma migrate deploy
+```
 
-Expected, from the measured export: roughly 12,100 mapped, around 5,300 skipped (`inactive-status` the bulk of it), and `phones unresolved` near 11% of those mapped.
+Everything that bites — a company-key collision, a duplicate client, how long
+12,000 contacts actually take — surfaces here where nothing matters. Do not
+skip to step 5 on production.
 
-Nothing is filtered server-side: the only `$filter` is `edited ge ...`, and on a `--full` run not even that. So `scanned` should be close to the total contact count (17,373 when last measured), not to the 12,100 that will be mapped, and every Personal contact in the CRM is read before the mapper skips it. A non-zero `personal` count is therefore **expected**, not a warning. What matters is that those contacts were skipped and none were written; if you want to confirm the number, compare it with the count of `Personal` in the ACT! ID/Status picklist.
+- [ ] **Step 3: Back up production and confirm the ground**
 
-Numbers far from these mean the filters are wrong. Stop and compare against the spec rather than writing.
+```bash
+systemctl start pq-backup-db.service && journalctl -u pq-backup-db -n 20
+```
 
-- [ ] **Step 4: First write, small**
+Then confirm the industry table is seeded, because an unseeded one silently
+leaves every imported company without an industry:
 
-Run: `npm run act:sync -- --limit 200`
+```sql
+SELECT COUNT(*) FROM "Industry";   -- expect 31
+```
 
-Then check what landed:
+- [ ] **Step 4: Reconcile the companies PathQuote already has**
+
+**Do this before any write.** Existing companies have `actCompanyKey = NULL`,
+so without this the sync does not recognise them and creates a second copy of
+every client you already quote — with the quotes left on the old row.
+
+```bash
+docker compose run --rm tools npm run act:sync-preflight
+```
+
+Read all five groups. `unambiguous` is safe. The other four are not neutral —
+each one becomes a duplicate company at the first sync:
+
+- **ambiguous** — two existing companies normalise to one key. Fix the data by
+  hand so they differ (usually one has the wrong country), then re-run.
+- **no country** — the key would end `|??`, which no ACT! contact ever
+  computes. Set the country, then re-run. The script deliberately refuses to
+  write these, because a row that holds a key is never re-examined.
+- **taken** / **no key** — read them and decide.
+
+Merging or deleting a company touches `Document` rows. Per `AGENTS.md` that
+needs Vadym's explicit decision and a backup, so it is not part of this run.
+
+When the report is as good as it will get:
+
+```bash
+docker compose run --rm tools npm run act:sync-preflight -- --apply
+```
+
+- [ ] **Step 5: Dry run, small**
+
+```bash
+docker compose run --rm -e ACT_BASE -e ACT_DB -e ACT_USER -e ACT_PASS tools \
+  npm run act:sync -- --dry-run --limit 50
+```
+
+Check the banner names the database you expect and says `dry run`. If
+authorize fails, the account needs the `Web API Access` permission
+(`docs/act-integration-reference.md` §5).
+
+Note the `--` before the flags. Without it npm swallows them and the script
+refuses to run rather than quietly doing a full write.
+
+- [ ] **Step 6: Dry run, everything**
+
+```bash
+docker compose run --rm -e ACT_BASE -e ACT_DB -e ACT_USER -e ACT_PASS tools \
+  npm run act:sync -- --dry-run --full
+```
+
+What to expect, from the measured export:
+
+- `scanned` close to **17,373**, not 12,100. There is no server-side status
+  filter, so every contact the account can see comes over the wire and the
+  mapper does the filtering.
+- roughly **12,100** mapped, about **5,300** skipped, `inactive-status` the
+  bulk of it.
+- a **non-zero `personal` count is expected and correct**. The mapper is the
+  only barrier against the director's private contacts.
+- `phones unresolved` near 11% of those mapped.
+
+Numbers far from these mean a filter is wrong. Stop and compare against the
+spec rather than writing.
+
+- [ ] **Step 7: First write, small**
+
+```bash
+docker compose run --rm -e ACT_BASE -e ACT_DB -e ACT_USER -e ACT_PASS tools \
+  npm run act:sync -- --limit 200
+```
+
+A limited run deliberately stores no cursor, so this is repeatable and cannot
+rewind anything.
 
 ```sql
 SELECT COUNT(*) FROM "Contact" WHERE "actContactId" IS NOT NULL;
-SELECT COUNT(*) FROM "Company" WHERE "actCompanyKey" IS NOT NULL;
-SELECT "name", "city", "country" FROM "Company" WHERE "actCompanyKey" IS NOT NULL LIMIT 10;
-SELECT "firstName", "lastName", "phone", "actAccountMgr" FROM "Contact" WHERE "actContactId" IS NOT NULL LIMIT 10;
+SELECT COUNT(*) FROM "Company" WHERE "actSyncedAt" IS NOT NULL;
+SELECT "firstName", "lastName", "phone", "actAccountMgr" FROM "Contact"
+  WHERE "actContactId" IS NOT NULL LIMIT 10;
+SELECT "name", "city", "country", "actCompanyKey" FROM "Company"
+  WHERE "actSyncedAt" IS NOT NULL LIMIT 10;
 ```
 
-Phones should be E.164 or null, never a raw ACT! spelling. Countries should be ISO-2.
+Phones must be E.164 or null, never a raw ACT! spelling. Countries must be
+ISO-2. No company may be named `''`.
 
-- [ ] **Step 5: Run it twice and confirm the second is a no-op**
+`company key collisions` above zero means two firms share a normalised name —
+look at them before going further.
+
+- [ ] **Step 8: Idempotency**
+
+Run the same limited write twice more:
 
 ```bash
-npm run act:sync
-npm run act:sync
+docker compose run --rm -e ACT_BASE -e ACT_DB -e ACT_USER -e ACT_PASS tools \
+  npm run act:sync -- --full --limit 200
 ```
 
-Expected: the second run scans few or no records (the cursor moved) and creates nothing. If it re-creates companies, the uniqueness of `actCompanyKey` is not doing its job — that is a bug worth stopping for, because it means one client can end up with two company records and quotes split between them.
+The second of those must report `contacts created 0`, `companies created 0`,
+and leave `SELECT COUNT(*) FROM "Company"` unchanged. If it creates a company,
+`actCompanyKey`'s uniqueness is not doing its job — stop, because that means
+one client can end up as two rows with quotes split between them.
 
-- [ ] **Step 6: Full import**
+- [ ] **Step 9: Write a rollback query before the full import**
 
-Run: `npm run act:sync -- --full`
+`Document.company` is `Restrict`, so this fails closed on anything quoted:
 
-- [ ] **Step 7: Commit the observed numbers into the reference document**
+```sql
+DELETE FROM "Company"
+ WHERE "actSyncedAt" IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM "Document" d WHERE d."companyId" = "Company".id);
+```
 
-Add a short section to `docs/act-integration-reference.md` under section 10 recording what the first full import produced: contacts, companies, unresolved phones, unknown industry values. The next person to run this needs a baseline to compare against, and today's numbers are the only honest one.
+Contacts and snapshots cascade. This only works before anyone quotes against
+an imported row, which is the window the full import opens.
+
+- [ ] **Step 10: Full import**
+
+```bash
+docker compose run --rm -e ACT_BASE -e ACT_DB -e ACT_USER -e ACT_PASS tools \
+  npm run act:sync -- --full
+```
+
+The cursor is checkpointed per page, so an interruption resumes rather than
+restarting. A non-zero `failed` count freezes the cursor on purpose — fix the
+cause and re-run; nothing is skipped.
+
+- [ ] **Step 11: Verify, including the delta path**
+
+The delta filter is `edited ge`, which this is the first run to exercise —
+only `gt` was ever verified by hand. Confirm the boundary:
+
+```bash
+docker compose run --rm -e ACT_BASE -e ACT_DB -e ACT_USER -e ACT_PASS tools \
+  npm run act:sync -- --dry-run --limit 50
+```
+
+with a cursor now stored. The first record read should carry an `edited` equal
+to the cursor, re-read on purpose. Check what the cursor holds:
+
+```sql
+SELECT value FROM "Setting" WHERE key = 'act.sync.cursor';
+```
+
+Then:
+
+```sql
+-- no company imported without a contact
+SELECT COUNT(*) FROM "Company" c
+ WHERE c."actSyncedAt" IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM "Contact" ct WHERE ct."companyId" = c.id);
+-- every snapshot has exactly one owner
+SELECT COUNT(*) FROM "ActSnapshot"
+ WHERE ("contactId" IS NULL) = ("companyId" IS NULL);   -- expect 0
+```
+
+And open the quote builder. It preloads every visible company with all of its
+contacts (`src/lib/queries/documents-pickers.ts`), and that query was written
+when the list was small. Time the page. If it has become slow, the picker
+needs a filter — likely on `actStatus`, so Suspects and Prospects stay out of
+the client list — and that is a follow-up, not a reason to roll back.
+
+- [ ] **Step 12: Record what actually happened**
+
+Add to `docs/act-integration-reference.md` §10 the numbers this run produced:
+contacts, companies, unresolved phones, key collisions, unknown industry
+values, and how long the full import took. The next person needs a baseline to
+tell a bad run from a normal one, and today's numbers are the only honest one.
 
 ```bash
 git add docs/act-integration-reference.md
