@@ -50,9 +50,10 @@ In `prisma/schema.prisma`, next to the other enums:
 
 ```prisma
 /// Where a PathQuote record stands against its ACT! counterpart.
-/// PENDING and CONFLICT are written by phase 2 (writes back to ACT!); phase 1
-/// only ever produces SYNCED, and the values exist now so the column does not
-/// need a second migration later.
+/// Phase 1 only ever writes SYNCED. PENDING and CONFLICT exist now because the
+/// spec fixes the state machine, so freezing all three here keeps phase 2 from
+/// inventing a different vocabulary later -- not to avoid a migration, which
+/// z56_el_install_role shows is a one-line file.
 enum ActSyncState {
   SYNCED
   PENDING
@@ -63,39 +64,48 @@ enum ActSyncState {
 In `model Company`, before `@@index([ownerId])`:
 
 ```prisma
-  /// ACT! company id, when this company is one of the ~2.5% of contacts
-  /// actually linked to a Company record. Null for the rest, which PathQuote
-  /// derives from the contact's company name -- see the spec's "Company is
+  /// ACT! links only ~2.5% of contacts to a real Company record; for those,
+  /// this holds that id. Null for the rest, whose company PathQuote derives
+  /// from the contact's free-text company name -- see the spec's "Company is
   /// derived, not imported".
-  actCompanyId      String?       @unique
-  /// Normalised company name + ISO country, the key contacts are grouped by.
-  /// Unique because it IS the identity of a derived company.
-  actCompanyKey     String?       @unique
-  /// ACT! recordManagerID of the contact this company was derived from. Kept
-  /// as a uuid rather than a name because names change.
+  actCompanyId       String?      @unique
+  /// Normalised company name + ISO country. Unique because it IS the identity
+  /// of a derived company, so the guarantee is only as strong as the
+  /// normalisation in src/lib/act/company-key.ts.
+  actCompanyKey      String?      @unique
+  /// recordManagerID of whichever contact the sync happened to process last
+  /// for this company. Last-writer-wins and not authoritative: a derived
+  /// company can have contacts under several managers. Kept as a uuid rather
+  /// than a name because names change, and intended as the hint that maps a
+  /// company to a PathQuote owner via User.actUserId.
   actRecordManagerId String?
   /// ACT! idStatus, promoted out of the snapshot because the client list
   /// filters on it.
-  actStatus         String?
-  actEditedAtSync   DateTime?
-  actSnapshot       Json?
-  actSyncedAt       DateTime?
+  actStatus          String?
+  /// When this sync last touched the row. Distinct from the source record's
+  /// own edited time, which a derived company does not have.
+  actSyncedAt        DateTime?
 ```
 
 In `model Contact`, before `@@index([companyId])`:
 
 ```prisma
+  /// The ACT! contact this row mirrors. Null for contacts created in
+  /// PathQuote and never matched to ACT!, and it is the authoritative answer
+  /// to "does ACT! know about this contact?".
   actContactId      String?       @unique
+  /// Null means the same thing actContactId null means: this contact has no
+  /// ACT! counterpart. Set only alongside actContactId.
   actSyncState      ActSyncState?
-  /// The `edited` value seen at the last sync. Phase 2 sends this back as a
-  /// concurrency token; phase 1 only records it.
-  actEditedAtSync   DateTime?
-  actSnapshot       Json?
+  /// The `edited` timestamp ACT! reported for this contact at the last sync --
+  /// the source record's own clock, not ours. actSyncedAt is when we ran.
+  /// Phase 2 sends this back as a concurrency token; phase 1 only records it.
+  actSourceEditedAt DateTime?
+  /// When this sync last touched the row.
   actSyncedAt       DateTime?
   /// ACT! "Account Mgr" (customFields/rep). Visibility is decided on this,
-  /// not on Record Manager -- see the spec's "Who sees what". Nothing reads it
-  /// yet; it is imported from day one so switching visibility on later is a
-  /// filter, not a re-import.
+  /// not on Record Manager -- see the spec's "Who sees what". Imported from
+  /// day one so switching visibility on later is a filter, not a re-import.
   actAccountMgr     String?
 ```
 
@@ -108,16 +118,19 @@ In `model User`, after `active`:
   /// This user's name as it appears in ACT!'s "Account Mgr" field.
   actAccountMgr     String?
   /// Countries whose contacts this user may see, mirroring their ACT! Sync
-  /// Set. Empty means "no country grant" -- they still see contacts where
-  /// actAccountMgr matches them.
+  /// Set. ISO 3166-1 alpha-2, the same vocabulary as the country half of
+  /// Company.actCompanyKey and as Company.country for rows written since the
+  /// ISO migration -- legacy company rows may still hold free text, so a
+  /// visibility filter cannot assume every row compares directly. Empty means
+  /// "no country grant" -- they still see contacts
+  /// where actAccountMgr matches them.
   visibleCountries  String[]      @default([])
 ```
 
-Add indexes at the end of `model Contact`:
-
-```prisma
-  @@index([actAccountMgr])
-```
+No index on `actAccountMgr` yet. Nothing reads it in this phase, and the
+visibility rule it would eventually serve is `actAccountMgr = me OR country IN
+(...)` — an OR this index does not answer on its own. It also costs on every
+write during a 12,000-row import. Add it with the query that needs it.
 
 - [ ] **Step 2: Write the migration**
 
@@ -127,9 +140,15 @@ Create `prisma/migrations/z60_act_sync/migration.sql`:
 -- ACT! read-only sync, phase 1
 -- (docs/superpowers/specs/2026-09-08-act-integration-design.md).
 --
--- Additive only: new nullable columns and one new enum. No existing row is
--- read or rewritten, so this is safe to run against live data without a
--- backup window.
+-- Additive only: new nullable columns, one enum, one table. No data is
+-- modified -- there is no backfill, no UPDATE and no drop.
+--
+-- The ALTERs take ACCESS EXCLUSIVE on Company, Contact and User, which blocks
+-- reads as well as writes and is held until the file commits, because Prisma
+-- runs a migration as one transaction. The index builds run under that same
+-- lock. Every column involved is NULL at that point so it is brief, but User
+-- is read on each authenticated request -- whether that needs a window is the
+-- approver's call, not this file's.
 
 CREATE TYPE "ActSyncState" AS ENUM ('SYNCED', 'PENDING', 'CONFLICT');
 
@@ -138,22 +157,21 @@ ALTER TABLE "Company"
   ADD COLUMN "actCompanyKey"      TEXT,
   ADD COLUMN "actRecordManagerId" TEXT,
   ADD COLUMN "actStatus"          TEXT,
-  ADD COLUMN "actEditedAtSync"    TIMESTAMP(3),
-  ADD COLUMN "actSnapshot"        JSONB,
   ADD COLUMN "actSyncedAt"        TIMESTAMP(3);
 
 ALTER TABLE "Contact"
-  ADD COLUMN "actContactId"    TEXT,
-  ADD COLUMN "actSyncState"    "ActSyncState",
-  ADD COLUMN "actEditedAtSync" TIMESTAMP(3),
-  ADD COLUMN "actSnapshot"     JSONB,
-  ADD COLUMN "actSyncedAt"     TIMESTAMP(3),
-  ADD COLUMN "actAccountMgr"   TEXT;
+  ADD COLUMN "actContactId"      TEXT,
+  ADD COLUMN "actSyncState"      "ActSyncState",
+  ADD COLUMN "actSourceEditedAt" TIMESTAMP(3),
+  ADD COLUMN "actSyncedAt"       TIMESTAMP(3),
+  ADD COLUMN "actAccountMgr"     TEXT;
 
 ALTER TABLE "User"
   ADD COLUMN "actUserId"        TEXT,
   ADD COLUMN "actAccountMgr"    TEXT,
-  ADD COLUMN "visibleCountries" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];
+  -- No NOT NULL: this is what `prisma migrate diff` generates for a
+  -- `String[] @default([])`, and CI compares the two.
+  ADD COLUMN "visibleCountries" TEXT[] DEFAULT ARRAY[]::TEXT[];
 
 -- Unique rather than plain indexes: each of these IS an identity. Two
 -- PathQuote companies claiming the same ACT! company, or the same derived
@@ -164,9 +182,74 @@ CREATE UNIQUE INDEX "Company_actCompanyKey_key" ON "Company"("actCompanyKey");
 CREATE UNIQUE INDEX "Contact_actContactId_key"  ON "Contact"("actContactId");
 CREATE UNIQUE INDEX "User_actUserId_key"        ON "User"("actUserId");
 
--- Visibility filters on this once phase 1's data is in place.
-CREATE INDEX "Contact_actAccountMgr_idx" ON "Contact"("actAccountMgr");
+-- The ACT! payload sits in its own table so it is never selected alongside a
+-- company name. One row per contact or company, never both, which Prisma
+-- cannot express and a CHECK can.
+CREATE TABLE "ActSnapshot" (
+  "id"        TEXT  NOT NULL,
+  "contactId" TEXT,
+  "companyId" TEXT,
+  "payload"   JSONB NOT NULL,
+
+  CONSTRAINT "ActSnapshot_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "ActSnapshot_one_owner" CHECK (
+    ("contactId" IS NOT NULL) <> ("companyId" IS NOT NULL)
+  )
+);
+
+CREATE UNIQUE INDEX "ActSnapshot_contactId_key" ON "ActSnapshot"("contactId");
+CREATE UNIQUE INDEX "ActSnapshot_companyId_key" ON "ActSnapshot"("companyId");
+
+ALTER TABLE "ActSnapshot"
+  ADD CONSTRAINT "ActSnapshot_contactId_fkey" FOREIGN KEY ("contactId")
+    REFERENCES "Contact"("id") ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT "ActSnapshot_companyId_fkey" FOREIGN KEY ("companyId")
+    REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 ```
+
+`prisma migrate diff` will not generate the CHECK — Prisma has no syntax for
+it. That is expected and is why these migrations are hand-written; CI compares
+columns and indexes, not constraints.
+
+The ACT! payload does **not** go on `Contact` or `Company`. Add a side table,
+after the other models:
+
+```prisma
+/// The raw ACT! payload behind a synced record.
+///
+/// It lives here rather than as a column on Contact and Company because
+/// Prisma selects every scalar unless told otherwise, and several existing
+/// queries read whole rows with `include` rather than `select` --
+/// src/lib/queries/documents-pickers.ts loads every visible company with all
+/// of its contacts on each client-picker load. A full ACT! payload per row
+/// would put tens of megabytes through that query.
+///
+/// A global Prisma `omit` was the other way to stop that, and it was tried and
+/// rejected: `omit` changes the client's type parameter, so `PrismaClient`
+/// stops being assignable to itself and the breakage lands in auth, recalc and
+/// catalog code that has no interest in this column. Keeping the blob out of
+/// the row needs no cleverness and cannot leak into a new query by default.
+///
+/// Phase 2 reads this to show a person what diverged under fill-only-empty;
+/// phase 1 only writes it. Exactly one of contactId and companyId is set --
+/// see the CHECK constraint in the migration.
+///
+/// Only a contact-owned row is a copy of one ACT! record. A company-owned row
+/// holds the company fields as seen by the last contact the sync processed,
+/// because a derived company has no ACT! record of its own -- the same
+/// last-writer-wins caveat as Company.actRecordManagerId.
+model ActSnapshot {
+  id        String   @id @default(cuid())
+  contactId String?  @unique
+  companyId String?  @unique
+  payload   Json
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+```
+
+Add the back-relations: `actSnapshot ActSnapshot?` on both `model Contact` and
+`model Company`.
 
 - [ ] **Step 3: Check the schema parses and matches the migration**
 
@@ -305,7 +388,11 @@ export type SkipReason =
   | "private"
   | "personal"
   | "inactive-status"
-  | "no-name";
+  | "no-name"
+  /** Has a name but no company name. PathQuote's Contact requires a company,
+   * so there is nothing to attach it to. Decided by the worker, not the
+   * mapper. */
+  | "no-company";
 
 /** Statuses the sync imports. Everything else stays in ACT!. */
 export const ACTIVE_STATUSES = [
@@ -711,7 +798,7 @@ Create `tests/act-industries.test.ts`:
 
 ```typescript
 import { describe, it, expect } from "vitest";
-import { buildIndustryResolver } from "../src/lib/act/industries";
+import { buildIndustryResolver, loadActIndustries } from "../src/lib/act/industries";
 
 describe("buildIndustryResolver", () => {
   const resolve = buildIndustryResolver();
@@ -742,10 +829,7 @@ describe("buildIndustryResolver", () => {
   });
 
   it("resolves every canonical segment to itself", () => {
-    const { canonical } = require("../scripts/data/act-industries.json") as {
-      canonical: string[];
-    };
-    for (const name of canonical) {
+    for (const name of loadActIndustries().canonical) {
       expect(resolve(name)).toBe(name);
     }
   });
@@ -762,8 +846,7 @@ Expected: FAIL — `Failed to resolve import "../src/lib/act/industries"`
 Create `src/lib/act/industries.ts`:
 
 ```typescript
-import { readFileSync } from "node:fs";
-import path from "node:path";
+import actIndustries from "../../../scripts/data/act-industries.json";
 import { normalizeIndustryName } from "@/lib/validation/industries";
 
 // ACT!'s Industry field is free text and twenty years of it produced 335
@@ -788,10 +871,20 @@ export type ActIndustries = {
   aliases: Record<string, string | null>;
 };
 
-const DATA_PATH = path.join(process.cwd(), "scripts", "data", "act-industries.json");
+/** Where the mapping lives, for error messages. Not used to read the file. */
+export const ACT_INDUSTRIES_PATH = "scripts/data/act-industries.json";
 
+/**
+ * The mapping, as data.
+ *
+ * Imported statically rather than read with `readFileSync`: `resolveJsonModule`
+ * is on, so this needs no filesystem at runtime and no assumption about the
+ * working directory. The script this moved from used `import.meta.dirname`,
+ * which does not survive Next's bundler, and `process.cwd()` would have made
+ * the sync depend on being run from the repo root.
+ */
 export function loadActIndustries(): ActIndustries {
-  return JSON.parse(readFileSync(DATA_PATH, "utf8")) as ActIndustries;
+  return actIndustries as ActIndustries;
 }
 
 /**
@@ -831,27 +924,75 @@ Expected: PASS, 6 tests
 
 - [ ] **Step 5: Point the seeding script at the moved resolver**
 
-In `scripts/import-act-industries.ts`, delete the local `ActIndustries` type, `DATA_PATH`, `loadActIndustries` and `resolveActIndustry`, and the now-unused `readFileSync`/`path` imports. Add at the top of the imports:
+Three files import from the old location, so all three move with it.
+
+**`scripts/import-act-industries.ts`.** Delete the local `ActIndustries` type,
+`DATA_PATH`, `loadActIndustries` and `resolveActIndustry`, and the now-unused
+`readFileSync` and `path` imports. Import from the new home instead:
 
 ```typescript
 import {
-  loadActIndustries,
+  ACT_INDUSTRIES_PATH,
   buildIndustryResolver,
-  type ActIndustries,
+  loadActIndustries,
 } from "../src/lib/act/industries";
 ```
 
-Keep `resolveActIndustry` working for any existing caller by re-exporting the new resolver's behaviour:
+Not `type ActIndustries` — once the local resolver is gone nothing in that file
+annotates with it, and eslint flags the unused import.
 
 ```typescript
-/** Kept as a named export for callers that resolve one value at a time.
- * Prefer `buildIndustryResolver` when resolving more than a handful. */
-export function resolveActIndustry(aliases: ActIndustries["aliases"], raw: string): string | null {
-  return buildIndustryResolver({ canonical: [], aliases })(raw);
-}
 ```
 
-and add `buildIndustryResolver` to the same import.
+`DATA_PATH` appeared in one error message; use `ACT_INDUSTRIES_PATH` there:
+
+```typescript
+    console.error(`invalid names in ${ACT_INDUSTRIES_PATH}: ${invalid.join(", ")}`);
+```
+
+The one internal caller of `resolveActIndustry` is the `--merge` scan. Build
+the resolver once before that loop rather than per row:
+
+```typescript
+  const resolveIndustry = buildIndustryResolver(data);
+
+  const toMerge: { from: (typeof existing)[number]; to: string }[] = [];
+  for (const row of existing) {
+    const key = normalizeIndustryName(row.name);
+    if (canonicalKeys.has(key)) continue;
+    const target = resolveIndustry(row.name);
+    if (target && normalizeIndustryName(target) !== key) {
+      toMerge.push({ from: row, to: target });
+    }
+  }
+```
+
+`resolveActIndustry` is **not** re-exported. Nothing outside this file ever
+called it — the only caller was the loop above — so a compatibility shim would
+be dead code on arrival. Its module docstring currently promises the opposite
+("`resolveActIndustry` below is exported for it"); correct that sentence to
+point at `src/lib/act/industries.ts`, and likewise the two trailing comments
+near the bottom of the file that name it.
+
+**`scripts/seed-industry-aliases.ts`** imports `loadActIndustries` and
+`type ActIndustries` from `./import-act-industries`. Repoint it:
+
+```typescript
+import { loadActIndustries, type ActIndustries } from "../src/lib/act/industries";
+```
+
+Its header comment also mentions `resolveActIndustry`; leave the sense intact
+but point at the new module.
+
+**`tests/industry-alias-seed.test.ts`** imports `loadActIndustries` from
+`../scripts/import-act-industries`. Repoint it the same way:
+
+```typescript
+import { loadActIndustries } from "../src/lib/act/industries";
+```
+
+That test must keep passing unchanged otherwise — it is the existing guard on
+this data file.
 
 - [ ] **Step 6: Run the whole suite**
 
@@ -861,7 +1002,9 @@ Expected: PASS. `tests/industry-alias-seed.test.ts` exercises this data and must
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/lib/act/industries.ts scripts/import-act-industries.ts tests/act-industries.test.ts
+git add src/lib/act/industries.ts scripts/import-act-industries.ts \
+  scripts/seed-industry-aliases.ts tests/industry-alias-seed.test.ts \
+  tests/act-industries.test.ts
 git commit -m "refactor: move the ACT! industry resolver into src and index it
 
 Its own comment said the contact import would need it, and importing from
@@ -870,7 +1013,12 @@ by normalised key instead of scanned per lookup: 352 aliases times 12,000
 contacts was 4.2 million normalisations to answer 12,000 questions.
 
 Canonical segments now resolve to themselves, which the old table did not
-guarantee for every one of the 31."
+guarantee for every one of the 31. The data file is a static import rather than
+a readFileSync, so resolving it no longer depends on the working directory.
+
+resolveActIndustry is gone rather than re-exported: its only caller was the
+--merge scan in the same file, which now builds the resolver once instead of
+rescanning 352 aliases per existing row."
 ```
 
 ---
@@ -943,7 +1091,7 @@ Create `src/lib/act/merge.ts`:
 //
 // It may not. A sync fills blanks and nothing else: what a salesperson typed
 // into PathQuote is never silently replaced by what ACT! happens to hold. The
-// full ACT! payload is stored alongside in actSnapshot, so a divergence can be
+// full ACT! payload is kept in the ActSnapshot table, so a divergence can be
 // shown to a person without either version being destroyed.
 //
 // Kept as one tiny function rather than inlined at each call site so that
@@ -1223,9 +1371,12 @@ export function mapContact(
   const status = text(contact.idStatus);
 
   // Personal contacts belong to the director and he shares them with nobody.
-  // The API query already excludes them by status; this is a second, separate
-  // barrier so that widening the status list later cannot leak them by
-  // accident.
+  // This is the ONLY barrier. client.ts sends no status filter -- its sole
+  // $filter is `edited ge ...` -- so every Personal contact in the CRM reaches
+  // this function. That is why it is a separate, explicit check and not left
+  // to fall out of the active-status test below: widening ACTIVE_STATUSES
+  // later must not be able to let them through, and they get a count of their
+  // own in the run report.
   if (status === "Personal") {
     return { kind: "skipped", reason: "personal" };
   }
@@ -1300,10 +1451,11 @@ git commit -m "feat: map one ACT! contact to PathQuote shapes
 Pure, so the skip rules can be tested without a database. They are the part of
 this integration most likely to be wrong and the most expensive to get wrong.
 
-Personal contacts are refused here as well as in the API query. They are the
-director's own, and one condition in one query is thin protection for them: if
-someone widens the status list later and forgets this case, the second barrier
-holds.
+Personal contacts are refused here, and this is the only place they are. The
+API query carries no status filter, so every one of them reaches the mapper.
+They are the director's own, so the check is explicit rather than a side
+effect of the active-status test: if someone widens the status list later, it
+still holds.
 
 A contact whose phone would not resolve is still imported. 7.8% of active
 contacts are in that state, almost always because the country on the record is
@@ -1404,31 +1556,50 @@ export class ActClient {
     return this.authorize();
   }
 
-  /** GET a path, re-authorising once if the token was rejected. */
-  private async get(path: string): Promise<unknown> {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const token = await this.getToken();
-      const response = await fetch(`${this.config.baseUrl}${path}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Act-Database-Name": this.config.database,
-        },
-      });
+  /** One GET, with whatever token is current, result uninterpreted. */
+  private async fetchOnce(path: string): Promise<Response> {
+    const token = await this.getToken();
+    return fetch(`${this.config.baseUrl}${path}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Act-Database-Name": this.config.database,
+      },
+    });
+  }
 
-      if (response.status === 401 && attempt === 0) {
-        // Expired or revoked mid-run. One retry with a fresh token; a second
-        // 401 is a real failure and should not loop.
-        this.token = null;
-        continue;
-      }
-
-      const body = await response.text();
-      if (!response.ok) {
-        throw new ActApiError(`GET ${path} failed (${response.status})`, response.status, body);
-      }
-      return body ? JSON.parse(body) : null;
+  private async parse(path: string, response: Response): Promise<unknown> {
+    const body = await response.text();
+    if (!response.ok) {
+      throw new ActApiError(`GET ${path} failed (${response.status})`, response.status, body);
     }
-    throw new ActApiError(`GET ${path} failed: still 401 after re-authorising`, 401, "");
+    return body ? JSON.parse(body) : null;
+  }
+
+  /**
+   * GET a path, re-authorising once if the token was rejected.
+   *
+   * Two explicit attempts rather than a loop. A `for` loop here needs a throw
+   * after it to satisfy the compiler, that throw is unreachable, and its
+   * message can therefore never print -- so the second 401 would surface as a
+   * bare "failed (401)" while the useful sentence sat in dead code. This shape
+   * has no unreachable branch and the diagnostic actually fires.
+   */
+  private async get(path: string): Promise<unknown> {
+    const first = await this.fetchOnce(path);
+    if (first.status !== 401) return this.parse(path, first);
+
+    // Expired or revoked mid-run. Drop the cached token so the retry fetches a
+    // fresh one.
+    this.token = null;
+    const second = await this.fetchOnce(path);
+    if (second.status === 401) {
+      throw new ActApiError(
+        `GET ${path} failed: still 401 after re-authorising. The account may have lost its "Web API Access" permission, or the password was rotated.`,
+        401,
+        await second.text(),
+      );
+    }
+    return this.parse(path, second);
   }
 
   /** Unwrap whichever envelope this endpoint happens to use. */
@@ -1470,7 +1641,12 @@ export class ActClient {
         $orderby: "edited",
       });
       if (since) {
-        params.set("$filter", `edited gt ${since.toISOString()}`);
+        // `ge`, not `gt`. The cursor is the newest `edited` this sync stored,
+        // and a --limit run stops mid-stream: another record can carry that
+        // same timestamp and never have been reached. `gt` would skip it
+        // permanently. `ge` re-reads the boundary record instead, which
+        // fill-only-empty turns into a no-op.
+        params.set("$filter", `edited ge ${since.toISOString()}`);
       }
 
       const page = this.rows<ActContact>(await this.get(`/api/contacts?${params}`));
@@ -1534,7 +1710,8 @@ No unit test: orchestration around Prisma. Its decisions are in `map.ts` and `me
 Create `src/lib/act/sync.ts`:
 
 ```typescript
-import { prisma } from "@/lib/db";
+import { Prisma } from "@prisma/client";
+import { db } from "@/lib/db";
 import { ActClient } from "@/lib/act/client";
 import { buildIndustryResolver } from "@/lib/act/industries";
 import { mapContact } from "@/lib/act/map";
@@ -1575,20 +1752,41 @@ function emptySkips(): Record<SkipReason, number> {
     personal: 0,
     "inactive-status": 0,
     "no-name": 0,
+    "no-company": 0,
   };
 }
 
 export async function readCursor(): Promise<Date | null> {
-  const row = await prisma.setting.findUnique({ where: { key: CURSOR_KEY } });
+  const row = await db.setting.findUnique({ where: { key: CURSOR_KEY } });
   const value = row?.value as { editedAt?: string } | null;
   return value?.editedAt ? new Date(value.editedAt) : null;
 }
 
 async function writeCursor(editedAt: Date): Promise<void> {
-  await prisma.setting.upsert({
+  await db.setting.upsert({
     where: { key: CURSOR_KEY },
     create: { key: CURSOR_KEY, value: { editedAt: editedAt.toISOString() } },
     update: { value: { editedAt: editedAt.toISOString() } },
+  });
+}
+
+/**
+ * Store the ACT! payload behind a row.
+ *
+ * It lives in its own table rather than as a column so that a query wanting a
+ * company name never drags a full ACT! payload with it -- see the ActSnapshot
+ * model's comment. Nothing in phase 1 reads it back.
+ */
+async function writeSnapshot(
+  owner: { contactId: string } | { companyId: string },
+  payload: unknown,
+): Promise<void> {
+  // Prisma's Json input is InputJsonValue, not object.
+  const data = payload as Prisma.InputJsonValue;
+  await db.actSnapshot.upsert({
+    where: owner,
+    create: { ...owner, payload: data },
+    update: { payload: data },
   });
 }
 
@@ -1601,23 +1799,19 @@ async function writeCursor(editedAt: Date): Promise<void> {
  */
 async function resolveCompany(
   company: MappedCompany,
-  regionId: string,
+  industryId: string | null,
   counters: { companiesCreated: number },
 ): Promise<string | null> {
   if (!company.name) return null;
 
   const existing = company.actCompanyId
-    ? await prisma.company.findUnique({ where: { actCompanyId: company.actCompanyId } })
+    ? await db.company.findUnique({ where: { actCompanyId: company.actCompanyId } })
     : company.actCompanyKey
-      ? await prisma.company.findUnique({ where: { actCompanyKey: company.actCompanyKey } })
+      ? await db.company.findUnique({ where: { actCompanyKey: company.actCompanyKey } })
       : null;
 
-  const industryId = company.industry
-    ? (await prisma.industry.findFirst({ where: { name: company.industry } }))?.id ?? null
-    : null;
-
   if (!existing) {
-    const created = await prisma.company.create({
+    const created = await db.company.create({
       data: {
         name: company.name,
         street: company.street,
@@ -1627,15 +1821,14 @@ async function resolveCompany(
         country: company.country,
         website: company.website,
         industryId,
-        regionId,
         actCompanyId: company.actCompanyId,
         actCompanyKey: company.actCompanyKey,
         actStatus: company.actStatus,
         actRecordManagerId: company.actRecordManagerId,
-        actSnapshot: company as unknown as object,
         actSyncedAt: new Date(),
       },
     });
+    await writeSnapshot({ companyId: created.id }, company);
     counters.companiesCreated += 1;
     return created.id;
   }
@@ -1654,16 +1847,16 @@ async function resolveCompany(
     ["street", "city", "state", "postcode", "country", "website", "industryId"],
   );
 
-  await prisma.company.update({
+  await db.company.update({
     where: { id: existing.id },
     data: {
       ...patch,
       actStatus: company.actStatus,
       actRecordManagerId: company.actRecordManagerId,
-      actSnapshot: company as unknown as object,
       actSyncedAt: new Date(),
     },
   });
+  await writeSnapshot({ companyId: existing.id }, company);
   return existing.id;
 }
 
@@ -1684,13 +1877,14 @@ export async function syncContacts(
   const resolveIndustry = buildIndustryResolver();
   const since = options.full ? null : await readCursor();
 
-  // Every company needs a region and ACT! does not supply one. Until the
-  // territory mapping exists, imported companies land in the default region;
-  // a salesperson moves the few that are wrong.
-  // Check what Region is actually keyed on in prisma/schema.prisma before
-  // writing this line; order by whichever field makes "first" deterministic.
-  const defaultRegion = await prisma.region.findFirst({ orderBy: { code: "asc" } });
-  if (!defaultRegion) throw new Error("no Region rows: seed the database first");
+  // Industry is a small fixed table, so read it once rather than asking per
+  // contact -- 12,000 lookups to answer at most 31 distinct questions.
+  const industryIdByName = new Map(
+    (await db.industry.findMany({ select: { id: true, name: true } })).map((row) => [
+      row.name,
+      row.id,
+    ]),
+  );
 
   const result: SyncResult = {
     scanned: 0,
@@ -1727,22 +1921,35 @@ export async function syncContacts(
         newestEdited = mapped.contact.actEditedAt;
       }
 
-      if (options.dryRun) continue;
-
-      const companyId = await resolveCompany(mapped.company, defaultRegion.id, result);
-      if (!companyId) {
-        // PathQuote's Contact requires a company. A contact with no company
-        // name is six records out of 12,094 and is left in ACT!.
-        result.skipped["no-name"] += 1;
+      // PathQuote's Contact requires a company, and a contact with no company
+      // name is six records out of 12,094. Decided from the mapped value rather
+      // than from resolveCompany returning null, so a dry run reports the same
+      // count a real run does.
+      if (!mapped.company.name) {
+        result.skipped["no-company"] += 1;
         continue;
       }
 
-      const existing = await prisma.contact.findUnique({
+      if (options.dryRun) continue;
+
+      const industryId = mapped.company.industry
+        ? industryIdByName.get(mapped.company.industry) ?? null
+        : null;
+      const companyId = await resolveCompany(mapped.company, industryId, result);
+      if (!companyId) {
+        // Unreachable today: the only null resolveCompany returns is for a
+        // missing name, refused above. Kept so that giving resolveCompany a
+        // second reason to decline cannot silently drop a contact instead.
+        result.skipped["no-company"] += 1;
+        continue;
+      }
+
+      const existing = await db.contact.findUnique({
         where: { actContactId: mapped.contact.actContactId },
       });
 
       if (!existing) {
-        await prisma.contact.create({
+        const created = await db.contact.create({
           data: {
             companyId,
             firstName: mapped.contact.firstName,
@@ -1753,11 +1960,11 @@ export async function syncContacts(
             actContactId: mapped.contact.actContactId,
             actAccountMgr: mapped.contact.actAccountMgr,
             actSyncState: "SYNCED",
-            actEditedAtSync: mapped.contact.actEditedAt,
-            actSnapshot: mapped.contact.snapshot as unknown as object,
+            actSourceEditedAt: mapped.contact.actEditedAt,
             actSyncedAt: new Date(),
           },
         });
+        await writeSnapshot({ contactId: created.id }, mapped.contact.snapshot);
         result.contactsCreated += 1;
       } else {
         const patch = fillOnlyEmpty(
@@ -1770,17 +1977,17 @@ export async function syncContacts(
           },
           ["lastName", "email", "phone", "position"],
         );
-        await prisma.contact.update({
+        await db.contact.update({
           where: { id: existing.id },
           data: {
             ...patch,
             actAccountMgr: mapped.contact.actAccountMgr,
             actSyncState: "SYNCED",
-            actEditedAtSync: mapped.contact.actEditedAt,
-            actSnapshot: mapped.contact.snapshot as unknown as object,
+            actSourceEditedAt: mapped.contact.actEditedAt,
             actSyncedAt: new Date(),
           },
         });
+        await writeSnapshot({ contactId: existing.id }, mapped.contact.snapshot);
         result.contactsUpdated += 1;
       }
 
@@ -1822,9 +2029,10 @@ alone and the next one re-reads the overlap, which fill-only-empty makes a
 no-op -- cheaper than tracking partial progress and impossible to get subtly
 wrong.
 
-Imported companies land in the default region until the territory mapping
-exists. ACT! has no notion of a PathQuote region, and guessing one per contact
-would be a silent wrong answer rather than a visible gap."
+No region is set on an imported company, because Company has no region column:
+in this schema a region hangs off User, Price and Document, and a quote picks
+one up from the document rather than the client. The industry table is read
+once into a map instead of per contact."
 ```
 
 ---
@@ -1935,67 +2143,236 @@ creating them -- auto-creating is what produced 335 spellings of 31 trades."
 
 ---
 
+> **Note, added after implementation.** Tasks 1-10 are done. Review then found
+> four defects that changed the design, so the code blocks above are no longer a
+> faithful transcript of what shipped — read `src/lib/act/` for that. What
+> changed, and why, is in the commits on this branch: the ACT! payload moved to
+> an `ActSnapshot` side table, the company-identity decision became a pure
+> tested module (`company-identity.ts`) after the original version crashed every
+> run on a unique-key collision, the cursor is checkpointed per page and never
+> by a limited run, and the CLI refuses unknown flags. Task 11 below has been
+> amended to match.
+
 ### Task 11: First run against the real database
 
-**Files:** none — this is verification.
+**Files:** none until the last step — this is a procedure, and it is the only
+task that touches production.
 
-- [ ] **Step 1: Run the whole suite**
+It was rewritten after Tasks 1-10 were built, because review found four
+defects that changed what this run has to check. The original five steps were
+not safe: they had no rehearsal, no backup, no reconciliation of companies
+PathQuote already holds, and their "run it twice" step was not actually an
+idempotency test.
 
-Run: `npm test`
-Expected: PASS, including the five new files.
+**Where this runs.** On the VPS, in the `tools` container. The Act! API is
+IP-allowlisted to the VPS (`docs/act-integration-reference.md` §11), so a run
+from a laptop gets a 403 — or worse, succeeds against whatever database the
+local `.env` points at. Note that `docker compose run` does not forward
+`export`ed variables; pass them with `-e`.
 
-- [ ] **Step 2: Dry run, small**
+- [ ] **Step 1: Green locally**
 
-```bash
-export ACT_BASE=https://actapi.pathfindercut.com/act.web.api
-export ACT_DB=Pathfinder
-export ACT_USER='Marketing'
-read -rs -p "ACT password: " ACT_PASS; export ACT_PASS; echo
-
-npm run act:sync -- --dry-run --limit 50
+```
+npm test && npm run typecheck && npm run lint
 ```
 
-Expected: the API version line, 50 scanned, a skip breakdown, and no database writes. If authorize fails, the account needs `Web API Access` — see `docs/act-integration-reference.md`.
+- [ ] **Step 2: Rehearse on a scratch copy**
 
-- [ ] **Step 3: Dry run, everything**
+This costs an hour and is the step that makes everything after it boring.
+Restore the newest dump into a *separate* database on the VPS, apply the
+migration there, and run steps 5 through 11 against it.
 
-Run: `npm run act:sync -- --dry-run --full`
+```bash
+gunzip -c /opt/backups/pq-<stamp>.sql.gz | psql -d pq_rehearsal
+DATABASE_URL=...pq_rehearsal docker compose run --rm -e DATABASE_URL tools \
+  npx prisma migrate deploy
+```
 
-Expected, from the measured export: roughly 12,100 mapped, around 5,300 skipped (`inactive-status` the bulk of it), and `phones unresolved` near 11% of those mapped. A `personal` count above zero is worth looking at — those should already have been excluded by status.
+Everything that bites — a company-key collision, a duplicate client, how long
+12,000 contacts actually take — surfaces here where nothing matters. Do not
+skip to step 5 on production.
 
-Numbers far from these mean the filters are wrong. Stop and compare against the spec rather than writing.
+- [ ] **Step 3: Back up production and confirm the ground**
 
-- [ ] **Step 4: First write, small**
+```bash
+systemctl start pq-backup-db.service && journalctl -u pq-backup-db -n 20
+```
 
-Run: `npm run act:sync -- --limit 200`
+Then confirm the industry table is seeded, because an unseeded one silently
+leaves every imported company without an industry:
 
-Then check what landed:
+```sql
+SELECT COUNT(*) FROM "Industry";   -- expect 31
+```
+
+- [ ] **Step 4: Reconcile the companies PathQuote already has**
+
+**Do this before any write.** Existing companies have `actCompanyKey = NULL`,
+so without this the sync does not recognise them and creates a second copy of
+every client you already quote — with the quotes left on the old row.
+
+```bash
+docker compose run --rm tools npm run act:sync-preflight
+```
+
+Read all five groups. `unambiguous` is safe. The other four are not neutral —
+each one becomes a duplicate company at the first sync:
+
+- **ambiguous** — two existing companies normalise to one key. Fix the data by
+  hand so they differ (usually one has the wrong country), then re-run.
+- **no country** — the key would end `|??`, which no ACT! contact ever
+  computes. Set the country, then re-run. The script deliberately refuses to
+  write these, because a row that holds a key is never re-examined.
+- **taken** / **no key** — read them and decide.
+
+Merging or deleting a company touches `Document` rows. Per `AGENTS.md` that
+needs Vadym's explicit decision and a backup, so it is not part of this run.
+
+When the report is as good as it will get:
+
+```bash
+docker compose run --rm tools npm run act:sync-preflight -- --apply
+```
+
+- [ ] **Step 5: Dry run, small**
+
+```bash
+docker compose run --rm -e ACT_BASE -e ACT_DB -e ACT_USER -e ACT_PASS tools \
+  npm run act:sync -- --dry-run --limit 50
+```
+
+Check the banner names the database you expect and says `dry run`. If
+authorize fails, the account needs the `Web API Access` permission
+(`docs/act-integration-reference.md` §5).
+
+Note the `--` before the flags. Without it npm swallows them and the script
+refuses to run rather than quietly doing a full write.
+
+- [ ] **Step 6: Dry run, everything**
+
+```bash
+docker compose run --rm -e ACT_BASE -e ACT_DB -e ACT_USER -e ACT_PASS tools \
+  npm run act:sync -- --dry-run --full
+```
+
+What to expect, from the measured export:
+
+- `scanned` close to **17,373**, not 12,100. There is no server-side status
+  filter, so every contact the account can see comes over the wire and the
+  mapper does the filtering.
+- roughly **12,100** mapped, about **5,300** skipped, `inactive-status` the
+  bulk of it.
+- a **non-zero `personal` count is expected and correct**. The mapper is the
+  only barrier against the director's private contacts.
+- `phones unresolved` near 11% of those mapped.
+
+Numbers far from these mean a filter is wrong. Stop and compare against the
+spec rather than writing.
+
+- [ ] **Step 7: First write, small**
+
+```bash
+docker compose run --rm -e ACT_BASE -e ACT_DB -e ACT_USER -e ACT_PASS tools \
+  npm run act:sync -- --limit 200
+```
+
+A limited run deliberately stores no cursor, so this is repeatable and cannot
+rewind anything.
 
 ```sql
 SELECT COUNT(*) FROM "Contact" WHERE "actContactId" IS NOT NULL;
-SELECT COUNT(*) FROM "Company" WHERE "actCompanyKey" IS NOT NULL;
-SELECT "name", "city", "country" FROM "Company" WHERE "actCompanyKey" IS NOT NULL LIMIT 10;
-SELECT "firstName", "lastName", "phone", "actAccountMgr" FROM "Contact" WHERE "actContactId" IS NOT NULL LIMIT 10;
+SELECT COUNT(*) FROM "Company" WHERE "actSyncedAt" IS NOT NULL;
+SELECT "firstName", "lastName", "phone", "actAccountMgr" FROM "Contact"
+  WHERE "actContactId" IS NOT NULL LIMIT 10;
+SELECT "name", "city", "country", "actCompanyKey" FROM "Company"
+  WHERE "actSyncedAt" IS NOT NULL LIMIT 10;
 ```
 
-Phones should be E.164 or null, never a raw ACT! spelling. Countries should be ISO-2.
+Phones must be E.164 or null, never a raw ACT! spelling. Countries must be
+ISO-2. No company may be named `''`.
 
-- [ ] **Step 5: Run it twice and confirm the second is a no-op**
+`company key collisions` above zero means two firms share a normalised name —
+look at them before going further.
+
+- [ ] **Step 8: Idempotency**
+
+Run the same limited write twice more:
 
 ```bash
-npm run act:sync
-npm run act:sync
+docker compose run --rm -e ACT_BASE -e ACT_DB -e ACT_USER -e ACT_PASS tools \
+  npm run act:sync -- --full --limit 200
 ```
 
-Expected: the second run scans few or no records (the cursor moved) and creates nothing. If it re-creates companies, the uniqueness of `actCompanyKey` is not doing its job — that is a bug worth stopping for, because it means one client can end up with two company records and quotes split between them.
+The second of those must report `contacts created 0`, `companies created 0`,
+and leave `SELECT COUNT(*) FROM "Company"` unchanged. If it creates a company,
+`actCompanyKey`'s uniqueness is not doing its job — stop, because that means
+one client can end up as two rows with quotes split between them.
 
-- [ ] **Step 6: Full import**
+- [ ] **Step 9: Write a rollback query before the full import**
 
-Run: `npm run act:sync -- --full`
+`Document.company` is `Restrict`, so this fails closed on anything quoted:
 
-- [ ] **Step 7: Commit the observed numbers into the reference document**
+```sql
+DELETE FROM "Company"
+ WHERE "actSyncedAt" IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM "Document" d WHERE d."companyId" = "Company".id);
+```
 
-Add a short section to `docs/act-integration-reference.md` under section 10 recording what the first full import produced: contacts, companies, unresolved phones, unknown industry values. The next person to run this needs a baseline to compare against, and today's numbers are the only honest one.
+Contacts and snapshots cascade. This only works before anyone quotes against
+an imported row, which is the window the full import opens.
+
+- [ ] **Step 10: Full import**
+
+```bash
+docker compose run --rm -e ACT_BASE -e ACT_DB -e ACT_USER -e ACT_PASS tools \
+  npm run act:sync -- --full
+```
+
+The cursor is checkpointed per page, so an interruption resumes rather than
+restarting. A non-zero `failed` count freezes the cursor on purpose — fix the
+cause and re-run; nothing is skipped.
+
+- [ ] **Step 11: Verify, including the delta path**
+
+The delta filter is `edited ge`, which this is the first run to exercise —
+only `gt` was ever verified by hand. Confirm the boundary:
+
+```bash
+docker compose run --rm -e ACT_BASE -e ACT_DB -e ACT_USER -e ACT_PASS tools \
+  npm run act:sync -- --dry-run --limit 50
+```
+
+with a cursor now stored. The first record read should carry an `edited` equal
+to the cursor, re-read on purpose. Check what the cursor holds:
+
+```sql
+SELECT value FROM "Setting" WHERE key = 'act.sync.cursor';
+```
+
+Then:
+
+```sql
+-- no company imported without a contact
+SELECT COUNT(*) FROM "Company" c
+ WHERE c."actSyncedAt" IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM "Contact" ct WHERE ct."companyId" = c.id);
+-- every snapshot has exactly one owner
+SELECT COUNT(*) FROM "ActSnapshot"
+ WHERE ("contactId" IS NULL) = ("companyId" IS NULL);   -- expect 0
+```
+
+And open the quote builder. It preloads every visible company with all of its
+contacts (`src/lib/queries/documents-pickers.ts`), and that query was written
+when the list was small. Time the page. If it has become slow, the picker
+needs a filter — likely on `actStatus`, so Suspects and Prospects stay out of
+the client list — and that is a follow-up, not a reason to roll back.
+
+- [ ] **Step 12: Record what actually happened**
+
+Add to `docs/act-integration-reference.md` §10 the numbers this run produced:
+contacts, companies, unresolved phones, key collisions, unknown industry
+values, and how long the full import took. The next person needs a baseline to
+tell a bad run from a normal one, and today's numbers are the only honest one.
 
 ```bash
 git add docs/act-integration-reference.md

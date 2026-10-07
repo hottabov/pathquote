@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildCandidates } from "../scripts/seed-industry-aliases";
-import { loadActIndustries } from "../scripts/import-act-industries";
+import { loadActIndustries } from "../src/lib/act/industries";
 import { normalizeIndustryName } from "../src/lib/validation/industries";
 
 /**

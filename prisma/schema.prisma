@@ -114,6 +114,17 @@ enum SignerRole {
   CLIENT
 }
 
+/// Where a PathQuote record stands against its ACT! counterpart.
+/// Phase 1 only ever writes SYNCED. PENDING and CONFLICT exist now because the
+/// spec fixes the state machine, so freezing all three here keeps phase 2 from
+/// inventing a different vocabulary later -- not to avoid a migration, which
+/// z56_el_install_role shows is a one-line file.
+enum ActSyncState {
+  SYNCED
+  PENDING
+  CONFLICT
+}
+
 // What a catalogue product *is*, stated outright instead of being inferred
 // from its code. Until migration z31_catalog_identity every "is this a
 // machine?", "which order form?", "how wide?" question was answered by a
@@ -291,6 +302,19 @@ model User {
   regionId          String?
   region            Region?             @relation(fields: [regionId], references: [id])
   active            Boolean             @default(true)
+  /// ACT! user id, the join between an ACT! Record Manager and a PathQuote
+  /// user. Null until someone maps them.
+  actUserId         String?             @unique
+  /// This user's name as it appears in ACT!'s "Account Mgr" field.
+  actAccountMgr     String?
+  /// Countries whose contacts this user may see, mirroring their ACT! Sync
+  /// Set. ISO 3166-1 alpha-2, the same vocabulary as the country half of
+  /// Company.actCompanyKey and as Company.country for rows written since the
+  /// ISO migration -- legacy company rows may still hold free text, so a
+  /// visibility filter cannot assume every row compares directly. Empty means
+  /// "no country grant" -- they still see contacts
+  /// where actAccountMgr matches them.
+  visibleCountries  String[]            @default([])
   documents         Document[]
   accounts          Account[]
   sessions          Session[]
@@ -730,6 +754,29 @@ model Company {
   documents  Document[]
   createdAt  DateTime   @default(now())
 
+  /// ACT! links only ~2.5% of contacts to a real Company record; for those,
+  /// this holds that id. Null for the rest, whose company PathQuote derives
+  /// from the contact's free-text company name -- see the spec's "Company is
+  /// derived, not imported".
+  actCompanyId       String?      @unique
+  /// Normalised company name + ISO country. Unique because it IS the identity
+  /// of a derived company, so the guarantee is only as strong as the
+  /// normalisation in src/lib/act/company-key.ts.
+  actCompanyKey      String?      @unique
+  /// recordManagerID of whichever contact the sync happened to process last
+  /// for this company. Last-writer-wins and not authoritative: a derived
+  /// company can have contacts under several managers. Kept as a uuid rather
+  /// than a name because names change, and intended as the hint that maps a
+  /// company to a PathQuote owner via User.actUserId.
+  actRecordManagerId String?
+  /// ACT! idStatus, promoted out of the snapshot because the client list
+  /// filters on it.
+  actStatus          String?
+  /// When this sync last touched the row. Distinct from the source record's
+  /// own edited time, which a derived company does not have.
+  actSyncedAt        DateTime?
+  actSnapshot        ActSnapshot?
+
   @@index([ownerId])
   @@index([industryId]) // renaming an industry shows an affected-company count first ("Used by 14 companies"), counted by industryId
 }
@@ -746,6 +793,25 @@ model Contact {
   isPrimary       Boolean          @default(false)
   documents       Document[]
   signingRequests SigningRequest[]
+
+  /// The ACT! contact this row mirrors. Null for contacts created in
+  /// PathQuote and never matched to ACT!, and it is the authoritative answer
+  /// to "does ACT! know about this contact?".
+  actContactId      String?       @unique
+  /// Null means the same thing actContactId null means: this contact has no
+  /// ACT! counterpart. Set only alongside actContactId.
+  actSyncState      ActSyncState?
+  /// The `edited` timestamp ACT! reported for this contact at the last sync --
+  /// the source record's own clock, not ours. actSyncedAt is when we ran.
+  /// Phase 2 sends this back as a concurrency token; phase 1 only records it.
+  actSourceEditedAt DateTime?
+  /// When this sync last touched the row.
+  actSyncedAt       DateTime?
+  /// ACT! "Account Mgr" (customFields/rep). Visibility is decided on this,
+  /// not on Record Manager -- see the spec's "Who sees what". Imported from
+  /// day one so switching visibility on later is a filter, not a re-import.
+  actAccountMgr     String?
+  actSnapshot       ActSnapshot?
 
   @@index([companyId])
 }
@@ -1412,4 +1478,36 @@ model SigningRequest {
   declineUserAgent String?
 
   @@index([documentId])
+}
+
+/// The raw ACT! payload behind a synced record.
+///
+/// It lives here rather than as a column on Contact and Company because
+/// Prisma selects every scalar unless told otherwise, and several existing
+/// queries read whole rows with `include` rather than `select` --
+/// src/lib/queries/documents-pickers.ts loads every visible company with all
+/// of its contacts on each client-picker load. A full ACT! payload per row
+/// would put tens of megabytes through that query.
+///
+/// A global Prisma `omit` was the other way to stop that, and it was tried and
+/// rejected: `omit` changes the client's type parameter, so `PrismaClient`
+/// stops being assignable to itself and the breakage lands in auth, recalc and
+/// catalog code that has no interest in this column. Keeping the blob out of
+/// the row needs no cleverness and cannot leak into a new query by default.
+///
+/// Phase 2 reads this to show a person what diverged under fill-only-empty;
+/// phase 1 only writes it. Exactly one of contactId and companyId is set --
+/// see the CHECK constraint in the migration.
+///
+/// Only a contact-owned row is a copy of one ACT! record. A company-owned row
+/// holds the company fields as seen by the last contact the sync processed,
+/// because a derived company has no ACT! record of its own -- the same
+/// last-writer-wins caveat as Company.actRecordManagerId.
+model ActSnapshot {
+  id        String   @id @default(cuid())
+  contactId String?  @unique
+  companyId String?  @unique
+  payload   Json
+  contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
