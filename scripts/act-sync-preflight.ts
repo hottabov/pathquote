@@ -15,9 +15,12 @@
  * onto the existing row. The sync then finds that row and keeps it, quote
  * history and all.
  *
- * Four groups are reported, and only the first is ever written:
+ * Five groups are reported, and only the first is ever written:
  *   unambiguous    one company computes to the key, nothing else holds it
  *   ambiguous      two or more companies compute to the same key
+ *   no country     the stored country does not resolve, so the key would end
+ *                  in |?? (held back: the sync can never match such a key, and
+ *                  a written key is never re-examined. Set the country, re-run)
  *   already taken  the key is already held by a different company
  *   no key         the name normalises to nothing
  *

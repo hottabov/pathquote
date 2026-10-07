@@ -1,5 +1,5 @@
 import { normalizeCountryInput } from "@/lib/countries";
-import { companyKey } from "@/lib/act/company-key";
+import { companyKey, isNoCountryKey } from "@/lib/act/company-key";
 
 // Reconcile the companies PathQuote already has with the identity the ACT!
 // sync will look them up by.
@@ -37,16 +37,24 @@ export type CompanyRow = {
 export type BackfillItem = {
   company: CompanyRow;
   key: string;
-  /**
-   * False when the stored country did not resolve to an ISO code, so the key
-   * ends in `|??`. The key is still the one the sync computes for a contact
-   * whose country is also unresolved -- and for no other contact.
-   */
-  countryResolved: boolean;
 };
 
 /** Two or more companies that compute to the same key. */
 export type AmbiguousGroup = {
+  key: string;
+  candidates: CompanyRow[];
+  /** A different row that already holds this key, if there is one as well. */
+  heldBy: CompanyRow | null;
+};
+
+/**
+ * Unkeyed companies whose stored country did not resolve, so their key ends in
+ * the `|??` placeholder. One group per key, so that two different companies
+ * computing to the same key are listed as two rows under one key, never merged
+ * into one line. A group of one is the common case; two or more is the same
+ * ambiguity as AmbiguousGroup, and is shown as such.
+ */
+export type NoCountryGroup = {
   key: string;
   candidates: CompanyRow[];
   /** A different row that already holds this key, if there is one as well. */
@@ -61,12 +69,18 @@ export type TakenItem = {
 };
 
 export type BackfillPlan = {
-  /** Every company read. Always equals the sum of the six counts below. */
+  /**
+   * Every company read. Always equals alreadyKeyed + unambiguous +
+   * ambiguousCompanyCount + noCountryCompanyCount + taken + noKey.
+   */
   total: number;
   /** Rows that already had a key. Never recomputed and never touched. */
   alreadyKeyed: number;
+  /** The only group `--apply` writes. */
   unambiguous: BackfillItem[];
   ambiguous: AmbiguousGroup[];
+  /** Reported, never written: a `|??` key is sticky and matches nothing. */
+  noCountry: NoCountryGroup[];
   taken: TakenItem[];
   /** Names that normalise to nothing. */
   noKey: CompanyRow[];
@@ -97,6 +111,15 @@ function byKey<T extends { key: string }>(a: T, b: T): number {
  *    row holds it.
  *  - ambiguous: two or more unkeyed companies compute to the same key. Which
  *    one the ACT! contacts belong to is a guess, so none is chosen.
+ *  - noCountry: the computed key ends in the `|??` placeholder, because the
+ *    stored country is missing or does not resolve. Held back, whatever else is
+ *    true of the key. An ACT! contact that has a country computes `name|AU`,
+ *    never `name|??`, so the sync cannot find such a row and the client is
+ *    duplicated either way. Writing the key would add nothing and would make
+ *    the row permanent: a keyed row is never looked at again, so setting its
+ *    country afterwards would not re-key it. Left null, the row is re-examined
+ *    on the next run. Ambiguity still shows within the group: two companies
+ *    computing to the same `|??` key are two entries under one key.
  *  - taken: one unkeyed company, but another row already holds its key.
  *  - noKey: companyKey() returned null.
  *
@@ -112,6 +135,7 @@ export function planBackfill(rows: readonly CompanyRow[]): BackfillPlan {
   }
 
   const candidatesByKey = new Map<string, CompanyRow[]>();
+  const noCountryByKey = new Map<string, CompanyRow[]>();
   const noKey: CompanyRow[] = [];
   let alreadyKeyed = 0;
 
@@ -125,13 +149,15 @@ export function planBackfill(rows: readonly CompanyRow[]): BackfillPlan {
       noKey.push(row);
       continue;
     }
-    const group = candidatesByKey.get(key);
+    const target = isNoCountryKey(key) ? noCountryByKey : candidatesByKey;
+    const group = target.get(key);
     if (group) group.push(row);
-    else candidatesByKey.set(key, [row]);
+    else target.set(key, [row]);
   }
 
   const unambiguous: BackfillItem[] = [];
   const ambiguous: AmbiguousGroup[] = [];
+  const noCountry: NoCountryGroup[] = [];
   const taken: TakenItem[] = [];
 
   for (const [key, candidates] of candidatesByKey) {
@@ -141,12 +167,16 @@ export function planBackfill(rows: readonly CompanyRow[]): BackfillPlan {
     } else if (holder) {
       taken.push({ company: candidates[0], key, heldBy: holder });
     } else {
-      unambiguous.push({
-        company: candidates[0],
-        key,
-        countryResolved: !key.endsWith("|??"),
-      });
+      unambiguous.push({ company: candidates[0], key });
     }
+  }
+
+  for (const [key, candidates] of noCountryByKey) {
+    noCountry.push({
+      key,
+      candidates: [...candidates].sort(byName),
+      heldBy: holders.get(key) ?? null,
+    });
   }
 
   return {
@@ -154,6 +184,7 @@ export function planBackfill(rows: readonly CompanyRow[]): BackfillPlan {
     alreadyKeyed,
     unambiguous: unambiguous.sort(byKey),
     ambiguous: ambiguous.sort(byKey),
+    noCountry: noCountry.sort(byKey),
     taken: taken.sort(byKey),
     noKey: noKey.sort(byName),
   };
@@ -162,6 +193,11 @@ export function planBackfill(rows: readonly CompanyRow[]): BackfillPlan {
 /** Companies, not keys: an ambiguous group of three is three rows. */
 export function ambiguousCompanyCount(plan: BackfillPlan): number {
   return plan.ambiguous.reduce((sum, group) => sum + group.candidates.length, 0);
+}
+
+/** Companies, not keys: two companies sharing one `|??` key are two rows. */
+export function noCountryCompanyCount(plan: BackfillPlan): number {
+  return plan.noCountry.reduce((sum, group) => sum + group.candidates.length, 0);
 }
 
 function describe(company: CompanyRow): string {
@@ -179,8 +215,8 @@ function describe(company: CompanyRow): string {
  */
 export function formatReport(plan: BackfillPlan): string[] {
   const out: string[] = [];
-  const noCountry = plan.unambiguous.filter((item) => !item.countryResolved);
   const ambiguousCompanies = ambiguousCompanyCount(plan);
+  const noCountryCompanies = noCountryCompanyCount(plan);
 
   out.push(
     `UNAMBIGUOUS: ${plan.unambiguous.length} -- one company computes to the key and nothing else holds it`,
@@ -190,14 +226,33 @@ export function formatReport(plan: BackfillPlan): string[] {
     out.push(`  ${key}`);
     out.push(`      ${describe(company)}`);
   }
-  if (noCountry.length > 0) {
+
+  out.push("");
+  out.push(
+    `NO COUNTRY: ${plan.noCountry.length} key(s), ${noCountryCompanies} companies -- left alone, never written`,
+  );
+  if (plan.noCountry.length === 0) out.push("  none");
+  for (const group of plan.noCountry) {
+    const shared =
+      group.candidates.length >= 2
+        ? `  -- ${group.candidates.length} companies compute to this key`
+        : "";
+    out.push(`  ${group.key}${shared}`);
+    for (const company of group.candidates) out.push(`      ${describe(company)}`);
+    if (group.heldBy) out.push(`      already holds this key: ${describe(group.heldBy)}`);
+  }
+  if (plan.noCountry.length > 0) {
     out.push("");
-    out.push(`  !! No usable country on ${noCountry.length} of these, so the key ends in |??.`);
-    out.push("  !! The sync gives an ACT! contact that HAS a country a different key, so it");
-    out.push("  !! will not find such a row and will create a second copy of that client.");
-    out.push("  !! Once a row holds a key this script never looks at it again, so correcting");
-    out.push("  !! its country afterwards would not re-key it. Set the country first, then");
-    out.push("  !! run this.");
+    out.push("  !! The country on these companies is missing or does not resolve to an ISO");
+    out.push("  !! code, so their key would end in |??. An ACT! contact that HAS a country");
+    out.push("  !! computes a different key, so the sync will not find these rows and will");
+    out.push("  !! create a second copy of each client until the country is fixed.");
+    out.push("  !! Writing a |?? key would not help, and would make it worse: a row that holds");
+    out.push("  !! a key is never looked at again, so correcting its country afterwards would");
+    out.push("  !! not re-key it.");
+    out.push("  !! To fix: set the company's country, then re-run this preflight. The row is");
+    out.push("  !! then keyed from its real country (or listed as ambiguous or taken, if that");
+    out.push("  !! key is shared).");
   }
 
   out.push("");
@@ -237,12 +292,9 @@ export function formatReport(plan: BackfillPlan): string[] {
     out.push(`  ${label.padEnd(30)}${String(value).padStart(6)}${note}`);
   line("companies in the database", plan.total);
   line("already have a key", plan.alreadyKeyed);
-  line(
-    "would be backfilled",
-    plan.unambiguous.length,
-    noCountry.length > 0 ? `   (${noCountry.length} with no country, key ends |??)` : "",
-  );
+  line("would be backfilled", plan.unambiguous.length);
   line("ambiguous", ambiguousCompanies, `   (${plan.ambiguous.length} key(s))`);
+  line("no country", noCountryCompanies, `   (${plan.noCountry.length} key(s))`);
   line("already taken", plan.taken.length);
   line("no key", plan.noKey.length);
 

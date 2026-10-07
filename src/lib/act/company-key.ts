@@ -77,6 +77,9 @@ export function normaliseCompanyName(raw: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
 
+/** The country part of a key when the ISO country did not resolve. */
+export const NO_COUNTRY = "??";
+
 /**
  * The identity of a derived company: normalised name and ISO country.
  *
@@ -90,5 +93,14 @@ export function normaliseCompanyName(raw: string): string {
 export function companyKey(rawName: string, countryCode: string | null): string | null {
   const name = normaliseCompanyName(rawName);
   if (!name) return null;
-  return `${name}|${countryCode ?? "??"}`;
+  return `${name}|${countryCode ?? NO_COUNTRY}`;
+}
+
+/**
+ * True for a key whose country part is the placeholder. Safe on the suffix
+ * alone: a normalised name cannot contain `|` or `?` (punctuation is stripped),
+ * and a real country part is an ISO code, never `??`.
+ */
+export function isNoCountryKey(key: string): boolean {
+  return key.endsWith(`|${NO_COUNTRY}`);
 }

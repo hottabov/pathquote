@@ -2,10 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   ambiguousCompanyCount,
   formatReport,
+  noCountryCompanyCount,
   planBackfill,
   type CompanyRow,
 } from "../src/lib/act/preflight";
-import { companyKey } from "../src/lib/act/company-key";
+import { companyKey, NO_COUNTRY } from "../src/lib/act/company-key";
 
 let seq = 0;
 function company(overrides: Partial<CompanyRow> & { name: string }): CompanyRow {
@@ -26,9 +27,7 @@ describe("planBackfill: unambiguous", () => {
     const acme = company({ name: "Acme Pty Ltd", country: "AU", documentCount: 3 });
     const plan = planBackfill([acme]);
 
-    expect(plan.unambiguous).toEqual([
-      { company: acme, key: "acme|AU", countryResolved: true },
-    ]);
+    expect(plan.unambiguous).toEqual([{ company: acme, key: "acme|AU" }]);
     // Not a literal re-derivation: the real function is the one the sync calls.
     expect(plan.unambiguous[0].key).toBe(companyKey("Acme Pty Ltd", "AU"));
     expect(plan.ambiguous).toEqual([]);
@@ -50,20 +49,7 @@ describe("planBackfill: unambiguous", () => {
       "borealis|AU",
       "cirrus|US",
     ]);
-    expect(plan.unambiguous.every((item) => item.countryResolved)).toBe(true);
-  });
-
-  it("flags a key with no country rather than hiding it", () => {
-    const plan = planBackfill([
-      company({ name: "No Country Co", country: null }),
-      company({ name: "Lost Co", country: "Atlantis" }),
-      company({ name: "Blank Co", country: "   " }),
-    ]);
-    expect(plan.unambiguous.map((item) => [item.key, item.countryResolved])).toEqual([
-      ["blank|??", false],
-      ["lost|??", false],
-      ["no country|??", false],
-    ]);
+    expect(plan.noCountry).toEqual([]);
   });
 
   it("does not treat the same name in two countries as ambiguous", () => {
@@ -75,6 +61,67 @@ describe("planBackfill: unambiguous", () => {
     ]);
     expect(plan.ambiguous).toEqual([]);
     expect(plan.unambiguous.map((item) => item.key)).toEqual(["adient|MX", "adient|RO"]);
+  });
+});
+
+describe("planBackfill: no country", () => {
+  it("holds back a key whose country does not resolve, and never lists it as unambiguous", () => {
+    const missing = company({ name: "No Country Co", country: null });
+    const unknown = company({ name: "Lost Co", country: "Atlantis" });
+    const blank = company({ name: "Blank Co", country: "   " });
+    const plan = planBackfill([missing, unknown, blank]);
+
+    expect(plan.unambiguous).toEqual([]);
+    expect(plan.ambiguous).toEqual([]);
+    expect(plan.taken).toEqual([]);
+    expect(plan.noCountry.map((group) => [group.key, group.candidates])).toEqual([
+      ["blank|??", [blank]],
+      ["lost|??", [unknown]],
+      ["no country|??", [missing]],
+    ]);
+    expect(plan.noCountry.every((group) => group.heldBy === null)).toBe(true);
+  });
+
+  it("detects the placeholder by the real companyKey, not by a copy of it", () => {
+    const row = company({ name: "Acme", country: null });
+    const plan = planBackfill([row]);
+    expect(plan.noCountry[0].key).toBe(companyKey("Acme", null));
+    expect(plan.noCountry[0].key).toBe(`acme|${NO_COUNTRY}`);
+  });
+
+  it("keeps a company with a country out of the group, beside one without", () => {
+    const withCountry = company({ name: "Acme", country: "AU" });
+    const without = company({ name: "Borealis", country: null });
+    const plan = planBackfill([withCountry, without]);
+    expect(plan.unambiguous.map((item) => item.key)).toEqual(["acme|AU"]);
+    expect(plan.noCountry.map((group) => group.key)).toEqual(["borealis|??"]);
+  });
+
+  it("does not collapse two companies that share a |?? key into one", () => {
+    // "Lost Co" has no country and "Lost Ltd" has one that does not resolve:
+    // different rows, same computed key.
+    const first = company({ name: "Lost Co", country: null, documentCount: 2 });
+    const second = company({ name: "Lost Ltd", country: "Atlantis", contactCount: 4 });
+    const plan = planBackfill([first, second]);
+
+    expect(plan.noCountry).toHaveLength(1);
+    expect(plan.noCountry[0].key).toBe("lost|??");
+    expect(plan.noCountry[0].candidates).toHaveLength(2);
+    expect(plan.noCountry[0].candidates).toEqual(expect.arrayContaining([first, second]));
+    expect(noCountryCompanyCount(plan)).toBe(2);
+    // The shared key is shown inside this group, not moved to the ambiguous one.
+    expect(plan.ambiguous).toEqual([]);
+    expect(plan.unambiguous).toEqual([]);
+  });
+
+  it("shows a row that already holds the same |?? key, and still never writes", () => {
+    const holder = company({ name: "Lost", country: null, actCompanyKey: "lost|??" });
+    const row = company({ name: "Lost Co", country: null });
+    const plan = planBackfill([holder, row]);
+
+    expect(plan.taken).toEqual([]);
+    expect(plan.unambiguous).toEqual([]);
+    expect(plan.noCountry).toEqual([{ key: "lost|??", candidates: [row], heldBy: holder }]);
   });
 });
 
@@ -201,12 +248,20 @@ describe("planBackfill: accounting", () => {
       company({ name: "Held Pty Ltd" }),
       company({ name: "..." }),
       company({ name: "Keyed", actCompanyKey: "keyed|AU" }),
+      company({ name: "Nowhere", country: null }),
+      company({ name: "Lost", country: null }),
+      company({ name: "Lost Ltd", country: "Atlantis" }),
     ];
     const plan = planBackfill(rows);
+    // Every group is non-empty, so a group dropped from the sum would show.
+    expect(plan.unambiguous.length).toBeGreaterThan(0);
+    expect(plan.noCountry.length).toBeGreaterThan(0);
+    expect(noCountryCompanyCount(plan)).toBe(3);
     const accounted =
       plan.alreadyKeyed +
       plan.unambiguous.length +
       ambiguousCompanyCount(plan) +
+      noCountryCompanyCount(plan) +
       plan.taken.length +
       plan.noKey.length;
     expect(plan.total).toBe(rows.length);
@@ -219,6 +274,7 @@ describe("planBackfill: accounting", () => {
       alreadyKeyed: 0,
       unambiguous: [],
       ambiguous: [],
+      noCountry: [],
       taken: [],
       noKey: [],
     });
@@ -230,6 +286,9 @@ describe("planBackfill: accounting", () => {
       company({ name: "Twin" }),
       company({ name: "Alpha" }),
       company({ name: "Twin Ltd" }),
+      company({ name: "Lost Co", country: null }),
+      company({ name: "Lost Ltd", country: "Atlantis" }),
+      company({ name: "Mislaid", country: null }),
     ];
     expect(planBackfill([...rows].reverse())).toEqual(planBackfill(rows));
   });
@@ -268,11 +327,54 @@ describe("formatReport", () => {
     expect(text).toContain("AMBIGUOUS: 0 key(s), 0 companies");
   });
 
-  it("warns about keys with no country", () => {
+  it("gives a no-country company its own section, with the fix, and does not call it backfillable", () => {
+    const lines = formatReport(
+      planBackfill([company({ name: "Acme", country: null, documentCount: 5 })]),
+    );
+    const text = lines.join("\n");
+
+    expect(text).toContain("NO COUNTRY: 1 key(s), 1 companies -- left alone, never written");
+    expect(text).toContain("acme|??");
+    expect(text).toContain("documents 5");
+    expect(text).toContain("set the company's country, then re-run this preflight");
+    expect(text).toMatch(/would be backfilled\s+0/);
+    expect(text).toMatch(/no country\s+1\b/);
+
+    // The row appears under NO COUNTRY and nowhere in UNAMBIGUOUS.
+    const unambiguousAt = lines.findIndex((line) => line.startsWith("UNAMBIGUOUS:"));
+    const noCountryAt = lines.findIndex((line) => line.startsWith("NO COUNTRY:"));
+    const keyAt = lines.findIndex((line) => line.trim() === "acme|??");
+    expect(unambiguousAt).toBeGreaterThanOrEqual(0);
+    expect(keyAt).toBeGreaterThan(noCountryAt);
+    expect(lines.slice(unambiguousAt, noCountryAt)).not.toContain("  acme|??");
+  });
+
+  it("no longer says a |?? row is about to be written", () => {
     const text = formatReport(
       planBackfill([company({ name: "Acme", country: null })]),
     ).join("\n");
-    expect(text).toContain("key ends in |??");
+    expect(text).not.toContain("Set the country first, then");
+    expect(text).not.toContain("with no country, key ends");
+  });
+
+  it("shows two companies sharing a |?? key as two rows under one key", () => {
+    const text = formatReport(
+      planBackfill([
+        company({ name: "Lost Co", country: null }),
+        company({ name: "Lost Ltd", country: "Atlantis" }),
+      ]),
+    ).join("\n");
+    expect(text).toContain("NO COUNTRY: 1 key(s), 2 companies");
+    expect(text).toContain("lost|??  -- 2 companies compute to this key");
+    expect(text).toContain('"Lost Co"');
+    expect(text).toContain('"Lost Ltd"');
+    expect(text).toMatch(/no country\s+2\s+\(1 key\(s\)\)/);
+  });
+
+  it("says none, and omits the fix, when every company has a country", () => {
+    const text = formatReport(planBackfill([company({ name: "Acme" })])).join("\n");
+    expect(text).toContain("NO COUNTRY: 0 key(s), 0 companies");
+    expect(text).not.toContain("then re-run this preflight");
   });
 
   it("states the counts that add up to the total", () => {
@@ -287,5 +389,42 @@ describe("formatReport", () => {
     expect(text).toMatch(/already have a key\s+1/);
     expect(text).toMatch(/would be backfilled\s+1/);
     expect(text).toMatch(/no key\s+1/);
+  });
+
+  it("prints a summary whose parts sum to its total, every group present", () => {
+    const text = formatReport(
+      planBackfill([
+        company({ name: "Solo" }),
+        company({ name: "Twin" }),
+        company({ name: "Twin Ltd" }),
+        company({ name: "Held", actCompanyKey: "held|AU" }),
+        company({ name: "Held Pty Ltd" }),
+        company({ name: "Keyed", actCompanyKey: "keyed|AU" }),
+        company({ name: "..." }),
+        company({ name: "Lost Co", country: null }),
+        company({ name: "Lost Ltd", country: "Atlantis" }),
+        company({ name: "Mislaid", country: null }),
+      ]),
+    ).join("\n");
+
+    // Read the numbers back out of the printed summary, not out of the plan.
+    const summary = text.slice(text.indexOf("SUMMARY"));
+    const value = (label: string): number => {
+      const match = summary.match(new RegExp(`^\\s+${label}\\s+(\\d+)`, "m"));
+      if (!match) throw new Error(`no summary line for "${label}"`);
+      return Number(match[1]);
+    };
+    const parts = [
+      "already have a key",
+      "would be backfilled",
+      "ambiguous",
+      "no country",
+      "already taken",
+      "no key",
+    ].map(value);
+
+    expect(value("companies in the database")).toBe(10);
+    expect(parts.every((n) => n > 0)).toBe(true);
+    expect(parts.reduce((a, b) => a + b, 0)).toBe(value("companies in the database"));
   });
 });
