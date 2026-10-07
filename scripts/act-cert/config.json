@@ -1,0 +1,7 @@
+{
+  "Url": "https://q.pathfindercut.com/actapi-cert/actapi.pfx",
+  "Token": "Bearer PASTEHERE",
+  "PfxPassword": "HIDDEN",
+  "HostName": "actapi.pathfindercut.com",
+  "SiteName": "PathQuote"
+}

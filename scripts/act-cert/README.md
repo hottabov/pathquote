@@ -118,11 +118,22 @@ write `config.json` beside it:
 ```json
 {
   "Url": "https://<vps-host>/actapi-cert/actapi.pfx",
-  "Token": "<the token>",
+  "Token": "<the token, without the word Bearer>",
   "PfxPassword": "<the pfx password>",
   "HostName": "actapi.pathfindercut.com",
   "SiteName": "Default Web Site"
 }
+```
+
+`Token` is the bare token. The script adds the `Bearer ` scheme itself, and
+strips one if you paste it in anyway — copying the whole line out of the nginx
+map is the obvious thing to do, and `Bearer Bearer <token>` fails as a plain
+403 that looks identical to a wrong IP or an unreadable file.
+
+Read the exact token back out of nginx rather than retyping it:
+
+```bash
+sudo grep -oP 'Bearer \K[a-f0-9]+' /etc/nginx/conf.d/actapi-token.conf
 ```
 
 Lock the directory down — it holds two secrets:

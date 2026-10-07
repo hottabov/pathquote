@@ -93,6 +93,11 @@ foreach ($key in 'Url', 'Token', 'PfxPassword', 'HostName', 'SiteName') {
     }
 }
 
+# A token pasted straight out of the nginx map arrives with its scheme
+# attached, and "Bearer Bearer <token>" fails as a flat 403 that looks
+# exactly like a wrong IP or an unreadable file.
+$token = ($cfg.Token -replace '^\s*Bearer\s+', '').Trim()
+
 $binding = "IIS:\SslBindings\!443!$($cfg.HostName)"
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -110,8 +115,17 @@ Write-Log 'INFO' "current binding: $(if ($currentThumbprint) { $currentThumbprin
 
 $temp = Join-Path $env:TEMP ("actapi-{0}.pfx" -f ([guid]::NewGuid().ToString('N')))
 try {
-    Invoke-WebRequest -Uri $cfg.Url -OutFile $temp -UseBasicParsing -TimeoutSec 60 `
-        -Headers @{ Authorization = "Bearer $($cfg.Token)" }
+    try {
+        Invoke-WebRequest -Uri $cfg.Url -OutFile $temp -UseBasicParsing -TimeoutSec 60 `
+            -Headers @{ Authorization = "Bearer $token" }
+    } catch [System.Net.WebException] {
+        $status = $null
+        if ($_.Exception.Response) { $status = [int]$_.Exception.Response.StatusCode }
+        if ($status -eq 403) {
+            throw "403 from $($cfg.Url). Check, in this order: the token in config.json matches the nginx map and carries no 'Bearer ' prefix; this server reaches the VPS from the allowed address; the PFX is readable by www-data."
+        }
+        throw
+    }
     Write-Log 'INFO' "downloaded $([math]::Round((Get-Item $temp).Length / 1KB, 1)) KB"
 
     $securePassword = ConvertTo-SecureString $cfg.PfxPassword -AsPlainText -Force
