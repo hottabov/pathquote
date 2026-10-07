@@ -78,31 +78,50 @@ export class ActClient {
     return this.authorize();
   }
 
-  /** GET a path, re-authorising once if the token was rejected. */
-  private async get(path: string): Promise<unknown> {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const token = await this.getToken();
-      const response = await fetch(`${this.config.baseUrl}${path}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Act-Database-Name": this.config.database,
-        },
-      });
+  /** One GET, with whatever token is current, result uninterpreted. */
+  private async fetchOnce(path: string): Promise<Response> {
+    const token = await this.getToken();
+    return fetch(`${this.config.baseUrl}${path}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Act-Database-Name": this.config.database,
+      },
+    });
+  }
 
-      if (response.status === 401 && attempt === 0) {
-        // Expired or revoked mid-run. One retry with a fresh token; a second
-        // 401 is a real failure and should not loop.
-        this.token = null;
-        continue;
-      }
-
-      const body = await response.text();
-      if (!response.ok) {
-        throw new ActApiError(`GET ${path} failed (${response.status})`, response.status, body);
-      }
-      return body ? JSON.parse(body) : null;
+  private async parse(path: string, response: Response): Promise<unknown> {
+    const body = await response.text();
+    if (!response.ok) {
+      throw new ActApiError(`GET ${path} failed (${response.status})`, response.status, body);
     }
-    throw new ActApiError(`GET ${path} failed: still 401 after re-authorising`, 401, "");
+    return body ? JSON.parse(body) : null;
+  }
+
+  /**
+   * GET a path, re-authorising once if the token was rejected.
+   *
+   * Two explicit attempts rather than a loop. A `for` loop here needs a throw
+   * after it to satisfy the compiler, that throw is unreachable, and its
+   * message can therefore never print -- so the second 401 would surface as a
+   * bare "failed (401)" while the useful sentence sat in dead code. This shape
+   * has no unreachable branch and the diagnostic actually fires.
+   */
+  private async get(path: string): Promise<unknown> {
+    const first = await this.fetchOnce(path);
+    if (first.status !== 401) return this.parse(path, first);
+
+    // Expired or revoked mid-run. Drop the cached token so the retry fetches a
+    // fresh one.
+    this.token = null;
+    const second = await this.fetchOnce(path);
+    if (second.status === 401) {
+      throw new ActApiError(
+        `GET ${path} failed: still 401 after re-authorising. The account may have lost its "Web API Access" permission, or the password was rotated.`,
+        401,
+        await second.text(),
+      );
+    }
+    return this.parse(path, second);
   }
 
   /** Unwrap whichever envelope this endpoint happens to use. */
