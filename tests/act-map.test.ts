@@ -89,9 +89,9 @@ describe("mapContact", () => {
     expect(result.company.industry).toBeNull();
   });
 
-  it("skips Personal contacts even if the status filter let them through", () => {
+  it("skips Personal contacts as their own explicit case", () => {
     // These are the director's own and he shares them with nobody. The API
-    // query already excludes them; this is the second barrier, on purpose.
+    // query applies no status filter, so the mapper is the only barrier.
     expect(mapContact(contact({ idStatus: "Personal" }), resolveIndustry)).toEqual({
       kind: "skipped",
       reason: "personal",

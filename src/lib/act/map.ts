@@ -46,9 +46,12 @@ export function mapContact(
   const status = text(contact.idStatus);
 
   // Personal contacts belong to the director and he shares them with nobody.
-  // The API query already excludes them by status; this is a second, separate
-  // barrier so that widening the status list later cannot leak them by
-  // accident.
+  // This is the ONLY barrier. client.ts sends no status filter -- its sole
+  // $filter is `edited ge ...` -- so every Personal contact in the CRM reaches
+  // this function. That is why it is a separate, explicit check and not left
+  // to fall out of the active-status test below: widening ACTIVE_STATUSES
+  // later must not be able to let them through, and they get a count of their
+  // own in the run report.
   if (status === "Personal") {
     return { kind: "skipped", reason: "personal" };
   }
