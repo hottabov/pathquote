@@ -22,9 +22,10 @@
  * scripts/data/act-industries.json, deliberately as data rather than in this
  * file: every judgement call about which spellings are the same trade is
  * reviewable there in one place, and the same mapping is what the planned ACT
- * contact import will need — `resolveActIndustry` below is exported for it, so
- * a contact's raw industry text resolves to a row created here rather than
- * seeding a second, dirtier list beside this one.
+ * contact import will need — `buildIndustryResolver` in
+ * src/lib/act/industries.ts is exported for it, so a contact's raw industry
+ * text resolves to a row created here rather than seeding a second, dirtier
+ * list beside this one.
  *
  * Usage:
  *   npx tsx scripts/import-act-industries.ts --dry-run   # print, change nothing
@@ -44,44 +45,13 @@
  * rows are listed and left alone.
  */
 import "dotenv/config";
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  ACT_INDUSTRIES_PATH,
+  buildIndustryResolver,
+  loadActIndustries,
+} from "../src/lib/act/industries";
 import { industryNameSchema, normalizeIndustryName } from "../src/lib/validation/industries";
-
-export type ActIndustries = {
-  /** The segments to seed. */
-  canonical: string[];
-  /** Raw ACT spelling -> segment, or null for a value that is not an industry.
-   * Also carries the intermediate cleaned names (the 86-row pass that preceded
-   * these segments), so a database seeded from that earlier list can be folded
-   * in with `--merge`. */
-  aliases: Record<string, string | null>;
-};
-
-const DATA_PATH = path.join(import.meta.dirname, "data", "act-industries.json");
-
-/** The mapping, as data. Exported for the ACT contact import, which needs to
- * resolve each contact's raw industry text against the same table this script
- * seeded rather than inventing its own. */
-export function loadActIndustries(): ActIndustries {
-  return JSON.parse(readFileSync(DATA_PATH, "utf8")) as ActIndustries;
-}
-
-/**
- * The segment for one raw ACT industry value, or null when the value maps to
- * nothing (junk) or isn't in the mapping at all — the caller decides whether an
- * unknown value is worth failing over or just leaving the company's industry
- * unset. Matched on the normalized key, so capitalisation and stray whitespace
- * in the export don't miss.
- */
-export function resolveActIndustry(aliases: ActIndustries["aliases"], raw: string): string | null {
-  const key = normalizeIndustryName(raw);
-  for (const [alias, segment] of Object.entries(aliases)) {
-    if (normalizeIndustryName(alias) === key) return segment;
-  }
-  return null;
-}
 
 async function main() {
   const args = new Set(process.argv.slice(2));
@@ -95,7 +65,7 @@ async function main() {
   // refusal rather than a half-finished import.
   const invalid = data.canonical.filter((name) => !industryNameSchema.safeParse(name).success);
   if (invalid.length > 0) {
-    console.error(`invalid names in ${DATA_PATH}: ${invalid.join(", ")}`);
+    console.error(`invalid names in ${ACT_INDUSTRIES_PATH}: ${invalid.join(", ")}`);
     process.exit(1);
   }
 
@@ -115,11 +85,13 @@ async function main() {
   // Rows already in the table whose name is a raw ACT spelling of something
   // else in the canonical list. A row that IS its own canonical name is not one
   // of these, hence the key comparison rather than a plain lookup.
+  const resolveIndustry = buildIndustryResolver(data);
+
   const toMerge: { from: (typeof existing)[number]; to: string }[] = [];
   for (const row of existing) {
     const key = normalizeIndustryName(row.name);
     if (canonicalKeys.has(key)) continue;
-    const target = resolveActIndustry(data.aliases, row.name);
+    const target = resolveIndustry(row.name);
     if (target && normalizeIndustryName(target) !== key) {
       toMerge.push({ from: row, to: target });
     }
@@ -176,11 +148,10 @@ async function main() {
   );
 }
 
-// Only when this file is what was run. `loadActIndustries` and
-// `resolveActIndustry` above are exported to be imported -- by
-// scripts/seed-industry-aliases.ts today and by the ACT contact import later --
-// and an unguarded `main()` would mean importing either one silently seeds the
-// Industry table and then calls process.exit(0) out from under the caller.
+// Only when this file is what was run. The mapping now lives in
+// src/lib/act/industries.ts, so nothing imports this file any more; the guard
+// stays so that importing it, as a test might, can't silently seed the
+// Industry table and then call process.exit(0) out from under the caller.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main()
     .catch((error) => {

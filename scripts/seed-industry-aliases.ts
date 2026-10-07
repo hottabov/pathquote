@@ -14,7 +14,7 @@
  * 32nd industry -- undoing the cleanup by hand, one contact at a time. With
  * them, that spelling resolves to "Marine" in the picker and in the eventual
  * ACT contact import, which resolves an incoming category against the database
- * rather than against `resolveActIndustry`.
+ * rather than against `buildIndustryResolver` (src/lib/act/industries.ts).
  *
  * Usage:
  *   npx tsx scripts/seed-industry-aliases.ts --dry-run   # print, change nothing
@@ -27,7 +27,7 @@
  */
 import "dotenv/config";
 import { pathToFileURL } from "node:url";
-import { loadActIndustries, type ActIndustries } from "./import-act-industries";
+import { loadActIndustries, type ActIndustries } from "../src/lib/act/industries";
 import { industryAliasSchema, normalizeIndustryName } from "../src/lib/validation/industries";
 
 /**
