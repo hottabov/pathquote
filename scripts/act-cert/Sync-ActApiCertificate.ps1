@@ -39,18 +39,26 @@
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$ConfigPath = "$PSScriptRoot\config.json",
-    [string]$LogPath    = "$PSScriptRoot\sync.log"
+    [string]$ConfigPath,
+    [string]$LogPath
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# $PSScriptRoot is not dependable inside a param block -- under -File it can
+# come through empty, which silently turns the defaults into \config.json and
+# C:\sync.log. Resolve the directory from the invocation instead.
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+if (-not $ConfigPath) { $ConfigPath = Join-Path $ScriptDir 'config.json' }
+if (-not $LogPath)    { $LogPath    = Join-Path $ScriptDir 'sync.log' }
+
 function Write-Log {
     param([string]$Level, [string]$Message)
     $line = "{0} [{1}] {2}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $Level, $Message
     Write-Output $line
-    try { Add-Content -Path $LogPath -Value $line -Encoding utf8 } catch { }
+    # -WhatIf:$false because writing the log is not the change being previewed.
+    try { Add-Content -Path $LogPath -Value $line -Encoding utf8 -WhatIf:$false } catch { }
 }
 
 function Write-Event {
