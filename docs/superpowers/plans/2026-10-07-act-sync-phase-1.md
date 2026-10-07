@@ -118,9 +118,11 @@ In `model User`, after `active`:
   /// This user's name as it appears in ACT!'s "Account Mgr" field.
   actAccountMgr     String?
   /// Countries whose contacts this user may see, mirroring their ACT! Sync
-  /// Set. ISO 3166-1 alpha-2, the same vocabulary as Company.country and the
-  /// country half of Company.actCompanyKey, so a visibility filter can compare
-  /// them directly. Empty means "no country grant" -- they still see contacts
+  /// Set. ISO 3166-1 alpha-2, the same vocabulary as the country half of
+  /// Company.actCompanyKey and as Company.country for rows written since the
+  /// ISO migration -- legacy company rows may still hold free text, so a
+  /// visibility filter cannot assume every row compares directly. Empty means
+  /// "no country grant" -- they still see contacts
   /// where actAccountMgr matches them.
   visibleCountries  String[]      @default([])
 ```
@@ -138,10 +140,15 @@ Create `prisma/migrations/z60_act_sync/migration.sql`:
 -- ACT! read-only sync, phase 1
 -- (docs/superpowers/specs/2026-09-08-act-integration-design.md).
 --
--- Additive only: new nullable columns and one new enum. No data is modified --
--- there is no backfill, no UPDATE and no drop. The index builds do scan every
--- row and take a brief write lock on Company and Contact. Whether that needs a
--- backup window is the approver's call, not this file's.
+-- Additive only: new nullable columns, one enum, one table. No data is
+-- modified -- there is no backfill, no UPDATE and no drop.
+--
+-- The ALTERs take ACCESS EXCLUSIVE on Company, Contact and User, which blocks
+-- reads as well as writes and is held until the file commits, because Prisma
+-- runs a migration as one transaction. The index builds run under that same
+-- lock. Every column involved is NULL at that point so it is brief, but User
+-- is read on each authenticated request -- whether that needs a window is the
+-- approver's call, not this file's.
 
 CREATE TYPE "ActSyncState" AS ENUM ('SYNCED', 'PENDING', 'CONFLICT');
 
@@ -226,6 +233,11 @@ after the other models:
 /// Phase 2 reads this to show a person what diverged under fill-only-empty;
 /// phase 1 only writes it. Exactly one of contactId and companyId is set --
 /// see the CHECK constraint in the migration.
+///
+/// Only a contact-owned row is a copy of one ACT! record. A company-owned row
+/// holds the company fields as seen by the last contact the sync processed,
+/// because a derived company has no ACT! record of its own -- the same
+/// last-writer-wins caveat as Company.actRecordManagerId.
 model ActSnapshot {
   id        String   @id @default(cuid())
   contactId String?  @unique
@@ -1605,6 +1617,7 @@ No unit test: orchestration around Prisma. Its decisions are in `map.ts` and `me
 Create `src/lib/act/sync.ts`:
 
 ```typescript
+import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { ActClient } from "@/lib/act/client";
 import { buildIndustryResolver } from "@/lib/act/industries";
@@ -1674,7 +1687,8 @@ async function writeSnapshot(
   owner: { contactId: string } | { companyId: string },
   payload: unknown,
 ): Promise<void> {
-  const data = payload as object;
+  // Prisma's Json input is InputJsonValue, not object.
+  const data = payload as Prisma.InputJsonValue;
   await db.actSnapshot.upsert({
     where: owner,
     create: { ...owner, payload: data },

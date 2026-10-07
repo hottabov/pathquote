@@ -1,10 +1,15 @@
 -- ACT! read-only sync, phase 1
 -- (docs/superpowers/specs/2026-09-08-act-integration-design.md).
 --
--- Additive only: new nullable columns and one new enum. No data is modified --
--- there is no backfill, no UPDATE and no drop. The index builds do scan every
--- row and take a brief write lock on Company and Contact. Whether that needs a
--- backup window is the approver's call, not this file's.
+-- Additive only: new nullable columns, one enum, one table. No data is
+-- modified -- there is no backfill, no UPDATE and no drop.
+--
+-- The ALTERs take ACCESS EXCLUSIVE on Company, Contact and User, which blocks
+-- reads as well as writes and is held until the file commits, because Prisma
+-- runs a migration as one transaction. The index builds run under that same
+-- lock. Every column involved is NULL at that point so it is brief, but User
+-- is read on each authenticated request -- whether that needs a window is the
+-- approver's call, not this file's.
 
 CREATE TYPE "ActSyncState" AS ENUM ('SYNCED', 'PENDING', 'CONFLICT');
 
