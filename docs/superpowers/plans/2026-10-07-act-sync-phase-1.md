@@ -1785,7 +1785,7 @@ async function writeSnapshot(
  */
 async function resolveCompany(
   company: MappedCompany,
-  regionId: string,
+  industryId: string | null,
   counters: { companiesCreated: number },
 ): Promise<string | null> {
   if (!company.name) return null;
@@ -1795,10 +1795,6 @@ async function resolveCompany(
     : company.actCompanyKey
       ? await db.company.findUnique({ where: { actCompanyKey: company.actCompanyKey } })
       : null;
-
-  const industryId = company.industry
-    ? (await db.industry.findFirst({ where: { name: company.industry } }))?.id ?? null
-    : null;
 
   if (!existing) {
     const created = await db.company.create({
@@ -1811,7 +1807,6 @@ async function resolveCompany(
         country: company.country,
         website: company.website,
         industryId,
-        regionId,
         actCompanyId: company.actCompanyId,
         actCompanyKey: company.actCompanyKey,
         actStatus: company.actStatus,
@@ -1868,13 +1863,14 @@ export async function syncContacts(
   const resolveIndustry = buildIndustryResolver();
   const since = options.full ? null : await readCursor();
 
-  // Every company needs a region and ACT! does not supply one. Until the
-  // territory mapping exists, imported companies land in the default region;
-  // a salesperson moves the few that are wrong.
-  // Check what Region is actually keyed on in prisma/schema.prisma before
-  // writing this line; order by whichever field makes "first" deterministic.
-  const defaultRegion = await db.region.findFirst({ orderBy: { code: "asc" } });
-  if (!defaultRegion) throw new Error("no Region rows: seed the database first");
+  // Industry is a small fixed table, so read it once rather than asking per
+  // contact -- 12,000 lookups to answer at most 31 distinct questions.
+  const industryIdByName = new Map(
+    (await db.industry.findMany({ select: { id: true, name: true } })).map((row) => [
+      row.name,
+      row.id,
+    ]),
+  );
 
   const result: SyncResult = {
     scanned: 0,
@@ -1913,7 +1909,10 @@ export async function syncContacts(
 
       if (options.dryRun) continue;
 
-      const companyId = await resolveCompany(mapped.company, defaultRegion.id, result);
+      const industryId = mapped.company.industry
+        ? industryIdByName.get(mapped.company.industry) ?? null
+        : null;
+      const companyId = await resolveCompany(mapped.company, industryId, result);
       if (!companyId) {
         // PathQuote's Contact requires a company. A contact with no company
         // name is six records out of 12,094 and is left in ACT!.
@@ -2006,9 +2005,10 @@ alone and the next one re-reads the overlap, which fill-only-empty makes a
 no-op -- cheaper than tracking partial progress and impossible to get subtly
 wrong.
 
-Imported companies land in the default region until the territory mapping
-exists. ACT! has no notion of a PathQuote region, and guessing one per contact
-would be a silent wrong answer rather than a visible gap."
+No region is set on an imported company, because Company has no region column:
+in this schema a region hangs off User, Price and Document, and a quote picks
+one up from the document rather than the client. The industry table is read
+once into a map instead of per contact."
 ```
 
 ---
