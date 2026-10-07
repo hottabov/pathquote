@@ -931,8 +931,13 @@ import {
   ACT_INDUSTRIES_PATH,
   buildIndustryResolver,
   loadActIndustries,
-  type ActIndustries,
 } from "../src/lib/act/industries";
+```
+
+Not `type ActIndustries` — once the local resolver is gone nothing in that file
+annotates with it, and eslint flags the unused import.
+
+```typescript
 ```
 
 `DATA_PATH` appeared in one error message; use `ACT_INDUSTRIES_PATH` there:
