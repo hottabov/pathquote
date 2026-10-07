@@ -248,17 +248,91 @@ A PathQuote quote that has been sent maps to `Proposal` (AU) or `Engage` (US).
 
 ## 10. Reading with a delta cursor
 
+The sync is `src/lib/act/sync.ts`, started by `npm run act:sync`. It is read-only against Act!.
+
 ```
-GET /api/contacts?$filter=edited gt 2026-09-01T00:00:00Z&$orderby=edited&$top=200
+GET /api/contacts?$top=200&$skip=0&$orderby=edited&$filter=edited ge 2026-09-01T00:00:00.000Z
 ```
 
-Verified working. The same call serves both the nightly job and the manual "Load contacts" button, with the cursor being the timestamp of the last successful run.
+Pages of 200, oldest `edited` first, advancing `$skip` until a short page — about 60 requests for a full import. `syncContacts` is one operation meant to serve both a nightly job and a manual button, so there is no separate full-import path to drift from the incremental one. Phase 1 has only the CLI.
 
-Filters applied by the client:
+### What is filtered where
 
-- `contactType eq 'Contact'`
-- not `isPrivate`, unless the caller is that record's Record Manager
-- `idStatus` in `Customer`, `Prospect`, `Prospect-Distributor`, `Suspect` — about 12,094 of 17,373
+**The request carries no filter except `edited ge`**, and a `--full` run omits that too. In particular there is no `contactType`, `isPrivate` or `idStatus` clause: every contact the account can see comes back, and the mapper (`src/lib/act/map.ts`) discards what PathQuote must not hold:
+
+- anything whose `contactType` is not `Contact`
+- `isPrivate`
+- `idStatus` of `Personal` — the director's own contacts, counted separately as `personal`. This check in the mapper is the **only** thing keeping them out, so a non-zero `personal` count is expected
+- `idStatus` not in `Customer`, `Prospect`, `Prospect-Distributor`, `Suspect` — about 12,094 of 17,373 at last measurement
+
+The one filtering that does happen server-side is the account's own permissions: without *Access All Non-Private Data* it would see almost nothing (section 2), and private records belonging to others are not returned to it (section 3).
+
+`gt` was verified against the live API (section 3). `ge` is the same operator family and is what the code sends, but it had not yet been exercised against the live system when this was written; the first real run is where that gets confirmed. A server-side status filter would shrink the run from ~17,400 reads to ~12,100, but it has not been tried against the API and is deliberately not there.
+
+### Why `ge` and not `gt`
+
+The cursor is the `edited` of the newest record stored. A `--limit` run stops partway through the oldest-first stream, so another record can share that exact timestamp and never have been reached. `gt` would skip it permanently; `ge` reads the boundary record again, which fill-only-empty turns into a no-op. Do not "tidy" it to `gt`.
+
+### The cursor
+
+| | |
+|---|---|
+| Stored in | table `Setting`, key `act.sync.cursor` |
+| Value | JSON `{"editedAt": "<ISO timestamp>"}` |
+| Means | the newest `edited` timestamp **successfully stored** — *not* the time of the last run |
+| Written | after every fully processed page, so an interrupted run resumes near where it stopped |
+| Never written | by a `--dry-run` |
+| Stops advancing | the moment any contact in the run fails. A failed record sits at or after the cursor in oldest-first order, so moving past it would skip it forever; holding the cursor makes the next run try it again |
+
+Inspect it with `SELECT value FROM "Setting" WHERE key = 'act.sync.cursor';`. Deleting the row makes the next run read everything, same as `--full`.
+
+`--full` ignores the stored cursor while reading, but it still checkpoints as it goes, so it overwrites the cursor with wherever that run got to — which, for a `--full --limit N`, is older than before. That is harmless (the next delta run just re-reads more) but it is a rewind, not a no-op.
+
+### Running it
+
+```
+npm run act:sync -- --dry-run --limit 50   # read and report, write nothing
+npm run act:sync -- --limit 200            # a careful first write
+npm run act:sync                           # delta since the stored cursor
+npm run act:sync -- --full                 # ignore the cursor, read everything
+```
+
+| Flag | Meaning |
+|---|---|
+| `--dry-run` | Read and map, write nothing — including no cursor. |
+| `--limit N` or `--limit=N` | Stop after N contacts. N must be a positive whole number. |
+| `--full` | Ignore the stored cursor and read everything. |
+
+Those three are the whole interface. Anything else, a missing `--limit` value, `0`, a negative or a non-number is refused with exit status `2`, before anything is read or written. A banner naming the mode (`dry run` or `WRITE`), the limit and the database (`host:port/name`, never the password) is printed first.
+
+The `--` after the script name is required. Without it npm consumes the flags itself and the script starts with none, which is a full write. The CLI notices that npm swallowed a flag and refuses.
+
+Exit status: `0` clean; `1` the run threw (for example an unrecognised response shape from the API) or one or more contacts failed to store; `2` bad arguments, or no database could be identified from `DATABASE_URL`.
+
+The report prints `company key collisions` and `failed`. A non-zero collision count means two different Act! companies have names that normalise to the same key, so two firms may be sharing a name: a person needs to look. A non-zero `failed` count comes with the first failing contact id and its error.
+
+### Configuration
+
+Read from the environment (`.env` is loaded by `dotenv/config`, and `docker compose` passes it to the `tools` container):
+
+| Variable | Value |
+|---|---|
+| `ACT_BASE` | `https://actapi.pathfindercut.com/act.web.api` |
+| `ACT_DB` | `Pathfinder` |
+| `ACT_USER` | the Act! **display name** as it appears in Manage Users, e.g. `John Hollo`, not `john`. The integration account is `Marketing` (section 2) |
+| `ACT_PASS` | that account's password |
+
+A missing variable is reported by name. A wrong `ACT_USER` or `ACT_DB` is not: both return a bare `401` (section 2). The sync also reads and writes `DATABASE_URL`, like the rest of PathQuote.
+
+### Where it has to run
+
+The API is IP-allowlisted to the VPS (`74.208.106.34`, section 11). Any other address, a laptop included, gets `403` however correct the credentials. The sync therefore runs on the VPS, not from a development machine.
+
+### Transport
+
+Each request has a 30 second timeout. A network error, a timeout or a `5xx` is retried, three attempts in all with a 1 s then 2 s pause, and each retry is logged. A `4xx` is a real answer and is not retried. A `401` triggers one re-authorisation, which is separate from the retries.
+
+A response that is neither an array nor an object with an array `value` is an error, not an empty page. It names the shape it saw. Treating it as empty would have made a changed envelope look like a successful run with nothing to do.
 
 ## 11. Infrastructure
 

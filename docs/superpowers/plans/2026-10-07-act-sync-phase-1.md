@@ -1371,9 +1371,12 @@ export function mapContact(
   const status = text(contact.idStatus);
 
   // Personal contacts belong to the director and he shares them with nobody.
-  // The API query already excludes them by status; this is a second, separate
-  // barrier so that widening the status list later cannot leak them by
-  // accident.
+  // This is the ONLY barrier. client.ts sends no status filter -- its sole
+  // $filter is `edited ge ...` -- so every Personal contact in the CRM reaches
+  // this function. That is why it is a separate, explicit check and not left
+  // to fall out of the active-status test below: widening ACTIVE_STATUSES
+  // later must not be able to let them through, and they get a count of their
+  // own in the run report.
   if (status === "Personal") {
     return { kind: "skipped", reason: "personal" };
   }
@@ -1448,10 +1451,11 @@ git commit -m "feat: map one ACT! contact to PathQuote shapes
 Pure, so the skip rules can be tested without a database. They are the part of
 this integration most likely to be wrong and the most expensive to get wrong.
 
-Personal contacts are refused here as well as in the API query. They are the
-director's own, and one condition in one query is thin protection for them: if
-someone widens the status list later and forgets this case, the second barrier
-holds.
+Personal contacts are refused here, and this is the only place they are. The
+API query carries no status filter, so every one of them reaches the mapper.
+They are the director's own, so the check is explicit rather than a side
+effect of the active-status test: if someone widens the status list later, it
+still holds.
 
 A contact whose phone would not resolve is still imported. 7.8% of active
 contacts are in that state, almost always because the country on the record is
@@ -2165,7 +2169,9 @@ Expected: the API version line, 50 scanned, a skip breakdown, and no database wr
 
 Run: `npm run act:sync -- --dry-run --full`
 
-Expected, from the measured export: roughly 12,100 mapped, around 5,300 skipped (`inactive-status` the bulk of it), and `phones unresolved` near 11% of those mapped. A `personal` count above zero is worth looking at — those should already have been excluded by status.
+Expected, from the measured export: roughly 12,100 mapped, around 5,300 skipped (`inactive-status` the bulk of it), and `phones unresolved` near 11% of those mapped.
+
+Nothing is filtered server-side: the only `$filter` is `edited ge ...`, and on a `--full` run not even that. So `scanned` should be close to the total contact count (17,373 when last measured), not to the 12,100 that will be mapped, and every Personal contact in the CRM is read before the mapper skips it. A non-zero `personal` count is therefore **expected**, not a warning. What matters is that those contacts were skipped and none were written; if you want to confirm the number, compare it with the count of `Personal` in the ACT! ID/Status picklist.
 
 Numbers far from these mean the filters are wrong. Stop and compare against the spec rather than writing.
 
