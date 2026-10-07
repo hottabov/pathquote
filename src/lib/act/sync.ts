@@ -163,6 +163,13 @@ async function resolveCompany(
   industryId: string | null,
   counters: Pick<SyncResult, "companiesCreated" | "companiesKeyCollisions">,
 ): Promise<string | null> {
+  // A company needs a name as well as an identity. A contact linked to an ACT!
+  // company but carrying blank company text has an identity and no name, and
+  // creating a company called "" would put an unnamed row in the client
+  // picker. The real name is on ACT!'s own Company record, which phase 1 does
+  // not fetch, so the contact stays in ACT! where someone can see it.
+  if (!company.name) return null;
+
   const byId = company.actCompanyId
     ? await db.company.findUnique({ where: { actCompanyId: company.actCompanyId } })
     : null;
@@ -292,16 +299,21 @@ export async function syncContacts(
         newestEdited = mapped.contact.actEditedAt;
       }
 
-      // PathQuote's Contact requires a company, and a contact whose company
-      // carries no identity at all has nothing to attach to. Decided from the
-      // mapped value, with no lookups, so a dry run reports the same count a
-      // real run does.
-      if (chooseCompany(mapped.company, null, null).kind === "skip") {
-        result.skipped["no-company"] += 1;
+      // PathQuote's Contact requires a company, and creating one needs both a
+      // name and an identity to group on. Decided from the mapped value with no
+      // lookups, so a dry run can report it.
+      const companyUsable =
+        Boolean(mapped.company.name) && chooseCompany(mapped.company, null, null).kind !== "skip";
+
+      if (options.dryRun) {
+        // A dry run cannot know whether a contact already exists, so it counts
+        // what a first import would skip -- which is the number worth comparing
+        // against the measured export. A real incremental run counts only
+        // genuinely new contacts here, because an existing one keeps the
+        // company it already has and is refreshed either way.
+        if (!companyUsable) result.skipped["no-company"] += 1;
         continue;
       }
-
-      if (options.dryRun) continue;
 
       try {
         const industryId = mapped.company.industry
@@ -344,10 +356,14 @@ export async function syncContacts(
           await writeSnapshot({ contactId: existing.id }, mapped.contact.snapshot);
           result.contactsUpdated += 1;
         } else {
+          if (!companyUsable) {
+            result.skipped["no-company"] += 1;
+            continue;
+          }
           const companyId = await resolveCompany(mapped.company, industryId, result);
           if (!companyId) {
-            // Unreachable while the check above runs first, since both ask
-            // chooseCompany the same question. Kept so that the two can never
+            // Belt and braces: companyUsable asks chooseCompany the same
+            // question, so this should not fire. Kept so the two can never
             // drift apart into silently dropping a contact.
             result.skipped["no-company"] += 1;
             continue;
