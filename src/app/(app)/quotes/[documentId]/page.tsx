@@ -245,14 +245,16 @@ export default async function DocumentBuilderPage({
   // client-search.ts). `document.company` is that company already, loaded by
   // `getDocumentForBuilder` with its contacts in the order the picker needs
   // (isPrimary desc, firstName asc), so this costs no query. Mapped down to
-  // the picker's four contact fields on purpose: `BuilderContact` also carries
-  // email and phone, and anything passed as a prop to a client component is
-  // serialised into the page.
+  // the picker's fields on purpose: `BuilderCompany` carries a whole address
+  // and `BuilderContact` also carries email and phone, and anything passed as
+  // a prop to a client component is serialised into the page.
   const pickerCompany: ClientSearchCompany | null = document.company
     ? {
         id: document.company.id,
         name: document.company.name,
         industryId: document.company.industryId,
+        city: document.company.city,
+        country: document.company.country,
         contacts: document.company.contacts.map((contact) => ({
           id: contact.id,
           firstName: contact.firstName,

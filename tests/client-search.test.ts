@@ -3,7 +3,11 @@ import {
   CLIENT_SEARCH_MAX_LENGTH,
   CLIENT_SEARCH_MAX_WORDS,
   CLIENT_SEARCH_MIN_LENGTH,
-  clientResultLabel,
+  CLIENT_SEARCH_PAGE_SIZE,
+  clientContactMatchText,
+  clientLocation,
+  clientSearchOrderBy,
+  clientSearchStatus,
   clientSearchTerm,
   clientSearchWhere,
   clientSearchWords,
@@ -122,7 +126,56 @@ describe("clientSearchWhere", () => {
   });
 });
 
-describe("clientResultLabel", () => {
+describe("CLIENT_SEARCH_PAGE_SIZE", () => {
+  it("offers at least a hundred rows", () => {
+    expect(CLIENT_SEARCH_PAGE_SIZE).toBeGreaterThanOrEqual(100);
+  });
+});
+
+describe("clientSearchOrderBy", () => {
+  it("puts the newest companies first when there is no term", () => {
+    expect(clientSearchOrderBy("")).toEqual([{ createdAt: "desc" }, { id: "asc" }]);
+  });
+
+  it("orders by name when there is a term", () => {
+    expect(clientSearchOrderBy("boats")).toEqual([{ name: "asc" }, { id: "asc" }]);
+  });
+
+  it("breaks ties by id either way, so a page does not reshuffle", () => {
+    expect(clientSearchOrderBy("").at(-1)).toEqual({ id: "asc" });
+    expect(clientSearchOrderBy("boats").at(-1)).toEqual({ id: "asc" });
+  });
+
+  it("treats a too-short query as no term, because clientSearchTerm does", () => {
+    expect(clientSearchOrderBy(clientSearchTerm("bo"))).toEqual(clientSearchOrderBy(""));
+  });
+});
+
+describe("clientLocation", () => {
+  it("joins the city and the country's English name", () => {
+    expect(clientLocation({ city: "Sydney", country: "AU" })).toBe("Sydney, Australia");
+  });
+
+  it("shows a country alone, or a city alone", () => {
+    expect(clientLocation({ city: null, country: "NZ" })).toBe("New Zealand");
+    expect(clientLocation({ city: "Perth", country: null })).toBe("Perth");
+  });
+
+  it("is null when neither is on file, including when they are blank", () => {
+    expect(clientLocation({ city: null, country: null })).toBeNull();
+    expect(clientLocation({ city: "  ", country: "" })).toBeNull();
+  });
+
+  it("keeps an older free-text country as it was stored", () => {
+    expect(clientLocation({ city: "Lyon", country: "Narnia" })).toBe("Lyon, Narnia");
+  });
+
+  it("resolves an older free-text country that names a real one", () => {
+    expect(clientLocation({ city: null, country: "Australia" })).toBe("Australia");
+  });
+});
+
+describe("clientContactMatchText", () => {
   const acme = {
     name: "Acme Pty Ltd",
     contacts: [
@@ -132,37 +185,122 @@ describe("clientResultLabel", () => {
     ],
   };
 
-  it("is the bare name when there is no search", () => {
-    expect(clientResultLabel(acme, "")).toBe("Acme Pty Ltd");
+  it("is null when there is no search", () => {
+    expect(clientContactMatchText(acme, "")).toBeNull();
   });
 
-  it("is the bare name when the company name holds every word", () => {
-    expect(clientResultLabel(acme, "acme")).toBe("Acme Pty Ltd");
-    expect(clientResultLabel(acme, "pty acme")).toBe("Acme Pty Ltd");
+  it("is null when the company name holds every word", () => {
+    expect(clientContactMatchText(acme, "acme")).toBeNull();
+    expect(clientContactMatchText(acme, "pty acme")).toBeNull();
   });
 
-  it("names the contacts that matched when the name does not explain the result", () => {
-    expect(clientResultLabel(acme, "smith")).toBe("Acme Pty Ltd — John Smith");
+  it("names the contact that matched when the name does not explain the result", () => {
+    expect(clientContactMatchText(acme, "smith")).toBe("Matches contact John Smith");
   });
 
   it("matches on a last name or a first name, ignoring case", () => {
-    expect(clientResultLabel(acme, "JONES")).toBe("Acme Pty Ltd — Anna Jones");
-    expect(clientResultLabel(acme, "anna")).toBe("Acme Pty Ltd — Anna Jones");
+    expect(clientContactMatchText(acme, "JONES")).toBe("Matches contact Anna Jones");
+    expect(clientContactMatchText(acme, "anna")).toBe("Matches contact Anna Jones");
   });
 
   it("names a contact with no last name by its first name alone", () => {
-    expect(clientResultLabel(acme, "joan")).toBe("Acme Pty Ltd — Joan");
+    expect(clientContactMatchText(acme, "joan")).toBe("Matches contact Joan");
   });
 
-  it("shows two contacts and counts the rest", () => {
-    expect(clientResultLabel(acme, "jo")).toBe("Acme Pty Ltd — John Smith, Anna Jones +1");
+  it("shows two contacts, pluralises, and counts the rest", () => {
+    expect(clientContactMatchText(acme, "jo")).toBe(
+      "Matches contacts John Smith, Anna Jones +1 more"
+    );
   });
 
   it("names a contact for a word the company name does not hold, even when another word it does", () => {
-    expect(clientResultLabel(acme, "pty smith")).toBe("Acme Pty Ltd — John Smith");
+    expect(clientContactMatchText(acme, "pty smith")).toBe("Matches contact John Smith");
   });
 
-  it("falls back to the bare name when no contact explains the words", () => {
-    expect(clientResultLabel(acme, "zzz")).toBe("Acme Pty Ltd");
+  it("is null when no contact explains the words", () => {
+    expect(clientContactMatchText(acme, "zzz")).toBeNull();
+  });
+});
+
+describe("clientSearchStatus", () => {
+  const answered = (term: string, count: number, failed = false) => ({ term, count, failed });
+  const idle = { tooShort: false, searching: false };
+
+  it("says the companies are loading before the first answer", () => {
+    expect(clientSearchStatus({ ...idle, searching: true, outcome: null })).toEqual({
+      kind: "loading",
+      text: "Loading companies…",
+    });
+  });
+
+  it("describes the newest-companies list on focus, with the way to search", () => {
+    const status = clientSearchStatus({ ...idle, outcome: answered("", 100) });
+    expect(status.kind).toBe("full");
+    expect(status.text).toBe(
+      `Showing the ${CLIENT_SEARCH_PAGE_SIZE} newest companies. Type ${CLIENT_SEARCH_MIN_LENGTH} or more letters to search.`
+    );
+  });
+
+  it("describes a default list that is shorter than a page", () => {
+    const status = clientSearchStatus({ ...idle, outcome: answered("", 12) });
+    expect(status.kind).toBe("results");
+    expect(status.text).toBe(
+      `Newest companies first. Type ${CLIENT_SEARCH_MIN_LENGTH} or more letters to search.`
+    );
+  });
+
+  it("shows the minimum-length hint for one or two typed letters, over the list", () => {
+    const status = clientSearchStatus({ tooShort: true, searching: false, outcome: answered("", 100) });
+    expect(status).toEqual({
+      kind: "tooShort",
+      text: `Type ${CLIENT_SEARCH_MIN_LENGTH} or more letters to search.`,
+    });
+  });
+
+  it("keeps the hint while the default list is being fetched back after deleting letters", () => {
+    const status = clientSearchStatus({ tooShort: true, searching: true, outcome: answered("boat", 3) });
+    expect(status.kind).toBe("tooShort");
+  });
+
+  it("says it is searching while a newer term is in flight", () => {
+    expect(clientSearchStatus({ tooShort: false, searching: true, outcome: answered("boa", 3) })).toEqual({
+      kind: "searching",
+      text: "Searching…",
+    });
+  });
+
+  it("counts matches, singular and plural", () => {
+    expect(clientSearchStatus({ ...idle, outcome: answered("boats", 1) }).text).toBe("1 match");
+    expect(clientSearchStatus({ ...idle, outcome: answered("boats", 12) }).text).toBe("12 matches");
+  });
+
+  it("says a full page of matches may be cut short", () => {
+    const status = clientSearchStatus({ ...idle, outcome: answered("boats", CLIENT_SEARCH_PAGE_SIZE) });
+    expect(status.kind).toBe("full");
+    expect(status.text).toBe(`Showing the first ${CLIENT_SEARCH_PAGE_SIZE} matches. Type more to narrow them down.`);
+  });
+
+  it("names the term and what to do when nothing matches", () => {
+    const status = clientSearchStatus({ ...idle, outcome: answered("boatz", 0) });
+    expect(status.kind).toBe("empty");
+    expect(status.text).toBe(
+      "No company or contact matches “boatz”. Check the spelling, try fewer letters, or use + New company."
+    );
+  });
+
+  it("says there are no clients at all when even the default list is empty", () => {
+    const status = clientSearchStatus({ ...idle, outcome: answered("", 0) });
+    expect(status.kind).toBe("empty");
+    expect(status.text).toContain("No clients are available to you yet");
+  });
+
+  it("reports a failure over everything but a search already retrying it", () => {
+    expect(clientSearchStatus({ ...idle, outcome: answered("boats", 0, true) })).toEqual({
+      kind: "failed",
+      text: "Search failed.",
+    });
+    expect(
+      clientSearchStatus({ tooShort: false, searching: true, outcome: answered("boats", 0, true) }).kind
+    ).toBe("searching");
   });
 });

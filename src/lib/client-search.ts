@@ -1,13 +1,23 @@
 // The pure half of the builder's client search: how a typed query becomes a
-// search term, how that term becomes a Prisma `where`, and how a result is
-// labelled. No database here, so every rule below has a unit test; the query
-// that runs it is src/lib/queries/client-search.ts and stays a thin shell.
+// search term, how that term becomes a Prisma `where` and an ordering, how a
+// result row is described, and what the open list says about the search. No
+// database here, so every rule below has a unit test; the query that runs it
+// is src/lib/queries/client-search.ts and stays a thin shell.
 
+import { displayCountry } from "./countries";
 import type { CompanyScopeWhere } from "./scope";
 
 /** Results per search. Also what an empty or too-short query returns: the
- * first page by name, so the picker never opens onto a blank list. */
-export const CLIENT_SEARCH_PAGE_SIZE = 20;
+ * newest companies (see `clientSearchOrderBy`), so the picker never opens onto
+ * a blank list.
+ *
+ * It was 20, which hid companies a manager knew were there: with 8,809 imported
+ * companies, "Ikon Boats" was simply not among the first twenty. A hundred rows
+ * is a scrolling list, not a full catalogue, and it is still a proportion of
+ * the 2,158 kB the old preload shipped -- roughly 25 kB, against 5 kB for
+ * twenty -- so the page size is a trade, not free. Raise it with the payload in
+ * mind, not just because a list felt short. */
+export const CLIENT_SEARCH_PAGE_SIZE = 100;
 
 /** The shortest term that is searched for. Two things agree on three: the
  * trigram indexes of z62_client_search_trgm cannot serve a shorter pattern, so
@@ -99,44 +109,162 @@ function wordClause(word: string): Exclude<CompanySearchClause, CompanyScopeWher
   };
 }
 
-type LabelledContact = { firstName: string; lastName: string | null };
+/** A `Company` order-by clause, as far as the search uses them. Assignable to
+ * Prisma's `CompanyOrderByWithRelationInput`; kept structural so this file
+ * stays free of the Prisma client. */
+export type ClientSearchOrder = { createdAt: "desc" } | { name: "asc" } | { id: "asc" };
 
-function fullName(contact: LabelledContact): string {
+/**
+ * How a page of results is ordered.
+ *
+ * With no term -- the picker just opened, or too little was typed to search --
+ * the NEWEST companies come first. A manager who entered a client in ACT! this
+ * week, and let the sync run, is about to build that client's quote; the first
+ * thing they should see is that company, not the same twenty beginning with
+ * "A". Ordering by name there was a list that never changed.
+ *
+ * A caveat that is true today and will stop being true: the initial ACT!
+ * import created 8,735 companies within a few minutes, so for now the head of
+ * this order is the tail of that import and carries no meaning of its own. It
+ * becomes useful as new clients trickle in on top of it, and that steady state
+ * is what it is for.
+ *
+ * With a term the order is by name: someone who types is looking for a specific
+ * company, not a recent one, and name order is what lets them scan the matches.
+ *
+ * `id` breaks ties in both -- same-named companies (an ACT! import can hold two
+ * of one name in different countries) and same-instant creations (a batch)
+ * would otherwise swap places between identical requests.
+ */
+export function clientSearchOrderBy(term: string): ClientSearchOrder[] {
+  return term === "" ? [{ createdAt: "desc" }, { id: "asc" }] : [{ name: "asc" }, { id: "asc" }];
+}
+
+/**
+ * Where a company is, for a result row: "Sydney, Australia", "Australia", the
+ * city alone, or null when neither is on file. The country is stored as an ISO
+ * code (or, for older rows, free text) and shown as its English name, the same
+ * as everywhere else (`displayCountry`).
+ *
+ * This is what tells two similarly-named companies apart, so it is the second
+ * line of every row that has it.
+ */
+export function clientLocation(company: { city: string | null; country: string | null }): string | null {
+  const parts = [company.city?.trim(), displayCountry(company.country)?.trim()].filter(
+    (part): part is string => Boolean(part)
+  );
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
+type NamedContact = { firstName: string; lastName: string | null };
+
+function fullName(contact: NamedContact): string {
   return [contact.firstName, contact.lastName].filter(Boolean).join(" ");
 }
 
-/** Contacts shown beside a company before "+N" takes over. */
-const LABEL_CONTACTS = 2;
+/** Contacts named on a row before "+N more" takes over. */
+const MATCHED_CONTACTS_SHOWN = 2;
 
 /**
- * The text of a result row. The company's name, plus -- when the company is
- * here because of a contact rather than its own name -- which contacts, so a
- * manager who typed "smith" can see why "Acme Pty Ltd" is on the list.
+ * Why a company is in the results when its own name is not the reason: the
+ * contacts that matched, as a line for the row ("Matches contact John Smith",
+ * "Matches contacts John Smith, Anna Jones +1 more"). Null when the row needs
+ * no such line.
  *
- * A company is labelled with contacts only when its name does not already
- * contain every word of the search; a name that does is the reason it matched,
- * and naming contacts beside it would be noise. Matching mirrors the server's
- * (case-insensitive `contains`, on first or last name), so a contact is named
- * here exactly when it could have caused the match.
+ * A company gets one only when its name does not already contain every word of
+ * the search; a name that does is the reason it matched, and naming contacts
+ * beside it would be noise. Matching mirrors the server's (case-insensitive
+ * `contains`, on first or last name), so a contact is named here exactly when
+ * it could have caused the match. Without the line, a manager who typed
+ * "smith" is shown "Acme Pty Ltd" and cannot tell why.
+ *
+ * `term` is the term the results answer, not whatever has been typed since.
  */
-export function clientResultLabel(
-  company: { name: string; contacts: LabelledContact[] },
+export function clientContactMatchText(
+  company: { name: string; contacts: NamedContact[] },
   term: string
-): string {
+): string | null {
   const words = clientSearchWords(term).map((word) => word.toLowerCase());
-  if (words.length === 0) return company.name;
+  if (words.length === 0) return null;
 
   const name = company.name.toLowerCase();
-  if (words.every((word) => name.includes(word))) return company.name;
+  if (words.every((word) => name.includes(word))) return null;
 
   const matching = company.contacts.filter((contact) => {
     const first = contact.firstName.toLowerCase();
     const last = (contact.lastName ?? "").toLowerCase();
     return words.some((word) => first.includes(word) || last.includes(word));
   });
-  if (matching.length === 0) return company.name;
+  if (matching.length === 0) return null;
 
-  const shown = matching.slice(0, LABEL_CONTACTS).map(fullName).join(", ");
-  const more = matching.length - LABEL_CONTACTS;
-  return `${company.name} — ${shown}${more > 0 ? ` +${more}` : ""}`;
+  const shown = matching.slice(0, MATCHED_CONTACTS_SHOWN).map(fullName).join(", ");
+  const more = matching.length - MATCHED_CONTACTS_SHOWN;
+  return `Matches ${matching.length === 1 ? "contact" : "contacts"} ${shown}${more > 0 ? ` +${more} more` : ""}`;
+}
+
+export type ClientSearchStatusKind =
+  | "failed"
+  | "tooShort"
+  | "loading"
+  | "searching"
+  | "empty"
+  | "full"
+  | "results";
+
+/**
+ * What the open list says about itself, in order of importance: a failure, a
+ * hint that what was typed is too short to search, the first load, a search in
+ * flight, nothing found (with what to do about it), a page that may be cut
+ * short, then the plain count. The same text is shown at the top of the list
+ * and announced to a screen reader when the list opens or the answer changes.
+ *
+ * - `tooShort` outranks `loading` and `searching`: a person who has typed two
+ *   letters needs to hear why nothing is narrowing, more than that a request
+ *   for the default list is under way.
+ * - `outcome` is the latest finished search, or null before the first answer;
+ *   `outcome.term` is the term it answered, which is what the wording about
+ *   the results is for. `searching` is true when that differs from the term now
+ *   typed.
+ */
+export function clientSearchStatus(input: {
+  tooShort: boolean;
+  searching: boolean;
+  outcome: { term: string; count: number; failed: boolean } | null;
+}): { kind: ClientSearchStatusKind; text: string } {
+  const { tooShort, searching, outcome } = input;
+
+  if (outcome?.failed && !searching) return { kind: "failed", text: "Search failed." };
+  if (tooShort) {
+    return { kind: "tooShort", text: `Type ${CLIENT_SEARCH_MIN_LENGTH} or more letters to search.` };
+  }
+  if (outcome === null) return { kind: "loading", text: "Loading companies…" };
+  if (searching) return { kind: "searching", text: "Searching…" };
+
+  if (outcome.count === 0) {
+    return {
+      kind: "empty",
+      text:
+        outcome.term === ""
+          ? "No clients are available to you yet. Use + New company to add one."
+          : `No company or contact matches “${outcome.term}”. Check the spelling, try fewer letters, or use + New company.`,
+    };
+  }
+
+  if (outcome.count >= CLIENT_SEARCH_PAGE_SIZE) {
+    return {
+      kind: "full",
+      text:
+        outcome.term === ""
+          ? `Showing the ${CLIENT_SEARCH_PAGE_SIZE} newest companies. Type ${CLIENT_SEARCH_MIN_LENGTH} or more letters to search.`
+          : `Showing the first ${CLIENT_SEARCH_PAGE_SIZE} matches. Type more to narrow them down.`,
+    };
+  }
+
+  return {
+    kind: "results",
+    text:
+      outcome.term === ""
+        ? `Newest companies first. Type ${CLIENT_SEARCH_MIN_LENGTH} or more letters to search.`
+        : `${outcome.count} ${outcome.count === 1 ? "match" : "matches"}`,
+  };
 }
