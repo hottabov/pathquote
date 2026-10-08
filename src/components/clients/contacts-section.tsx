@@ -7,7 +7,6 @@ import { ContactForm } from "@/components/clients/contact-form";
 import {
   TableShell,
   tableClassName,
-  tableHeadRowClassName,
   tableRowClassName,
   EmptyState,
 } from "@/components/ui-kit";
@@ -94,8 +93,14 @@ export function ContactsSection({
         <TableShell
           table={
             <table className={tableClassName}>
-              <thead>
-                <tr className={tableHeadRowClassName}>
+              {/* Visually hidden rather than deleted. The card shows each
+                  contact's name, position and email inline, so the header row
+                  is noise on screen -- it was also rendering above the add and
+                  edit forms, where it labels nothing. A screen reader still
+                  needs the column names to read the rows, and a data table
+                  without them is genuinely worse to navigate. */}
+              <thead className="sr-only">
+                <tr>
                   <th scope="col" className="px-4 py-3">
                     Name
                   </th>
