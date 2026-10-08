@@ -4,12 +4,17 @@ import {
   CLIENT_LIST_DEFAULT_PAGE_SIZE,
   CLIENT_LIST_MAX_PAGE,
   CLIENT_LIST_PAGE_SIZES,
+  CLIENT_LIST_SORT_KEYS,
+  clientListDefaultDir,
   clientListHref,
+  clientListOrderBy,
+  clientListSortOptions,
   clientListSlice,
   clientListSummary,
   clientListTerm,
   clientListWhere,
   clientListWindow,
+  nextClientListSort,
   parseClientListParams,
 } from "../src/lib/client-list";
 import { CLIENT_SEARCH_MAX_LENGTH, CLIENT_SEARCH_MAX_WORDS } from "../src/lib/client-search";
@@ -17,7 +22,7 @@ import { companyWhereForUser } from "../src/lib/scope";
 
 describe("parseClientListParams", () => {
   it("defaults to page 1, 20 a page, no search, for a bare /clients", () => {
-    expect(parseClientListParams({})).toEqual({ q: "", page: 1, pageSize: 20 });
+    expect(parseClientListParams({})).toEqual({ q: "", page: 1, pageSize: 20, sort: "name", dir: "asc" });
     expect(CLIENT_LIST_DEFAULT_PAGE_SIZE).toBe(20);
   });
 
@@ -26,6 +31,8 @@ describe("parseClientListParams", () => {
       q: "acme",
       page: 3,
       pageSize: 100,
+      sort: "name",
+      dir: "asc",
     });
   });
 
@@ -55,12 +62,22 @@ describe("parseClientListParams", () => {
   });
 
   it("takes the first of a repeated parameter and never throws on an array", () => {
-    expect(parseClientListParams({ q: ["acme", "other"], page: ["2", "9"], pageSize: ["50", "all"] })).toEqual({
-      q: "acme",
-      page: 2,
-      pageSize: 50,
+    expect(
+      parseClientListParams({
+        q: ["acme", "other"],
+        page: ["2", "9"],
+        pageSize: ["50", "all"],
+        sort: ["owner", "name"],
+        dir: ["desc", "asc"],
+      })
+    ).toEqual({ q: "acme", page: 2, pageSize: 50, sort: "owner", dir: "desc" });
+    expect(parseClientListParams({ q: [], page: [], pageSize: [], sort: [], dir: [] })).toEqual({
+      q: "",
+      page: 1,
+      pageSize: 20,
+      sort: "name",
+      dir: "asc",
     });
-    expect(parseClientListParams({ q: [], page: [], pageSize: [] })).toEqual({ q: "", page: 1, pageSize: 20 });
   });
 
   it("validates each parameter on its own: junk in one does not cost the others", () => {
@@ -68,12 +85,130 @@ describe("parseClientListParams", () => {
       q: "acme",
       page: 1,
       pageSize: 50,
+      sort: "name",
+      dir: "asc",
     });
     expect(parseClientListParams({ q: "acme", page: "4", pageSize: "junk" })).toEqual({
       q: "acme",
       page: 4,
       pageSize: 20,
+      sort: "name",
+      dir: "asc",
     });
+    expect(parseClientListParams({ q: "acme", page: "4", sort: "junk", dir: "desc" })).toEqual({
+      q: "acme",
+      page: 4,
+      pageSize: 20,
+      sort: "name",
+      dir: "desc",
+    });
+    expect(parseClientListParams({ q: "acme", sort: "owner", dir: "junk" })).toMatchObject({
+      q: "acme",
+      sort: "owner",
+      dir: "asc",
+    });
+  });
+});
+
+describe("parseClientListParams: sort and dir", () => {
+  it("accepts each of the four columns", () => {
+    for (const sort of ["name", "location", "contacts", "owner"]) {
+      expect(parseClientListParams({ sort }).sort).toBe(sort);
+    }
+    expect([...CLIENT_LIST_SORT_KEYS]).toEqual(["name", "location", "contacts", "owner"]);
+  });
+
+  it("falls back to name for anything that is not a column", () => {
+    for (const bad of ["", "Name", "NAME", " name", "name ", "id", "city", "country", "website", "createdAt", "constructor", "__proto__", "toString", "owner.name", "name,desc", "null", "undefined", "0", "[object Object]", "name\u0000"]) {
+      expect(parseClientListParams({ sort: bad }).sort).toBe("name");
+    }
+    expect(parseClientListParams({ sort: undefined }).sort).toBe("name");
+  });
+
+  it("accepts asc and desc for every column", () => {
+    for (const sort of CLIENT_LIST_SORT_KEYS) {
+      expect(parseClientListParams({ sort, dir: "asc" }).dir).toBe("asc");
+      expect(parseClientListParams({ sort, dir: "desc" }).dir).toBe("desc");
+    }
+  });
+
+  it("falls back to the column's own default direction for anything else", () => {
+    for (const bad of ["", "ASC", "DESC", "Asc", " asc", "desc ", "ascending", "descending", "up", "down", "1", "-1", "true", "null", "constructor"]) {
+      expect(parseClientListParams({ sort: "name", dir: bad }).dir).toBe("asc");
+      expect(parseClientListParams({ sort: "location", dir: bad }).dir).toBe("asc");
+      expect(parseClientListParams({ sort: "owner", dir: bad }).dir).toBe("asc");
+      expect(parseClientListParams({ sort: "contacts", dir: bad }).dir).toBe("desc");
+    }
+  });
+
+  it("opens contacts descending, because the question put to that column is 'who has the most'", () => {
+    expect(clientListDefaultDir("contacts")).toBe("desc");
+    expect(parseClientListParams({ sort: "contacts" }).dir).toBe("desc");
+    expect(parseClientListParams({ sort: "contacts", dir: "asc" }).dir).toBe("asc");
+    for (const sort of ["name", "location", "owner"] as const) {
+      expect(clientListDefaultDir(sort)).toBe("asc");
+    }
+  });
+
+  it("reads dir against the sort that survived, so junk sort means plain name order", () => {
+    expect(parseClientListParams({ sort: "junk", dir: "junk" })).toMatchObject({ sort: "name", dir: "asc" });
+    expect(parseClientListParams({ dir: "desc" })).toMatchObject({ sort: "name", dir: "desc" });
+  });
+
+  it("treats owner as unrecognised for a viewer who is not shown the Owner column", () => {
+    expect(parseClientListParams({ sort: "owner", dir: "desc" }, { ownerSortable: false })).toMatchObject({
+      sort: "name",
+      dir: "desc",
+    });
+    expect(parseClientListParams({ sort: "owner" }, { ownerSortable: false }).sort).toBe("name");
+    // The other columns, and the default, are unaffected.
+    expect(parseClientListParams({ sort: "contacts" }, { ownerSortable: false }).sort).toBe("contacts");
+    expect(parseClientListParams({ sort: "owner" }, { ownerSortable: true }).sort).toBe("owner");
+    expect(parseClientListParams({ sort: "owner" }).sort).toBe("owner");
+  });
+});
+
+describe("nextClientListSort", () => {
+  it("flips the direction of the column that is already sorted", () => {
+    expect(nextClientListSort({ sort: "name", dir: "asc" }, "name")).toEqual({ sort: "name", dir: "desc" });
+    expect(nextClientListSort({ sort: "name", dir: "desc" }, "name")).toEqual({ sort: "name", dir: "asc" });
+    expect(nextClientListSort({ sort: "contacts", dir: "desc" }, "contacts")).toEqual({ sort: "contacts", dir: "asc" });
+  });
+
+  it("starts any other column in its own default direction, whatever the current direction", () => {
+    expect(nextClientListSort({ sort: "name", dir: "desc" }, "location")).toEqual({ sort: "location", dir: "asc" });
+    expect(nextClientListSort({ sort: "name", dir: "asc" }, "contacts")).toEqual({ sort: "contacts", dir: "desc" });
+    expect(nextClientListSort({ sort: "contacts", dir: "asc" }, "owner")).toEqual({ sort: "owner", dir: "asc" });
+    expect(nextClientListSort({ sort: "contacts", dir: "asc" }, "name")).toEqual({ sort: "name", dir: "asc" });
+  });
+});
+
+describe("clientListSortOptions", () => {
+  it("offers both directions of every column, each column's default first", () => {
+    const options = clientListSortOptions(true);
+    expect(options.map((o) => o.value)).toEqual([
+      "name:asc",
+      "name:desc",
+      "location:asc",
+      "location:desc",
+      "contacts:desc",
+      "contacts:asc",
+      "owner:asc",
+      "owner:desc",
+    ]);
+  });
+
+  it("leaves owner out for a viewer who is not shown that column", () => {
+    expect(clientListSortOptions(false).some((o) => o.sort === "owner")).toBe(false);
+    expect(clientListSortOptions(false)).toHaveLength(6);
+  });
+
+  it("has distinct labels, and every option is a request the parser would accept as it is", () => {
+    const options = clientListSortOptions(true);
+    expect(new Set(options.map((o) => o.label)).size).toBe(options.length);
+    for (const { sort, dir } of options) {
+      expect(parseClientListParams({ sort, dir })).toMatchObject({ sort, dir });
+    }
   });
 });
 
@@ -221,9 +356,116 @@ describe("clientListHref", () => {
   });
 
   it("round-trips through parseClientListParams", () => {
-    const request = { q: "john smith", page: 4, pageSize: 200 as const };
+    const request = { q: "john smith", page: 4, pageSize: 200 as const, sort: "name" as const, dir: "asc" as const };
     const url = new URL(clientListHref(request), "http://x");
     expect(parseClientListParams(Object.fromEntries(url.searchParams))).toEqual(request);
+  });
+
+  it("leaves the default sort out: a plain name order is a plain /clients", () => {
+    expect(clientListHref({ sort: "name" })).toBe("/clients");
+    expect(clientListHref({ sort: "name", dir: "asc" })).toBe("/clients");
+    expect(clientListHref({ sort: "location", dir: "asc" })).toBe("/clients?sort=location");
+    expect(clientListHref({ sort: "owner", dir: "asc" })).toBe("/clients?sort=owner");
+  });
+
+  it("leaves out dir when it is the sorted column's own default, so contacts is ?sort=contacts", () => {
+    expect(clientListHref({ sort: "contacts", dir: "desc" })).toBe("/clients?sort=contacts");
+    expect(clientListHref({ sort: "contacts", dir: "asc" })).toBe("/clients?sort=contacts&dir=asc");
+    expect(clientListHref({ sort: "location", dir: "desc" })).toBe("/clients?sort=location&dir=desc");
+    expect(clientListHref({ sort: "name", dir: "desc" })).toBe("/clients?dir=desc");
+  });
+
+  it("carries the search and the page size next to the sort, in a fixed order, page last", () => {
+    expect(clientListHref({ q: "acme", pageSize: 50, sort: "contacts", dir: "asc", page: 3 })).toBe(
+      "/clients?q=acme&pageSize=50&sort=contacts&dir=asc&page=3"
+    );
+  });
+
+  it("a header link keeps q and pageSize and drops page, so a new sort starts at page 1", () => {
+    // What the header builds: the current q and pageSize, the sort a click
+    // gives, and no page -- even though the viewer is on page 7.
+    const current = { q: "acme", pageSize: 50 as const, sort: "name" as const, dir: "asc" as const, page: 7 };
+    const next = nextClientListSort(current, "contacts");
+    const href = clientListHref({ q: current.q, pageSize: current.pageSize, ...next });
+    expect(href).toBe("/clients?q=acme&pageSize=50&sort=contacts");
+    expect(href).not.toContain("page=");
+    // And a page link keeps the sort, or page 2 would be a different list.
+    expect(clientListHref({ ...current, ...next, page: 2 })).toBe("/clients?q=acme&pageSize=50&sort=contacts&page=2");
+  });
+
+  it("round-trips every column in every direction", () => {
+    for (const sort of CLIENT_LIST_SORT_KEYS) {
+      for (const dir of ["asc", "desc"] as const) {
+        const request = { q: "x", page: 2, pageSize: 100 as const, sort, dir };
+        const url = new URL(clientListHref(request), "http://x");
+        expect(parseClientListParams(Object.fromEntries(url.searchParams))).toEqual(request);
+      }
+    }
+  });
+});
+
+describe("clientListOrderBy", () => {
+  const nullsLast = (sort: "asc" | "desc") => ({ sort, nulls: "last" });
+
+  it("orders by name, then id", () => {
+    expect(clientListOrderBy("name", "asc")).toEqual([{ name: "asc" }, { id: "asc" }]);
+    expect(clientListOrderBy("name", "desc")).toEqual([{ name: "desc" }, { id: "asc" }]);
+  });
+
+  it("orders by country, then city, nulls last in both directions, then name, then id", () => {
+    for (const dir of ["asc", "desc"] as const) {
+      expect(clientListOrderBy("location", dir)).toEqual([
+        { country: nullsLast(dir) },
+        { city: nullsLast(dir) },
+        { name: "asc" },
+        { id: "asc" },
+      ]);
+    }
+  });
+
+  it("orders by the count of the contacts relation, then name, then id", () => {
+    expect(clientListOrderBy("contacts", "desc")).toEqual([
+      { contacts: { _count: "desc" } },
+      { name: "asc" },
+      { id: "asc" },
+    ]);
+    expect(clientListOrderBy("contacts", "asc")).toEqual([
+      { contacts: { _count: "asc" } },
+      { name: "asc" },
+      { id: "asc" },
+    ]);
+  });
+
+  it("orders by the owner's name with nulls last, keeps each owner together, then name, then id", () => {
+    for (const dir of ["asc", "desc"] as const) {
+      expect(clientListOrderBy("owner", dir)).toEqual([
+        { owner: { name: nullsLast(dir) } },
+        { ownerId: { sort: "asc", nulls: "last" } },
+        { name: "asc" },
+        { id: "asc" },
+      ]);
+    }
+  });
+
+  it("ends every ordering in id, ascending, so paging cannot repeat or skip a company", () => {
+    for (const sort of CLIENT_LIST_SORT_KEYS) {
+      for (const dir of ["asc", "desc"] as const) {
+        const order = clientListOrderBy(sort, dir);
+        expect(order[order.length - 1]).toEqual({ id: "asc" });
+        // One key per entry: Prisma rejects an orderBy object with two.
+        for (const entry of order) expect(Object.keys(entry)).toHaveLength(1);
+      }
+    }
+  });
+
+  it("puts a null-bearing column's nulls last in every direction, never Postgres's default", () => {
+    for (const sort of ["location", "owner"] as const) {
+      for (const dir of ["asc", "desc"] as const) {
+        const text = JSON.stringify(clientListOrderBy(sort, dir));
+        expect(text).toContain('"nulls":"last"');
+        expect(text).not.toContain('"nulls":"first"');
+      }
+    }
   });
 });
 

@@ -23,20 +23,22 @@ export default async function ClientsPage({
   // redirects unauthenticated requests, so a session is always present here.
   const session = (await auth())!;
 
-  // `q`, `page` and `pageSize` come from the URL, so the back button and a
-  // pasted link reproduce a view. They are validated, not trusted: junk in any
-  // of them falls back to a default (see `parseClientListParams`), and a page
-  // past the end is clamped by `listCompanies`. The query searches and pages
-  // on the server -- the list used to ship every company to the browser,
-  // which stopped being viable at the ACT! import's 8,809.
-  const request = parseClientListParams(await searchParams);
-  const { items: companies, total, page, pageSize } = await listCompanies(session.user, request);
-
-  // Decided before the rows are built, so a name for a column that is not
-  // rendered never goes on a row. Same predicate as the Owner column -- a
-  // MANAGER's list is one person's clients, so the column would be one name
-  // repeated down the page.
+  // Decided before the request is parsed and before the rows are built, so a
+  // name for a column that is not rendered never goes on a row, and a viewer
+  // who is not shown the column cannot order by it either. Same predicate as
+  // the Owner column -- a MANAGER's list is one person's clients, so the
+  // column would be one name repeated down the page.
   const showOwner = canSeeSalesperson(session.user.role);
+
+  // `q`, `page`, `pageSize`, `sort` and `dir` come from the URL, so the back
+  // button and a pasted link reproduce a view. They are validated, not
+  // trusted: junk in any of them falls back to a default (see
+  // `parseClientListParams`), and a page past the end is clamped by
+  // `listCompanies`. The query searches, orders and pages on the server -- the
+  // list used to ship every company to the browser, which stopped being viable
+  // at the ACT! import's 8,809.
+  const request = parseClientListParams(await searchParams, { ownerSortable: showOwner });
+  const { items: companies, total, page, pageSize } = await listCompanies(session.user, request);
 
   const rows = companies.map<ClientListRow>((c) => ({
     id: c.id,
@@ -86,6 +88,8 @@ export default async function ClientsPage({
           total,
           q: request.q,
           pageSize,
+          sort: request.sort,
+          dir: request.dir,
         }}
       />
     </div>

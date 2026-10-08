@@ -2,6 +2,7 @@ import { cache } from "react";
 import { db } from "@/lib/db";
 import {
   CLIENT_LIST_ALL,
+  clientListOrderBy,
   clientListSlice,
   clientListWhere,
   clientListWindow,
@@ -49,13 +50,17 @@ export type CompanyListPage = {
  * One page of the companies visible to `user` — all for ADMIN, this region's
  * managers' for a REGIONAL_MANAGER, own-only for MANAGER, plus every company in
  * a country the user has been granted (`User.visibleCountries`) — ordered by
- * name, with the total that matched. Each row carries its contact count for
- * the list cards and its owner's name for the `Owner` column.
+ * the column the request names (name unless told otherwise), with the total
+ * that matched. Each row carries its contact count for the list cards and its
+ * owner's name for the `Owner` column.
  *
  * `request` is what `parseClientListParams` returned, so it is already
- * validated; the rules for `q`, `page` and `pageSize` live in
+ * validated; the rules for `q`, `page`, `pageSize`, `sort` and `dir` live in
  * src/lib/client-list.ts. The search covers the whole scoped set, not the
- * page: the user searches, then pages through the results.
+ * page: the user searches, then pages through the results. So does the order:
+ * the database sorts every matching company and then takes the page, which is
+ * the only way "sorted by contacts" can mean the list rather than the 20 rows
+ * on screen.
  *
  * Two queries, run together under one `where`: the page and the count. The
  * count does add work -- with a search it has to test every row, where the
@@ -64,9 +69,10 @@ export type CompanyListPage = {
  * tens of milliseconds. "All" skips the count, because the rows returned are
  * the total.
  *
- * Ordered by `id` after `name`: an ACT! import can hold two companies of one
- * name, and with `skip`/`take` an unstable tie-break shows one of them on two
- * pages and the other on none.
+ * Every ordering ends in `id` (see `clientListOrderBy`): an ACT! import can
+ * hold two companies of one name, and any column has ties, and with
+ * `skip`/`take` an unstable tie-break shows one company on two pages and
+ * another on none.
  */
 export async function listCompanies(
   user: ScopeUser,
@@ -77,7 +83,7 @@ export async function listCompanies(
   const fetchPage = (page: number) =>
     db.company.findMany({
       where,
-      orderBy: [{ name: "asc" }, { id: "asc" }],
+      orderBy: clientListOrderBy(request.sort, request.dir),
       ...clientListSlice(page, request.pageSize),
       include: {
         _count: { select: { contacts: true } },

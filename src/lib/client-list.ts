@@ -1,13 +1,14 @@
-// The pure half of the /clients list: how the URL's `q`, `page` and
-// `pageSize` become a validated request, how a request becomes a Prisma
-// `where` and a `skip`/`take`, and how the position on the page is described.
-// No database and no React, so every rule below has a unit test; the query
-// that runs it is `listCompanies` (src/lib/queries/clients.ts) and the markup
-// is src/components/clients/clients-list.tsx.
+// The pure half of the /clients list: how the URL's `q`, `page`, `pageSize`,
+// `sort` and `dir` become a validated request, how a request becomes a Prisma
+// `where`, `orderBy` and `skip`/`take`, and how the position on the page is
+// described. No database and no React, so every rule below has a unit test;
+// the query that runs it is `listCompanies` (src/lib/queries/clients.ts) and
+// the markup is src/components/clients/clients-list.tsx.
 //
 // Why this exists: the ACT! import took /clients from two companies to 8,809,
 // and the page used to ship every one of them to the browser.
 
+import type { Prisma } from "@prisma/client";
 import { CLIENT_SEARCH_MAX_LENGTH, clientSearchWords } from "./client-search";
 import { normalizeCountryInput } from "./countries";
 import type { CompanyScopeWhere } from "./scope";
@@ -29,6 +30,30 @@ export const CLIENT_LIST_DEFAULT_PAGE_SIZE: ClientListPageSize = 20;
  * query clamps to the real last page afterwards. */
 export const CLIENT_LIST_MAX_PAGE = 999_999;
 
+/** The columns the list can be ordered by, in the order the headers appear. */
+export const CLIENT_LIST_SORT_KEYS = ["name", "location", "contacts", "owner"] as const;
+
+export type ClientListSortKey = (typeof CLIENT_LIST_SORT_KEYS)[number];
+
+export type ClientListSortDir = "asc" | "desc";
+
+/** The column a bare /clients is ordered by. */
+export const CLIENT_LIST_DEFAULT_SORT: ClientListSortKey = "name";
+
+/**
+ * The direction a column opens in when `dir` is absent from the URL, and so
+ * the direction a first click on its header asks for. Ascending for the text
+ * columns. Descending for `contacts`: the question people put to that column
+ * is "who has the most", and an ascending first click would open on a screen
+ * of companies with none -- most imported companies have one contact or none.
+ *
+ * It is also what `dir` means when left out, which is why a URL for the
+ * default direction of any column carries no `dir` at all.
+ */
+export function clientListDefaultDir(sort: ClientListSortKey): ClientListSortDir {
+  return sort === "contacts" ? "desc" : "asc";
+}
+
 /** What the URL asks for, after validation. */
 export type ClientListRequest = {
   /** The normalised search term; `""` means no search. */
@@ -36,6 +61,10 @@ export type ClientListRequest = {
   /** 1-based, and not yet clamped to the last page: that needs the total. */
   page: number;
   pageSize: ClientListPageSize;
+  sort: ClientListSortKey;
+  /** Always explicit here, with the column's own default filled in; only the
+   * URL leaves it out. */
+  dir: ClientListSortDir;
 };
 
 /** One search-param value as Next hands it over. */
@@ -82,21 +111,172 @@ function parsePage(raw: string): number {
   return Math.min(Math.max(Number(raw), 1), CLIENT_LIST_MAX_PAGE);
 }
 
+/** `raw` as a sort column, or the default for anything that is not one. An
+ * exact, case-sensitive match against the list, so "Name", "name " and
+ * "constructor" are all rejected. `ownerSortable` is false for a viewer who is
+ * not shown the Owner column. */
+function parseSort(raw: string, ownerSortable: boolean): ClientListSortKey {
+  for (const key of CLIENT_LIST_SORT_KEYS) {
+    if (raw === key && (key !== "owner" || ownerSortable)) return key;
+  }
+  return CLIENT_LIST_DEFAULT_SORT;
+}
+
+/** `raw` as a direction, or the column's own default for anything else. */
+function parseDir(raw: string, sort: ClientListSortKey): ClientListSortDir {
+  return raw === "asc" || raw === "desc" ? raw : clientListDefaultDir(sort);
+}
+
 /**
  * The request in a /clients URL. Never throws, and trusts nothing: every field
  * is validated on its own, so one bad parameter does not cost the others -- a
  * good `q` survives a junk `page`.
+ *
+ * `dir` is read against the `sort` that survived validation, so `?sort=contacts`
+ * is descending and `?sort=junk&dir=junk` is the plain name order.
+ *
+ * `ownerSortable: false` is for a viewer who is not shown the Owner column
+ * (`canSeeSalesperson`, src/lib/roles.ts): `sort=owner` is then as unrecognised
+ * as any other junk. Ordering by a column the viewer cannot see would both
+ * look like no order at all and tell them how the names they are not shown
+ * compare.
  */
-export function parseClientListParams(params: {
-  q?: RawParam;
-  page?: RawParam;
-  pageSize?: RawParam;
-}): ClientListRequest {
+export function parseClientListParams(
+  params: {
+    q?: RawParam;
+    page?: RawParam;
+    pageSize?: RawParam;
+    sort?: RawParam;
+    dir?: RawParam;
+  },
+  options: { ownerSortable?: boolean } = {}
+): ClientListRequest {
+  const sort = parseSort(firstValue(params.sort), options.ownerSortable ?? true);
   return {
     q: clientListTerm(firstValue(params.q)),
     page: parsePage(firstValue(params.page)),
     pageSize: parsePageSize(firstValue(params.pageSize)),
+    sort,
+    dir: parseDir(firstValue(params.dir), sort),
   };
+}
+
+/**
+ * The sort a click on `key`'s header asks for: the opposite direction if it is
+ * already the active column, otherwise that column in its own default
+ * direction. Never "no sort": the list is always ordered by something, so the
+ * way back to the plain order is to click Name.
+ */
+export function nextClientListSort(
+  current: Pick<ClientListRequest, "sort" | "dir">,
+  key: ClientListSortKey
+): { sort: ClientListSortKey; dir: ClientListSortDir } {
+  if (current.sort !== key) return { sort: key, dir: clientListDefaultDir(key) };
+  return { sort: key, dir: current.dir === "asc" ? "desc" : "asc" };
+}
+
+/**
+ * The orderings offered by the sort selector on small screens, where there is
+ * no table header to click. One entry per column per direction, each column's
+ * own default direction first; `value` is what the `<select>` carries.
+ * `owner` is left out for a viewer who is not shown that column.
+ */
+export function clientListSortOptions(showOwner: boolean): {
+  value: string;
+  sort: ClientListSortKey;
+  dir: ClientListSortDir;
+  label: string;
+}[] {
+  const labels: Record<ClientListSortKey, Record<ClientListSortDir, string>> = {
+    name: { asc: "Name, A to Z", desc: "Name, Z to A" },
+    location: { asc: "Location, A to Z", desc: "Location, Z to A" },
+    contacts: { desc: "Contacts, most first", asc: "Contacts, fewest first" },
+    owner: { asc: "Owner, A to Z", desc: "Owner, Z to A" },
+  };
+  return CLIENT_LIST_SORT_KEYS.filter((sort) => showOwner || sort !== "owner").flatMap((sort) => {
+    const first = clientListDefaultDir(sort);
+    const second: ClientListSortDir = first === "asc" ? "desc" : "asc";
+    return [first, second].map((dir) => ({
+      value: `${sort}:${dir}`,
+      sort,
+      dir,
+      label: labels[sort][dir],
+    }));
+  });
+}
+
+/** The label of a column header, for the places that name the column (the
+ * header itself, and what a screen reader is told the list is sorted by). */
+export const CLIENT_LIST_SORT_LABELS: Record<ClientListSortKey, string> = {
+  name: "Name",
+  location: "Location",
+  contacts: "Contacts",
+  owner: "Owner",
+};
+
+const NULLS_LAST = "last" as const;
+
+/**
+ * The Prisma `orderBy` for the list. Pure, so the exact query shape has a unit
+ * test without a database.
+ *
+ * Every ordering ends the same way, and that ending is not decoration:
+ *
+ *  - `id` always comes last. `ORDER BY` on a column with equal values leaves
+ *    those rows in no defined order, and with `skip`/`take` each page is its
+ *    own query, so one company could appear on two pages and another on none.
+ *    `id` is unique, so nothing ties past it.
+ *  - Every ordering other than `name` has `name` just before `id`. That is
+ *    for the reader as much as for stability: companies that tie on the sorted
+ *    column (all the one-contact companies, all the ones in one city, all one
+ *    manager's) come out alphabetical inside the tie rather than in the order
+ *    they were imported.
+ *  - Both are ascending whatever `dir` is. "Z to A" reverses the column the
+ *    user clicked, not the tie-break inside it.
+ *
+ * Nulls: `country`, `city` and the owner's name are nullable, and are all
+ * `nulls: "last"` in both directions. Postgres's own default would put them
+ * first in descending order, and most imported companies have no owner, so
+ * "Owner, Z to A" would open on thousands of unassigned rows. A company with
+ * nothing to sort on belongs after every company that has something, whichever
+ * way the column is sorted.
+ *
+ * Per column:
+ *  - `location`: `country`, then `city`. `country` holds an ISO code, so the
+ *    order is by code, not by the country name the list displays ("AT" before
+ *    "AU", so Austria before Australia).
+ *  - `contacts`: the count of the `contacts` relation, which Prisma orders by
+ *    directly (`_count`), with no rows fetched to count in memory.
+ *  - `owner`: the owner's `name`, then `ownerId`. The second key keeps one
+ *    manager's companies together when two managers share a name. It also
+ *    separates the two kinds of company the first key cannot: an owner with no
+ *    `name` is listed by their email, so they are a real owner, yet their
+ *    `name` is null exactly like an unowned company's. `ownerId` is null only
+ *    for the unowned, so with `nulls: "last"` the unowned come after nameless
+ *    owners in both directions. Nameless owners follow every named one, in
+ *    id order rather than alphabetically by email.
+ */
+export function clientListOrderBy(
+  sort: ClientListSortKey,
+  dir: ClientListSortDir
+): Prisma.CompanyOrderByWithRelationInput[] {
+  const nullable = { sort: dir, nulls: NULLS_LAST };
+  const tail: Prisma.CompanyOrderByWithRelationInput[] = [{ name: "asc" }, { id: "asc" }];
+
+  switch (sort) {
+    case "name":
+      return [{ name: dir }, { id: "asc" }];
+    case "location":
+      return [{ country: nullable }, { city: nullable }, ...tail];
+    case "contacts":
+      return [{ contacts: { _count: dir } }, ...tail];
+    case "owner":
+      return [
+        { owner: { name: nullable } },
+        { ownerId: { sort: "asc", nulls: NULLS_LAST } },
+        ...tail,
+      ];
+  }
 }
 
 /** The `skip`/`take` for `page` of `pageSize`. `take` is `undefined` for "all",
@@ -171,13 +351,21 @@ export function clientListSummary(
 /**
  * The URL for a /clients view, with defaults left out so a shared link stays
  * short: no `q` when empty, no `page` for page 1, no `pageSize` for the
- * default. Leaving `page` out is also what sends a changed search or page size
- * back to page 1 -- a caller that wants to keep the page passes it.
+ * default, no `sort` for name, and no `dir` for the sorted column's own default
+ * direction (see `clientListDefaultDir`). Leaving `page` out is also what sends
+ * a changed search, page size or sort back to page 1 -- a caller that wants to
+ * keep the page passes it.
+ *
+ * `dir` is only meaningful next to the `sort` it is given with, so a caller
+ * changing the column passes both (see `nextClientListSort`). A `dir` with no
+ * `sort` means the default column, name.
  */
 export function clientListHref(request: {
   q?: string;
   page?: number;
   pageSize?: ClientListPageSize;
+  sort?: ClientListSortKey;
+  dir?: ClientListSortDir;
 }): string {
   const search = new URLSearchParams();
   const q = clientListTerm(request.q ?? "");
@@ -185,6 +373,9 @@ export function clientListHref(request: {
   if (request.pageSize && request.pageSize !== CLIENT_LIST_DEFAULT_PAGE_SIZE) {
     search.set("pageSize", String(request.pageSize));
   }
+  const sort = request.sort ?? CLIENT_LIST_DEFAULT_SORT;
+  if (sort !== CLIENT_LIST_DEFAULT_SORT) search.set("sort", sort);
+  if (request.dir && request.dir !== clientListDefaultDir(sort)) search.set("dir", request.dir);
   if (request.page && request.page > 1) search.set("page", String(request.page));
   const query = search.toString();
   return query ? `/clients?${query}` : "/clients";

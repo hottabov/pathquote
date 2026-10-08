@@ -9,10 +9,15 @@ import {
   tableRowClassName,
 } from "@/components/ui-kit/data-table";
 import { ClientsToolbar } from "@/components/clients/clients-toolbar";
+import { SortLinkTh } from "@/components/ui-kit/sort-link-th";
 import {
+  CLIENT_LIST_SORT_LABELS,
   clientListHref,
   clientListSummary,
+  nextClientListSort,
   type ClientListPageSize,
+  type ClientListSortDir,
+  type ClientListSortKey,
   type ClientListWindow,
 } from "@/lib/client-list";
 import { websiteHref, websiteLabel } from "@/lib/website";
@@ -49,21 +54,35 @@ export type ClientListPaging = ClientListWindow & {
   total: number;
   q: string;
   pageSize: ClientListPageSize;
+  sort: ClientListSortKey;
+  dir: ClientListSortDir;
 };
 
 /**
- * The /clients list: search and page-size controls, a line saying what is on
- * screen, the table (cards below md), and the page controls.
+ * The /clients list: search, page-size and (below md) sort controls, a line
+ * saying what is on screen, the table (cards below md), and the page controls.
  *
  * A Server Component with no state of its own. The old version filtered and
  * sorted every company in the browser, which was instant and was the problem
  * once the ACT! import made it 8,809 of them; now the URL is the state and the
- * server does the filtering. Only the toolbar is a client component (it pushes
- * the URL), and the page controls are plain links.
+ * server does the filtering, the ordering and the paging. Only the toolbar is
+ * a client component (it pushes the URL), and the page controls and the column
+ * headers are plain links.
  *
- * The table is no longer sortable: it is ordered by name on the server, and
- * a header that re-sorted only the 20 rows on screen would look like it
- * sorted the list.
+ * The column headers sort on the server, and that is the point: this list is
+ * shown 20 rows at a time, so a header that re-sorted the rows in the browser
+ * (what `useListTable` and `SortableTh` do for the small lists) would order
+ * only those 20 and look as if it had ordered the list. That version was
+ * removed once for exactly that reason; do not restore it. A header here is a
+ * link (`SortLinkTh`) to the same URL with `sort` and `dir` changed -- keeping
+ * the search and page size, dropping the page, because page 7 of a re-sorted
+ * list shows rows unrelated to the click -- and the database orders every
+ * matching company before it takes the page. How, and how ties and missing
+ * values are ordered so that paging never repeats or skips a company, is in
+ * `clientListOrderBy` (src/lib/client-list.ts).
+ *
+ * Below md there is no table header, so the toolbar offers the same orderings
+ * in a "Sort by" select instead.
  */
 export function ClientsList({
   rows,
@@ -81,12 +100,26 @@ export function ClientsList({
 
   return (
     <div className="flex flex-col gap-6">
-      <ClientsToolbar q={paging.q} pageSize={paging.pageSize} />
+      <ClientsToolbar
+        q={paging.q}
+        pageSize={paging.pageSize}
+        sort={paging.sort}
+        dir={paging.dir}
+        showOwner={showOwner}
+      />
 
       {/* Always rendered, zero results included: "0 matching companies" is
-          what tells a manager a search found nothing rather than failed. */}
+          what tells a manager a search found nothing rather than failed. The
+          hidden half is the announcement for a sort, which changes nothing
+          else on screen that a screen reader would be told about. */}
       <p aria-live="polite" className="text-sm text-slate-600">
         {clientListSummary(paging, paging.total, searching)}
+        {rows.length > 0 ? (
+          <span className="sr-only">
+            . Sorted by {CLIENT_LIST_SORT_LABELS[paging.sort]},{" "}
+            {paging.dir === "asc" ? "ascending" : "descending"}.
+          </span>
+        ) : null}
       </p>
 
       {rows.length === 0 ? (
@@ -106,20 +139,10 @@ export function ClientsList({
               <table className={tableClassName}>
                 <thead>
                   <tr className={tableHeadRowClassName}>
-                    <th scope="col" className="px-4 py-3">
-                      Name
-                    </th>
-                    <th scope="col" className="px-4 py-3">
-                      Location
-                    </th>
-                    <th scope="col" className="px-4 py-3">
-                      Contacts
-                    </th>
-                    {showOwner ? (
-                      <th scope="col" className="px-4 py-3">
-                        Owner
-                      </th>
-                    ) : null}
+                    <SortHeader column="name" paging={paging} />
+                    <SortHeader column="location" paging={paging} />
+                    <SortHeader column="contacts" paging={paging} />
+                    {showOwner ? <SortHeader column="owner" paging={paging} /> : null}
                     <th scope="col" className="px-4 py-3">
                       <span className="sr-only">Website</span>
                     </th>
@@ -143,6 +166,23 @@ export function ClientsList({
   );
 }
 
+/** One sortable column header. The link carries the current search and page
+ * size and the sort that a click would give (`nextClientListSort`), and no
+ * `page`: it starts the new order at page 1. */
+function SortHeader({ column, paging }: { column: ClientListSortKey; paging: ClientListPaging }) {
+  const { q, pageSize, sort, dir } = paging;
+  const next = nextClientListSort({ sort, dir }, column);
+
+  return (
+    <SortLinkTh
+      label={CLIENT_LIST_SORT_LABELS[column]}
+      href={clientListHref({ q, pageSize, sort: next.sort, dir: next.dir })}
+      direction={sort === column ? dir : null}
+      nextDirection={next.dir}
+    />
+  );
+}
+
 const pageLinkClass =
   "focus-ring inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-md border border-slate-200 bg-white px-3 text-sm text-brand-dark transition-colors hover:bg-slate-50";
 const pageLinkDisabledClass =
@@ -153,10 +193,12 @@ const pageLinkDisabledClass =
  * same rows. Renders nothing when there is only one page, which is also every
  * "All" view. */
 function PageControls({ paging }: { paging: ClientListPaging }) {
-  const { page, pageCount, q, pageSize } = paging;
+  const { page, pageCount, q, pageSize, sort, dir } = paging;
   if (pageCount <= 1) return null;
 
-  const href = (target: number) => clientListHref({ q, pageSize, page: target });
+  // The sort is carried from page to page: without it, page 2 of a list
+  // sorted by contacts would be page 2 of the list sorted by name.
+  const href = (target: number) => clientListHref({ q, pageSize, sort, dir, page: target });
   const atStart = page <= 1;
   const atEnd = page >= pageCount;
 
