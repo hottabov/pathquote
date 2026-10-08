@@ -50,7 +50,11 @@ export default async function AccountSettingsPage() {
                   <h2 className="text-lg font-semibold text-brand-dark">{name ?? <NotSet />}</h2>
                   <StatusBadge tone={STATUS_TONE[session.user.role]}>{roleLabel(session.user.role)}</StatusBadge>
                 </div>
-                <dl className="divide-y divide-slate-100">
+                {/* Email, Phone and Region are short words, and this card
+                    is the narrow one -- it shares its width with the avatar.
+                    The default 10rem label column pushed the email into
+                    wrapping mid-address; 4rem still clears "Region". */}
+                <dl className="divide-y divide-slate-100 [--detail-label-width:4rem]">
                   <DetailRow label="Email">{email}</DetailRow>
                   <DetailRow label="Phone">
                     <Value value={me?.phone} />

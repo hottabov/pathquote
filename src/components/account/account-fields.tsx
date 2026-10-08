@@ -1,7 +1,16 @@
 import { cn } from "@/lib/utils";
 import { pickDerivativeWidth } from "@/lib/image-derivative-width";
 
-/** Label/value row used by the Account page's read-only details. */
+/** Label/value row used by the Account page's read-only details.
+ *
+ * The label column is 10rem by default, which suits the Company and Bank
+ * details cards -- "Legal address", "Legal ID", a bank's own row labels. A
+ * list whose labels are all short can narrow it by setting
+ * `--detail-label-width` on the enclosing <dl>: the identity card beside the
+ * avatar has only Email, Phone and Region to name, and the default column
+ * spent a third of that card's width on them while the email wrapped mid-
+ * address beside it. Set on the list rather than passed per row so one
+ * decision covers the whole list and the rows stay in one column. */
 export function DetailRow({
   label,
   children,
@@ -12,7 +21,12 @@ export function DetailRow({
   className?: string;
 }) {
   return (
-    <div className={cn("grid gap-1 py-3 first:pt-0 last:pb-0 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4", className)}>
+    <div
+      className={cn(
+        "grid gap-1 py-3 first:pt-0 last:pb-0 sm:grid-cols-[var(--detail-label-width,10rem)_minmax(0,1fr)] sm:gap-4",
+        className
+      )}
+    >
       <dt className="text-sm text-slate-500">{label}</dt>
       <dd className="min-w-0 break-words text-sm font-medium text-brand-dark">{children}</dd>
     </div>
