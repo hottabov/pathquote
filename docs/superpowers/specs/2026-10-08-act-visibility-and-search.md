@@ -46,6 +46,53 @@ The picker auto-selects a company's contact as `contacts[0]`, relying on the ord
 
 ---
 
+## 3. The stored key goes stale, and a stale key duplicates a client
+
+`Company.actCompanyKey` is written once, when the company is created, and never
+updated. That is deliberate — it is what makes renaming a company in PathQuote
+safe, because matching compares against the stored key rather than against the
+current name. But it has a second consequence that the 2026-10-08 rehearsal
+made concrete.
+
+Two things change the key a contact would compute today:
+
+- **a country that starts resolving.** `refreshCompany` fills `country` through
+  fill-only-empty, so a company imported with a null country gains one as soon
+  as the spelling becomes resolvable — whether through a new alias in
+  `countries.ts` or a correction in ACT! itself. The key keeps `|??`.
+- **a rename in ACT!.** The name changes there, nothing propagates here, and
+  the key keeps the old normalised name.
+
+In both cases the next *new* contact at that company computes a key that does
+not match, misses, and creates a second company. The first client's quotes stay
+on the first row. This is precisely the split the key exists to prevent,
+arriving from the other direction.
+
+It did not bite the production import, because that started from two companies
+and created everything with correct keys. It bites afterwards, every time a
+country alias is added or a manager corrects a name in ACT!.
+
+**Not a silent re-key.** Deciding "this is the same company, renamed" needs
+either trusting that a changed name in ACT! is always a correction — it is not;
+sometimes a contact genuinely moved to another firm — or comparing addresses and
+phones. The first silently merges two different firms, which is the most
+expensive mistake available here.
+
+**Report it instead.** When the key a contact computes differs from the key
+stored on the company it is already attached to, count it and list it:
+
+    key drift   3 companies whose ACT! name or country no longer matches
+                their stored key
+
+Then a person decides: rename in PathQuote (safe — the key and the id do not
+move, so quotes are unaffected), or accept the split as a genuine one. Around
+ten lines in the worker and one line in the CLI report.
+
+Worth pairing with a one-off repair script for the companies already in this
+state, since a fresh import will not fix them: by definition their contacts
+already exist, so the sync takes the existing-contact path and never re-resolves
+the company.
+
 ## Decisions needed
 
 ### D1. What makes an imported company visible to a manager?
