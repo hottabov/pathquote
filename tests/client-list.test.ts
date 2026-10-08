@@ -286,3 +286,30 @@ describe("clientListWhere", () => {
     expect(where.AND).toHaveLength(1 + CLIENT_SEARCH_MAX_WORDS);
   });
 });
+
+describe("searching by country name", () => {
+  it("finds companies by the country's name, not only its stored code", () => {
+    // Company.country holds an ISO code, so without resolving the name a
+    // manager typing "Australia" matched nothing -- on a list whose visibility
+    // is itself granted by country, which makes it the obvious thing to type.
+    const where = clientListWhere({}, "Australia") as { AND: { OR?: unknown[] }[] };
+    const word = where.AND.find((clause) => "OR" in clause);
+    expect(word).toBeDefined();
+    expect(word?.OR ?? []).toContainEqual({ country: { equals: "AU" } });
+  });
+
+  it("resolves the colloquial spellings the ACT! import added", () => {
+    for (const [typed, code] of [["Turkey", "TR"], ["China", "CN"], ["UK", "GB"], ["USA", "US"]]) {
+      const where = clientListWhere({}, typed) as { AND: { OR?: unknown[] }[] };
+      const word = where.AND.find((clause) => "OR" in clause);
+      expect(word?.OR ?? []).toContainEqual({ country: { equals: code } });
+    }
+  });
+
+  it("adds no country clause for a word that is not a country", () => {
+    const where = clientListWhere({}, "marine") as { AND: { OR?: unknown[] }[] };
+    const word = where.AND.find((clause) => "OR" in clause);
+    const clauses = (word?.OR ?? []) as Record<string, unknown>[];
+    expect(clauses.some((c) => "country" in c && "equals" in (c.country as object))).toBe(false);
+  });
+});

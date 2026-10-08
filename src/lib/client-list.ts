@@ -9,6 +9,7 @@
 // and the page used to ship every one of them to the browser.
 
 import { CLIENT_SEARCH_MAX_LENGTH, clientSearchWords } from "./client-search";
+import { normalizeCountryInput } from "./countries";
 import type { CompanyScopeWhere } from "./scope";
 
 /** The page sizes a manager can pick, besides "all". */
@@ -191,32 +192,44 @@ export function clientListHref(request: {
 
 type Contains = { contains: string; mode: "insensitive" };
 
+/** One column test inside a word's `OR`. An array rather than a tuple: the
+ * country clause is conditional, since a word only yields one when it resolves
+ * to a country code, and a fixed-length tuple cannot express "sometimes six". */
+type WordMatch =
+  | { name: Contains }
+  | { city: Contains }
+  | { country: Contains }
+  | { country: { equals: string } }
+  | { website: Contains }
+  | {
+      contacts: {
+        some: { OR: [{ firstName: Contains }, { lastName: Contains }, { email: Contains }] };
+      };
+    };
+
 /** One of the clauses `clientListWhere` puts in its `AND`: the viewer's scope,
  * or a per-word match. Typed loosely on purpose -- it is handed to Prisma as a
  * `CompanyWhereInput`, which checks the real shape. */
-export type ClientListClause =
-  | CompanyScopeWhere
-  | {
-      OR: [
-        { name: Contains },
-        { city: Contains },
-        { country: Contains },
-        { website: Contains },
-        {
-          contacts: {
-            some: { OR: [{ firstName: Contains }, { lastName: Contains }, { email: Contains }] };
-          };
-        },
-      ];
-    };
+export type ClientListClause = CompanyScopeWhere | { OR: WordMatch[] };
 
 function wordClause(word: string): Exclude<ClientListClause, CompanyScopeWhere> {
   const contains: Contains = { contains: word, mode: "insensitive" };
+
+  // `Company.country` stores an ISO alpha-2 code, so a manager typing
+  // "Australia" would match nothing without this -- and typing the country is
+  // the obvious thing to do on a list whose visibility is granted by country.
+  // `normalizeCountryInput` knows the official names, the colloquial ones the
+  // ACT! import added ("China", "Turkey") and a few aliases ("UK" -> "GB"), so
+  // one extra clause covers all of them. A word that is not a country resolves
+  // to null and adds nothing.
+  const asCountryCode = normalizeCountryInput(word);
+
   return {
     OR: [
       { name: contains },
       { city: contains },
       { country: contains },
+      ...(asCountryCode ? [{ country: { equals: asCountryCode } }] : []),
       { website: contains },
       {
         contacts: {
@@ -240,11 +253,12 @@ function wordClause(word: string): Exclude<ClientListClause, CompanyScopeWhere> 
  * rule, and same cap on words, as the builder's picker: see `clientSearchWhere`
  * in ./client-search.ts.
  *
- * `country` is matched as stored, which is an ISO alpha-2 code for most
- * companies ("AU") and free text for a few legacy ones. A manager typing
- * "Australia" matches only the latter; the country *name* is not in the
- * database. Searching by name would need the code table in the query, which is
- * a change of its own.
+ * `country` is matched both as stored -- an ISO alpha-2 code for most
+ * companies ("AU"), free text for a few legacy ones -- and as a name resolved
+ * through `normalizeCountryInput`, so "Australia", "USA" and "Turkey" all find
+ * their companies. Without that second clause, typing a country name found
+ * nothing, which is a poor answer on a list whose visibility is itself granted
+ * by country.
  *
  * `scope` goes in `AND` untouched and is never spread next to the search
  * clauses, for the reason `clientSearchWhere` gives at length:
