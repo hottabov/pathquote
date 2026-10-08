@@ -307,13 +307,16 @@ model User {
   actUserId         String?             @unique
   /// This user's name as it appears in ACT!'s "Account Mgr" field.
   actAccountMgr     String?
-  /// Countries whose contacts this user may see, mirroring their ACT! Sync
-  /// Set. ISO 3166-1 alpha-2, the same vocabulary as the country half of
-  /// Company.actCompanyKey and as Company.country for rows written since the
-  /// ISO migration -- legacy company rows may still hold free text, so a
-  /// visibility filter cannot assume every row compares directly. Empty means
-  /// "no country grant" -- they still see contacts
-  /// where actAccountMgr matches them.
+  /// Countries whose clients this user may read and edit, mirroring their
+  /// ACT! Sync Set. ISO 3166-1 alpha-2, the same vocabulary as the country
+  /// half of Company.actCompanyKey and as Company.country for rows written
+  /// since the ISO migration -- legacy company rows may still hold free text,
+  /// so a visibility filter cannot assume every row compares directly.
+  /// "*" means every country. Empty means "no country grant" and is NOT "all":
+  /// the column defaults to [], so reading that as a wildcard would show every
+  /// new user the whole client base. A grant never lets a manager delete a
+  /// client they do not own -- see src/lib/scope.ts. Set it with
+  /// `npm run user:countries`.
   visibleCountries  String[]            @default([])
   documents         Document[]
   accounts          Account[]
@@ -778,6 +781,7 @@ model Company {
   actSnapshot        ActSnapshot?
 
   @@index([ownerId])
+  @@index([country]) // every manager with a country grant filters on this: `country IN (...)` in companyWhereForUser, src/lib/scope.ts
   @@index([industryId]) // renaming an industry shows an affected-company count first ("Used by 14 companies"), counted by industryId
 }
 

@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { recalcDocument } from "@/lib/documents/recalc";
 import { requireSession } from "@/lib/authz";
-import { companyWhereForUser } from "@/lib/scope";
+import { companyOwnedWhereForUser, companyWhereForUser } from "@/lib/scope";
 import { companySchema, contactSchema } from "@/lib/validation/clients";
 import { idSchema } from "@/lib/validation/documents";
 import { NOT_FOUND_ERROR, flattenZodError, type ActionResult } from "./_shared";
@@ -209,8 +209,14 @@ export async function deleteCompany(companyId: string): Promise<ActionResult> {
     return { error: NOT_FOUND_ERROR };
   }
 
+  // Deliberately NOT `companyWhereForUser`, which is what every other action
+  // in this file uses. A country grant lets a manager see and edit the
+  // imported clients; it must not let them delete one they do not own.
+  // Deleting is irreversible and the quote-less imported companies are the
+  // ones the quote check below does not protect. See the header of
+  // src/lib/scope.ts (decision D2). Do not "fix" this to match its siblings.
   const existing = await db.company.findFirst({
-    where: { id: companyId, ...companyWhereForUser(session.user) },
+    where: { id: companyId, ...companyOwnedWhereForUser(session.user) },
   });
   if (!existing) return { error: NOT_FOUND_ERROR };
 
@@ -326,8 +332,13 @@ export async function deleteContact(contactId: string): Promise<ActionResult> {
     return { error: NOT_FOUND_ERROR };
   }
 
+  // Deliberately NOT `companyWhereForUser` (which `updateContact` above
+  // uses): a contact is deleted under the same narrow rule as its company, so
+  // a country grant cannot be used to strip a client of its contacts when it
+  // cannot delete the client. See the header of src/lib/scope.ts (decision
+  // D2). Do not "fix" this to match its siblings.
   const existing = await db.contact.findFirst({
-    where: { id: contactId, company: companyWhereForUser(session.user) },
+    where: { id: contactId, company: companyOwnedWhereForUser(session.user) },
   });
   if (!existing) return { error: NOT_FOUND_ERROR };
 

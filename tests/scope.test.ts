@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { companyWhereForUser, documentWhereForUser } from "../src/lib/scope";
+import {
+  ALL_COUNTRIES,
+  companyOwnedWhereForUser,
+  companyWhereForUser,
+  documentWhereForUser,
+} from "../src/lib/scope";
 
 describe("companyWhereForUser", () => {
   it("returns no restriction for an ADMIN", () => {
@@ -123,5 +128,188 @@ describe("what a regional manager's client filter implies", () => {
     const where = companyWhereForUser(rm);
     expect(where).toHaveProperty("owner");
     expect(where).not.toHaveProperty("ownerId");
+  });
+});
+
+// Country-based visibility (decisions D1-D3, 2026-10-08). `companyWhereForUser`
+// is the READ and EDIT filter and gains a country arm; `companyOwnedWhereForUser`
+// is the DELETE filter and never does. The cases that matter most are the
+// ones where a grant is absent or empty: until someone is granted countries
+// nothing may change, and an empty list must not be read as "all".
+describe("companyWhereForUser with a country grant", () => {
+  const manager = { id: "u1", role: "MANAGER" };
+  const regional = { id: "u3", role: "REGIONAL_MANAGER", regionId: "r-au" };
+
+  describe("no grant: exactly today's rule", () => {
+    it("MANAGER with the field absent", () => {
+      expect(companyWhereForUser(manager)).toEqual({ ownerId: "u1" });
+    });
+
+    it("MANAGER with an empty grant", () => {
+      expect(companyWhereForUser({ ...manager, visibleCountries: [] })).toEqual({ ownerId: "u1" });
+    });
+
+    it("REGIONAL_MANAGER with the field absent", () => {
+      expect(companyWhereForUser(regional)).toEqual({ owner: { regionId: "r-au" } });
+    });
+
+    it("REGIONAL_MANAGER with an empty grant", () => {
+      expect(companyWhereForUser({ ...regional, visibleCountries: [] })).toEqual({
+        owner: { regionId: "r-au" },
+      });
+    });
+
+    it("ADMIN with the field absent or empty", () => {
+      expect(companyWhereForUser({ id: "a", role: "ADMIN" })).toEqual({});
+      expect(companyWhereForUser({ id: "a", role: "ADMIN", visibleCountries: [] })).toEqual({});
+    });
+
+    it("treats a value that is not an array as no grant", () => {
+      // An old session token, or a hand-built user cast past the type.
+      const broken = { ...manager, visibleCountries: null as unknown as string[] };
+      expect(companyWhereForUser(broken)).toEqual({ ownerId: "u1" });
+    });
+
+    it("treats a grant of nothing but blank entries as no grant", () => {
+      // `country IN ('')` would match a company whose country was saved blank.
+      expect(companyWhereForUser({ ...manager, visibleCountries: ["", "  "] })).toEqual({
+        ownerId: "u1",
+      });
+    });
+  });
+
+  // The dangerous mistake. `User.visibleCountries` defaults to `[]`, so a
+  // wildcard reading of "empty" shows every new user all ~12,000 clients.
+  describe("an empty grant is not all", () => {
+    it("is not the unrestricted filter", () => {
+      expect(companyWhereForUser({ ...manager, visibleCountries: [] })).not.toEqual({});
+      expect(companyWhereForUser({ ...regional, visibleCountries: [] })).not.toEqual({});
+    });
+
+    it("still restricts to something, for every non-admin shape", () => {
+      for (const user of [manager, regional, { id: "x", role: "SOMETHING_ELSE" }]) {
+        const where = companyWhereForUser({ ...user, visibleCountries: [] });
+        expect(Object.keys(where).length).toBeGreaterThan(0);
+      }
+    });
+
+    it("only the explicit wildcard is unrestricted", () => {
+      expect(ALL_COUNTRIES).toBe("*");
+      expect(companyWhereForUser({ ...manager, visibleCountries: [ALL_COUNTRIES] })).toEqual({});
+    });
+  });
+
+  describe("a grant adds a country arm", () => {
+    it("MANAGER: owns it OR it is in a granted country", () => {
+      expect(companyWhereForUser({ ...manager, visibleCountries: ["US", "CA"] })).toEqual({
+        OR: [{ ownerId: "u1" }, { country: { in: ["US", "CA"] } }],
+      });
+    });
+
+    it("keeps the ownership arm, so nothing visible before is taken away", () => {
+      const where = companyWhereForUser({ ...manager, visibleCountries: ["MX"] });
+      expect(where).toEqual({ OR: [{ ownerId: "u1" }, { country: { in: ["MX"] } }] });
+      expect(JSON.stringify(where)).toContain('"ownerId":"u1"');
+    });
+
+    it("REGIONAL_MANAGER keeps the region arm and gains the country arm", () => {
+      expect(companyWhereForUser({ ...regional, visibleCountries: ["GB"] })).toEqual({
+        OR: [{ owner: { regionId: "r-au" } }, { country: { in: ["GB"] } }],
+      });
+    });
+
+    it("a region-less REGIONAL_MANAGER keeps the fail-closed region arm", () => {
+      // The empty region id matches no owner; the country arm is all they get.
+      expect(
+        companyWhereForUser({ id: "u4", role: "REGIONAL_MANAGER", regionId: null, visibleCountries: ["GB"] })
+      ).toEqual({ OR: [{ owner: { regionId: "" } }, { country: { in: ["GB"] } }] });
+    });
+
+    it("does not mutate or alias the user's grant", () => {
+      const grant = ["US", "CA"];
+      const where = companyWhereForUser({ ...manager, visibleCountries: grant });
+      grant.push("MX");
+      expect(JSON.stringify(where)).not.toContain("MX");
+    });
+  });
+
+  describe('"*" is every country', () => {
+    it("collapses a MANAGER to the unrestricted filter", () => {
+      expect(companyWhereForUser({ ...manager, visibleCountries: ["*"] })).toEqual({});
+    });
+
+    it("collapses a REGIONAL_MANAGER to the unrestricted filter", () => {
+      expect(companyWhereForUser({ ...regional, visibleCountries: ["*"] })).toEqual({});
+    });
+
+    it("wins when listed beside other codes", () => {
+      expect(companyWhereForUser({ ...manager, visibleCountries: ["US", "*"] })).toEqual({});
+    });
+  });
+
+  describe("admin is unaffected by a grant", () => {
+    it("ADMIN and DEVELOPER stay unrestricted", () => {
+      expect(companyWhereForUser({ id: "a", role: "ADMIN", visibleCountries: ["US"] })).toEqual({});
+      expect(companyWhereForUser({ id: "d", role: "DEVELOPER", visibleCountries: ["US"] })).toEqual({});
+    });
+  });
+});
+
+// The delete filter. D2: a country grant must never let a manager delete a
+// company they do not own, including the grant that makes their read filter
+// as wide as an admin's.
+describe("companyOwnedWhereForUser", () => {
+  const grants = [undefined, [], ["US", "CA"], ["*"]];
+
+  it("is today's ownership rule for a MANAGER, whatever the grant", () => {
+    for (const visibleCountries of grants) {
+      expect(companyOwnedWhereForUser({ id: "u1", role: "MANAGER", visibleCountries })).toEqual({
+        ownerId: "u1",
+      });
+    }
+  });
+
+  it("is today's region rule for a REGIONAL_MANAGER, whatever the grant", () => {
+    for (const visibleCountries of grants) {
+      expect(
+        companyOwnedWhereForUser({ id: "u3", role: "REGIONAL_MANAGER", regionId: "r-au", visibleCountries })
+      ).toEqual({ owner: { regionId: "r-au" } });
+    }
+  });
+
+  it("is unrestricted for an ADMIN and a DEVELOPER, whatever the grant", () => {
+    for (const visibleCountries of grants) {
+      expect(companyOwnedWhereForUser({ id: "a", role: "ADMIN", visibleCountries })).toEqual({});
+      expect(companyOwnedWhereForUser({ id: "d", role: "DEVELOPER", visibleCountries })).toEqual({});
+    }
+  });
+
+  it("never mentions a country", () => {
+    for (const visibleCountries of grants) {
+      const where = companyOwnedWhereForUser({ id: "u1", role: "MANAGER", visibleCountries });
+      expect(JSON.stringify(where)).not.toContain("country");
+    }
+  });
+
+  it("fails closed for a region-less REGIONAL_MANAGER", () => {
+    expect(
+      companyOwnedWhereForUser({ id: "u4", role: "REGIONAL_MANAGER", visibleCountries: ["*"] })
+    ).toEqual({ owner: { regionId: "" } });
+  });
+
+  it('stays narrower than the read filter for a manager holding "*"', () => {
+    const manager = { id: "u1", role: "MANAGER", visibleCountries: ["*"] };
+    expect(companyWhereForUser(manager)).toEqual({});
+    expect(companyOwnedWhereForUser(manager)).toEqual({ ownerId: "u1" });
+  });
+
+  it("equals companyWhereForUser when there is no grant, so the two cannot drift", () => {
+    for (const user of [
+      { id: "u1", role: "MANAGER" },
+      { id: "u3", role: "REGIONAL_MANAGER", regionId: "r-au" },
+      { id: "a", role: "ADMIN" },
+    ]) {
+      expect(companyOwnedWhereForUser(user)).toEqual(companyWhereForUser(user));
+    }
   });
 });

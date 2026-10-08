@@ -179,6 +179,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.uid = dbUser.id;
         token.role = dbUser.role;
         token.regionId = dbUser.regionId;
+        token.visibleCountries = dbUser.visibleCountries ?? [];
         token.revalidatedAt = Date.now();
         return token;
       }
@@ -188,7 +189,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // valid session for up to `maxAge` (7 days), since the JWT is
       // self-contained and normally never touches the database again. Re-hit
       // the DB at most once per REVALIDATE_INTERVAL_MS to catch that case
-      // and to keep role/regionId in sync with the source of truth, while
+      // and to keep role/regionId/visibleCountries in sync with the source of truth, while
       // keeping the common case (a request within the interval) DB-free.
       const revalidatedAt = token.revalidatedAt ?? 0;
       if (Date.now() - revalidatedAt < REVALIDATE_INTERVAL_MS) {
@@ -218,6 +219,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       token.role = dbUser.role;
       token.regionId = dbUser.regionId;
+      token.visibleCountries = dbUser.visibleCountries ?? [];
       token.revalidatedAt = Date.now();
       return token;
     },
@@ -226,6 +228,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.id = token.uid;
         session.user.role = token.role;
         session.user.regionId = token.regionId;
+        // A token issued before this field existed has none; `?? []` is the
+        // empty grant, which fails closed (see `companyWhereForUser`). It
+        // fills in at the next revalidation.
+        session.user.visibleCountries = token.visibleCountries ?? [];
       }
       return session;
     },

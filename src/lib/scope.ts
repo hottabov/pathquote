@@ -7,28 +7,69 @@
 // unit-testable and safe to import from both server actions/queries and
 // plain tests.
 //
-// These two functions are the app's read AND write boundary: every query
-// spreads one of them into its `where`, and so does every mutating action
-// (see src/lib/actions/documents/*.ts, src/lib/actions/clients.ts), which
-// load the row they are about to change through the same filter. Widening a
-// filter therefore widens editing too, and that is deliberate for
-// REGIONAL_MANAGER — it may edit, finalize, unfinalize and delete drafts in
-// its region, decided by Vadym 2026-09-22. Anything a regional manager must
-// NOT do is gated on `isAdminRole` at its own call site, not here.
+// Three functions here decide which clients a user touches, and they are not
+// interchangeable. Every query and every mutating action spreads one of them
+// into its `where` (see src/lib/actions/documents/*.ts,
+// src/lib/actions/clients.ts), loading the row it is about to change through
+// the same filter it reads with. So widening a filter widens editing too, and
+// that is deliberate for REGIONAL_MANAGER -- it may edit, finalize, unfinalize
+// and delete drafts in its region, decided by Vadym 2026-09-22. Anything a
+// regional manager must NOT do is gated on `isAdminRole` at its own call
+// site, not here.
+//
+//   companyWhereForUser       READ and EDIT clients. Ownership (or region),
+//                             plus any country the user has been granted.
+//                             The widest of the two company filters.
+//   companyOwnedWhereForUser  DELETE clients, and nothing else. Ownership (or
+//                             region) only; a country grant never reaches it.
+//   documentWhereForUser      READ and WRITE quotes. Unrelated to countries.
+//
+// Why delete has its own filter (decision D2, 2026-10-08): a country grant
+// exists so a manager can find and keep correct the ~12,000 clients imported
+// from ACT!, none of which has an owner. Fixing an address is a daily act and
+// is cheap to undo. Deleting a client is rare and cannot be undone, and the
+// imported companies are exactly the ones at risk -- `Document.company` is
+// `onDelete: Restrict`, so only a company with no quotes can be deleted, and
+// that is most of them. A grant that is broad on purpose (one manager holds
+// "*") must therefore not become permission to remove a client the manager
+// does not look after. If a new action deletes a company or a contact, it
+// belongs on `companyOwnedWhereForUser`, and the compiler will not tell you.
 
 import { isAdminRole, isRegionalManagerRole } from "./roles";
 
+/** The `visibleCountries` value that grants every country. An empty list is
+ * the opposite -- no grant -- and must never be read as "all": the column
+ * defaults to `[]`, so that reading would hand every new user the whole client
+ * base. Exported so the script that writes grants and the tests that read
+ * them use the same spelling. */
+export const ALL_COUNTRIES = "*";
+
 /** A viewer whose rows are being scoped. `regionId` is optional so every
  * existing `{ id, role }` caller and test still type-checks; it is read only
- * for a REGIONAL_MANAGER, and a missing one fails closed (see below). A
- * NextAuth `session.user` satisfies this directly — see
+ * for a REGIONAL_MANAGER, and a missing one fails closed (see below).
+ * `visibleCountries` is optional for the same reason, and a missing one fails
+ * closed the same way: no country arm, which leaves exactly the ownership
+ * (or region) rule. A NextAuth `session.user` satisfies this directly -- see
  * src/types/next-auth.d.ts. */
-export type ScopeUser = { id: string; role: string; regionId?: string | null };
+export type ScopeUser = {
+  id: string;
+  role: string;
+  regionId?: string | null;
+  visibleCountries?: string[];
+};
 
-/** What `companyWhereForUser` may return: an owner id (MANAGER), an owner
- * region (REGIONAL_MANAGER), or nothing at all (admin). Named so the union
- * is visible at the call sites that spread it. */
-export type CompanyScopeWhere = { ownerId?: string; owner?: { regionId: string } };
+/** What `companyOwnedWhereForUser` may return: an owner id (MANAGER), an
+ * owner region (REGIONAL_MANAGER), or nothing at all (admin). */
+export type CompanyOwnedScopeWhere = { ownerId?: string; owner?: { regionId: string } };
+
+/** What `companyWhereForUser` may return: anything `CompanyOwnedScopeWhere`
+ * can (an owner id, an owner region, or nothing), or -- for a user holding a
+ * country grant -- an `OR` of that ownership rule and `country IN (grant)`.
+ * Named so the shapes are visible at the call sites that spread it. The two
+ * never combine: `OR` is present only on its own. */
+export type CompanyScopeWhere = CompanyOwnedScopeWhere & {
+  OR?: [CompanyOwnedScopeWhere, { country: { in: string[] } }];
+};
 
 /** What `documentWhereForUser` may return — see `CompanyScopeWhere`. */
 export type DocumentScopeWhere = { authorId?: string; regionId?: string };
@@ -43,16 +84,31 @@ function regionalScopeId(user: ScopeUser): string {
   return user.regionId ?? "";
 }
 
-/** Restricts a Company query to what `user` may see: every company for an
- * admin (`{}`), every company owned by a user of their region for a
- * REGIONAL_MANAGER, and their own companies for everyone else. Spread this
- * into a Prisma `where` object, merging with any other filters (e.g. a
- * search term) the caller applies.
+/** The countries `user` has been granted, with anything that is not a
+ * non-empty string dropped. Blank entries go because `country IN ('')` would
+ * match a company whose country was saved as an empty string, and a grant
+ * that is nothing but blanks is no grant at all. A missing or non-array value
+ * (an old session token, a hand-built user) is the empty grant. */
+function grantedCountries(user: ScopeUser): string[] {
+  const raw: unknown = user.visibleCountries;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((code): code is string => typeof code === "string" && code.trim() !== "");
+}
+
+/** Restricts a Company query to the clients `user` OWNS -- or, for a
+ * REGIONAL_MANAGER, the clients owned by a user of their region -- and ignores
+ * any country grant. Every company for an admin (`{}`). Spread this into a
+ * Prisma `where` object, merging with any other filters the caller applies.
+ *
+ * This is the DELETE filter: `deleteCompany` and `deleteContact` use it and
+ * nothing else should. See the header comment for why deleting is narrower
+ * than editing. It is also the ownership arm that `companyWhereForUser` ORs a
+ * country grant onto, so the two cannot drift apart.
  *
  * A regional manager's filter goes through the `owner` relation because
  * `Company` deliberately has no region of its own (see the comment on
  * `model Company` in prisma/schema.prisma): a client belongs to the business
- * and to the manager who looks after them, not to an office — an Australian
+ * and to the manager who looks after them, not to an office -- an Australian
  * manager sells into Europe and that European buyer is still their client.
  * So "this region's clients" can only mean "owned by a user of this region",
  * and two consequences follow, both intended:
@@ -60,14 +116,52 @@ function regionalScopeId(user: ScopeUser): string {
  *     and stays admin-only;
  *   - handing a leaver's clients to another manager (`reassignUserCompanies`,
  *     src/lib/actions/users.ts) moves them between regional views
- *     automatically, with no second column to keep in step — but blanking a
+ *     automatically, with no second column to keep in step -- but blanking a
  *     departed manager's own `regionId` hides their clients from their
  *     region's manager. Deactivate the account; leave its region alone.
  */
-export function companyWhereForUser(user: ScopeUser): CompanyScopeWhere {
+export function companyOwnedWhereForUser(user: ScopeUser): CompanyOwnedScopeWhere {
   if (isAdminRole(user.role)) return {};
   if (isRegionalManagerRole(user.role)) return { owner: { regionId: regionalScopeId(user) } };
   return { ownerId: user.id };
+}
+
+/** Restricts a Company query to the clients `user` may READ and EDIT: the
+ * ones `companyOwnedWhereForUser` allows, plus every company whose `country`
+ * is one the user has been granted (`User.visibleCountries`). Spread this into
+ * a Prisma `where` object, merging with any other filters the caller applies.
+ *
+ * The country arm is purely additive (decision D1, 2026-10-08): nothing a
+ * manager could see before is taken away, and a regional manager keeps its
+ * region arm. That matters because the ACT! import left every company without
+ * an owner -- the ownership rule alone shows a manager none of them.
+ *
+ *   - admin                        `{}`
+ *   - no grant (empty or absent)   exactly `companyOwnedWhereForUser`
+ *   - grant of one or more codes   `{ OR: [<ownership rule>, { country: { in } }] }`
+ *   - grant containing `"*"`       `{}` -- every country, which for a manager
+ *                                  is the same read/edit view an admin has.
+ *                                  Delete is unaffected; see the header.
+ *
+ * An EMPTY grant is not "all". `User.visibleCountries` defaults to `[]`, so
+ * treating that as a wildcard would show every new user the entire client
+ * base. The wildcard is the explicit `"*"` and nothing else.
+ *
+ * `country IN (...)` compares exactly, and `Company.country` is only
+ * guaranteed to be an ISO alpha-2 code for rows written since the ISO
+ * migration (see the schema comment): a legacy free-text company does not
+ * match a grant of its country until it is normalised. That is the safe
+ * direction -- it hides a row rather than showing one to the wrong person.
+ */
+export function companyWhereForUser(user: ScopeUser): CompanyScopeWhere {
+  if (isAdminRole(user.role)) return {};
+
+  const owned = companyOwnedWhereForUser(user);
+  const countries = grantedCountries(user);
+  if (countries.length === 0) return owned;
+  if (countries.includes(ALL_COUNTRIES)) return {};
+
+  return { OR: [owned, { country: { in: countries } }] };
 }
 
 /** Restricts a Document query to what `user` may see: every quote for an

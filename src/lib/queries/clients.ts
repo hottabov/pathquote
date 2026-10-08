@@ -27,7 +27,8 @@ export type CompanyListItem = {
 
 /**
  * Companies visible to `user` — all for ADMIN, this region's managers' for a
- * REGIONAL_MANAGER, own-only for MANAGER — optionally filtered by a
+ * REGIONAL_MANAGER, own-only for MANAGER, plus every company in a country the
+ * user has been granted (`User.visibleCountries`) — optionally filtered by a
  * case-insensitive name search, ordered by name. Each row carries its contact
  * count for the list cards and its owner's name for the `Owner` column.
  */
@@ -119,10 +120,28 @@ export function getCompanyDetail(
   user: ScopeUser,
   companyId: string
 ): Promise<CompanyDetail | null> {
-  return getCompanyDetailInScope(user.id, user.role, user.regionId ?? null, companyId);
+  return getCompanyDetailInScope(
+    user.id,
+    user.role,
+    user.regionId ?? null,
+    countriesKey(user.visibleCountries),
+    companyId
+  );
 }
 
-/** Takes the scope as its three primitive parts rather than the `ScopeUser`
+/** A country grant as one primitive, for the memo below: `cache` compares
+ * arguments by identity, and `session.user.visibleCountries` is a fresh array
+ * on every `auth()` call. Sorted so two orderings of one grant share an entry.
+ * The codes are ISO alpha-2 (or `*`), so a comma cannot occur in one. */
+function countriesKey(countries: string[] | undefined): string {
+  return [...(countries ?? [])].sort().join(",");
+}
+
+function countriesFromKey(key: string): string[] {
+  return key === "" ? [] : key.split(",");
+}
+
+/** Takes the scope as its primitive parts rather than the `ScopeUser`
  * itself, for the reason `getDocumentForBuilderInScope`
  * (src/lib/queries/documents.ts) spells out: React's `cache` matches object
  * arguments by identity, and every `auth()` call hands back a fresh
@@ -131,14 +150,24 @@ export function getCompanyDetail(
  * `regionId` is one of them because it shapes the query: a REGIONAL_MANAGER
  * is scoped by their region rather than their own id
  * (`companyWhereForUser`). Dropping it here would resolve every colleague's
- * client to `null` — a 404 on a company the list had just linked to. */
+ * client to `null` — a 404 on a company the list had just linked to.
+ *
+ * `countries` is another, for the same reason: it is the country arm of that
+ * filter. Dropping it here would fail closed, and a manager whose list shows
+ * the clients of their countries would get a 404 on every one of them. */
 const getCompanyDetailInScope = cache(async function getCompanyDetailInScope(
   userId: string,
   role: string,
   regionId: string | null,
+  countries: string,
   companyId: string
 ): Promise<CompanyDetail | null> {
-  const user: ScopeUser = { id: userId, role, regionId };
+  const user: ScopeUser = {
+    id: userId,
+    role,
+    regionId,
+    visibleCountries: countriesFromKey(countries),
+  };
   const company = await db.company.findFirst({
     where: { id: companyId, ...companyWhereForUser(user) },
     include: {
