@@ -1,7 +1,6 @@
 import type { OptionRole } from "@prisma/client";
 import type { ConsumableLink } from "@/lib/consumables";
 import { db } from "@/lib/db";
-import { companyWhereForUser, type ScopeUser } from "@/lib/scope";
 import { compatibilityOrFilter } from "@/lib/catalog-compat";
 import {
   isSeriesHidden,
@@ -10,58 +9,16 @@ import {
 } from "@/lib/catalog-visibility";
 
 /**
- * What the builder's three pickers offer: which client to quote, which
- * product to add, and which options an added item can carry. Each is
- * preloaded whole so the picker itself filters in the browser rather than
- * round-tripping per keystroke.
+ * What the builder's item and option pickers offer: which product to add, and
+ * which options an added item can carry. Each is preloaded whole so the picker
+ * itself filters in the browser rather than round-tripping per keystroke --
+ * the catalogue is a few hundred rows, which that suits.
+ *
+ * The client picker is NOT in this file and must not come back to it. It used
+ * to preload every company the viewer could see, on the same reasoning, and
+ * after the ACT! import that was 2,158 kB on every builder page open; it is
+ * server-side search now, in src/lib/queries/client-search.ts.
  */
-
-// --- client picker ---------------------------------------------------------
-
-export type ClientPickerContact = {
-  id: string;
-  firstName: string;
-  lastName: string | null;
-  isPrimary: boolean;
-};
-
-export type ClientPickerCompany = {
-  id: string;
-  name: string;
-  /** `Industry.id`, or null — the builder's client card edits it in place. */
-  industryId: string | null;
-  contacts: ClientPickerContact[];
-};
-
-/**
- * Every company `user` can see (scoped like listCompanies in
- * src/lib/queries/clients.ts), each with its contacts ordered primary-first
- * then by first name — preloaded in full for the builder's client-picker
- * client component, which does its own search filtering (companies are a
- * small enough list per manager that a client-side filter beats a
- * per-keystroke server round trip).
- */
-export async function listClientPickerCompanies(user: ScopeUser): Promise<ClientPickerCompany[]> {
-  const companies = await db.company.findMany({
-    where: companyWhereForUser(user),
-    orderBy: { name: "asc" },
-    include: {
-      contacts: { orderBy: [{ isPrimary: "desc" }, { firstName: "asc" }] },
-    },
-  });
-
-  return companies.map((c) => ({
-    id: c.id,
-    name: c.name,
-    industryId: c.industryId,
-    contacts: c.contacts.map((contact) => ({
-      id: contact.id,
-      firstName: contact.firstName,
-      lastName: contact.lastName,
-      isPrimary: contact.isPrimary,
-    })),
-  }));
-}
 
 // --- item picker ---------------------------------------------------------
 

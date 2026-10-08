@@ -19,11 +19,11 @@ import {
   getDocumentForBuilder,
   getDocumentForForms,
   getItemPickerCatalog,
-  listClientPickerCompanies,
   listCompatibleOptions,
   type CompatibleOption,
   type DocumentForBuilder,
 } from "@/lib/queries/documents";
+import type { ClientSearchCompany } from "@/lib/queries/client-search";
 import { getQuoteDocumentsForRegion } from "@/lib/queries/quote-documents";
 import { resolveQuoteDocuments } from "@/lib/quotation-data";
 import { catalogVisibilityUserId } from "@/lib/catalog-visibility";
@@ -195,7 +195,6 @@ export default async function DocumentBuilderPage({
   const industriesPromise = listIndustries();
 
   const [
-    companies,
     catalog,
     showOptionIcons,
     orgDefaultValidityDays,
@@ -204,7 +203,6 @@ export default async function DocumentBuilderPage({
     quoteDocumentRows,
     compatibleOptionsEntries,
   ] = await Promise.all([
-    listClientPickerCompanies(session.user),
     hiddenCatalogIdsPromise.then((hiddenCatalogIds) =>
       getItemPickerCatalog(document.regionCode, hiddenCatalogIds)
     ),
@@ -241,6 +239,28 @@ export default async function DocumentBuilderPage({
   const compatibleOptionsByItemKey: Record<string, CompatibleOption[]> = Object.fromEntries(
     compatibleOptionsEntries
   );
+
+  // The client picker is handed the quote's own company and nothing else; the
+  // rest of the client list is searched for on demand (src/lib/actions/
+  // client-search.ts). `document.company` is that company already, loaded by
+  // `getDocumentForBuilder` with its contacts in the order the picker needs
+  // (isPrimary desc, firstName asc), so this costs no query. Mapped down to
+  // the picker's four contact fields on purpose: `BuilderContact` also carries
+  // email and phone, and anything passed as a prop to a client component is
+  // serialised into the page.
+  const pickerCompany: ClientSearchCompany | null = document.company
+    ? {
+        id: document.company.id,
+        name: document.company.name,
+        industryId: document.company.industryId,
+        contacts: document.company.contacts.map((contact) => ({
+          id: contact.id,
+          firstName: contact.firstName,
+          lastName: contact.lastName,
+          isPrimary: contact.isPrimary,
+        })),
+      }
+    : null;
 
   // One row per key for this region (its own version where it has one, the
   // global default otherwise), in the print order an admin set — the same
@@ -347,9 +367,8 @@ export default async function DocumentBuilderPage({
           >
           <ClientSection
             documentId={document.id}
-            companies={companies}
+            initialCompany={pickerCompany}
             industries={industries}
-            initialCompanyId={document.company?.id ?? null}
             initialContactId={document.contactId}
             readOnly={!isDraft}
           />

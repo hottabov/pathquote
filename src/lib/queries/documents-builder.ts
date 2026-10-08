@@ -34,6 +34,10 @@ export type BuilderContact = {
 export type BuilderCompany = {
   id: string;
   name: string;
+  /** `Industry.id`, or null. Carried so the builder's client picker can be
+   * seeded from this company (it has the same ordered contacts) instead of a
+   * query of its own -- see the page, and `ClientSearchCompany`. */
+  industryId: string | null;
   street: string | null;
   city: string | null;
   state: string | null;
@@ -905,6 +909,7 @@ async function loadDocumentForBuilder(
       ? {
           id: document.company.id,
           name: document.company.name,
+          industryId: document.company.industryId,
           street: document.company.street,
           city: document.company.city,
           state: document.company.state,

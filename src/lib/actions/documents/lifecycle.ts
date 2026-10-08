@@ -296,7 +296,7 @@ export async function deleteDocument(documentId: string): Promise<ActionResult> 
  * When `contactId` is omitted/empty, the company's primary contact is
  * auto-assigned instead of leaving the document contact-less: `isPrimary`
  * first, else the first contact by the same ordering the client picker uses
- * (`isPrimary` desc, `firstName` asc — see `listClientPickerCompanies`), or
+ * (`isPrimary` desc, `firstName` asc — see `searchClientCompanies`), or
  * `null` if the company has no contacts at all. This is what lets the
  * builder's company select persist a usable contact in one step — the
  * explicit contact dropdown then still overrides it by passing a concrete

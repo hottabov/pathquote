@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Building2, Search, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState, FieldRow, ReadOnlyValue, SectionCard, fieldInputClass } from "@/components/ui-kit";
@@ -21,30 +21,74 @@ import { IndustryPicker, type IndustryOption } from "@/components/clients/indust
 import { cn } from "@/lib/utils";
 import { setDocumentClient } from "@/lib/actions/documents";
 import { createCompanyInline, createContactInline } from "@/lib/actions/clients";
-import type { ClientPickerCompany } from "@/lib/queries/documents";
+import { searchClients } from "@/lib/actions/client-search";
+import {
+  CLIENT_SEARCH_MIN_LENGTH,
+  CLIENT_SEARCH_PAGE_SIZE,
+  clientResultLabel,
+  clientSearchTerm,
+} from "@/lib/client-search";
+import type { ClientSearchCompany } from "@/lib/queries/client-search";
+
+/** How long typing must pause before the search goes to the server. Short
+ * enough to feel live, long enough that "noitex" is one request and not six --
+ * which matters more than usual here, because Next.js runs Server Actions one
+ * at a time per client, so every request sent also queues whatever the manager
+ * does next (picking a company is another Server Action) behind it. */
+const SEARCH_DEBOUNCE_MS = 200;
+
+/** One finished search. `term` is the normalised term it answered
+ * (`clientSearchTerm`), kept with the results so the list is labelled and the
+ * "nothing matches" message worded for the search that produced them, not for
+ * whatever has been typed since. */
+type SearchOutcome = { term: string; companies: ClientSearchCompany[]; failed: boolean };
 
 /**
- * The builder's "Client" section: a search box over every company `user`
- * can see (preloaded in full server-side — companies are a small list, so a
- * client-side filter is simpler than a per-keystroke server round trip),
- * then a company select and — once a company with contacts is chosen — a
- * contact select. Every change calls `setDocumentClient` directly (no
- * <form>, same pattern as the "make primary" star in
+ * The builder's "Client" section: a search box, then a company select fed by
+ * that search, and — once a company with contacts is chosen — a contact
+ * select. Every change calls `setDocumentClient` directly (no <form>, same
+ * pattern as the "make primary" star in
  * src/components/clients/contacts-section.tsx) so picking a client is a
  * single tap with no separate "save" step. Once a company is selected it
  * collapses to a small summary card with a "Change" action, so the picker
  * itself only reappears when actually switching clients.
+ *
+ * THE SEARCH IS SERVER-SIDE, AND THAT IS NOT AN OPTIMISATION TO UNDO. This
+ * section used to be handed every company the viewer could see, each with all
+ * its contacts, and filtered them in the browser ("companies are a small
+ * list"). That held while the table had two rows. After the ACT! CRM import
+ * it was 8,810 companies and 10,473 contacts: 2,158 kB of JSON serialised,
+ * shipped and hydrated on every builder page open, against 29 ms of SQL
+ * (measured on the rehearsal database, 2026-10-08). Vadym's call, for the
+ * reason that a sluggish builder makes the product look amateur to the people
+ * who use it all day. The page now passes only the quote's own company
+ * (`initialCompany`); the picker asks `searchClients`
+ * (src/lib/actions/client-search.ts) for the 20 best matches by company or
+ * contact name, debounced, and shows them in the select. Do not put the full
+ * list back, however convenient the instant filter was.
+ *
+ * Two consequences the code below is built around:
+ *   - The selected company is held as an object of its own, not looked up in
+ *     the current results. Results are replaced on every search, so a lookup
+ *     would lose the selection the moment the manager typed after picking.
+ *   - Responses can arrive out of order. A slow answer for "no" must never
+ *     replace the answer for "noitex" typed after it. Each search effect
+ *     carries a `current` flag that its cleanup clears; a change of search
+ *     term (or closing the picker) runs the cleanup first, so a response only
+ *     lands if nothing newer has superseded its request. Not an
+ *     AbortController: a Server Action takes no signal, so the request would
+ *     run to completion either way and only the answer can be ignored.
  *
  * "+ New company" / "+ New contact" open an inline panel right here
  * (`createCompanyInline`/`createContactInline` — the JSON-friendly siblings
  * of the /clients forms' actions, see src/lib/actions/clients.ts) instead of
  * navigating to /clients/new: a
  * manager building a quote for a client that doesn't exist yet never has
- * to leave the document. On success the new entity is appended to the
- * local company list (kept in state precisely so this doesn't need a
- * server round trip to reflect), auto-selected, and immediately applied
- * to the document via `setDocumentClient` — same as picking an existing
- * company/contact from the selects. These two panels keep an explicit
+ * to leave the document. On success the new entity is made the selected
+ * company directly from what the action returned — no search round trip to
+ * find it again — and immediately applied to the document via
+ * `setDocumentClient`, same as picking an existing company/contact from the
+ * selects. These two panels keep an explicit
  * "Create" button (creation is an intentional trigger, unlike an edit) —
  * everything else in the builder that got autosaved keeps that button
  * gone (see item-discount-field.tsx, document-discount-field.tsx,
@@ -64,28 +108,42 @@ import type { ClientPickerCompany } from "@/lib/queries/documents";
  */
 export function ClientSection({
   documentId,
-  companies,
+  initialCompany,
   industries,
-  initialCompanyId,
   initialContactId,
   readOnly = false,
 }: {
   documentId: string;
-  companies: ClientPickerCompany[];
+  /** The quote's own company, with its contacts ordered `isPrimary` desc then
+   * `firstName` asc, or null when it has none yet. The only company this
+   * component is handed: every other one comes from the search. */
+  initialCompany: ClientSearchCompany | null;
   /** The shared Industry list, for the "+ New company" panel's picker. */
   industries: IndustryOption[];
-  initialCompanyId: string | null;
   initialContactId: string | null;
   readOnly?: boolean;
 }) {
   const toast = useToast();
-  const [localCompanies, setLocalCompanies] = useState<ClientPickerCompany[]>(companies);
+  const [selectedCompany, setSelectedCompany] = useState<ClientSearchCompany | null>(initialCompany);
   const [query, setQuery] = useState("");
-  const [companyId, setCompanyId] = useState(initialCompanyId ?? "");
   const [contactId, setContactId] = useState(initialContactId ?? "");
-  const [picking, setPicking] = useState(!initialCompanyId);
+  const [picking, setPicking] = useState(!initialCompany);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  // The latest finished search; null from the moment the picker opens until
+  // its first answer. One slot, not a cache: a company or contact created
+  // since an older answer would be missing from it.
+  const [outcome, setOutcome] = useState<SearchOutcome | null>(null);
+  const term = clientSearchTerm(query);
+  // Derived rather than stored, so there is no flag to forget to clear: the
+  // picker is searching exactly when it is open and what it shows answers a
+  // different term from the one typed.
+  const searching = picking && !readOnly && outcome?.term !== term;
+  // Something typed, but under the minimum: the list is the first page, and
+  // the manager should be told why nothing narrowed.
+  const tooShort = query.trim() !== "" && term === "";
+  const statusId = `${documentId}-client-search-status`;
 
   const [showCompanyForm, setShowCompanyForm] = useState(false);
   const [showMoreCompanyFields, setShowMoreCompanyFields] = useState(false);
@@ -121,13 +179,48 @@ export function ClientSection({
     disabled: companyFormPending,
   };
 
-  const filteredCompanies = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    if (!term) return localCompanies;
-    return localCompanies.filter((c) => c.name.toLowerCase().includes(term));
-  }, [localCompanies, query]);
+  // Runs a search whenever the term the picker should be showing differs from
+  // the one it is showing (`searching`). `current` is the out-of-order guard
+  // described in the header comment: cleanup clears it, so any response whose
+  // request has been superseded (by a different term, the picker closing, or
+  // unmount) is dropped. A failed search is recorded under its term too, so it
+  // is not retried in a loop; "Try again" clears the outcome to ask again.
+  useEffect(() => {
+    if (!searching) return;
+    let current = true;
+    const timer = setTimeout(
+      () => {
+        searchClients(term).then(
+          (result) => {
+            if (!current) return;
+            setOutcome(
+              "error" in result
+                ? { term, companies: [], failed: true }
+                : { term, companies: result.companies, failed: false }
+            );
+          },
+          () => {
+            if (current) setOutcome({ term, companies: [], failed: true });
+          }
+        );
+      },
+      // The first page needs no waiting for: opening the picker, or clearing the box.
+      term === "" ? 0 : SEARCH_DEBOUNCE_MS
+    );
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
+  }, [searching, term]);
 
-  const selectedCompany = localCompanies.find((c) => c.id === companyId) ?? null;
+  const results = outcome?.companies ?? [];
+
+  function openPicker() {
+    // Fetch afresh: the answer on screen from the last time the picker was
+    // open predates anything created or changed since.
+    setOutcome(null);
+    setPicking(true);
+  }
 
   function runSetClient(nextCompanyId: string, nextContactId: string) {
     setError(null);
@@ -138,25 +231,29 @@ export function ClientSection({
   }
 
   function handleCompanyChange(nextCompanyId: string) {
-    setCompanyId(nextCompanyId);
+    // The placeholder option, or an id that is no longer in the list: nothing
+    // to select. (The document keeps whatever client it has; there is no
+    // "no client" to switch to.)
+    const nextCompany = results.find((c) => c.id === nextCompanyId);
+    if (!nextCompany) return;
+
+    // The company is kept whole as the selection, not looked up in `results`
+    // later: the next search replaces `results`.
+    setSelectedCompany(nextCompany);
     // Mirror the server's auto-primary-contact resolution (setDocumentClient)
     // for an immediate UI reflection: `contacts` is already ordered isPrimary
-    // desc, firstName asc (see listClientPickerCompanies), so [0] is exactly
+    // desc, firstName asc (see searchClientCompanies), so [0] is exactly
     // the contact the server will assign when no contactId is submitted.
-    const nextCompany = localCompanies.find((c) => c.id === nextCompanyId) ?? null;
-    const autoContactId = nextCompany?.contacts[0]?.id ?? "";
-    setContactId(autoContactId);
-    if (nextCompanyId) {
-      runSetClient(nextCompanyId, "");
-      setPicking(false);
-      setQuery("");
-      setShowContactForm(false);
-    }
+    setContactId(nextCompany.contacts[0]?.id ?? "");
+    runSetClient(nextCompany.id, "");
+    setPicking(false);
+    setQuery("");
+    setShowContactForm(false);
   }
 
   function handleContactChange(nextContactId: string) {
     setContactId(nextContactId);
-    if (companyId) runSetClient(companyId, nextContactId);
+    if (selectedCompany) runSetClient(selectedCompany.id, nextContactId);
   }
 
   function closeCompanyForm() {
@@ -186,14 +283,15 @@ export function ClientSection({
       return;
     }
 
-    const newCompany: ClientPickerCompany = {
+    // Selected straight from what the action returned. It never goes through
+    // the search, so it does not matter that the current results do not
+    // contain it (and the next time the picker opens it is fetched afresh).
+    setSelectedCompany({
       id: result.company.id,
       name: result.company.name,
       industryId: companyIndustryId,
       contacts: [],
-    };
-    setLocalCompanies((prev) => [...prev, newCompany].sort((a, b) => a.name.localeCompare(b.name)));
-    setCompanyId(result.company.id);
+    });
     setContactId("");
     setPicking(false);
     setQuery("");
@@ -203,7 +301,8 @@ export function ClientSection({
   }
 
   async function handleCreateContact() {
-    if (!companyId) return;
+    if (!selectedCompany) return;
+    const companyId = selectedCompany.id;
     setContactFormError(null);
     setContactFormPending(true);
     const result = await createContactInline(companyId, contactForm);
@@ -216,23 +315,21 @@ export function ClientSection({
 
     const trimmedFirstName = contactForm.firstName.trim();
     const trimmedLastName = contactForm.lastName.trim();
-    setLocalCompanies((prev) =>
-      prev.map((c) =>
-        c.id === companyId
-          ? {
-              ...c,
-              contacts: [
-                ...c.contacts,
-                {
-                  id: result.contact.id,
-                  firstName: trimmedFirstName,
-                  lastName: trimmedLastName || null,
-                  isPrimary: c.contacts.length === 0,
-                },
-              ],
-            }
-          : c
-      )
+    setSelectedCompany((current) =>
+      current && current.id === companyId
+        ? {
+            ...current,
+            contacts: [
+              ...current.contacts,
+              {
+                id: result.contact.id,
+                firstName: trimmedFirstName,
+                lastName: trimmedLastName || null,
+                isPrimary: current.contacts.length === 0,
+              },
+            ],
+          }
+        : current
     );
     setContactId(result.contact.id);
     closeContactForm();
@@ -278,7 +375,7 @@ export function ClientSection({
               </div>
               <button
                 type="button"
-                onClick={() => setPicking(true)}
+                onClick={openPicker}
                 disabled={pending}
                 className="focus-ring shrink-0 rounded-md text-xs font-medium text-brand hover:underline"
               >
@@ -296,8 +393,9 @@ export function ClientSection({
                   type="search"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search companies…"
-                  aria-label="Search companies"
+                  placeholder="Search companies or contacts…"
+                  aria-label="Search companies or contacts"
+                  aria-describedby={statusId}
                   className={cn(fieldInputClass, "pl-9")}
                   disabled={pending}
                 />
@@ -305,18 +403,55 @@ export function ClientSection({
 
               <select
                 aria-label="Company"
-                value={companyId}
+                aria-busy={searching}
+                // Controlled only while the selection is among the options;
+                // after "Change" the current client is usually not in the
+                // list, and the placeholder is the honest thing to show.
+                value={results.some((c) => c.id === selectedCompany?.id) ? selectedCompany?.id : ""}
                 onChange={(e) => handleCompanyChange(e.target.value)}
                 className={fieldInputClass}
                 disabled={pending}
               >
-                <option value="">Select a company…</option>
-                {filteredCompanies.map((c) => (
+                <option value="">{outcome === null ? "Loading companies…" : "Select a company…"}</option>
+                {results.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name}
+                    {clientResultLabel(c, outcome?.term ?? "")}
                   </option>
                 ))}
               </select>
+
+              {/* Always rendered, so the screen-reader announcement has a
+                  live region to land in, and a minimum height so the list
+                  below does not jump as the message comes and goes. What it
+                  says is the search's own state, in order of importance: a
+                  failure, a search in flight, nothing found (with what to do
+                  about it), a truncated page. */}
+              <p id={statusId} role="status" aria-live="polite" className="min-h-4 text-xs text-slate-500">
+                {searching ? (
+                  "Searching…"
+                ) : outcome?.failed ? (
+                  <>
+                    Search failed.{" "}
+                    <button
+                      type="button"
+                      onClick={() => setOutcome(null)}
+                      className="focus-ring rounded-md font-medium text-brand hover:underline"
+                    >
+                      Try again
+                    </button>
+                  </>
+                ) : outcome && results.length === 0 ? (
+                  outcome.term === ""
+                    ? "No clients are available to you yet. Use + New company to add one."
+                    : `No company or contact matches “${outcome.term}”. Check the spelling, try fewer letters, or use + New company.`
+                ) : outcome && results.length >= CLIENT_SEARCH_PAGE_SIZE ? (
+                  outcome.term === ""
+                    ? `Showing the first ${CLIENT_SEARCH_PAGE_SIZE} companies. Type ${CLIENT_SEARCH_MIN_LENGTH} or more letters to search.`
+                    : `Showing the first ${CLIENT_SEARCH_PAGE_SIZE} matches. Type more to narrow them down.`
+                ) : tooShort ? (
+                  `Type ${CLIENT_SEARCH_MIN_LENGTH} or more letters to search.`
+                ) : null}
+              </p>
             </div>
           )}
 
