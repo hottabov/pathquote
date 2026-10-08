@@ -783,6 +783,8 @@ model Company {
   @@index([ownerId])
   @@index([country]) // every manager with a country grant filters on this: `country IN (...)` in companyWhereForUser, src/lib/scope.ts
   @@index([industryId]) // renaming an industry shows an affected-company count first ("Used by 14 companies"), counted by industryId
+  // Trigram, for the builder's client search (`contains`, case-insensitive, so ILIKE '%q%'). See z62_client_search_trgm.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Company_name_trgm_idx")
 }
 
 model Contact {
@@ -818,6 +820,9 @@ model Contact {
   actSnapshot       ActSnapshot?
 
   @@index([companyId])
+  // Trigram, for the builder's client search over contact names. See z62_client_search_trgm.
+  @@index([firstName(ops: raw("gin_trgm_ops"))], type: Gin, map: "Contact_firstName_trgm_idx")
+  @@index([lastName(ops: raw("gin_trgm_ops"))], type: Gin, map: "Contact_lastName_trgm_idx")
 }
 
 // Lookup table rather than free text on Company: the list is bulk-imported
