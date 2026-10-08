@@ -5,7 +5,9 @@ import {
   ACTIVE_STATUSES,
   ACT_FIELD,
   type ActContact,
+  type GenericChannel,
   type MapResult,
+  type MappedCompany,
 } from "@/lib/act/types";
 
 // One ACT! contact to the shapes PathQuote stores, or a reason it was skipped.
@@ -61,9 +63,6 @@ export function mapContact(
 
   const first = text(contact.firstName);
   const last = text(contact.lastName);
-  if (!first && !last) {
-    return { kind: "skipped", reason: "no-name" };
-  }
 
   const address = contact.businessAddress;
   const rawCountry = text(address?.country ?? null);
@@ -77,6 +76,39 @@ export function mapContact(
 
   const companyName = text(contact.company);
   const email = text(contact.emailAddress);
+  const phone = contactPhone(contact.businessPhone, contact.mobilePhone, rawCountry);
+
+  // The same company whether or not a person comes with it.
+  const company: MappedCompany = {
+    actCompanyKey: companyName ? companyKey(companyName, country) : null,
+    // The API returns "" rather than null for an unlinked contact.
+    actCompanyId: text(contact.companyID),
+    name: companyName ?? "",
+    street,
+    city: text(address?.city ?? null),
+    state: text(address?.state ?? null),
+    postcode: text(address?.postalCode ?? null),
+    country,
+    website: text(contact.website),
+    industry: resolveIndustry(custom(contact, ACT_FIELD.industry)),
+    actStatus: status,
+    actRecordManagerId: text(contact.recordManagerID),
+  };
+
+  if (!first && !last) {
+    // A record entered as a company with a generic mailbox and no person. 713 of
+    // the 12,323 importable records are like this, and 652 of their companies
+    // are reached by no other contact, so skipping them dropped 652 real
+    // clients. The company comes in; no person is invented -- a company name
+    // in firstName would print on a quote as someone's name. What the record
+    // carries for reaching them belongs to the company.
+    if (!companyName) return { kind: "skipped", reason: "no-name" };
+    return {
+      kind: "company-only",
+      company,
+      channel: { email: email ? email.toLowerCase() : null, phone },
+    };
+  }
 
   return {
     kind: "mapped",
@@ -87,26 +119,23 @@ export function mapContact(
       firstName: first ?? (last as string),
       lastName: first ? last : null,
       email: email ? email.toLowerCase() : null,
-      phone: contactPhone(contact.businessPhone, contact.mobilePhone, rawCountry),
+      phone,
       position: text(contact.jobTitle),
       actAccountMgr: custom(contact, ACT_FIELD.accountMgr),
       actEditedAt: new Date(contact.edited),
       snapshot: contact,
     },
-    company: {
-      actCompanyKey: companyName ? companyKey(companyName, country) : null,
-      // The API returns "" rather than null for an unlinked contact.
-      actCompanyId: text(contact.companyID),
-      name: companyName ?? "",
-      street,
-      city: text(address?.city ?? null),
-      state: text(address?.state ?? null),
-      postcode: text(address?.postalCode ?? null),
-      country,
-      website: text(contact.website),
-      industry: resolveIndustry(custom(contact, ACT_FIELD.industry)),
-      actStatus: status,
-      actRecordManagerId: text(contact.recordManagerID),
-    },
+    company,
   };
+}
+
+/**
+ * The generic channel as one line for Company.notes, or null when there is
+ * nothing to record. Prefixed so a reader can tell it came from the sync
+ * rather than from a person.
+ */
+export function formatGenericChannel(channel: GenericChannel): string | null {
+  const parts = [channel.email, channel.phone].filter((part): part is string => Boolean(part));
+  if (parts.length === 0) return null;
+  return `ACT! general contact: ${parts.join(", ")}`;
 }

@@ -85,9 +85,21 @@ export type MappedCompany = {
   actRecordManagerId: string | null;
 };
 
+/** The contact details a nameless record carries, which belong to the company
+ *  rather than to any person. */
+export type GenericChannel = {
+  email: string | null;
+  /** E.164 where it resolved, as for a named contact. */
+  phone: string | null;
+};
+
 /** One contact mapped, or the reason it was skipped. */
 export type MapResult =
   | { kind: "mapped"; contact: MappedContact; company: MappedCompany }
+  /** The contact carries no name, but its company is real and often nothing
+   *  else brings that company in -- 652 of the 713 such contacts are the only
+   *  source of their company. Import the company, invent no person. */
+  | { kind: "company-only"; company: MappedCompany; channel: GenericChannel }
   | { kind: "skipped"; reason: SkipReason };
 
 export type SkipReason =
@@ -95,6 +107,8 @@ export type SkipReason =
   | "private"
   | "personal"
   | "inactive-status"
+  /** No first name, no last name, and no company name either: nothing to
+   * import. A nameless contact that does carry a company is `company-only`. */
   | "no-name"
   /** Has a name but no company name. PathQuote's Contact requires a company,
    * so there is nothing to attach it to. Decided by the worker, not the

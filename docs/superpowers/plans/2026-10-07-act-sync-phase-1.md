@@ -1150,6 +1150,19 @@ write when nothing actually changed."
 
 ### Task 7: Mapping one contact
 
+> **Amended after the first full dry run.** The mapper no longer skips every
+> contact with no first and last name. `MapResult` has a third case,
+> `company-only` (`company` plus a `GenericChannel` of lowercased email and
+> E.164 phone), returned when the name is blank but the company name is not.
+> `no-name` now means nothing at all to import: no person *and* no company.
+> Reason: 713 of the 12,323 importable contacts are nameless, every one carries
+> a company, and 652 of those companies are reached by no other contact, so
+> skipping them dropped 652 real clients. No person is invented from the company
+> name; the company's `MappedCompany` is exactly what a named contact would have
+> produced. `formatGenericChannel` renders the channel as the single
+> `ACT! general contact: ...` line that goes in `Company.notes`. The code blocks
+> below predate this.
+
 **Files:**
 - Create: `src/lib/act/map.ts`
 - Test: `tests/act-map.test.ts`
@@ -1699,6 +1712,22 @@ failure."
 ---
 
 ### Task 9: Sync worker
+
+> **Amended after the first full dry run.** The loop now handles
+> `company-only`: the company goes through `resolveCompany` (so
+> `chooseCompany`, snapshots, key collisions and the industry lookup behave as
+> for a named contact), then `recordGenericChannel` sets `Company.notes` through
+> `fillOnlyEmpty`, whether the company was just created or already existed. No
+> `Contact` is created. `SyncResult.companiesFromNamelessContacts` counts these
+> records (not distinct companies), and `act:sync` prints it as
+> `companies, no contact`. A dry run counts every one whose company is usable
+> and writes nothing, as for every other outcome; it cannot tell a new company
+> from a known one, so `companies created` stays 0 in a dry run. A
+> company-only record whose company has no usable identity counts as
+> `no-company`, as a named contact would. Such records move the cursor like any
+> other stored record, using the raw `edited` timestamp, and are excluded from
+> `unresolvedPhones`, which counts contacts imported. The code block below
+> predates this.
 
 **Files:**
 - Create: `src/lib/act/sync.ts`
@@ -2261,7 +2290,9 @@ What to expect, from the measured export:
   filter, so every contact the account can see comes over the wire and the
   mapper does the filtering.
 - roughly **12,100** mapped, about **5,300** skipped, `inactive-status` the
-  bulk of it.
+  bulk of it. Nameless contacts are no longer in the skipped figure: expect
+  `no-name` near **0** and `companies, no contact` near **713**, less any of
+  them counted under `no-company`.
 - a **non-zero `personal` count is expected and correct**. The mapper is the
   only barrier against the director's private contacts.
 - `phones unresolved` near 11% of those mapped.
@@ -2303,7 +2334,9 @@ docker compose run --rm -e ACT_BASE -e ACT_DB -e ACT_USER -e ACT_PASS tools \
   npm run act:sync -- --full --limit 200
 ```
 
-The second of those must report `contacts created 0`, `companies created 0`,
+The second of those must report `contacts created 0`, `companies created 0`
+(`companies, no contact` counts records it handled, new or not, so it is
+expected to be non-zero on every run that meets a nameless contact),
 and leave `SELECT COUNT(*) FROM "Company"` unchanged. If it creates a company,
 `actCompanyKey`'s uniqueness is not doing its job — stop, because that means
 one client can end up as two rows with quotes split between them.

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { mapContact } from "../src/lib/act/map";
+import { companyKey } from "../src/lib/act/company-key";
+import { formatGenericChannel, mapContact } from "../src/lib/act/map";
 import type { ActContact } from "../src/lib/act/types";
 
 const resolveIndustry = (raw: string | null | undefined) =>
@@ -123,10 +124,101 @@ describe("mapContact", () => {
     });
   });
 
-  it("skips a contact with no name at all", () => {
-    expect(
-      mapContact(contact({ firstName: null, lastName: null }), resolveIndustry),
-    ).toEqual({ kind: "skipped", reason: "no-name" });
+  describe("a contact with no name", () => {
+    const nameless = (overrides: Partial<ActContact> = {}) =>
+      contact({
+        firstName: null,
+        lastName: null,
+        company: "NOITEX S.R.L.",
+        emailAddress: "Info@Noitex.IT",
+        businessPhone: "045 6340034",
+        businessAddress: {
+          line1: "Via Roma 1",
+          line2: null,
+          line3: null,
+          city: "Verona",
+          state: null,
+          postalCode: "37100",
+          country: "Italy",
+        },
+        ...overrides,
+      });
+
+    it("yields the company and the generic channel, and no person", () => {
+      const result = mapContact(nameless(), resolveIndustry);
+      expect(result.kind).toBe("company-only");
+      if (result.kind !== "company-only") return;
+
+      expect(result).not.toHaveProperty("contact");
+      expect(result.channel).toEqual({ email: "info@noitex.it", phone: "+390456340034" });
+      expect(result.company).toMatchObject({
+        actCompanyKey: companyKey("NOITEX S.R.L.", "IT"),
+        name: "NOITEX S.R.L.",
+        city: "Verona",
+        country: "IT",
+        industry: "Furniture & Upholstery",
+        actStatus: "Prospect",
+      });
+    });
+
+    it("builds the same company a named contact would have", () => {
+      const named = mapContact(contact({ company: "NOITEX S.R.L." }), resolveIndustry);
+      const bare = mapContact(
+        contact({ company: "NOITEX S.R.L.", firstName: null, lastName: null }),
+        resolveIndustry,
+      );
+      if (named.kind !== "mapped" || bare.kind !== "company-only") throw new Error("unexpected kind");
+      expect(bare.company).toEqual(named.company);
+    });
+
+    it("carries a missing email or phone as null", () => {
+      const result = mapContact(
+        nameless({ emailAddress: null, businessPhone: null, mobilePhone: null }),
+        resolveIndustry,
+      );
+      if (result.kind !== "company-only") throw new Error("expected company-only");
+      expect(result.channel).toEqual({ email: null, phone: null });
+    });
+
+    it("falls back to the mobile when there is no business phone", () => {
+      const result = mapContact(
+        nameless({ businessPhone: null, mobilePhone: "345 123 4567" }),
+        resolveIndustry,
+      );
+      if (result.kind !== "company-only") throw new Error("expected company-only");
+      expect(result.channel.phone).toBe("+393451234567");
+    });
+
+    it("treats whitespace-only names as no name", () => {
+      const result = mapContact(nameless({ firstName: "  ", lastName: "\r" }), resolveIndustry);
+      expect(result.kind).toBe("company-only");
+    });
+
+    it("is skipped when the company name is blank too", () => {
+      expect(mapContact(nameless({ company: null }), resolveIndustry)).toEqual({
+        kind: "skipped",
+        reason: "no-name",
+      });
+      expect(mapContact(nameless({ company: "   " }), resolveIndustry)).toEqual({
+        kind: "skipped",
+        reason: "no-name",
+      });
+    });
+
+    it("still obeys the filters that come before the name check", () => {
+      expect(mapContact(nameless({ idStatus: "Personal" }), resolveIndustry)).toEqual({
+        kind: "skipped",
+        reason: "personal",
+      });
+      expect(mapContact(nameless({ isPrivate: true }), resolveIndustry)).toEqual({
+        kind: "skipped",
+        reason: "private",
+      });
+      expect(mapContact(nameless({ idStatus: "Dead Prospect" }), resolveIndustry)).toEqual({
+        kind: "skipped",
+        reason: "inactive-status",
+      });
+    });
   });
 
   it("keeps a contact whose phone could not be resolved", () => {
@@ -148,5 +240,29 @@ describe("mapContact", () => {
     const result = mapContact(contact({ company: null }), resolveIndustry);
     if (result.kind !== "mapped") throw new Error("expected mapped");
     expect(result.company.actCompanyKey).toBeNull();
+  });
+});
+
+describe("formatGenericChannel", () => {
+  it("lists the email and the phone", () => {
+    expect(formatGenericChannel({ email: "info@noitex.it", phone: "+390456340034" })).toBe(
+      "ACT! general contact: info@noitex.it, +390456340034",
+    );
+  });
+
+  it("lists only the email when there is no phone", () => {
+    expect(formatGenericChannel({ email: "info@noitex.it", phone: null })).toBe(
+      "ACT! general contact: info@noitex.it",
+    );
+  });
+
+  it("lists only the phone when there is no email", () => {
+    expect(formatGenericChannel({ email: null, phone: "+390456340034" })).toBe(
+      "ACT! general contact: +390456340034",
+    );
+  });
+
+  it("is null when there is nothing to record", () => {
+    expect(formatGenericChannel({ email: null, phone: null })).toBeNull();
   });
 });

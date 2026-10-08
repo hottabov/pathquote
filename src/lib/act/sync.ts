@@ -3,9 +3,9 @@ import { db } from "@/lib/db";
 import { ActClient } from "@/lib/act/client";
 import { chooseCompany } from "@/lib/act/company-identity";
 import { buildIndustryResolver } from "@/lib/act/industries";
-import { mapContact } from "@/lib/act/map";
+import { formatGenericChannel, mapContact } from "@/lib/act/map";
 import { fillOnlyEmpty } from "@/lib/act/merge";
-import type { MappedCompany, SkipReason } from "@/lib/act/types";
+import type { GenericChannel, MappedCompany, SkipReason } from "@/lib/act/types";
 
 // Pull contacts from ACT! into PathQuote.
 //
@@ -30,6 +30,13 @@ export type SyncResult = {
   contactsCreated: number;
   contactsUpdated: number;
   companiesCreated: number;
+  /**
+   * Nameless ACT! contacts whose company was imported (or refreshed) with no
+   * contact attached. Counts records, not distinct companies: two nameless
+   * contacts at one firm count twice. A dry run counts every one whose company
+   * is usable, since it cannot tell a new company from a known one.
+   */
+  companiesFromNamelessContacts: number;
   /**
    * Companies created with no actCompanyKey because another company already
    * holds it: two different ACT! companies whose names normalise to the same
@@ -224,6 +231,27 @@ async function resolveCompany(
   }
 }
 
+/**
+ * Record a nameless contact's generic mailbox and phone on its company's notes.
+ *
+ * Fill-only-empty like everything else the sync writes: a note a person wrote is
+ * never replaced, and once the sync has written one it is not rewritten when
+ * ACT! changes. Runs for a company that was just created and for one that was
+ * already there alike -- it reads the notes back rather than assuming blank.
+ */
+async function recordGenericChannel(companyId: string, channel: GenericChannel): Promise<void> {
+  const line = formatGenericChannel(channel);
+  if (!line) return;
+
+  const current = await db.company.findUniqueOrThrow({
+    where: { id: companyId },
+    select: { notes: true },
+  });
+  const patch = fillOnlyEmpty(current, { notes: line }, ["notes"]);
+  if (patch.notes === undefined) return;
+  await db.company.update({ where: { id: companyId }, data: patch });
+}
+
 export type SyncOptions = {
   /** Ignore the stored cursor and read everything. */
   full?: boolean;
@@ -255,6 +283,7 @@ export async function syncContacts(
     contactsCreated: 0,
     contactsUpdated: 0,
     companiesCreated: 0,
+    companiesFromNamelessContacts: 0,
     companiesKeyCollisions: 0,
     skipped: emptySkips(),
     unresolvedPhones: 0,
@@ -298,10 +327,14 @@ export async function syncContacts(
       if (typeof rawIndustry === "string" && rawIndustry.trim() && !mapped.company.industry) {
         unknownIndustries.add(rawIndustry.trim());
       }
-      if (!mapped.contact.phone) result.unresolvedPhones += 1;
+      // Counts contacts imported; a company-only record imports none.
+      if (mapped.kind === "mapped" && !mapped.contact.phone) result.unresolvedPhones += 1;
 
-      if (!newestEdited || mapped.contact.actEditedAt > newestEdited) {
-        newestEdited = mapped.contact.actEditedAt;
+      // A company-only record has no contact to carry the timestamp, but it is
+      // stored all the same, so it moves the cursor like any other.
+      const editedAt = mapped.kind === "mapped" ? mapped.contact.actEditedAt : new Date(raw.edited);
+      if (!newestEdited || editedAt > newestEdited) {
+        newestEdited = editedAt;
       }
 
       // PathQuote's Contact requires a company, and creating one needs both a
@@ -317,6 +350,7 @@ export async function syncContacts(
         // genuinely new contacts here, because an existing one keeps the
         // company it already has and is refreshed either way.
         if (!companyUsable) result.skipped["no-company"] += 1;
+        else if (mapped.kind === "company-only") result.companiesFromNamelessContacts += 1;
         continue;
       }
 
@@ -324,6 +358,24 @@ export async function syncContacts(
         const industryId = mapped.company.industry
           ? industryIdByName.get(mapped.company.industry) ?? null
           : null;
+
+        if (mapped.kind === "company-only") {
+          // No person to create: the company goes through the same identity
+          // decision a named contact's would, and the generic mailbox and phone
+          // are kept on it.
+          if (!companyUsable) {
+            result.skipped["no-company"] += 1;
+            continue;
+          }
+          const companyId = await resolveCompany(mapped.company, industryId, result);
+          if (!companyId) {
+            result.skipped["no-company"] += 1;
+            continue;
+          }
+          await recordGenericChannel(companyId, mapped.channel);
+          result.companiesFromNamelessContacts += 1;
+          continue;
+        }
 
         const existing = await db.contact.findUnique({
           where: { actContactId: mapped.contact.actContactId },
@@ -398,7 +450,7 @@ export async function syncContacts(
         // freezes the cursor so the next run reaches it again.
         result.failed += 1;
         if (result.firstFailureActContactId === null) {
-          result.firstFailureActContactId = mapped.contact.actContactId;
+          result.firstFailureActContactId = raw.id;
           result.firstFailureMessage = error instanceof Error ? error.message : String(error);
         }
       }

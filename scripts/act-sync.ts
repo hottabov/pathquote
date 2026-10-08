@@ -77,6 +77,7 @@ async function main() {
   row("contacts created", result.contactsCreated);
   row("contacts updated", result.contactsUpdated);
   row("companies created", result.companiesCreated);
+  row("companies, no contact", result.companiesFromNamelessContacts);
   row("company key collisions", result.companiesKeyCollisions);
   row("phones unresolved", result.unresolvedPhones);
   row("failed", result.failed);
