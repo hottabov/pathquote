@@ -115,22 +115,21 @@ export default async function EditUserPage({ params }: { params: Promise<Params>
 
       <SectionCard
         title="Catalogue visibility"
-        description="Checking hides a series or product from this user's own catalogue everywhere they'd meet it — the item picker, catalogue browsing, and adding it to a quote. Another user is unaffected. A quote that already has a now-hidden item keeps it, unchanged."
+        description="Ticked series and products are shown to this user, and everything is ticked by default. Unticking one hides it from their own catalogue everywhere they'd meet it — the item picker, catalogue browsing, and adding it to a quote. Unticking a series hides every product in it, whatever those products' own ticks say. Another user is unaffected. A quote that already has a now-hidden item keeps it, unchanged."
       >
         <CatalogVisibilityEditor userId={user.id} series={visibilitySeries} action={setCatalogVisibility} />
       </SectionCard>
 
-      {/* The opposite of the card above: there a tick hides, here it shows.
-          The description says so first, and the editor restates it in its
-          labels and a live summary. */}
+      {/* Works like the card above: a tick grants. The editor restates the
+          effect of the current selection in a live summary. */}
       <SectionCard
         title="Contacts visibility"
         description={
           userIsAdmin
             ? "Which countries' clients this user can see."
             : isRegionalManagerRole(user.role)
-              ? "Ticking a country SHOWS that country's clients to this user — the opposite of Catalogue visibility above, where ticking hides. A country adds to the clients their region owns; it never replaces them, and nothing ticked leaves just those. It lets them view and edit that country's clients, never delete one they don't own."
-              : "Ticking a country SHOWS that country's clients to this user — the opposite of Catalogue visibility above, where ticking hides. Nothing ticked means they see only the clients they own. A country lets them view and edit its clients, never delete one they don't own."
+              ? "Ticking a country SHOWS that country's clients to this user; a tick grants, as in Catalogue visibility above. A country adds to the clients their region owns; it never replaces them, and nothing ticked leaves just those. It lets them view and edit that country's clients, never delete one they don't own."
+              : "Ticking a country SHOWS that country's clients to this user; a tick grants, as in Catalogue visibility above. Nothing ticked means they see only the clients they own. A country lets them view and edit its clients, never delete one they don't own."
         }
       >
         {contactsVisibility ? (

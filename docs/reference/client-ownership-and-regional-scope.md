@@ -66,8 +66,9 @@ granted even if it has none yet (shown with a count of 0, so a save cannot
 silently erase it). "Show clients from all countries" stores `["*"]`. The card
 is not offered for an ADMIN or DEVELOPER, who see every client by role.
 
-That card sits directly under Catalogue visibility and **its checkboxes mean the
-opposite**: there a tick *hides*, here a tick *shows*. The wording says so, and a
+That card sits directly under Catalogue visibility and **works the same way**: a
+tick *shows* (the catalogue card used to be the other way round and was
+inverted to match; its stored rows are still a deny-list). A
 live sentence restates what the current selection does ("This manager will see
 the 4,432 clients in 2 countries, plus any they own"). Nothing ticked is a
 warning, not a neutral state: the user then sees only the clients they own, and

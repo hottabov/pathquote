@@ -41,12 +41,11 @@ function plural(n: number, one: string, many: string): string {
 /**
  * Restates the working selection as its effect on what the user will see.
  *
- * The editor sits directly under Catalogue visibility, where a tick HIDES;
- * here a tick SHOWS. An admin who has just used the card above will reach for
- * the same mental model, and the failure is silent and one-directional: they
- * blind a manager while believing they granted access. So the effect is spelled
- * out in words that change as they toggle, rather than left to a checkbox
- * label. Pure and in `src/lib` so the wording is pinned by a test.
+ * A tick SHOWS here, as in the Catalogue visibility card above it. What an
+ * admin can get wrong is the empty selection: a manager left with nothing
+ * ticked sees almost no clients, silently. So the effect is spelled out in words
+ * that change as they toggle, rather than left to a checkbox label. Pure and in
+ * `src/lib` so the wording is pinned by a test.
  *
  * `regional` is a REGIONAL_MANAGER, whose ownership arm is "clients owned by a
  * user of my region" (see `companyOwnedWhereForUser`) rather than "mine".

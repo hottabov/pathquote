@@ -21,16 +21,15 @@ function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
 /**
  * Country checkboxes for one user's `visibleCountries`. Ticking SHOWS.
  *
- * This is the opposite of `CatalogVisibilityEditor`, which sits directly above
- * it on the same page and whose ticks HIDE. The two share an interaction
- * (toggle freely in local state, one Save sends the whole desired set and the
- * action reconciles it) and deliberately nothing else about their wording:
- * every label here says "show", the list is headed "Tick a country to show its
- * clients", a ticked row is tagged "Clients shown", and a sentence under the
- * "all countries" switch restates the effect of the current selection in plain
- * words as it changes -- see `describeContactsAccess`. An admin who has just
- * used the card above will otherwise reach for its mental model and blind a
- * manager while believing they granted access.
+ * This agrees with `CatalogVisibilityEditor`, which sits directly above it on
+ * the same page: in both a tick grants, and both share an interaction (toggle
+ * freely in local state, one Save sends the whole desired set and the action
+ * reconciles it). Every label here says "show", the list is headed "Tick a
+ * country to show its clients", a ticked row is tagged "Clients shown", and a
+ * sentence under the "all countries" switch restates the effect of the current
+ * selection in plain words as it changes -- see `describeContactsAccess`. Unlike
+ * the catalogue, though, nothing ticked is the dangerous state here (the user
+ * sees almost no clients), so the summary warns about it.
  *
  * "All countries" is a separate switch rather than a row, because it is a
  * different kind of thing (`["*"]`, not a country). While it is on the list is
@@ -149,8 +148,7 @@ export function ContactsVisibilityEditor({
         </span>
       </label>
 
-      {/* The effect of the selection as it stands now, in words. The card
-          above this one hides on a tick; this one shows. */}
+      {/* The effect of the selection as it stands now, in words. */}
       <div
         aria-live="polite"
         className={cn(
