@@ -61,6 +61,58 @@ describe("companySchema", () => {
     if (result.success) expect("regionCode" in result.data).toBe(false);
   });
 
+  describe("city and state are stored in the case they are printed in", () => {
+    // The city is printed on the quote a client receives, so the form stores
+    // what ACT! import stores: case fixed, spelling untouched.
+    const parse = (overrides: Record<string, unknown>) => {
+      const result = companySchema.safeParse({ ...base, ...overrides });
+      if (!result.success) throw new Error(JSON.stringify(result.error.issues));
+      return result.data;
+    };
+
+    it("fixes the case of a city typed carelessly", () => {
+      expect(parse({ city: "st paul" }).city).toBe("St Paul");
+      expect(parse({ city: "bELL gARDDENS" }).city).toBe("Bell Garddens");
+      expect(parse({ city: "  NEW   YORK " }).city).toBe("New York");
+      expect(parse({ city: "mcdonald" }).city).toBe("McDonald");
+    });
+
+    it("upper-cases a state code and capitalises a state name", () => {
+      expect(parse({ state: "ca" }).state).toBe("CA");
+      expect(parse({ state: "nsw" }).state).toBe("NSW");
+      expect(parse({ state: "new south wales" }).state).toBe("New South Wales");
+    });
+
+    it("leaves a city that is already right exactly as it is", () => {
+      expect(parse({ city: "Sydney" }).city).toBe("Sydney");
+      expect(parse({ city: "Stoke-on-Trent" }).city).toBe("Stoke-on-Trent");
+      expect(parse({ city: "北京" }).city).toBe("北京");
+    });
+
+    it("treats a blank city or state as absent", () => {
+      for (const blank of ["", "   ", null, undefined]) {
+        const data = parse({ city: blank, state: blank });
+        expect(data.city, JSON.stringify(blank)).toBeUndefined();
+        expect(data.state, JSON.stringify(blank)).toBeUndefined();
+      }
+    });
+
+    it("still refuses a city or state over 120 characters", () => {
+      for (const field of ["city", "state"]) {
+        const result = companySchema.safeParse({ ...base, [field]: "a".repeat(121) });
+        expect(result.success, field).toBe(false);
+      }
+      expect(companySchema.safeParse({ ...base, city: "a".repeat(120) }).success).toBe(true);
+    });
+
+    it("measures the length of what will be stored", () => {
+      // 145 characters typed, 116 once the run of spaces is collapsed.
+      const city = `${"a".repeat(100)}${" ".repeat(30)}${"b".repeat(15)}`;
+      const result = companySchema.safeParse({ ...base, city });
+      expect(result.success).toBe(true);
+    });
+  });
+
   describe("country", () => {
     it("accepts a valid ISO alpha-2 code", () => {
       const result = companySchema.safeParse({ ...base, country: "US" });
@@ -99,6 +151,36 @@ describe("companySchema - delivery address", () => {
     postcode: "2000",
     country: "AU",
   };
+
+  it("fixes the case of the delivery city and state as it does the main address", () => {
+    const result = companySchema.safeParse({
+      ...base,
+      deliverySameAsMain: "false",
+      deliveryStreet: "2 Factory Rd",
+      deliveryCity: "rEVERS cASE",
+      deliveryState: "nsw",
+      deliveryPostcode: "3000",
+      deliveryCountry: "au",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.deliveryCity).toBe("Revers Case");
+      expect(result.data.deliveryState).toBe("NSW");
+    }
+  });
+
+  it("still requires a delivery city when it is blank after the rule runs", () => {
+    const result = companySchema.safeParse({
+      ...base,
+      deliverySameAsMain: "false",
+      deliveryStreet: "2 Factory Rd",
+      deliveryCity: "   ",
+      deliveryPostcode: "3000",
+      deliveryCountry: "au",
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.issues.map((i) => i.path.join("."))).toContain("deliveryCity");
+  });
 
   it("defaults deliverySameAsMain to true when omitted, requiring no delivery fields", () => {
     const result = companySchema.safeParse(base);

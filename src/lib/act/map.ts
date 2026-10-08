@@ -1,6 +1,7 @@
 import { normalizeCountryInput } from "@/lib/countries";
 import { companyKey } from "@/lib/act/company-key";
 import { contactPhone } from "@/lib/act/phone";
+import { normalisePlaceName, normaliseStateName } from "@/lib/place-name";
 import { normaliseWebsite } from "@/lib/website";
 import {
   ACTIVE_STATUSES,
@@ -86,8 +87,10 @@ export function mapContact(
     actCompanyId: text(contact.companyID),
     name: companyName ?? "",
     street,
-    city: text(address?.city ?? null),
-    state: text(address?.state ?? null),
+    // Case fixed, spelling untouched: ACT! holds `bELL gARDDENS` and `st paul`,
+    // and the city is printed on the quote a client receives.
+    city: normalisePlaceName(address?.city),
+    state: normaliseStateName(address?.state),
     postcode: text(address?.postalCode ?? null),
     country,
     // ACT! holds a bare domain ("www.erpo.de"), a full URL, or whatever was

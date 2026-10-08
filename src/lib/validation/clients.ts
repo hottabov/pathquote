@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { isValidCountryCode } from "@/lib/countries";
 import { validatePhone } from "@/lib/phone";
+import { normalisePlaceName, normaliseStateName } from "@/lib/place-name";
 import { checkWebsite, WEBSITE_MAX_LENGTH } from "@/lib/website";
 import { idSchema } from "@/lib/validation/documents";
 
@@ -27,9 +28,39 @@ function optionalText(max: number, label: string) {
   );
 }
 
+/**
+ * An optional city or state, stored in the case it should be printed in:
+ * `st paul` is saved as `St Paul`, `ca` as `CA`. The city is printed on the
+ * quote a client receives, so the stored value is the one that has to be
+ * right; the rule lives in src/lib/place-name.ts because the ACT! import and
+ * the repair script apply the same one. Spelling is never touched.
+ *
+ * The length is checked after the rule runs, on what will be stored. Blank
+ * input collapses to `undefined`, as for every other optional address field.
+ */
+function optionalPlace(
+  max: number,
+  label: string,
+  normalise: (value: string) => string | null
+) {
+  return z.preprocess(
+    (value) =>
+      value === null || value === undefined || (typeof value === "string" && value.trim() === "")
+        ? undefined
+        : value,
+    z
+      .string()
+      .transform((value) => normalise(value) ?? undefined)
+      .pipe(z.string().max(max, `${label} must be at most ${max} characters`).optional())
+      // The preprocess above hands `undefined` for a blank, which has to get
+      // past the `z.string()` at the head of this chain.
+      .optional()
+  );
+}
+
 const streetSchema = optionalText(120, "Street");
-const citySchema = optionalText(120, "City");
-const stateSchema = optionalText(120, "State");
+const citySchema = optionalPlace(120, "City", normalisePlaceName);
+const stateSchema = optionalPlace(120, "State", normaliseStateName);
 const postcodeSchema = optionalText(20, "Postcode");
 const taxIdSchema = optionalText(50, "Tax ID");
 const notesSchema = optionalText(2000, "Notes");
@@ -153,8 +184,8 @@ const deliverySameAsMainSchema = z.preprocess((value) => {
 }, z.boolean());
 
 const deliveryStreetSchema = optionalText(120, "Delivery street");
-const deliveryCitySchema = optionalText(120, "Delivery city");
-const deliveryStateSchema = optionalText(120, "Delivery state");
+const deliveryCitySchema = optionalPlace(120, "Delivery city", normalisePlaceName);
+const deliveryStateSchema = optionalPlace(120, "Delivery state", normaliseStateName);
 const deliveryPostcodeSchema = optionalText(20, "Delivery postcode");
 const deliveryCountrySchema = optionalCountryCode("Delivery country");
 const deliveryContactNameSchema = optionalText(160, "Delivery contact name");

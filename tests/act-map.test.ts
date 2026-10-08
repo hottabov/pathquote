@@ -262,8 +262,89 @@ describe("mapContact", () => {
     expect(result.company.actCompanyKey).toBeNull();
   });
 
+  describe("city and state", () => {
+    const addressOf = (city: string | null, state: string | null, overrides: Partial<ActContact> = {}) => {
+      const result = mapContact(
+        contact({
+          businessAddress: {
+            line1: "1 Example St",
+            line2: null,
+            line3: null,
+            city,
+            state,
+            postalCode: "90201",
+            country: "United States",
+          },
+          ...overrides,
+        }),
+        resolveIndustry,
+      );
+      if (result.kind === "skipped") throw new Error("expected a company");
+      return { city: result.company.city, state: result.company.state };
+    };
+
+    it("lands 'bELL gARDDENS' as 'Bell Garddens', with its spelling untouched", () => {
+      // The city is printed on the quote the client receives. "Garddens" is a
+      // misspelling, and a guessed correction of a client's address is worse than
+      // a visibly odd one a person can fix.
+      expect(addressOf("bELL gARDDENS", "ca").city).toBe("Bell Garddens");
+    });
+
+    it("fixes the other shapes ACT! holds", () => {
+      expect(addressOf("st paul", "mn")).toEqual({ city: "St Paul", state: "MN" });
+      expect(addressOf("rEVERS cASE", null).city).toBe("Revers Case");
+      expect(addressOf("GLEASON", "TN")).toEqual({ city: "Gleason", state: "TN" });
+      expect(addressOf("mcdonald", null).city).toBe("McDonald");
+    });
+
+    it("upper-cases a state code and capitalises a state name", () => {
+      expect(addressOf("Sydney", "nsw").state).toBe("NSW");
+      expect(addressOf("Sydney", "new south wales").state).toBe("New South Wales");
+    });
+
+    it("leaves a city and state that are already right as they are", () => {
+      expect(addressOf("Atlanta", "GA")).toEqual({ city: "Atlanta", state: "GA" });
+      expect(addressOf("Stoke-on-Trent", null).city).toBe("Stoke-on-Trent");
+      expect(addressOf("北京", null).city).toBe("北京");
+    });
+
+    it("stores nothing for a blank or missing city or state", () => {
+      expect(addressOf("", "")).toEqual({ city: null, state: null });
+      expect(addressOf("  \r", "   ")).toEqual({ city: null, state: null });
+      expect(addressOf(null, null)).toEqual({ city: null, state: null });
+    });
+
+    it("applies the same rule to a company-only record", () => {
+      const result = mapContact(
+        contact({
+          firstName: null,
+          lastName: null,
+          businessAddress: {
+            line1: null,
+            line2: null,
+            line3: null,
+            city: "bELL gARDDENS",
+            state: "ca",
+            postalCode: null,
+            country: "United States",
+          },
+        }),
+        resolveIndustry,
+      );
+      if (result.kind !== "company-only") throw new Error("expected company-only");
+      expect(result.company).toMatchObject({ city: "Bell Garddens", state: "CA" });
+    });
+
+    it("maps a contact with no address at all to no city and no state", () => {
+      const result = mapContact(contact({ businessAddress: null }), resolveIndustry);
+      if (result.kind !== "mapped") throw new Error("expected mapped");
+      expect(result.company.city).toBeNull();
+      expect(result.company.state).toBeNull();
+    });
+  });
+
   describe("website", () => {
-    const websiteOf = (raw: string | null | undefined) => {
+    const websiteOf =(raw: string | null | undefined) => {
       const result = mapContact(contact({ website: raw }), resolveIndustry);
       if (result.kind !== "mapped") throw new Error("expected mapped");
       return result.company.website;
