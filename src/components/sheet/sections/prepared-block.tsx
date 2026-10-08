@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import type { QuotationData } from "@/lib/quotation-data";
+import { websiteHref, websiteLabel } from "@/lib/website";
 
 /**
  * `tel:` target for a phone as the user typed it. Strips everything a dialer
@@ -12,16 +13,6 @@ import type { QuotationData } from "@/lib/quotation-data";
 function telHref(phone: string): string | null {
   const dialable = phone.replace(/[^\d+]/g, "");
   return /\d/.test(dialable) ? `tel:${dialable}` : null;
-}
-
-/**
- * `href` for a website field. Clients type "democompany.com.au" as often as
- * "https://democompany.com.au", and a bare host in an href resolves relative
- * to the document — inside a PDF that is a dead link, not a wrong one. Any
- * explicit scheme is left alone; anything else gets https://.
- */
-function siteHref(website: string): string {
-  return /^[a-z][a-z0-9+.-]*:/i.test(website) ? website : `https://${website}`;
 }
 
 /**
@@ -93,7 +84,15 @@ export function PreparedBlock({
               </div>
             ))}
             {client.website ? (
-              <ContactLine href={siteHref(client.website)}>{client.website}</ContactLine>
+              // The stored website is a bare domain (a bare host in an href
+              // resolves relative to the document, so inside a PDF it would be a
+              // dead link). `websiteHref` adds the scheme, and is null -- plain
+              // text -- for a value that is not a website. Quotes already sent
+              // carry the old `https://...` form in their snapshot; both
+              // helpers read it correctly.
+              <ContactLine href={websiteHref(client.website)}>
+                {websiteLabel(client.website)}
+              </ContactLine>
             ) : null}
             {client.contactName ? (
               <div className="pq-client-line pq-client-contact">Attn: {client.contactName}</div>

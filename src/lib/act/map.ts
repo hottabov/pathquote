@@ -1,6 +1,7 @@
 import { normalizeCountryInput } from "@/lib/countries";
 import { companyKey } from "@/lib/act/company-key";
 import { contactPhone } from "@/lib/act/phone";
+import { normaliseWebsite } from "@/lib/website";
 import {
   ACTIVE_STATUSES,
   ACT_FIELD,
@@ -89,7 +90,11 @@ export function mapContact(
     state: text(address?.state ?? null),
     postcode: text(address?.postalCode ?? null),
     country,
-    website: text(contact.website),
+    // ACT! holds a bare domain ("www.erpo.de"), a full URL, or whatever was
+    // typed. Stored through the same rule as the company form, so the column
+    // has one shape; text that is not a website at all becomes null rather
+    // than junk in an href.
+    website: normaliseWebsite(contact.website),
     industry: resolveIndustry(custom(contact, ACT_FIELD.industry)),
     actStatus: status,
     actRecordManagerId: text(contact.recordManagerID),

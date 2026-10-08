@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { isValidCountryCode } from "@/lib/countries";
 import { validatePhone } from "@/lib/phone";
+import { checkWebsite, WEBSITE_MAX_LENGTH } from "@/lib/website";
 import { idSchema } from "@/lib/validation/documents";
 
 // --- shared field pieces -----------------------------------------------
@@ -85,7 +86,11 @@ function optionalPhone(label: string) {
   );
 }
 
-// Website URL: optional, normalized to https:// if no protocol
+// Website: optional, stored as a BARE address (`www.erpo.de`), never with a
+// scheme. A pasted `https://www.erpo.de/` is accepted and stored as
+// `www.erpo.de`; the scheme is added back where a link is drawn
+// (`websiteHref`). The rule itself lives in src/lib/website.ts because the ACT!
+// import applies the same one.
 const websiteSchema = z.preprocess(
   (value) =>
     value === null || value === undefined || (typeof value === "string" && value.trim() === "")
@@ -93,24 +98,20 @@ const websiteSchema = z.preprocess(
       : value,
   z
     .string()
-    .trim()
-    .refine((value) => {
-      // Match either https?://... OR bare domain
-      const protocolRegex = /^https?:\/\/\S+/i;
-      const domainRegex = /^[a-z0-9.-]+\.[a-z]{2,}(\/\S*)?$/i;
-      return protocolRegex.test(value) || domainRegex.test(value);
-    }, "Website must be a valid URL or domain")
-    .transform((value) => {
-      // Normalize: if no protocol, prepend https://
-      if (!value.match(/^https?:\/\//i)) {
-        return `https://${value}`;
+    .transform((value, ctx) => {
+      const result = checkWebsite(value);
+      if (!result.ok) {
+        ctx.addIssue({
+          code: "custom",
+          message:
+            result.reason === "too-long"
+              ? `Website must be at most ${WEBSITE_MAX_LENGTH} characters`
+              : "Website must be a valid URL or domain",
+        });
+        return z.NEVER;
       }
-      return value;
+      return result.value;
     })
-    .refine(
-      (value) => value.length <= 200,
-      "Website must be at most 200 characters after normalization"
-    )
     .optional()
 );
 

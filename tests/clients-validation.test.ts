@@ -315,47 +315,23 @@ describe("companySchema - website validation", () => {
     ["a fully populated company with a website", { ...base, website: "https://example.com" }],
   ]);
 
-  it("normalizes a bare domain by prepending https://", () => {
-    const result = companySchema.safeParse({
-      ...base,
-      website: "example.com",
-    });
-    expect(result.success).toBe(true);
+  // The column stores a bare address; the scheme is added where a link is drawn
+  // (see src/lib/website.ts). So nothing here may come back with a scheme.
+  it.each([
+    ["example.com", "example.com"],
+    ["www.erpo.de", "www.erpo.de"],
+    ["example.com/path/to/page", "example.com/path/to/page"],
+    ["https://example.com", "example.com"],
+    // A full URL pasted from the address bar: no error, stored bare.
+    ["https://www.erpo.de/", "www.erpo.de"],
+    // http is folded to https and the scheme is dropped like any other.
+    ["http://example.com", "example.com"],
+    ["  HTTPS://Example.COM/Path/  ", "example.com/Path"],
+  ])("stores %j as %j", (input, stored) => {
+    const result = companySchema.safeParse({ ...base, website: input });
+    expect(result.success, input).toBe(true);
     if (result.success) {
-      expect(result.data.website).toBe("https://example.com");
-    }
-  });
-
-  it("accepts a bare domain with a path", () => {
-    const result = companySchema.safeParse({
-      ...base,
-      website: "example.com/path/to/page",
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.website).toBe("https://example.com/path/to/page");
-    }
-  });
-
-  it("accepts https:// URLs", () => {
-    const result = companySchema.safeParse({
-      ...base,
-      website: "https://example.com",
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.website).toBe("https://example.com");
-    }
-  });
-
-  it("accepts http:// URLs", () => {
-    const result = companySchema.safeParse({
-      ...base,
-      website: "http://example.com",
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.website).toBe("http://example.com");
+      expect(result.data.website).toBe(stored);
     }
   });
 
@@ -379,13 +355,34 @@ describe("companySchema - website validation", () => {
 
   rejects(companySchema, [
     ["an invalid URL (no protocol, not a domain)", { ...base, website: "not a url" }],
-    ["a website over 200 characters", { ...base, website: `https://example.com/${"a".repeat(200)}` }],
+    ["an email address", { ...base, website: "info@example.com" }],
+    // 12 + 189 = 201 stored characters
+    ["a website over 200 characters", { ...base, website: `https://example.com/${"a".repeat(189)}` }],
   ]);
 
-  accepts(companySchema, [
-    // 8 + 11 + 1 + 177 = 197
-    ["a 200-character website (boundary)", { ...base, website: `https://example.com/${"a".repeat(177)}` }],
-  ]);
+  it("says the website is not valid for junk, and too long for a long one", () => {
+    const junk = companySchema.safeParse({ ...base, website: "not a url" });
+    const long = companySchema.safeParse({ ...base, website: `example.com/${"a".repeat(300)}` });
+    expect(junk.success).toBe(false);
+    expect(long.success).toBe(false);
+    if (!junk.success) {
+      expect(junk.error.issues.map((i) => i.message)).toContain("Website must be a valid URL or domain");
+    }
+    if (!long.success) {
+      expect(long.error.issues.map((i) => i.message)).toContain("Website must be at most 200 characters");
+    }
+  });
+
+  it("measures the 200-character limit on the stored form, not on what was typed", () => {
+    // 12 + 188 = 200 stored characters; typing the scheme adds 8 that are dropped.
+    const path = "a".repeat(188);
+    const result = companySchema.safeParse({ ...base, website: `https://example.com/${path}` });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.website).toBe(`example.com/${path}`);
+      expect(result.data.website?.length).toBe(200);
+    }
+  });
 
   it("rejects javascript: protocol URLs (XSS protection)", () => {
     expect(companySchema.safeParse({ ...base, website: "javascript:alert(1)" }).success).toBe(false);
@@ -403,20 +400,10 @@ describe("companySchema - website validation", () => {
     expect(companySchema.safeParse({ ...base, website: " javascript:alert(1)" }).success).toBe(false);
   });
 
-  it("rejects a bare domain that normalizes to > 200 characters", () => {
-    // 190 bare chars + 3 (.co) + 8 (https://) = 201 total (exceeds 200 limit)
-    const longDomain = `${"a".repeat(190)}.co`;
-    expect(companySchema.safeParse({ ...base, website: longDomain }).success).toBe(false);
-  });
-
-  it("accepts a bare domain that normalizes to exactly 200 characters", () => {
-    // 189 bare chars + 3 (.co) + 8 (https://) = 200 total (at limit)
-    const domainAt200 = `${"a".repeat(189)}.co`;
-    const result = companySchema.safeParse({ ...base, website: domainAt200 });
-    expect(result.success).toBe(true);
-    if (result.success && result.data.website) {
-      expect(result.data.website).toBe(`https://${domainAt200}`);
-      expect(result.data.website.length).toBe(200);
-    }
+  it("rejects a website whose stored form is over 200 characters", () => {
+    // A single DNS label tops out at 63 characters, so build a long path instead.
+    const long = `example.com/${"a".repeat(189)}`;
+    expect(long.length).toBe(201);
+    expect(companySchema.safeParse({ ...base, website: long }).success).toBe(false);
   });
 });

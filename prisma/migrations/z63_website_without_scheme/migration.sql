@@ -1,0 +1,52 @@
+-- Store a company's website without its scheme.
+--
+-- Company.website now holds a bare address ("www.erpo.de"); the scheme is added
+-- where a link is drawn (websiteHref in src/lib/website.ts). Until now the
+-- company form stored "https://..." and the ACT! import stored whatever ACT!
+-- held, which is a bare domain. The clients list rendered `<a href={website}>`,
+-- and a value with no scheme is a RELATIVE url: the browser resolved it against
+-- the app and the link went to https://q.pathfindercut.com/www.erpo.de, a 404.
+--
+-- This rewrites the rows the form wrote, so the column has one shape:
+--
+--   "https://www.erpo.de/"        -> "www.erpo.de"
+--   "http://x.de"                 -> "x.de"            (http and https alike)
+--   "https://example.com/en/"     -> "example.com/en"
+--   "https://example.com/?a=1"    -> "example.com/?a=1"  (a slash that is not last stays)
+--
+-- It matches the application's normaliseWebsite except where that function
+-- would have to guess: this does NOT lowercase the host and does NOT validate.
+-- Rows are touched only if they START with http:// or https:// followed by at
+-- least one character that is not a slash. Everything else is left exactly as
+-- it is:
+--   * bare values ("www.erpo.de") are already in the target form;
+--   * NULL and values that are not URLs ("n/a", "info@erpo.de", "not a url")
+--     are data for a person to look at, not for a migration to guess at;
+--   * a lone "https://" is left alone rather than turned into an empty string.
+-- Those rows still render safely: websiteHref returns null for a value that is
+-- not a website, so the clients list draws no link for them.
+--
+-- Idempotent: after one run no row starts with a scheme, so a second run
+-- matches nothing.
+--
+-- Rows in each state when this was written: UNKNOWN. Nothing in the repo or its
+-- docs counts Company.website by shape, and there is no database here to ask
+-- (the ACT! import landed 8,809 companies on production; how many of them carry
+-- a website, and how many of those start with a scheme, was not measured). To
+-- see it on production before or after applying:
+--
+--   SELECT
+--     count(*) FILTER (WHERE "website" IS NULL)                              AS no_website,
+--     count(*) FILTER (WHERE "website" ~* '^https?://[^/]')                  AS has_scheme,
+--     count(*) FILTER (WHERE "website" IS NOT NULL
+--                        AND "website" !~* '^https?://')                     AS other
+--   FROM "Company";
+--
+-- Scope: Company.website only. Quotes are not touched -- Document rows,
+-- revision snapshots and the ACT! snapshots keep the value they were written
+-- with, and the renderers read both forms. The column type is unchanged, so
+-- schema.prisma is not either.
+
+UPDATE "Company"
+SET "website" = regexp_replace(regexp_replace("website", '^https?://', '', 'i'), '/+$', '')
+WHERE "website" ~* '^https?://[^/]';

@@ -91,7 +91,7 @@ type ChoiceSpec = { kind: "country" | "phone"; label: string };
  */
 const COMPANY_FIELD_SPECS = {
   name: { kind: "text", label: "Company name", maxLength: 200 },
-  website: { kind: "text", label: "Website", maxLength: 200, placeholder: "https://example.com" },
+  website: { kind: "text", label: "Website", maxLength: 200, placeholder: "example.com" },
   taxId: { kind: "text", label: "Tax ID", maxLength: 50 },
   street: { kind: "text", label: "Street", maxLength: 120 },
   city: { kind: "text", label: "City", maxLength: 120 },

@@ -15,6 +15,7 @@ import {
   type ClientListPageSize,
   type ClientListWindow,
 } from "@/lib/client-list";
+import { websiteHref, websiteLabel } from "@/lib/website";
 
 /**
  * One row of the /clients list, with its location string already built by
@@ -212,6 +213,9 @@ function PageLink({
 
 function CompanyRow({ row, showOwner }: { row: ClientListRow; showOwner: boolean }) {
   const href = `/clients/${row.id}`;
+  // The stored website is a bare domain; an href needs the scheme added or the
+  // browser reads it as a path on this app. Null for a value that is not a site.
+  const siteHref = websiteHref(row.website);
 
   return (
     <tr className={tableRowClassName}>
@@ -236,10 +240,10 @@ function CompanyRow({ row, showOwner }: { row: ClientListRow; showOwner: boolean
           nesting an `<a>` inside a `RowCell`'s own `<Link>` would be invalid
           HTML and would fight the row link for clicks. */}
       <td className="p-0 align-middle">
-        {row.website ? (
+        {siteHref ? (
           <div className="flex justify-end px-2">
             <a
-              href={row.website}
+              href={siteHref}
               target="_blank"
               rel="noopener noreferrer"
               aria-label={`Open ${row.name}'s website`}
@@ -255,6 +259,8 @@ function CompanyRow({ row, showOwner }: { row: ClientListRow; showOwner: boolean
 }
 
 function CompanyCard({ row, showOwner }: { row: ClientListRow; showOwner: boolean }) {
+  const siteHref = websiteHref(row.website);
+
   return (
     <div className="relative flex min-h-12 flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 transition-colors active:bg-slate-100">
       <Link
@@ -279,16 +285,16 @@ function CompanyCard({ row, showOwner }: { row: ClientListRow; showOwner: boolea
       {showOwner ? (
         <p className="relative truncate text-xs text-slate-500">Owner: {row.ownerLabel}</p>
       ) : null}
-      {row.website ? (
+      {siteHref ? (
         <a
-          href={row.website}
+          href={siteHref}
           target="_blank"
           rel="noopener noreferrer"
           aria-label={`Open ${row.name}'s website`}
           className="focus-ring relative z-10 -my-1 inline-flex min-h-11 w-fit items-center gap-1.5 rounded-md text-sm text-slate-500 hover:text-brand"
         >
           <ExternalLink className="size-3.5 shrink-0" aria-hidden="true" />
-          <span className="truncate">{row.website}</span>
+          <span className="truncate">{websiteLabel(row.website)}</span>
         </a>
       ) : null}
     </div>

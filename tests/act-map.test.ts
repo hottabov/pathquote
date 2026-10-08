@@ -261,6 +261,45 @@ describe("mapContact", () => {
     if (result.kind !== "mapped") throw new Error("expected mapped");
     expect(result.company.actCompanyKey).toBeNull();
   });
+
+  describe("website", () => {
+    const websiteOf = (raw: string | null | undefined) => {
+      const result = mapContact(contact({ website: raw }), resolveIndustry);
+      if (result.kind !== "mapped") throw new Error("expected mapped");
+      return result.company.website;
+    };
+
+    it("keeps the bare domain ACT! stores", () => {
+      expect(websiteOf("www.erpo.de")).toBe("www.erpo.de");
+    });
+
+    it("stores a full URL without its scheme or trailing slash", () => {
+      expect(websiteOf("https://www.erpo.de/")).toBe("www.erpo.de");
+      expect(websiteOf("http://Efka.Example/en/")).toBe("efka.example/en");
+    });
+
+    it("stores nothing for text that is not a website", () => {
+      expect(websiteOf("not a url")).toBeNull();
+      expect(websiteOf("info@erpo.de")).toBeNull();
+      expect(websiteOf("n/a")).toBeNull();
+      expect(websiteOf("javascript:alert(1)")).toBeNull();
+    });
+
+    it("stores nothing for a blank or missing website", () => {
+      expect(websiteOf("")).toBeNull();
+      expect(websiteOf("   ")).toBeNull();
+      expect(websiteOf(null)).toBeNull();
+    });
+
+    it("applies the same rule to a company-only record", () => {
+      const result = mapContact(
+        contact({ firstName: null, lastName: null, website: "https://www.erpo.de/" }),
+        resolveIndustry,
+      );
+      if (result.kind !== "company-only") throw new Error("expected company-only");
+      expect(result.company.website).toBe("www.erpo.de");
+    });
+  });
 });
 
 describe("formatGenericChannel", () => {

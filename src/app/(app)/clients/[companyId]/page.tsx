@@ -8,6 +8,7 @@ import { getCompanyDetail } from "@/lib/queries/clients";
 import { listIndustries, countCompaniesUsingIndustry } from "@/lib/queries/industries";
 import { updateCompany, deleteCompany, createContact, updateContact, deleteContact } from "@/lib/actions/clients";
 import { normalizeCountryInput } from "@/lib/countries";
+import { websiteHref, websiteLabel } from "@/lib/website";
 import { CompanyForm } from "@/components/clients/company-form";
 import { ContactsSection } from "@/components/clients/contacts-section";
 import { DeleteCompanyButton } from "@/components/clients/delete-company-button";
@@ -62,21 +63,28 @@ export default async function CompanyEditorPage({ params }: { params: Promise<Pa
       ? await countCompaniesUsingIndustry(company.industryId)
       : null;
   const canRenameIndustry = isAdminRole(session.user.role);
+  // The column holds a bare domain; the link needs a scheme added (see
+  // src/lib/website.ts). Null when the stored value is not a website.
+  const siteHref = websiteHref(company.website);
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1.5">
         <PageHeader backHref="/clients" backLabel="Clients" title={company.name} />
-        {company.website ? (
+        {siteHref ? (
           <a
-            href={company.website}
+            href={siteHref}
             target="_blank"
             rel="noopener noreferrer"
             className="focus-ring inline-flex w-fit items-center gap-1.5 text-sm text-brand hover:underline"
           >
-            {company.website}
+            {websiteLabel(company.website)}
             <ExternalLink className="size-3.5" aria-hidden="true" />
           </a>
+        ) : websiteLabel(company.website) ? (
+          // Not a website (an old import value, say): show it so a person can
+          // see what is stored and fix it in the form below, but do not link it.
+          <span className="text-sm text-slate-500">{websiteLabel(company.website)}</span>
         ) : null}
       </div>
 
@@ -95,7 +103,7 @@ export default async function CompanyEditorPage({ params }: { params: Promise<Pa
             // of the "(unrecognized)" fallback, and so re-saving the form
             // without touching the country field doesn't fail validation.
             country: normalizeCountryInput(company.country) ?? company.country ?? "",
-            website: company.website ?? "",
+            website: websiteLabel(company.website) ?? "",
             taxId: company.taxId ?? "",
             notes: company.notes ?? "",
             deliverySameAsMain: company.deliverySameAsMain,
