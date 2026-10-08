@@ -42,6 +42,10 @@ const ALLOWLIST = new Map<string, string>([
     "getUserFootprint counts every company and document belonging to one user, across every owner, on purpose — it answers 'what does this person leave behind', and an owner-scoped count would answer it wrong. Its only caller is the ADMIN-only user editor, which is also the only screen allowed to see it.",
   ],
   [
+    "src/lib/queries/contacts-visibility-admin.ts",
+    "getContactsVisibility counts companies per country across every owner, on purpose — the Contacts visibility editor exists to show an admin how many clients a grant would reveal, and a count limited to the target manager's own companies would show them the number they can already see instead of the number they are about to be given. It returns counts, never rows. Its only caller is the ADMIN-only user editor, which gates on isAdminRole before it renders, and an admin is unscoped by definition.",
+  ],
+  [
     "src/lib/actions/regions.ts",
     "updateRegion re-prices every open draft in the region it just changed — a region's whole footprint, not one owner's rows, so scoping to the acting user would leave drafts on a stale tax. The action is behind requireAdmin(), and an admin is unscoped by definition.",
   ],
