@@ -59,9 +59,33 @@ migration ran. A company whose `country` is null, or still holds pre-ISO free
 text, matches no grant and stays owner-and-admin-only — it hides a row rather
 than leaking one.
 
-Set a grant with `npm run user:countries -- <email> <US,CA | '*' | none>`.
+**An admin sets a grant in the web interface:** Settings, Users, the user, then
+the **Contacts visibility** card (below Catalogue visibility). It lists every
+country that has clients with how many, plus any country the user was already
+granted even if it has none yet (shown with a count of 0, so a save cannot
+silently erase it). "Show clients from all countries" stores `["*"]`. The card
+is not offered for an ADMIN or DEVELOPER, who see every client by role.
+
+That card sits directly under Catalogue visibility and **its checkboxes mean the
+opposite**: there a tick *hides*, here a tick *shows*. The wording says so, and a
+live sentence restates what the current selection does ("This manager will see
+the 4,432 clients in 2 countries, plus any they own"). Nothing ticked is a
+warning, not a neutral state: the user then sees only the clients they own, and
+an imported client is owned by nobody. A REGIONAL_MANAGER keeps its region arm
+(Rule 1) in addition to whatever is ticked.
+
+The operator path, for fixing a grant without a browser, is
+`npm run user:countries -- <email> <US,CA | '*' | none>`. Both paths validate
+through `resolveCountryCodes` in `src/lib/country-grant.ts`, so they accept and
+refuse the same input.
+
 A session picks up a change within `REVALIDATE_INTERVAL_MS` or at next sign-in,
 and fails closed until it does.
+
+The editor's per-country counts count a company only when its stored `country`
+is exactly that ISO code, because `country IN (...)` is an exact match. A company
+whose country is null, blank or free text ("United States", "usa") is reported in
+a separate note as unreachable by any grant, not folded into a country's number.
 
 ## Rule 2a — a grant widens reading and editing, never deleting
 

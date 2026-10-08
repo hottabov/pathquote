@@ -24,6 +24,74 @@ export type ContactsVisibility = {
   companiesWithoutCountry: number;
 };
 
+export type ContactsAccessSummary = {
+  /** `none` is the dangerous one: nothing ticked, so the user sees almost no
+   *  clients. The editor renders it as a warning, not as a neutral note. */
+  tone: "all" | "some" | "none";
+  /** What the current, possibly unsaved, selection means in plain words. */
+  summary: string;
+  /** Present only for `none`: why that is probably not what the admin meant. */
+  warning: string | null;
+};
+
+function plural(n: number, one: string, many: string): string {
+  return `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
+}
+
+/**
+ * Restates the working selection as its effect on what the user will see.
+ *
+ * The editor sits directly under Catalogue visibility, where a tick HIDES;
+ * here a tick SHOWS. An admin who has just used the card above will reach for
+ * the same mental model, and the failure is silent and one-directional: they
+ * blind a manager while believing they granted access. So the effect is spelled
+ * out in words that change as they toggle, rather than left to a checkbox
+ * label. Pure and in `src/lib` so the wording is pinned by a test.
+ *
+ * `regional` is a REGIONAL_MANAGER, whose ownership arm is "clients owned by a
+ * user of my region" (see `companyOwnedWhereForUser`) rather than "mine".
+ * `selectedCompanies` is the total across ticked countries and is the number a
+ * grant would reveal today.
+ */
+export function describeContactsAccess(input: {
+  allCountries: boolean;
+  selectedCountries: number;
+  selectedCompanies: number;
+  regional: boolean;
+}): ContactsAccessSummary {
+  const who = input.regional ? "regional manager" : "manager";
+  const plus = input.regional ? "the clients owned by their region" : "any they own";
+
+  if (input.allCountries) {
+    return {
+      tone: "all",
+      summary: `This ${who} will see every client in the system, in every country.`,
+      warning: null,
+    };
+  }
+
+  if (input.selectedCountries === 0) {
+    const only = input.regional ? "only the clients owned by their region" : "only the clients they own";
+    return {
+      tone: "none",
+      summary: `This ${who} will see ${only}.`,
+      warning:
+        "Nothing is ticked. Clients imported from ACT! have no owner, so for an imported client base that is close to none. Tick the countries whose clients they should see, or turn on “Show clients from all countries”.",
+    };
+  }
+
+  const countries = plural(input.selectedCountries, "country", "countries");
+  const clients =
+    input.selectedCompanies > 0
+      ? `the ${plural(input.selectedCompanies, "client", "clients")} in ${countries}`
+      : `clients in ${countries} (none have any yet)`;
+  return {
+    tone: "some",
+    summary: `This ${who} will see ${clients}, plus ${plus}.`,
+    warning: null,
+  };
+}
+
 /** One row of `db.company.groupBy({ by: ["country"], _count: { _all: true } })`. */
 export type CompanyCountryGroup = {
   country: string | null;

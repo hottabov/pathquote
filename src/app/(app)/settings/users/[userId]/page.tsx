@@ -5,15 +5,18 @@ import { getUser } from "@/lib/queries/users";
 import { listActiveRegions } from "@/lib/queries/catalog";
 import { countActiveAdmins, getUserFootprint, listHandoverCandidates } from "@/lib/queries/users";
 import { getCatalogVisibilityTree } from "@/lib/queries/catalog-visibility-admin";
+import { getContactsVisibility } from "@/lib/queries/contacts-visibility-admin";
 import { updateUser, setUserPassword, setUserAvatar } from "@/lib/actions/users";
 import { setCatalogVisibility } from "@/lib/actions/catalog-visibility";
+import { setContactsVisibility } from "@/lib/actions/contacts-visibility";
 import { EditUserForm } from "@/components/users/edit-user-form";
 import { UserAccessSection } from "@/components/users/user-access-section";
 import { SetPasswordForm } from "@/components/users/set-password-form";
 import { CatalogVisibilityEditor } from "@/components/settings/catalog-visibility-editor";
+import { ContactsVisibilityEditor } from "@/components/settings/contacts-visibility-editor";
 import { PageHeader, SectionCard, StatusBadge, STATUS_TONE, Avatar } from "@/components/ui-kit";
 import { ImageUpload } from "@/components/catalog/image-upload";
-import { isAdminRole, roleLabel } from "@/lib/roles";
+import { isAdminRole, isRegionalManagerRole, roleLabel } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
 
@@ -43,10 +46,16 @@ export default async function EditUserPage({ params }: { params: Promise<Params>
   // getCatalogVisibilityTree's own comment) is the more expensive of this
   // page's reads, so there's no point running it in the Promise.all above only
   // to throw it away on a 404; the other two are simply about this user.
-  const [visibilitySeries, footprint, handoverCandidates] = await Promise.all([
+  //
+  // An admin's country grant would change nothing (they see every client by
+  // role), and the editor's per-country count is a scan of the client table,
+  // so it is skipped for them rather than fetched and thrown away.
+  const userIsAdmin = isAdminRole(user.role);
+  const [visibilitySeries, footprint, handoverCandidates, contactsVisibility] = await Promise.all([
     getCatalogVisibilityTree(user.id),
     getUserFootprint(user.id),
     listHandoverCandidates(user.id),
+    userIsAdmin ? null : getContactsVisibility(user.id),
   ]);
 
   const isSelf = session.user.id === user.id;
@@ -109,6 +118,34 @@ export default async function EditUserPage({ params }: { params: Promise<Params>
         description="Checking hides a series or product from this user's own catalogue everywhere they'd meet it — the item picker, catalogue browsing, and adding it to a quote. Another user is unaffected. A quote that already has a now-hidden item keeps it, unchanged."
       >
         <CatalogVisibilityEditor userId={user.id} series={visibilitySeries} action={setCatalogVisibility} />
+      </SectionCard>
+
+      {/* The opposite of the card above: there a tick hides, here it shows.
+          The description says so first, and the editor restates it in its
+          labels and a live summary. */}
+      <SectionCard
+        title="Contacts visibility"
+        description={
+          userIsAdmin
+            ? "Which countries' clients this user can see."
+            : isRegionalManagerRole(user.role)
+              ? "Ticking a country SHOWS that country's clients to this user — the opposite of Catalogue visibility above, where ticking hides. A country adds to the clients their region owns; it never replaces them, and nothing ticked leaves just those. It lets them view and edit that country's clients, never delete one they don't own."
+              : "Ticking a country SHOWS that country's clients to this user — the opposite of Catalogue visibility above, where ticking hides. Nothing ticked means they see only the clients they own. A country lets them view and edit its clients, never delete one they don't own."
+        }
+      >
+        {contactsVisibility ? (
+          <ContactsVisibilityEditor
+            userId={user.id}
+            visibility={contactsVisibility}
+            regional={isRegionalManagerRole(user.role)}
+            action={setContactsVisibility}
+          />
+        ) : (
+          <p className="text-sm text-slate-500">
+            This user&rsquo;s role ({roleLabel(user.role)}) already sees every client in every country. A
+            country grant would change nothing, so there is nothing to set here.
+          </p>
+        )}
       </SectionCard>
 
       <SectionCard

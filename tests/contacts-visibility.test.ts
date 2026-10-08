@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildContactsVisibility } from "../src/lib/contacts-visibility";
+import { buildContactsVisibility, describeContactsAccess } from "../src/lib/contacts-visibility";
 
 const group = (country: string | null, n: number) => ({ country, _count: { _all: n } });
 
@@ -94,5 +94,59 @@ describe("buildContactsVisibility", () => {
       countries: [],
       companiesWithoutCountry: 0,
     });
+  });
+});
+
+describe("describeContactsAccess", () => {
+  const base = { allCountries: false, selectedCountries: 0, selectedCompanies: 0, regional: false };
+
+  it("warns, rather than staying silent, when nothing is ticked", () => {
+    const result = describeContactsAccess(base);
+    expect(result.tone).toBe("none");
+    expect(result.summary).toBe("This manager will see only the clients they own.");
+    expect(result.warning).toContain("Nothing is ticked");
+    expect(result.warning).toContain("no owner");
+  });
+
+  it("states a grant as what the user WILL see, with the count it reveals", () => {
+    const result = describeContactsAccess({ ...base, selectedCountries: 2, selectedCompanies: 4432 });
+    expect(result.tone).toBe("some");
+    expect(result.summary).toBe("This manager will see the 4,432 clients in 2 countries, plus any they own.");
+    expect(result.warning).toBeNull();
+  });
+
+  it("uses the singular for one country and one client", () => {
+    const result = describeContactsAccess({ ...base, selectedCountries: 1, selectedCompanies: 1 });
+    expect(result.summary).toBe("This manager will see the 1 client in 1 country, plus any they own.");
+  });
+
+  it("says so when the ticked countries have no clients yet", () => {
+    const result = describeContactsAccess({ ...base, selectedCountries: 1 });
+    expect(result.summary).toBe(
+      "This manager will see clients in 1 country (none have any yet), plus any they own."
+    );
+  });
+
+  it("says every client for all countries, whatever else is ticked", () => {
+    const result = describeContactsAccess({ ...base, allCountries: true, selectedCountries: 3 });
+    expect(result.tone).toBe("all");
+    expect(result.summary).toBe("This manager will see every client in the system, in every country.");
+    expect(result.warning).toBeNull();
+  });
+
+  it("describes a regional manager's own arm as their region's clients", () => {
+    const some = describeContactsAccess({ ...base, regional: true, selectedCountries: 2, selectedCompanies: 10 });
+    expect(some.summary).toBe(
+      "This regional manager will see the 10 clients in 2 countries, plus the clients owned by their region."
+    );
+    const none = describeContactsAccess({ ...base, regional: true });
+    expect(none.summary).toBe("This regional manager will see only the clients owned by their region.");
+  });
+
+  it("never describes a selection as hiding anything", () => {
+    for (const input of [base, { ...base, selectedCountries: 2, selectedCompanies: 5 }]) {
+      const { summary, warning } = describeContactsAccess(input);
+      expect(`${summary} ${warning ?? ""}`).not.toMatch(/\bhid(e|es|den)\b/i);
+    }
   });
 });
