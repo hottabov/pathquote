@@ -2242,6 +2242,26 @@ leaves every imported company without an industry:
 SELECT COUNT(*) FROM "Industry";   -- expect 31
 ```
 
+- [ ] **Step 3a: Correct the country spellings in ACT! first**
+
+`Company.country` decides which manager sees a client, so a country PathQuote
+cannot resolve is a client no country grant reveals. Fix the source before the
+import rather than after: every write bumps `edited`, which is the delta
+cursor, so doing it afterwards makes the next sync re-pull each corrected
+record for nothing.
+
+```bash
+cd /opt/pathquote
+set -a; . <(grep '^ACT_' .env); set +a
+
+python3 scripts/act-fix-country-spellings.py --csv /root/act-country-fixes.csv
+python3 scripts/act-fix-country-spellings.py --apply --csv /root/act-country-fixes.csv
+```
+
+The `NEEDS A PERSON` and `NO COUNTRY AT ALL` groups it prints are not fixed by
+the script and not blockers — but every record in them is a client no country
+grant will reveal, so they are worth working through in ACT! at some point.
+
 - [ ] **Step 4: Reconcile the companies PathQuote already has**
 
 **Do this before any write.** Existing companies have `actCompanyKey = NULL`,
@@ -2292,18 +2312,38 @@ docker compose run --rm -e ACT_BASE -e ACT_DB -e ACT_USER -e ACT_PASS tools \
   npm run act:sync -- --dry-run --full
 ```
 
-What to expect, from the measured export:
+What to expect. These are no longer estimates — they are what the 2026-10-08
+rehearsal run actually produced, with the two-status filter in place:
 
-- `scanned` close to **17,373**, not 12,100. There is no server-side status
-  filter, so every contact the account can see comes over the wire and the
-  mapper does the filtering.
-- roughly **12,100** mapped, about **5,300** skipped, `inactive-status` the
-  bulk of it. Nameless contacts are no longer in the skipped figure: expect
-  `no-name` near **0** and `companies, no contact` near **713**, less any of
-  them counted under `no-company`.
-- a **non-zero `personal` count is expected and correct**. The mapper is the
-  only barrier against the director's private contacts.
-- `phones unresolved` near 11% of those mapped.
+| | |
+|---|---|
+| `scanned` | **17,529** |
+| `inactive-status` | **6,320** |
+| `personal` | **175** |
+| `not-a-contact` | **23** |
+| `no-company` | **4** |
+| `contacts created` | **10,471** |
+| `companies, no contact` | **536** |
+| `companies created` | **8,808** |
+| `phones unresolved` | **987** (9.4% of contacts) |
+| `company key collisions` | **0** |
+| `failed` | **0** |
+
+`scanned` is the whole contact table, not the filtered set: there is no
+server-side filter, so every contact comes over the wire and the mapper does
+the filtering. A **non-zero `personal` count is expected and correct** — the
+mapper is the only barrier against the director's private contacts.
+
+The arithmetic should close exactly: scanned minus the four skip counts equals
+`contacts created` plus `companies, no contact`. If it does not, something is
+being counted twice.
+
+Two figures will have moved since that run, both downwards and both on purpose:
+`country` resolution gained the colloquial ACT! spellings (commit 66ed696), and
+`scripts/act-fix-country-spellings.py` corrected the typos in ACT! itself. So
+expect fewer companies with a null country than the rehearsal showed, and
+possibly slightly fewer companies overall, because two spellings that used to
+produce two rows may now produce one.
 
 Numbers far from these mean a filter is wrong. Stop and compare against the
 spec rather than writing.
