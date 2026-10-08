@@ -24,22 +24,65 @@ regions moves the clients to the other region's view, immediately and with no
 second column to keep in step. That is the payoff for deriving the region
 instead of copying it.
 
-## Rule 2 — an ACT import sets a real owner, or none
+## Rule 2 — an ACT! import sets no owner, and a country grant is what reveals it
 
-Clients imported from ACT! are per-manager there and stay per-manager here.
-The importer's only job for scope is to map each ACT owner to a PathQuote
-`User` and set `Company.ownerId` to it; region visibility then follows with no
-extra field.
+This rule said the opposite until 2026-10-08: that the importer should map each
+ACT! record manager to a PathQuote `User` and set `Company.ownerId`. That was
+refused once the data was measured, and the reasoning is worth keeping.
 
-When an owner cannot be resolved, leave `ownerId` null. Such a company is
-visible to admins only (`{ owner: { regionId } }` matches no row whose owner is
-null) — which is the correct, visible, fixable state. Never:
+A PathQuote company is usually *derived* from the free-text company name on an
+ACT! contact — only about 2.5% of contacts link to a real ACT! Company record.
+So one PathQuote company can stand behind several ACT! contacts, under several
+different record managers. `Company.actRecordManagerId` records whichever
+contact the sync processed last and says so in its own schema comment. Choosing
+an owner from it would be picking arbitrarily, and the column would then read as
+fact. Never:
 
 - guess an owner (it silently files a client into the wrong region's view);
 - fall back to the importing admin (same, plus it looks deliberate);
-- add a `regionId` column to `Company` to avoid needing an owner (two sources
-  of truth that drift, and the schema comment explains why the column was
-  refused in the first place).
+- add a `regionId` column to `Company` to avoid needing an owner (two sources of
+  truth that drift, and the schema comment explains why the column was refused).
+
+So imported companies have no owner, and ownership alone would make the whole
+import admin-only. Visibility comes from a **country grant** instead:
+`User.visibleCountries`, matched against `Company.country`.
+
+| Grant | Means |
+| --- | --- |
+| `[]` (the default) | no country grant — ownership alone, i.e. today's rule |
+| `["US", "CA"]` | plus every company in those countries |
+| `["*"]` | plus every company, whatever its country |
+
+An empty grant deliberately does **not** mean "all": the column defaults to `[]`,
+so that reading would hand every new user the entire client base on the day the
+migration ran. A company whose `country` is null, or still holds pre-ISO free
+text, matches no grant and stays owner-and-admin-only — it hides a row rather
+than leaking one.
+
+Set a grant with `npm run user:countries -- <email> <US,CA | '*' | none>`.
+A session picks up a change within `REVALIDATE_INTERVAL_MS` or at next sign-in,
+and fails closed until it does.
+
+## Rule 2a — a grant widens reading and editing, never deleting
+
+`src/lib/scope.ts` has three helpers now, not two:
+
+| Helper | Scopes | Grant applies |
+| --- | --- | --- |
+| `companyWhereForUser` | reads and edits | yes |
+| `companyOwnedWhereForUser` | `deleteCompany`, `deleteContact` | no |
+| `documentWhereForUser` | quotes | not applicable |
+
+These filters are the app's write boundary as well as its read boundary, so
+widening one widens editing through it. That is wanted for editing — somebody has
+to be able to fix an imported client's address, and no manager owns one — and not
+wanted for deleting. Correcting an address is a daily act; deleting a client is
+rare and irreversible, and `Document.company` is `onDelete: Restrict`, so the
+companies actually at risk are the quote-less ones, which is most of a fresh
+import.
+
+Hence the split. If you find yourself "fixing" the inconsistency by pointing a
+delete at `companyWhereForUser`, this is the rule you are removing.
 
 ## Rule 3 — a regional manager needs a region
 
