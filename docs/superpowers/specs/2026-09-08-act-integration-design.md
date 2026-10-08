@@ -207,7 +207,9 @@ One operation, two callers: a nightly cron and the manual button, both passing a
 
 **Scope.** One pull, everything non-private, under the service account's `Access All Non-Private Data`. Visibility is decided inside PathQuote, not by fetching different subsets per user — see below.
 
-**Filters.** `contactType eq 'Contact'`; not `isPrivate`; `idStatus` in `Customer`, `Prospect`, `Prospect-Distributor`, `Suspect`. Contacts with an empty status are excluded — a business decision, about 1,393 records. The filtered set is 12,094 contacts.
+**Filters.** `contactType eq 'Contact'`; not `isPrivate`; `idStatus` in `Customer` or `Prospect`. Narrowed from four statuses on 2026-10-08: `Suspect` is raw leads, and `Prospect-Distributor` was raised as a genuine quote target and excluded anyway, so widening it again is a decision rather than a fix. Contacts with an empty status are excluded too — about 1,393 records. The four-status set measured 12,323 of 17,529 contacts; the two-status set is smaller and the first dry run after the change reports the real figure.
+
+None of these filters is applied by the API. The request carries only `$filter=edited ge <cursor>`, so every contact comes over the wire and the mapper does the filtering — which is why the mapper refuses `Personal` as its own explicit check rather than relying on the status list.
 
 **`Personal` contacts never leave ACT!.** They are the director's own, and he does not share them. The status filter already excludes them, but that is one condition in one query: the importer also drops any record whose `idStatus` is `Personal`, whatever the API returned. The redundancy is deliberate. If someone later widens the status list and forgets this case, the second barrier holds.
 

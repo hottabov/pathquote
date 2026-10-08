@@ -263,7 +263,7 @@ Pages of 200, oldest `edited` first, advancing `$skip` until a short page — ab
 - anything whose `contactType` is not `Contact`
 - `isPrivate`
 - `idStatus` of `Personal` — the director's own contacts, counted separately as `personal`. This check in the mapper is the **only** thing keeping them out, so a non-zero `personal` count is expected
-- `idStatus` not in `Customer`, `Prospect`, `Prospect-Distributor`, `Suspect` — about 12,094 of 17,373 at last measurement
+- `idStatus` not in `Customer` or `Prospect` — narrowed from four statuses on 2026-10-08 (see ACTIVE_STATUSES in src/lib/act/types.ts for why). The four-status set kept 12,323 of 17,529 at last measurement; the two-status set is smaller, and the figure is recorded below once the first import runs
 
 The one filtering that does happen server-side is the account's own permissions: without *Access All Non-Private Data* it would see almost nothing (section 2), and private records belonging to others are not returned to it (section 3).
 

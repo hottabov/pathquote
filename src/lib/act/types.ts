@@ -115,10 +115,17 @@ export type SkipReason =
    * mapper. */
   | "no-company";
 
-/** Statuses the sync imports. Everything else stays in ACT!. */
-export const ACTIVE_STATUSES = [
-  "Customer",
-  "Prospect",
-  "Prospect-Distributor",
-  "Suspect",
-] as const;
+/**
+ * Statuses the sync imports. Everything else stays in ACT!.
+ *
+ * Narrowed from four to two on Vadym's instruction: a quote goes to a customer
+ * or to someone being quoted, and ACT! holds a lot that never reaches one.
+ * `Suspect` is raw leads. `Prospect-Distributor` is a distributor, which does
+ * get quoted -- that one was raised and excluded deliberately, so widening the
+ * list again is a decision rather than a fix.
+ *
+ * Widening it is also the one change that can leak the director's private
+ * contacts, which is why map.ts refuses `Personal` separately instead of
+ * relying on this list.
+ */
+export const ACTIVE_STATUSES = ["Customer", "Prospect"] as const;

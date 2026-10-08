@@ -48,7 +48,7 @@ import urllib.request
 PAGE = 200
 
 # Must match ACTIVE_STATUSES in src/lib/act/types.ts.
-ACTIVE = {"Customer", "Prospect", "Prospect-Distributor", "Suspect"}
+ACTIVE = {"Customer", "Prospect"}
 
 # Must match ACT_FIELD in src/lib/act/types.ts: Industry is a renamed stock
 # user slot, not a field called "industry".

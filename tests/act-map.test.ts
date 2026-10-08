@@ -113,6 +113,26 @@ describe("mapContact", () => {
     });
   });
 
+  it("skips the statuses that are not Customer or Prospect", () => {
+    // Narrowed deliberately: Suspect is raw leads, and Prospect-Distributor was
+    // raised as a real quote target and excluded anyway. Pinned here so putting
+    // either back is a visible decision rather than a quiet widening -- which
+    // is also the change that could leak Personal contacts if the mapper did
+    // not refuse those separately.
+    for (const status of ["Suspect", "Prospect-Distributor"]) {
+      expect(mapContact(contact({ idStatus: status }), resolveIndustry)).toEqual({
+        kind: "skipped",
+        reason: "inactive-status",
+      });
+    }
+  });
+
+  it("imports Customer and Prospect", () => {
+    for (const status of ["Customer", "Prospect"]) {
+      expect(mapContact(contact({ idStatus: status }), resolveIndustry).kind).toBe("mapped");
+    }
+  });
+
   it("skips inactive statuses", () => {
     expect(mapContact(contact({ idStatus: "Dead Prospect" }), resolveIndustry)).toEqual({
       kind: "skipped",
