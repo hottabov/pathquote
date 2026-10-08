@@ -131,16 +131,24 @@ export default async function CompanyEditorPage({ params }: { params: Promise<Pa
           contacts={company.contacts}
           defaultCountry={normalizeCountryInput(company.country) ?? undefined}
           actions={{ createContact, updateContact, deleteContact }}
+          canDelete={company.canDelete}
         />
       </SectionCard>
 
-      <SectionCard
-        tone="danger"
-        title="Danger zone"
-        description="Deleting a company removes its contacts too. Companies with quotes can't be deleted."
-      >
-        <DeleteCompanyButton action={deleteCompany.bind(null, company.id)} companyName={company.name} />
-      </SectionCard>
+      {/* A country grant lets a manager open and edit a company they do not
+          own, but not delete it (Rule 2a, docs/reference/client-ownership-and-
+          regional-scope.md). `company.canDelete` is the delete actions' own
+          filter answered for this company, so the card is simply absent when
+          the action would refuse. The actions still refuse regardless. */}
+      {company.canDelete ? (
+        <SectionCard
+          tone="danger"
+          title="Danger zone"
+          description="Deleting a company removes its contacts too. Companies with quotes can't be deleted."
+        >
+          <DeleteCompanyButton action={deleteCompany.bind(null, company.id)} companyName={company.name} />
+        </SectionCard>
+      ) : null}
     </div>
   );
 }

@@ -36,6 +36,7 @@ export function ContactsSection({
   contacts,
   actions,
   defaultCountry,
+  canDelete,
 }: {
   companyId: string;
   contacts: ContactDetail[];
@@ -43,6 +44,13 @@ export function ContactsSection({
   /** The company's own country, ISO alpha-2 — which country each contact's
    * phone field opens on. See `PhoneField`. */
   defaultCountry?: string;
+  /** Whether to render each row's delete control -- `CompanyDetail.canDelete`.
+   * Required, not defaulted: a caller that forgets it should fail to compile
+   * rather than quietly show a button the action will refuse. Hidden, not
+   * disabled, like every other delete control the viewer cannot use here; the
+   * reason (ownership) is not something they can act on from this screen.
+   * `deleteContact` re-checks regardless. */
+  canDelete: boolean;
 }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -132,6 +140,7 @@ export function ContactsSection({
                       onEdit={() => setEditingId(contact.id)}
                       makePrimary={actions.updateContact}
                       onDelete={actions.deleteContact}
+                      canDelete={canDelete}
                     />
                   )
                 )}
@@ -165,6 +174,7 @@ export function ContactsSection({
                 onEdit={() => setEditingId(contact.id)}
                 makePrimary={actions.updateContact}
                 onDelete={actions.deleteContact}
+                canDelete={canDelete}
               />
             )
           )}
@@ -263,11 +273,13 @@ function ContactTableRow({
   onEdit,
   makePrimary,
   onDelete,
+  canDelete,
 }: {
   contact: ContactDetail;
   onEdit: () => void;
   makePrimary: (contactId: string, formData: FormData) => Promise<ActionResult>;
   onDelete: (contactId: string) => Promise<ActionResult>;
+  canDelete: boolean;
 }) {
   const { pending: primaryPending, handleMakePrimary } = useMakePrimary(contact, makePrimary);
   const { pending: deletePending, error, handleDelete, fullName } = useDeleteContact(contact, onDelete);
@@ -296,17 +308,19 @@ function ContactTableRow({
           >
             <Pencil className="size-4" aria-hidden="true" />
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={handleDelete}
-            disabled={deletePending}
-            aria-label={`Delete ${fullName}`}
-            className="focus-ring size-11 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-          >
-            <Trash2 className="size-4" aria-hidden="true" />
-          </Button>
+          {canDelete ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={handleDelete}
+              disabled={deletePending}
+              aria-label={`Delete ${fullName}`}
+              className="focus-ring size-11 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+            >
+              <Trash2 className="size-4" aria-hidden="true" />
+            </Button>
+          ) : null}
         </div>
         {error ? (
           <p role="alert" className="mt-1 text-right text-xs text-destructive">
@@ -323,11 +337,13 @@ function ContactCard({
   onEdit,
   makePrimary,
   onDelete,
+  canDelete,
 }: {
   contact: ContactDetail;
   onEdit: () => void;
   makePrimary: (contactId: string, formData: FormData) => Promise<ActionResult>;
   onDelete: (contactId: string) => Promise<ActionResult>;
+  canDelete: boolean;
 }) {
   const { pending: primaryPending, handleMakePrimary } = useMakePrimary(contact, makePrimary);
   const { pending: deletePending, error, handleDelete, fullName } = useDeleteContact(contact, onDelete);
@@ -353,17 +369,19 @@ function ContactCard({
           >
             <Pencil className="size-4" aria-hidden="true" />
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={handleDelete}
-            disabled={deletePending}
-            aria-label={`Delete ${fullName}`}
-            className="focus-ring size-11 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-          >
-            <Trash2 className="size-4" aria-hidden="true" />
-          </Button>
+          {canDelete ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={handleDelete}
+              disabled={deletePending}
+              aria-label={`Delete ${fullName}`}
+              className="focus-ring size-11 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+            >
+              <Trash2 className="size-4" aria-hidden="true" />
+            </Button>
+          ) : null}
         </div>
       </div>
       <p className="pl-11 text-sm text-slate-500">

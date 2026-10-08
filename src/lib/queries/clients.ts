@@ -1,6 +1,6 @@
 import { cache } from "react";
 import { db } from "@/lib/db";
-import { companyWhereForUser, type ScopeUser } from "@/lib/scope";
+import { companyOwnedWhereForUser, companyWhereForUser, type ScopeUser } from "@/lib/scope";
 
 export type CompanyListItem = {
   id: string;
@@ -103,6 +103,17 @@ export type CompanyDetail = {
   deliveryPhone: string | null;
   deliveryNotes: string | null;
   contacts: ContactDetail[];
+  /** Whether `deleteCompany` and `deleteContact` would accept this viewer for
+   * this company. Drives which delete controls the page renders; it is an
+   * affordance, not a permission -- both actions re-check on their own.
+   *
+   * Narrower than "can open this page": a manager can reach a company through
+   * a country grant (`companyWhereForUser`) without owning it, and a grant
+   * never reaches the delete filter (`companyOwnedWhereForUser`,
+   * docs/reference/client-ownership-and-regional-scope.md Rule 2a). Computed by
+   * asking the database that same filter, not by re-deriving it from the role,
+   * so it cannot drift from what the actions enforce. */
+  canDelete: boolean;
 };
 
 /**
@@ -168,14 +179,27 @@ const getCompanyDetailInScope = cache(async function getCompanyDetailInScope(
     regionId,
     visibleCountries: countriesFromKey(countries),
   };
-  const company = await db.company.findFirst({
-    where: { id: companyId, ...companyWhereForUser(user) },
-    include: {
-      contacts: {
-        orderBy: [{ isPrimary: "desc" }, { firstName: "asc" }],
+  // Two independent lookups, so they run together. The second asks the exact
+  // question the delete actions ask -- the same `companyOwnedWhereForUser`
+  // filter, spread the same way -- and keeps only the answer. That is the
+  // whole of the "may delete" rule on this page: do not rebuild it from
+  // `user.role` or `ownerId` here. It selects one indexed column and is
+  // wasted only for a company the viewer cannot open at all, which returns
+  // `null` below and is rare.
+  const [company, deletable] = await Promise.all([
+    db.company.findFirst({
+      where: { id: companyId, ...companyWhereForUser(user) },
+      include: {
+        contacts: {
+          orderBy: [{ isPrimary: "desc" }, { firstName: "asc" }],
+        },
       },
-    },
-  });
+    }),
+    db.company.findFirst({
+      where: { id: companyId, ...companyOwnedWhereForUser(user) },
+      select: { id: true },
+    }),
+  ]);
   if (!company) return null;
 
   return {
@@ -208,5 +232,6 @@ const getCompanyDetailInScope = cache(async function getCompanyDetailInScope(
       position: c.position,
       isPrimary: c.isPrimary,
     })),
+    canDelete: deletable !== null,
   };
 });
