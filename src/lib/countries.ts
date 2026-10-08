@@ -33,11 +33,30 @@ export function countryName(code: string): string | undefined {
   return COUNTRY_BY_CODE.get(code);
 }
 
-/** A handful of common free-text spellings that don't match their official
- * ISO name (`normalizeCountryInput`'s exact-name-match pass would otherwise
- * miss them) — keyed upper-case, values are ISO alpha-2 codes. Deliberately
- * short: this is a best-effort mapper for legacy free-text data, not a full
- * fuzzy matcher. */
+/** Free-text spellings that don't match their official ISO name
+ * (`normalizeCountryInput`'s exact-name-match pass would otherwise miss them)
+ * — keyed upper-case, values are ISO alpha-2 codes.
+ *
+ * Still a best-effort mapper for free-text data, not a fuzzy matcher. The
+ * entries below the first group were added from the ACT! import, where 35
+ * distinct spellings failed to resolve across 271 contacts. Only the ones that
+ * are genuinely another name for a country are here. Deliberately absent, and
+ * the distinction is the point:
+ *
+ *   - typos ("UDSA", "Lativa", "Trinidad and Tabago", "Unitted Kingdom") are
+ *     wrong in ACT!, which is the source of truth for contacts. Translating
+ *     them here would carry the mistake forever and hide it from whoever could
+ *     fix it. Same reasoning as scripts/act-fix-country-usa.py, which corrects
+ *     the source rather than mapping around it.
+ *   - regions and cities ("North America", "West Indies", "Africa",
+ *     "Launceston", "Istanbul", "Québec") are not countries. Guessing a country
+ *     from a city is how a client ends up in the wrong manager's list.
+ *   - truncations ("United", "P.R.") are ambiguous. "United" could be either
+ *     of the two most common values in this data.
+ *
+ * This matters more than it looks: Company.country decides which manager sees
+ * a client (see companyWhereForUser in src/lib/scope.ts), so an unresolved
+ * country means a client no country grant can reveal. */
 const COUNTRY_ALIASES: Record<string, string> = {
   USA: "US",
   "U.S.A.": "US",
@@ -57,6 +76,39 @@ const COUNTRY_ALIASES: Record<string, string> = {
   "UNITED ARAB EMIRATES": "AE",
   VIETNAM: "VN",
   "VIET NAM": "VN",
+
+  // From the ACT! import. The official ISO names our generated table holds are
+  // the long forms ("People's Republic of China", "Türkiye", "Taiwan, Province
+  // of China"), and twenty years of free text holds the short ones.
+  CHINA: "CN",
+  "P.R. CHINA": "CN",
+  "PR CHINA": "CN",
+  TURKEY: "TR",
+  TAIWAN: "TW",
+  IRAN: "IR",
+  MOLDOVA: "MD",
+  MACEDONIA: "MK",
+  "NORTH MACEDONIA": "MK",
+  "FIJI ISLANDS": "FJ",
+  "THE NETHERLANDS": "NL",
+  HOLLAND: "NL",
+  "SLOVAK REPUBLIC": "SK",
+  "KINGDOM OF SAUDI ARABIA": "SA",
+  "US VIRGIN ISLANDS": "VI",
+  "U.S. VIRGIN ISLANDS": "VI",
+  "SERBIA (REPUBLIC OF)": "RS",
+
+  // Australian shorthand, written both ways in the data.
+  AUST: "AU",
+  "AUST.": "AU",
+
+  // "Korea" alone is formally ambiguous, and in this data it is not: Pathfinder
+  // sells industrial cutting machines, South Korea is a real market and North
+  // Korea is under sanctions that make it impossible. Mapped on that basis
+  // rather than on the string, so if the business ever changes, so does this.
+  KOREA: "KR",
+  "REPUBLIC OF KOREA": "KR",
+  "KOREA, REPUBLIC OF": "KR",
 };
 
 const NAME_TO_CODE = new Map(COUNTRIES.map((c) => [c.name.trim().toUpperCase(), c.code]));
