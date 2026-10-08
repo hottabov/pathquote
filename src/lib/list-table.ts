@@ -1,5 +1,5 @@
 /**
- * The pure half of the interactive list tables (/quotes, /clients): how a
+ * The pure half of the interactive list tables (/quotes): how a
  * row is matched against a search box and how two rows compare on a sorted
  * column.
  *

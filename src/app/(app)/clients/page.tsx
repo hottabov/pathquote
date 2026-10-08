@@ -5,6 +5,7 @@ import { auth } from "@/auth";
 import { canSeeSalesperson, scopeDescription } from "@/lib/roles";
 import { listCompanies } from "@/lib/queries/clients";
 import { displayCountry } from "@/lib/countries";
+import { clientListWindow, parseClientListParams } from "@/lib/client-list";
 import { buttonVariants } from "@/components/ui/button";
 import { ClientsList, type ClientListRow } from "@/components/clients/clients-list";
 import { PageHeader } from "@/components/ui-kit";
@@ -13,23 +14,28 @@ import { cn } from "@/lib/utils";
 export const metadata: Metadata = { title: "Clients" };
 export const dynamic = "force-dynamic";
 
-export default async function ClientsPage() {
+export default async function ClientsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   // AppLayout (src/app/(app)/layout.tsx) already calls requireSession and
   // redirects unauthenticated requests, so a session is always present here.
   const session = (await auth())!;
 
-  // No `q` here any more — see the same note on the /quotes page: the
-  // search box in `ClientsList` filters the whole scoped list in the
-  // browser, across the location and website columns too, not just name.
-  const companies = await listCompanies(session.user);
+  // `q`, `page` and `pageSize` come from the URL, so the back button and a
+  // pasted link reproduce a view. They are validated, not trusted: junk in any
+  // of them falls back to a default (see `parseClientListParams`), and a page
+  // past the end is clamped by `listCompanies`. The query searches and pages
+  // on the server -- the list used to ship every company to the browser,
+  // which stopped being viable at the ACT! import's 8,809.
+  const request = parseClientListParams(await searchParams);
+  const { items: companies, total, page, pageSize } = await listCompanies(session.user, request);
 
-  // Computed before the rows are built, for the reason the /quotes page
-  // spells out: `rows` is a prop of a client component, so every row object is
-  // serialized into the RSC payload the browser receives, and a name left on a
-  // row whose column is not rendered would be shipped to a viewer who never
-  // sees it. Same predicate as the Salesperson column -- a MANAGER's list is
-  // one person's clients, so the column would be one name repeated down the
-  // page.
+  // Decided before the rows are built, so a name for a column that is not
+  // rendered never goes on a row. Same predicate as the Owner column -- a
+  // MANAGER's list is one person's clients, so the column would be one name
+  // repeated down the page.
   const showOwner = canSeeSalesperson(session.user.role);
 
   const rows = companies.map<ClientListRow>((c) => ({
@@ -72,7 +78,16 @@ export default async function ClientsPage() {
         }
       />
 
-      <ClientsList rows={rows} showOwner={showOwner} />
+      <ClientsList
+        rows={rows}
+        showOwner={showOwner}
+        paging={{
+          ...clientListWindow(page, pageSize, total),
+          total,
+          q: request.q,
+          pageSize,
+        }}
+      />
     </div>
   );
 }

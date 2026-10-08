@@ -14,7 +14,7 @@ import { fieldInputClass } from "./field-row";
 import { cn } from "@/lib/utils";
 
 /**
- * The interactive half of the list pages (/quotes, /clients): a search box
+ * The interactive half of the list pages (/quotes): a search box
  * that filters every rendered column as you type, and clickable column
  * headers that sort on the first click.
  *
@@ -27,10 +27,11 @@ import { cn } from "@/lib/utils";
  *
  * Filtering and sorting run in the browser over the full list the server
  * already sent, which is what makes them instant; the trade-off is that the
- * page must ship every row rather than a server-filtered page of them. Both
- * lists are per-business and small enough for that today — if one grows to
- * thousands of rows, the fix is server-side pagination, not a slower
- * version of this.
+ * page must ship every row rather than a server-filtered page of them. The
+ * quotes list is per-business and small enough for that today — if it grows
+ * to thousands of rows, the fix is server-side pagination, not a slower
+ * version of this. /clients was the first to outgrow it (8,809 companies after
+ * the ACT! import) and no longer uses this file: see src/lib/client-list.ts.
  *
  * The matching and ordering rules themselves live in @/lib/list-table,
  * where they are plain functions under test; this file is state and markup.

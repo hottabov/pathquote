@@ -1,5 +1,13 @@
 import { cache } from "react";
 import { db } from "@/lib/db";
+import {
+  CLIENT_LIST_ALL,
+  clientListSlice,
+  clientListWhere,
+  clientListWindow,
+  type ClientListPageSize,
+  type ClientListRequest,
+} from "@/lib/client-list";
 import { companyOwnedWhereForUser, companyWhereForUser, type ScopeUser } from "@/lib/scope";
 
 export type CompanyListItem = {
@@ -25,47 +33,95 @@ export type CompanyListItem = {
   ownerName: string | null;
 };
 
+/** One page of the clients list, with the numbers the controls need. */
+export type CompanyListPage = {
+  items: CompanyListItem[];
+  /** Every company matching the search within the viewer's scope, not just
+   * this page. */
+  total: number;
+  /** The page `items` really is. Equals the page asked for unless that was
+   * past the end, in which case it is the last page. */
+  page: number;
+  pageSize: ClientListPageSize;
+};
+
 /**
- * Companies visible to `user` — all for ADMIN, this region's managers' for a
- * REGIONAL_MANAGER, own-only for MANAGER, plus every company in a country the
- * user has been granted (`User.visibleCountries`) — optionally filtered by a
- * case-insensitive name search, ordered by name. Each row carries its contact
- * count for the list cards and its owner's name for the `Owner` column.
+ * One page of the companies visible to `user` — all for ADMIN, this region's
+ * managers' for a REGIONAL_MANAGER, own-only for MANAGER, plus every company in
+ * a country the user has been granted (`User.visibleCountries`) — ordered by
+ * name, with the total that matched. Each row carries its contact count for
+ * the list cards and its owner's name for the `Owner` column.
+ *
+ * `request` is what `parseClientListParams` returned, so it is already
+ * validated; the rules for `q`, `page` and `pageSize` live in
+ * src/lib/client-list.ts. The search covers the whole scoped set, not the
+ * page: the user searches, then pages through the results.
+ *
+ * Two queries, run together under one `where`: the page and the count. The
+ * count does add work -- with a search it has to test every row, where the
+ * page may stop sooner -- but the two run in parallel, so the wait is the
+ * slower of them rather than their sum, and at 8,810 companies each is in the
+ * tens of milliseconds. "All" skips the count, because the rows returned are
+ * the total.
+ *
+ * Ordered by `id` after `name`: an ACT! import can hold two companies of one
+ * name, and with `skip`/`take` an unstable tie-break shows one of them on two
+ * pages and the other on none.
  */
 export async function listCompanies(
   user: ScopeUser,
-  params: { q?: string } = {}
-): Promise<CompanyListItem[]> {
-  const { q } = params;
+  request: ClientListRequest
+): Promise<CompanyListPage> {
+  const where = clientListWhere(companyWhereForUser(user), request.q);
 
-  const where: NonNullable<Parameters<typeof db.company.findMany>[0]>["where"] = {
-    ...companyWhereForUser(user),
-  };
+  const fetchPage = (page: number) =>
+    db.company.findMany({
+      where,
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      ...clientListSlice(page, request.pageSize),
+      include: {
+        _count: { select: { contacts: true } },
+        // Nullable relation: `Company.ownerId` is optional (see the schema), so
+        // a company imported or created without a resolvable owner has none.
+        owner: { select: { name: true, email: true } },
+      },
+    });
 
-  if (q && q.trim()) {
-    where.name = { contains: q.trim(), mode: "insensitive" };
+  let page = request.page;
+  let companies;
+  let total: number;
+
+  if (request.pageSize === CLIENT_LIST_ALL) {
+    companies = await fetchPage(1);
+    total = companies.length;
+    page = 1;
+  } else {
+    [companies, total] = await Promise.all([fetchPage(page), db.company.count({ where })]);
+    // A page past the end comes back empty. Fetch the last one instead of
+    // showing "no companies" for a list that has some -- rare (a stale link,
+    // or the last row of the last page was just deleted), so the second query
+    // is paid only then.
+    const clamped = clientListWindow(page, request.pageSize, total).page;
+    if (clamped !== page) {
+      page = clamped;
+      companies = await fetchPage(page);
+    }
   }
 
-  const companies = await db.company.findMany({
-    where,
-    orderBy: { name: "asc" },
-    include: {
-      _count: { select: { contacts: true } },
-      // Nullable relation: `Company.ownerId` is optional (see the schema), so
-      // a company imported or created without a resolvable owner has none.
-      owner: { select: { name: true, email: true } },
-    },
-  });
-
-  return companies.map((c) => ({
-    id: c.id,
-    name: c.name,
-    city: c.city,
-    country: c.country,
-    website: c.website,
-    contactCount: c._count.contacts,
-    ownerName: c.owner ? (c.owner.name ?? c.owner.email) : null,
-  }));
+  return {
+    items: companies.map((c) => ({
+      id: c.id,
+      name: c.name,
+      city: c.city,
+      country: c.country,
+      website: c.website,
+      contactCount: c._count.contacts,
+      ownerName: c.owner ? (c.owner.name ?? c.owner.email) : null,
+    })),
+    total,
+    page,
+    pageSize: request.pageSize,
+  };
 }
 
 export type ContactDetail = {
