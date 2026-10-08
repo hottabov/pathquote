@@ -28,6 +28,28 @@ describe("normaliseCompanyName", () => {
     expect(normaliseCompanyName("Group")).toBe("group");
   });
 
+  it("strips a legal suffix that punctuation turned into single letters", () => {
+    // "S.R.L." survives the punctuation strip as "s r l", which matches no
+    // suffix. Without rejoining it, NOITEX S.R.L. and NOITEX SRL are two
+    // companies -- and both spellings are in the real data.
+    expect(normaliseCompanyName("NOITEX S.R.L.")).toBe(normaliseCompanyName("NOITEX SRL"));
+    expect(normaliseCompanyName("Acme G.m.b.H.")).toBe(normaliseCompanyName("Acme GmbH"));
+    expect(normaliseCompanyName("Acme S.p.A.")).toBe(normaliseCompanyName("Acme SpA"));
+    expect(normaliseCompanyName("Acme B.V.")).toBe(normaliseCompanyName("Acme BV"));
+    expect(normaliseCompanyName("Acme L.L.C.")).toBe(normaliseCompanyName("Acme LLC"));
+  });
+
+  it("only rejoins a trailing run, so leading initials survive", () => {
+    // The run has to be what ends the name. Initials at the front are part of
+    // it, not a legal form.
+    expect(normaliseCompanyName("A B C Trading")).toBe("a b c trading");
+  });
+
+  it("leaves a rejoined run alone when it is not a legal form", () => {
+    // "K G" joins to "kg", which is in no suffix list, so it stays as the name.
+    expect(normaliseCompanyName("Smith K.G.")).toBe("smith kg");
+  });
+
   it("returns an empty string for junk", () => {
     expect(normaliseCompanyName("   ")).toBe("");
     expect(normaliseCompanyName("...")).toBe("");
