@@ -785,6 +785,14 @@ plausible wrong number on a signed quote is worse than an empty field."
 
 ### Task 5: Industry resolution
 
+> **Amended after the first full dry run.** `industries.ts` also answers "does
+> the table have an opinion about this spelling?" (`isKnown`), from the same
+> index as `resolve`, via `buildIndustryLookup`. The sync's unresolved-industry
+> report lists a value only when the table has no entry for it; a spelling
+> mapped to `null` on purpose (`NIL`, `Poor info`, `prospect`) is a decision,
+> not a gap, and used to be reported anyway (4 of the 7 values the first run
+> listed). The reader should map each value listed to a segment, or to `null`.
+
 **Files:**
 - Create: `src/lib/act/industries.ts`
 - Modify: `scripts/import-act-industries.ts`

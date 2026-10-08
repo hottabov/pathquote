@@ -107,8 +107,9 @@ async function main() {
     console.log("");
     console.log(`industry values with no alias (${result.unknownIndustries.length}):`);
     for (const value of result.unknownIndustries) console.log(`  ${value}`);
-    console.log("Add the real ones to scripts/data/act-industries.json. Never let the");
-    console.log("importer create industries: free text is what produced 335 spellings.");
+    console.log("Map each in scripts/data/act-industries.json: to a segment, or to null if it");
+    console.log("is not an industry. Never let the importer create industries: free text is");
+    console.log("what produced 335 spellings.");
   }
   console.log("");
   const cursorLabel = args.dryRun ? "cursor would move to" : "cursor now";

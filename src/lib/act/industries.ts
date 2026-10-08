@@ -6,7 +6,7 @@ import { normalizeIndustryName } from "@/lib/validation/industries";
 // "Leatrher & Skins", "BoatingBrunswick", and 307 rows of "NIL".
 //
 // scripts/data/act-industries.json is the cleaned mapping: 31 canonical trade
-// segments and 352 raw spellings that point at them. It was built for
+// segments and 355 raw spellings that point at them. It was built for
 // scripts/import-act-industries.ts, which seeds the Industry table, and the
 // sync resolves against the same table rather than inventing a second,
 // dirtier one.
@@ -40,16 +40,35 @@ export function loadActIndustries(): ActIndustries {
 }
 
 /**
- * A resolver from raw ACT! industry text to a canonical segment name, or null.
+ * Both questions the sync asks of the table, answered from one index.
  *
- * The alias table is indexed once by normalised key. The previous
- * implementation scanned all 352 aliases per call, normalising both sides each
- * time; over 12,000 contacts that is 4.2 million normalisations to answer
- * 12,000 questions.
+ * `resolve` says what a spelling means. `isKnown` says whether the table has an
+ * opinion about it at all. They differ for a value like "NIL": the table knows
+ * it and says it is not an industry, so `resolve` returns null and `isKnown`
+ * returns true. A spelling nobody has seen also resolves to null, but there
+ * `isKnown` is false -- and only that one is worth putting in front of a person
+ * to map.
+ *
+ * Without `isKnown` the unresolved-industry report listed every deliberate null
+ * as if it were a gap (4 of its 7 entries), which teaches the reader to ignore
+ * the report.
  */
-export function buildIndustryResolver(
-  data: ActIndustries = loadActIndustries(),
-): (raw: string | null | undefined) => string | null {
+export type IndustryLookup = {
+  /** A canonical segment name, or null when the value is not an industry or is
+   * not in the table. */
+  resolve: (raw: string | null | undefined) => string | null;
+  /** True when the table has an opinion about this spelling, including the
+   * opinion that it is not an industry at all. */
+  isKnown: (raw: string | null | undefined) => boolean;
+};
+
+/**
+ * Index the alias table once by normalised key and answer both questions from
+ * it. The previous implementation scanned all the aliases per call, normalising
+ * both sides each time; over 12,000 contacts that is millions of
+ * normalisations to answer 12,000 questions.
+ */
+export function buildIndustryLookup(data: ActIndustries = loadActIndustries()): IndustryLookup {
   const index = new Map<string, string | null>();
   for (const [alias, segment] of Object.entries(data.aliases)) {
     index.set(normalizeIndustryName(alias), segment);
@@ -60,10 +79,40 @@ export function buildIndustryResolver(
     index.set(normalizeIndustryName(name), name);
   }
 
-  return (raw) => {
+  function keyOf(raw: string | null | undefined): string | null {
     if (!raw) return null;
-    const key = normalizeIndustryName(raw);
-    if (!key) return null;
-    return index.get(key) ?? null;
+    return normalizeIndustryName(raw) || null;
+  }
+
+  return {
+    resolve(raw) {
+      const key = keyOf(raw);
+      return key === null ? null : (index.get(key) ?? null);
+    },
+    isKnown(raw) {
+      const key = keyOf(raw);
+      return key !== null && index.has(key);
+    },
   };
+}
+
+/**
+ * A resolver from raw ACT! industry text to a canonical segment name, or null.
+ * Callers that also need `isKnown` should use `buildIndustryLookup` so the two
+ * share one index.
+ */
+export function buildIndustryResolver(
+  data: ActIndustries = loadActIndustries(),
+): (raw: string | null | undefined) => string | null {
+  return buildIndustryLookup(data).resolve;
+}
+
+/**
+ * True when the table has an opinion about this spelling, including the opinion
+ * that it is not an industry at all.
+ */
+export function buildIndustryKnownCheck(
+  data: ActIndustries = loadActIndustries(),
+): (raw: string | null | undefined) => boolean {
+  return buildIndustryLookup(data).isKnown;
 }

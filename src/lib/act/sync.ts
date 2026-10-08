@@ -2,7 +2,7 @@ import { Prisma, type Company } from "@prisma/client";
 import { db } from "@/lib/db";
 import { ActClient } from "@/lib/act/client";
 import { chooseCompany } from "@/lib/act/company-identity";
-import { buildIndustryResolver } from "@/lib/act/industries";
+import { buildIndustryLookup } from "@/lib/act/industries";
 import { formatGenericChannel, mapContact } from "@/lib/act/map";
 import { fillOnlyEmpty } from "@/lib/act/merge";
 import type { GenericChannel, MappedCompany, SkipReason } from "@/lib/act/types";
@@ -47,7 +47,10 @@ export type SyncResult = {
   skipped: Record<SkipReason, number>;
   /** Contacts imported with no usable phone number. */
   unresolvedPhones: number;
-  /** Raw industry values with no entry in the alias table, deduplicated. */
+  /**
+   * Raw industry values the alias table has no entry for, deduplicated. A value
+   * the table maps to null on purpose (not an industry) is not listed.
+   */
   unknownIndustries: string[];
   /** Contacts whose database work threw. The run carries on past them. */
   failed: number;
@@ -266,7 +269,7 @@ export async function syncContacts(
   client: ActClient,
   options: SyncOptions = {},
 ): Promise<SyncResult> {
-  const resolveIndustry = buildIndustryResolver();
+  const { resolve: resolveIndustry, isKnown: isKnownIndustry } = buildIndustryLookup();
   const since = options.full ? null : await readCursor();
 
   // Industry is a small fixed table, so read it once rather than asking per
@@ -324,7 +327,10 @@ export async function syncContacts(
       }
 
       const rawIndustry = raw.customFields?.user6;
-      if (typeof rawIndustry === "string" && rawIndustry.trim() && !mapped.company.industry) {
+      // Only a spelling the table has no opinion on is a gap. One it maps to
+      // null ("NIL", "Poor info") is a decision already made, and reporting it
+      // would teach the reader to ignore the list.
+      if (typeof rawIndustry === "string" && rawIndustry.trim() && !isKnownIndustry(rawIndustry)) {
         unknownIndustries.add(rawIndustry.trim());
       }
       // Counts contacts imported; a company-only record imports none.
