@@ -22,6 +22,7 @@
     "db:verify-seed": "tsx scripts/verify-seed.ts",
     "quotes:purge": "tsx scripts/purge-quotes.ts",
     "user:create": "tsx scripts/create-user.ts",
+    "user:countries": "tsx scripts/set-user-countries.ts",
     "images:import": "tsx scripts/import-product-images.ts",
     "import:industries": "tsx scripts/import-industries.ts",
     "import:act-industries": "tsx scripts/import-act-industries.ts",
