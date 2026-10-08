@@ -79,7 +79,6 @@ describe("normaliseWebsite", () => {
     ["-erpo.de"],
     ["erpo-.de"],
     ["erpo..de"],
-    [".erpo.de"],
     ["erpo.d"],
     ["erpo.d3"],
     ["erpo.de:"],
@@ -207,5 +206,49 @@ describe("websiteLabel", () => {
     expect(websiteLabel(undefined)).toBeNull();
     expect(websiteLabel("")).toBeNull();
     expect(websiteLabel("   ")).toBeNull();
+  });
+});
+
+/**
+ * The shapes the ACT! import actually put in `Company.website`, read off
+ * production on 2026-10-08. Twenty years of a free-text field: 1,440 rows with
+ * https, 1,474 with http, 4,571 bare, and among the bare ones these.
+ *
+ * Each is a usable site spoiled by one stray character, so rejecting them would
+ * lose a working link over a typo — and a company's website is one of the few
+ * things a salesperson opens straight from the client list.
+ */
+describe("normaliseWebsite against the real imported values", () => {
+  it("recovers a site behind leading punctuation", () => {
+    expect(normaliseWebsite("/3dbelt.com/our-brands")).toBe("3dbelt.com/our-brands");
+    expect(normaliseWebsite("/tyndaleusa.com/about-us/locations")).toBe(
+      "tyndaleusa.com/about-us/locations",
+    );
+    expect(normaliseWebsite(".mareclean.com")).toBe("mareclean.com");
+    expect(normaliseWebsite("@sweetvictorian.com")).toBe("sweetvictorian.com");
+  });
+
+  it("unwraps a markdown link, including one behind a stray slash", () => {
+    // Somebody pasted a formatted link into Act! years ago, and it is in there.
+    expect(
+      normaliseWebsite("/[www.texasspacovers.com/about-us/](https://www.texasspacovers.com/about-us/)"),
+    ).toBe("www.texasspacovers.com/about-us");
+    expect(normaliseWebsite("[Acme](https://acme.de)")).toBe("acme.de");
+  });
+
+  it("still refuses an email address, which a leading-@ strip must not turn into a host", () => {
+    expect(normaliseWebsite("info@erpo.de")).toBeNull();
+    expect(normaliseWebsite("sales@3m.co.uk")).toBeNull();
+  });
+
+  it("still refuses what is not a website at all", () => {
+    expect(normaliseWebsite("???")).toBeNull();
+    expect(normaliseWebsite("n/a")).toBeNull();
+    expect(normaliseWebsite("not a url")).toBeNull();
+  });
+
+  it("lowercases the shouting the data is full of", () => {
+    expect(normaliseWebsite("ALDERANDOAKDESIGNS.COM")).toBe("alderandoakdesigns.com");
+    expect(normaliseWebsite("A1Spacovers.com")).toBe("a1spacovers.com");
   });
 });

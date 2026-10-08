@@ -54,12 +54,43 @@ export type WebsiteCheck =
 export function checkWebsite(value: string | null | undefined): WebsiteCheck {
   if (typeof value !== "string") return { ok: false, reason: "invalid" };
 
-  // Surrounding whitespace is noise. Whitespace anywhere else is not a url.
   let rest = value.trim();
+  if (rest === "") return { ok: false, reason: "invalid" };
+
+  // Leading punctuation that can never begin a hostname, stripped before
+  // anything else because the markdown case below arrives behind one.
+  //
+  // At most ONE slash, deliberately: "/3dbelt.com/our-brands" is a real row and
+  // recovers, while "//evil.com" keeps a slash, leaves an empty host and is
+  // still refused. Protocol-relative values must not become links -- see the
+  // test named for it.
+  rest = rest.replace(/^[.@\s]*\/?[.@\s]*/, "");
+
+  // A markdown link, which really is in the imported data:
+  //   "/[www.texasspacovers.com/about-us/](https://www.texasspacovers.com/...)"
+  // Somebody pasted a formatted link into Act!'s free-text field years ago.
+  // Take the target and carry on with it; the label is usually the same URL
+  // without its scheme, so either would do, but the target is the one meant to
+  // be followed.
+  const markdown = rest.match(/^\s*\[[^\]]*\]\(([^)\s]+)\)\s*$/);
+  if (markdown) rest = markdown[1];
+
+  // The real values the strip above recovers are "/3dbelt.com/our-brands",
+  // ".mareclean.com" and "@sweetvictorian.com" -- usable sites spoiled by one
+  // stray character, where dropping the row would lose a working link over a
+  // typo. Only a *leading* "@" goes, so "info@erpo.de" is still rejected as
+  // the email address it is.
+  rest = rest.replace(/^[.@\s]+/, "");
+
+  // Whitespace anywhere else is not a url.
   if (rest === "" || /\s/.test(rest)) return { ok: false, reason: "invalid" };
 
   // `http://` is folded to `https://` -- by being dropped along with `https://`.
   rest = rest.replace(WEB_SCHEME, "");
+
+  // The scheme may itself have been behind the punctuation stripped above, or
+  // inside the markdown target, so look once more.
+  rest = rest.replace(/^[.@]+/, "").replace(WEB_SCHEME, "");
 
   // Host ends at the first `/`, `?` or `#`; the remainder is kept verbatim.
   // (Paths and queries are case-sensitive, so only the host is lowercased.)
