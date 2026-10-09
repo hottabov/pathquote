@@ -153,10 +153,103 @@ export function failedRun(started: ActSyncRun, counts: RunCounts, error: unknown
  * blank one -- would otherwise fall through to the killed-run branch, and a run
  * that threw would be reported as one that was stopped partway. A run that has
  * an error gets words for it even when the error itself had none.
+ *
+ * Exported for the Sync now action (src/lib/actions/act-sync.ts), which has the
+ * same problem from the other side: it returns the thrown message to the admin
+ * who pressed the button, and a blank one would paint an empty red banner. The
+ * two go through here so the banner and the stored record say the same words
+ * about the same failure.
  */
-function messageOf(error: unknown): string {
+export function messageOf(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message.trim() || "the sync threw an error that carried no message";
+}
+
+function isTrigger(value: unknown): value is SyncTrigger {
+  return value === "schedule" || value === "manual";
+}
+
+/**
+ * A stored timestamp: a string the clock can actually be read off.
+ *
+ * `typeof value === "string"` alone is not enough. Nothing in this module reads
+ * either timestamp as a date -- describeRun only asks whether `finishedAt` is
+ * null -- so being shown is the only reason `startedAt` is in the record at
+ * all, and a string that is not a date reaches the reader as the literal words
+ * "Invalid Date". Which looks like a bug in the page rather than a bad record,
+ * and sends whoever sees it to the wrong file.
+ */
+function isTimestamp(value: unknown): value is string {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value));
+}
+
+/**
+ * A stored counter.
+ *
+ * `typeof` is the check that does the work. `Number.isFinite` is belt and
+ * braces: neither NaN nor Infinity can come back out of a jsonb column, since
+ * nothing can put them in -- but both would survive the `typeof` test on their
+ * own and print as themselves, so the pair costs one call and removes the need
+ * to know that.
+ *
+ * Not checked for being a whole number or for being positive: nothing
+ * downstream depends on either -- `formatCount` renders 3.5 as "3.5" and -1 as
+ * "-1", neither of which is a crash or a misleading number -- and a guard that
+ * rejects a record over something harmless costs the reader the whole record.
+ */
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+/**
+ * The record that was stored, or null when what came back is not one.
+ *
+ * `Setting.value` is a bare Json column: nothing in the database enforces the
+ * shape declared at the top of this file, and the only writer is a version of
+ * sync.ts that will change. So the page has to survive a record written by an
+ * older or a newer version of this module.
+ *
+ * A crash is not the failure mode to worry about. Every counter describeRun
+ * reads is behind a `> 0` test, and `undefined > 0` is false, so a record
+ * missing `contactsUpdated` does not throw -- it reads as zero and the page
+ * says "No changes" about a run that updated eleven contacts. That is the
+ * wrong-and-looks-right answer the double write in sync.ts exists to prevent,
+ * reached from a third side, and nobody investigates a page that looks calm.
+ * (`formatCount(undefined)` IS a TypeError, so a reader that formats a counter
+ * without gating it first does crash. Both are closed here rather than one of
+ * them being closed again in every reader.)
+ *
+ * All or nothing, deliberately. The alternative -- keep the fields that parse,
+ * default the ones that do not -- is that same silent zero by choice instead of
+ * by accident, and it would let an unrecognised `trigger` label a hand run as
+ * the nightly job. One unreadable field makes the record unreadable, and the
+ * caller is left to say so rather than to guess.
+ *
+ * Fields this version does not know about are ignored rather than rejected, so
+ * a newer version adding one does not blank the page for an older one.
+ *
+ * A type assertion plus named guards, which is what this repo does with a Json
+ * column read back (`isCommissionTierArray`, src/lib/queries/settings.ts); no
+ * schema library, because there is none in this layer to be consistent with.
+ */
+export function parseStoredRun(value: unknown): ActSyncRun | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const { startedAt, finishedAt, trigger, error } = value as Record<string, unknown>;
+
+  if (!isTimestamp(startedAt)) return null;
+  if (!(finishedAt === null || isTimestamp(finishedAt))) return null;
+  if (!isTrigger(trigger)) return null;
+  if (!(error === null || typeof error === "string")) return null;
+
+  // Through onlyCounts so the six names stay written in exactly one place: a
+  // seventh counter added to RunCounts and not to this check would be read off
+  // the row untested, and the compiler would not say a word. The cast is a lie
+  // for the length of that one call -- the values may be anything, or absent --
+  // which is what the line below is for.
+  const counts = onlyCounts(value as RunCounts);
+  if (!Object.values(counts).every(isCount)) return null;
+
+  return { startedAt, finishedAt, trigger, ...counts, error };
 }
 
 /**

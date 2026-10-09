@@ -3,6 +3,8 @@ import {
   describeRun,
   failedRun,
   finishedRun,
+  messageOf,
+  parseStoredRun,
   startedRun,
   type ActSyncRun,
   type RunCounts,
@@ -245,5 +247,107 @@ describe("the three records one run can leave", () => {
       expect(describeRun(record).headline).toContain("Failed:");
     }
     expect(failedRun(started, counts, "ACT! said no").error).toBe("ACT! said no");
+  });
+});
+
+describe("messageOf", () => {
+  it("always has words, whatever was thrown", () => {
+    // Exported because the Sync now action returns this to the admin who
+    // pressed the button, where a blank message would paint an empty banner.
+    expect(messageOf(new Error("authorize failed (401)"))).toBe("authorize failed (401)");
+    expect(messageOf("ACT! said no")).toBe("ACT! said no");
+    expect(messageOf(new Error("  "))).toBeTruthy();
+    expect(messageOf(undefined)).toBeTruthy();
+  });
+});
+
+describe("parseStoredRun", () => {
+  // What the Settings page is actually handed: the record, through JSON and
+  // back, exactly as Prisma returns a jsonb column.
+  function stored(value: unknown): unknown {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  const written = finishedRun(
+    startedRun("schedule", new Date("2026-10-09T17:00:00.000Z")),
+    {
+      contactsCreated: 3,
+      contactsUpdated: 11,
+      companiesCreated: 2,
+      companiesFromNamelessContacts: 0,
+      companiesKeyCollisions: 0,
+      failed: 0,
+    },
+    new Date("2026-10-09T17:00:42.000Z"),
+  );
+
+  it("reads back a record this module wrote", () => {
+    expect(parseStoredRun(stored(written))).toEqual(written);
+  });
+
+  it("reads back the record a run writes when it starts", () => {
+    // No ending yet, which is the record the page sees while a sync is going.
+    // Rejecting a null `finishedAt` would blank the page for every run in
+    // progress.
+    const started = startedRun("manual", new Date("2026-10-09T17:00:00.000Z"));
+    expect(parseStoredRun(stored(started))).toEqual(started);
+  });
+
+  it("rejects anything that is not an object", () => {
+    // The row's value is a bare Json column: a hand-written `"none"` or a
+    // mistaken array is as storable as a record. Not put through `stored`:
+    // `undefined` is not JSON, which is the point -- it cannot come out of the
+    // column, and the guard takes it anyway rather than resting on that.
+    for (const value of [null, undefined, "none", 7, true, [written]]) {
+      expect(parseStoredRun(value)).toBeNull();
+    }
+  });
+
+  it("rejects a record missing a counter", () => {
+    const withoutOne: Record<string, unknown> = { ...written };
+    delete withoutOne.contactsUpdated;
+    expect(parseStoredRun(stored(withoutOne))).toBeNull();
+
+    // Why that is worth rejecting, pinned here rather than claimed in a
+    // comment: handed the same record unchecked, describeRun does not throw.
+    // Every counter it reads sits behind a `> 0` test and `undefined > 0` is
+    // false, so eleven updated contacts simply stop being mentioned.
+    expect(describeRun(withoutOne as unknown as ActSyncRun).headline).toBe(
+      "3 contacts added, 2 companies added",
+    );
+  });
+
+  it("rejects a counter that is not a number", () => {
+    expect(parseStoredRun(stored({ ...written, failed: "3" }))).toBeNull();
+    expect(parseStoredRun(stored({ ...written, failed: null }))).toBeNull();
+  });
+
+  it("rejects a trigger it does not recognise", () => {
+    // Not pedantry: describeRun says "Scheduled" for anything that is not
+    // "manual", so a third trigger name read off the row would label a run by
+    // hand as the nightly job.
+    expect(parseStoredRun(stored({ ...written, trigger: "nightly" }))).toBeNull();
+    expect(parseStoredRun(stored({ ...written, trigger: null }))).toBeNull();
+  });
+
+  it("rejects a timestamp the clock cannot be read off", () => {
+    // The page renders startedAt as a date. A string that is not one reaches
+    // the reader as the literal words "Invalid Date".
+    expect(parseStoredRun(stored({ ...written, startedAt: "last night" }))).toBeNull();
+    expect(parseStoredRun(stored({ ...written, startedAt: null }))).toBeNull();
+    expect(parseStoredRun(stored({ ...written, finishedAt: "soon" }))).toBeNull();
+  });
+
+  it("rejects an error that is not a message", () => {
+    expect(parseStoredRun(stored({ ...written, error: 401 }))).toBeNull();
+  });
+
+  it("ignores a field it does not know about, and does not pass it on", () => {
+    // A newer version of sync.ts adding a seventh counter must not blank the
+    // page for a server still running this one -- and must not smuggle the new
+    // field through either, because everything downstream of here is typed as
+    // ActSyncRun and would not expect it.
+    const fromLater = { ...written, contactsDeleted: 4 };
+    expect(parseStoredRun(stored(fromLater))).toEqual(written);
   });
 });
