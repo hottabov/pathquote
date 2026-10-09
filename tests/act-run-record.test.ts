@@ -25,6 +25,23 @@ describe("describeRun", () => {
     });
   });
 
+  it("keeps the noun on the first phrase when nothing was added", () => {
+    // What most nights look like: existing contacts edited, nothing new. The
+    // second noun is dropped only because the first phrase carried it, so when
+    // "updated" leads it has to carry its own -- a bare "11 updated, 2
+    // companies added" invites reading the 11 as companies.
+    expect(describeRun(run({ contactsCreated: 0 })).headline).toBe(
+      "11 contacts updated, 2 companies added",
+    );
+  });
+
+  it("groups thousands in a count", () => {
+    // The first full import is ~12,000 contacts. Pinned because a bare
+    // `${run.contactsUpdated}` would read "12000" and look like a simpler way
+    // to write the same thing.
+    expect(describeRun(run({ contactsUpdated: 12000 })).headline).toContain("12,000");
+  });
+
   it("says so plainly when a run changed nothing", () => {
     // The common case once the nightly job is running: nobody edited ACT!
     // yesterday. "0 contacts added, 0 updated" reads like a fault.
@@ -34,9 +51,12 @@ describe("describeRun", () => {
   });
 
   it("leads with the failure when one contact failed", () => {
-    const described = describeRun(run({ failed: 2 }));
+    // One, not two: the singular arm of `plural` is otherwise never exercised
+    // on the contact strings, and this catches the headline being rewritten as
+    // `${run.failed} contacts failed`.
+    const described = describeRun(run({ failed: 1 }));
     expect(described.tone).toBe("error");
-    expect(described.headline).toContain("2 contacts failed");
+    expect(described.headline).toContain("1 contact failed");
   });
 
   it("leads with the error when the run never finished", () => {
@@ -70,21 +90,40 @@ describe("describeRun", () => {
       run({ finishedAt: null, error: "ECONNRESET", failed: 3 }),
     );
     expect(described.headline).toContain("ECONNRESET");
-    expect(described.detail).toContain("3 contacts");
+    expect(described.detail).toContain("3 contacts had already failed");
+    // And says what a thrown run shares with a merely failed one: the reader
+    // should not have to assume records were lost. Not in terms of the cursor,
+    // which a thrown run may well have moved -- only ever past records already
+    // stored, which is why nothing is skipped either way.
+    expect(described.detail).toContain("Nothing was skipped");
   });
 
-  it("flags a key collision even on an otherwise clean run", () => {
-    // Two different firms whose names normalise alike. Nothing is broken, but
-    // a person should look, and nothing else on the page would say so.
-    const described = describeRun(run({ companiesKeyCollisions: 1 }));
+  it("says what a key collision means for the client list", () => {
+    // Two different ACT! companies whose names normalise alike, so the second
+    // one became a client row of its own (see chooseCompany in
+    // company-identity.ts). Nothing is broken, but there are now two
+    // look-alike clients in the picker and a quote can go to the wrong one --
+    // which is what this has to say, not that a key collided.
+    const described = describeRun(run({ companiesKeyCollisions: 2 }));
     expect(described.tone).toBe("warn");
-    expect(described.detail).toContain("1 company key collision");
+    expect(described.detail).toBe(
+      "2 new clients have names that look like clients you already have — check the client list before quoting any of them.",
+    );
+    // One collision is its own sentence rather than the plural one with a
+    // different number in it, so it is pinned here too.
+    expect(describeRun(run({ companiesKeyCollisions: 1 })).detail).toBe(
+      "1 new client has a name that looks like a client you already have — check the client list before quoting either of them.",
+    );
   });
 
-  it("names the companies imported without a contact", () => {
-    expect(describeRun(run({ companiesFromNamelessContacts: 4 })).detail).toContain(
-      "4 companies had no named contact",
-    );
+  it("counts nameless arrivals as the contacts they are", () => {
+    // companiesFromNamelessContacts counts records, not distinct companies:
+    // two nameless contacts at one firm count twice. Saying "4 companies"
+    // invites reconciling the number against the client list, where it will
+    // not match.
+    const detail = describeRun(run({ companiesFromNamelessContacts: 4 })).detail;
+    expect(detail).toContain("4 contacts arrived with a company but no person's name");
+    expect(detail).not.toContain("companies");
   });
 
   it("says which trigger started it", () => {
