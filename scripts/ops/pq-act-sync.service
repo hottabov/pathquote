@@ -1,0 +1,11 @@
+[Unit]
+Description=PathQuote ACT! sync: contacts and companies from the CRM, nightly
+After=docker.service network-online.target
+Wants=network-online.target
+OnFailure=pq-backup-alert@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pq-act-sync.sh
+StandardOutput=append:/var/log/pq-act-sync.log
+StandardError=append:/var/log/pq-act-sync.log
