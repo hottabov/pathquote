@@ -7,6 +7,7 @@
 // suite.
 
 import { isProductHidden, isSeriesHidden, type HiddenCatalogIds } from "./catalog-visibility";
+import { plural } from "./plural";
 
 /** The slice of `VisibilitySeriesRow` the counts need. */
 export type CatalogueTree = readonly { id: string; products: readonly { id: string }[] }[];
@@ -50,10 +51,6 @@ export type CatalogueAccessSummary = {
   /** Present only for `none`: why that is probably not what the admin meant. */
   warning: string | null;
 };
-
-function plural(n: number, one: string, many: string): string {
-  return `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
-}
 
 /**
  * Restates the working selection as its effect on what the user will see.

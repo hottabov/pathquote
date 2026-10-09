@@ -4,6 +4,7 @@
 // `@/lib/db`, which throws without DATABASE_URL -- unusable from the no-database
 // test suite. No `@/lib/db` or `next/*` imports.
 import { countryName, isValidCountryCode } from "./countries";
+import { plural } from "./plural";
 import { ALL_COUNTRIES } from "./scope";
 
 export type VisibilityCountryRow = {
@@ -33,10 +34,6 @@ export type ContactsAccessSummary = {
   /** Present only for `none`: why that is probably not what the admin meant. */
   warning: string | null;
 };
-
-function plural(n: number, one: string, many: string): string {
-  return `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
-}
 
 /**
  * Restates the working selection as its effect on what the user will see.

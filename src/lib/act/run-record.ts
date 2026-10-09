@@ -8,6 +8,8 @@
 // Pure: no database, no React. The wording is the part worth testing, and the
 // counts it reads come straight from SyncResult.
 
+import { formatCount, plural } from "@/lib/plural";
+
 /** The Setting key the record lives under. */
 export const LAST_RUN_KEY = "act.sync.lastRun";
 
@@ -41,15 +43,6 @@ export type RunDescription = {
   /** "Scheduled" or "Run by hand". */
   trigger: string;
 };
-
-// Grouped counts, matching the `plural` in catalog-visibility-summary.ts and
-// contacts-visibility.ts -- same shape, same "en-US", so a count reads the same
-// wherever the app prints one. The grouping earns its place at this scale: the
-// first full import is ~12,000 contacts, and "12,000 updated" is read at a
-// glance where "12000 updated" has to be counted.
-function plural(count: number, one: string, many: string): string {
-  return `${count.toLocaleString("en-US")} ${count === 1 ? one : many}`;
-}
 
 /**
  * One run, in words.
@@ -128,7 +121,7 @@ export function describeRun(run: ActSyncRun): RunDescription {
     // invites reading the 11 as companies.
     changes.push(
       changes.length > 0
-        ? `${run.contactsUpdated.toLocaleString("en-US")} updated`
+        ? `${formatCount(run.contactsUpdated)} updated`
         : `${plural(run.contactsUpdated, "contact", "contacts")} updated`,
     );
   }
