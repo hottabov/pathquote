@@ -19,7 +19,7 @@
  * do awnings and tents, because a shop that does one rarely does the other.
  *
  * The segment list and the full raw->segment mapping live in
- * scripts/data/act-industries.json, deliberately as data rather than in this
+ * src/lib/act/act-industries.json, deliberately as data rather than in this
  * file: every judgement call about which spellings are the same trade is
  * reviewable there in one place, and the same mapping is what the planned ACT
  * contact import will need — `buildIndustryResolver` in

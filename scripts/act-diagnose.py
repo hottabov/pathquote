@@ -11,7 +11,7 @@ first full dry run raised.
    judged.
 
 2. `industry values with no alias (7)`. Four of those seven are already in
-   scripts/data/act-industries.json mapped to null, because they are not
+   src/lib/act/act-industries.json mapped to null, because they are not
    industries ("NIL", "Poor info"). The sync reports them anyway, which cries
    wolf. This separates genuinely unmapped spellings from deliberate nulls, with
    a contact count for each, so the mapping can be finished from real data
@@ -54,7 +54,14 @@ ACTIVE = {"Customer", "Prospect"}
 # user slot, not a field called "industry".
 INDUSTRY_FIELD = "user6"
 
-DATA_PATH = pathlib.Path(__file__).resolve().parent / "data" / "act-industries.json"
+# Derived from this file's location, not the working directory, so the script
+# runs from anywhere. The mapping lives under src/ because the app statically
+# imports it and the image build only copies src/ -- see the header of
+# src/lib/act/industries.ts.
+DATA_PATH = (
+    pathlib.Path(__file__).resolve().parent.parent
+    / "src" / "lib" / "act" / "act-industries.json"
+)
 
 
 def env(name):

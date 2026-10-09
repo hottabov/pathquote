@@ -115,7 +115,7 @@ async function main() {
     console.log("");
     console.log(`industry values with no alias (${result.unknownIndustries.length}):`);
     for (const value of result.unknownIndustries) console.log(`  ${value}`);
-    console.log("Map each in scripts/data/act-industries.json: to a segment, or to null if it");
+    console.log("Map each in src/lib/act/act-industries.json: to a segment, or to null if it");
     console.log("is not an industry. Never let the importer create industries: free text is");
     console.log("what produced 335 spellings.");
   }
