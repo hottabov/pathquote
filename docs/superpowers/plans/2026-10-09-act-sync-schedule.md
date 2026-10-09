@@ -706,6 +706,18 @@ Expected: a delta run, `failed 0`, and the Settings page showing it within secon
 
 Start the service and press **Sync now** in the browser while it is running. The page must say a sync is already running, not start a second one. This is the one behaviour here that cannot be unit-tested, and it is the one that corrupts the cursor if it is wrong.
 
+- [ ] **Step 4a: Measure the one number that is still a guess**
+
+Task 5 worked out that the button's worst case is **~43 minutes** (88 pages × 200 contacts, each exchange bounded by 3 attempts × 30s + backoff), and that nothing in the application bounds it: `next.config.ts` declares no `serverActions` block, `maxDuration` means nothing behind a proxy, and Node's response timeout is off. The only ceiling is nginx's `proxy_read_timeout` — **assumed to be the 60s default, read from nginx's documentation rather than from this server**, because the live site is a WordOps proxy site whose generated template is not in this repo.
+
+Read the real value:
+
+```bash
+nginx -T 2>/dev/null | grep -n 'proxy_read_timeout\|proxy_send_timeout'
+```
+
+What happens when it trips is already understood and is acceptable: nginx answers 504, the page reports a failure, **and the sync carries on** — nothing cancels a server action when the client goes away, so it keeps the lock, finishes, and writes its record. A reload says "Running now", a later one says what changed. Record the actual number in the runbook so the next person does not have to rediscover it.
+
 - [ ] **Step 5: Confirm the next run is scheduled**
 
 ```bash
