@@ -58,7 +58,7 @@ describe("buildCandidates", () => {
 // The file this seeds from, checked as it actually stands. A mapping that
 // pointed two spellings at different segments, or named a segment that was
 // never seeded, would insert cleanly and then make an import ambiguous.
-describe("scripts/data/act-industries.json", () => {
+describe("src/lib/act/act-industries.json", () => {
   const data = loadActIndustries();
   const canonicalKeys = new Set(data.canonical.map(normalizeIndustryName));
 

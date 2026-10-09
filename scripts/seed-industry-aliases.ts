@@ -3,7 +3,7 @@
  *
  * scripts/import-act-industries.ts collapsed 335 distinct spellings from the
  * ACT contact export into 31 trade segments, and the judgement calls behind
- * that live as data in scripts/data/act-industries.json. Seeding the segments
+ * that live as data in src/lib/act/act-industries.json. Seeding the segments
  * used only the left column of that file; this script finally uses the right
  * one -- every raw spelling becomes an IndustryAlias pointing at the segment
  * it was mapped to.

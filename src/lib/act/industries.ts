@@ -1,15 +1,20 @@
-import actIndustries from "../../../scripts/data/act-industries.json";
+import actIndustries from "./act-industries.json";
 import { normalizeIndustryName } from "@/lib/validation/industries";
 
 // ACT!'s Industry field is free text and twenty years of it produced 335
 // distinct spellings across 17,373 contacts -- "CARPET" and "carpET",
 // "Leatrher & Skins", "BoatingBrunswick", and 307 rows of "NIL".
 //
-// scripts/data/act-industries.json is the cleaned mapping: 31 canonical trade
-// segments and 355 raw spellings that point at them. It was built for
+// act-industries.json, beside this file, is the cleaned mapping: 31 canonical
+// trade segments and 355 raw spellings that point at them. It was built for
 // scripts/import-act-industries.ts, which seeds the Industry table, and the
 // sync resolves against the same table rather than inventing a second,
 // dirtier one.
+//
+// It lives here rather than under scripts/ because the app statically imports
+// it: the Dockerfile's `build` stage copies src/ and not scripts/, so a file
+// the app needs has to be inside src/. tests/build-image-imports.test.ts
+// holds that line for every file under src/.
 //
 // The importer never creates an industry row. An unknown spelling leaves the
 // company's industry unset and goes in the unresolved report, because
@@ -24,7 +29,7 @@ export type ActIndustries = {
 };
 
 /** Where the mapping lives, for error messages. Not used to read the file. */
-export const ACT_INDUSTRIES_PATH = "scripts/data/act-industries.json";
+export const ACT_INDUSTRIES_PATH = "src/lib/act/act-industries.json";
 
 /**
  * The mapping, as data.
