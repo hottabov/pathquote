@@ -1,4 +1,5 @@
-import { Prisma, type Company } from "@prisma/client";
+import { Prisma, PrismaClient, type Company } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { db } from "@/lib/db";
 import { ActClient } from "@/lib/act/client";
 import { chooseCompany } from "@/lib/act/company-identity";
@@ -24,6 +25,27 @@ import type { GenericChannel, MappedCompany, SkipReason } from "@/lib/act/types"
 // skip it forever; holding the cursor makes the next run try it again.
 
 const CURSOR_KEY = "act.sync.cursor";
+
+// An advisory lock rather than a `locked` column, because the lock belongs to
+// the database session and is gone the moment the connection closes. A run that
+// is killed, crashes, or loses the box releases it on the way out; a column set
+// to true stays set, and wedges every later run until a person clears it by
+// hand.
+//
+// The number is arbitrary and only has to stay fixed. It is a bare key in a
+// namespace shared with the whole database, carrying nothing that says what it
+// is for, and this line is the only record of it -- so a second feature wanting
+// a lock picks a different number and writes it down next to this one.
+const SYNC_LOCK_KEY = 8_472_001;
+
+/** Thrown when another sync holds the lock. Not a failure of this run: the
+ * work is already being done by somebody else. */
+export class SyncAlreadyRunningError extends Error {
+  constructor() {
+    super("A sync is already running. Wait for it to finish and try again.");
+    this.name = "SyncAlreadyRunningError";
+  }
+}
 
 export type SyncResult = {
   scanned: number;
@@ -265,211 +287,260 @@ export type SyncOptions = {
   onProgress?: (scanned: number) => void;
 };
 
+/**
+ * Open a connection of the sync's own, for the advisory lock to sit on.
+ *
+ * A session advisory lock belongs to the connection that took it, and `db` is a
+ * pool: outside a transaction every query checks a connection out and hands it
+ * straight back, so the unlock is not guaranteed to reach the connection
+ * holding the lock -- and pg closes a connection that has sat idle for ten
+ * seconds, which would drop the lock part way through a ten-minute run. One
+ * client, one connection, idle reaping off, for exactly as long as the run
+ * lasts.
+ *
+ * Wrapping the run in `db.$transaction` would pin a connection too, but it
+ * would make the whole sync one transaction, and the per-page cursor
+ * checkpoints would stop being durable until it committed -- which is the
+ * resume-after-interruption property described at the top of this file.
+ */
+function openLockConnection(): PrismaClient {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL is not set");
+  return new PrismaClient({
+    adapter: new PrismaPg({ connectionString: url, max: 1, idleTimeoutMillis: 0 }),
+  });
+}
+
 export async function syncContacts(
   client: ActClient,
   options: SyncOptions = {},
 ): Promise<SyncResult> {
-  const { resolve: resolveIndustry, isKnown: isKnownIndustry } = buildIndustryLookup();
-  const since = options.full ? null : await readCursor();
+  const lock = openLockConnection();
+  try {
+    // pg_try_advisory_lock, not pg_advisory_lock: the blocking form would queue
+    // the Sync now button behind a ten-minute import and leave the admin
+    // watching a spinner with nothing to read. Failing at once lets the caller
+    // say that somebody else is already syncing.
+    const [{ locked }] = await lock.$queryRaw<{ locked: boolean }[]>`
+      SELECT pg_try_advisory_lock(${SYNC_LOCK_KEY}) AS locked
+    `;
+    if (!locked) {
+      throw new SyncAlreadyRunningError();
+    }
 
-  // Industry is a small fixed table, so read it once rather than asking per
-  // contact -- 12,000 lookups to answer at most 31 distinct questions.
-  const industryIdByName = new Map(
-    (await db.industry.findMany({ select: { id: true, name: true } })).map((row) => [
-      row.name,
-      row.id,
-    ]),
-  );
+    const { resolve: resolveIndustry, isKnown: isKnownIndustry } = buildIndustryLookup();
+    const since = options.full ? null : await readCursor();
 
-  const result: SyncResult = {
-    scanned: 0,
-    contactsCreated: 0,
-    contactsUpdated: 0,
-    companiesCreated: 0,
-    companiesFromNamelessContacts: 0,
-    companiesKeyCollisions: 0,
-    skipped: emptySkips(),
-    unresolvedPhones: 0,
-    unknownIndustries: [],
-    failed: 0,
-    firstFailureActContactId: null,
-    firstFailureMessage: null,
-    cursorFrom: since,
-    cursorTo: null,
-  };
-  const unknownIndustries = new Set<string>();
-  let newestEdited: Date | null = null;
-  let checkpointed: Date | null = null;
+    // Industry is a small fixed table, so read it once rather than asking per
+    // contact -- 12,000 lookups to answer at most 31 distinct questions.
+    const industryIdByName = new Map(
+      (await db.industry.findMany({ select: { id: true, name: true } })).map((row) => [
+        row.name,
+        row.id,
+      ]),
+    );
 
-  // Called after each fully processed page. Never once a contact has failed:
-  // see the note at the top of this file.
-  //
-  // A limited run never checkpoints either. `--limit` reads the oldest records
-  // first, so the newest `edited` it sees is older than a stored cursor, and
-  // saving it would rewind the cursor and make the next delta run re-read
-  // everything in between. A limited run is a sample, not a sync.
-  async function checkpoint(): Promise<void> {
-    if (options.dryRun || options.limit || result.failed > 0 || !newestEdited) return;
-    if (checkpointed && newestEdited <= checkpointed) return;
-    await writeCursor(newestEdited);
-    checkpointed = newestEdited;
-  }
+    const result: SyncResult = {
+      scanned: 0,
+      contactsCreated: 0,
+      contactsUpdated: 0,
+      companiesCreated: 0,
+      companiesFromNamelessContacts: 0,
+      companiesKeyCollisions: 0,
+      skipped: emptySkips(),
+      unresolvedPhones: 0,
+      unknownIndustries: [],
+      failed: 0,
+      firstFailureActContactId: null,
+      firstFailureMessage: null,
+      cursorFrom: since,
+      cursorTo: null,
+    };
+    const unknownIndustries = new Set<string>();
+    let newestEdited: Date | null = null;
+    let checkpointed: Date | null = null;
 
-  for await (const page of client.contactsEditedSince(since)) {
-    for (const raw of page) {
-      if (options.limit && result.scanned >= options.limit) break;
-      result.scanned += 1;
+    // Called after each fully processed page. Never once a contact has failed:
+    // see the note at the top of this file.
+    //
+    // A limited run never checkpoints either. `--limit` reads the oldest records
+    // first, so the newest `edited` it sees is older than a stored cursor, and
+    // saving it would rewind the cursor and make the next delta run re-read
+    // everything in between. A limited run is a sample, not a sync.
+    async function checkpoint(): Promise<void> {
+      if (options.dryRun || options.limit || result.failed > 0 || !newestEdited) return;
+      if (checkpointed && newestEdited <= checkpointed) return;
+      await writeCursor(newestEdited);
+      checkpointed = newestEdited;
+    }
 
-      const mapped = mapContact(raw, resolveIndustry);
-      if (mapped.kind === "skipped") {
-        result.skipped[mapped.reason] += 1;
-        continue;
-      }
+    for await (const page of client.contactsEditedSince(since)) {
+      for (const raw of page) {
+        if (options.limit && result.scanned >= options.limit) break;
+        result.scanned += 1;
 
-      const rawIndustry = raw.customFields?.user6;
-      // Only a spelling the table has no opinion on is a gap. One it maps to
-      // null ("NIL", "Poor info") is a decision already made, and reporting it
-      // would teach the reader to ignore the list.
-      if (typeof rawIndustry === "string" && rawIndustry.trim() && !isKnownIndustry(rawIndustry)) {
-        unknownIndustries.add(rawIndustry.trim());
-      }
-      // Counts contacts imported; a company-only record imports none.
-      if (mapped.kind === "mapped" && !mapped.contact.phone) result.unresolvedPhones += 1;
-
-      // A company-only record has no contact to carry the timestamp, but it is
-      // stored all the same, so it moves the cursor like any other.
-      const editedAt = mapped.kind === "mapped" ? mapped.contact.actEditedAt : new Date(raw.edited);
-      if (!newestEdited || editedAt > newestEdited) {
-        newestEdited = editedAt;
-      }
-
-      // PathQuote's Contact requires a company, and creating one needs both a
-      // name and an identity to group on. Decided from the mapped value with no
-      // lookups, so a dry run can report it.
-      const companyUsable =
-        Boolean(mapped.company.name) && chooseCompany(mapped.company, null, null).kind !== "skip";
-
-      if (options.dryRun) {
-        // A dry run cannot know whether a contact already exists, so it counts
-        // what a first import would skip -- which is the number worth comparing
-        // against the measured export. A real incremental run counts only
-        // genuinely new contacts here, because an existing one keeps the
-        // company it already has and is refreshed either way.
-        if (!companyUsable) result.skipped["no-company"] += 1;
-        else if (mapped.kind === "company-only") result.companiesFromNamelessContacts += 1;
-        continue;
-      }
-
-      try {
-        const industryId = mapped.company.industry
-          ? industryIdByName.get(mapped.company.industry) ?? null
-          : null;
-
-        if (mapped.kind === "company-only") {
-          // No person to create: the company goes through the same identity
-          // decision a named contact's would, and the generic mailbox and phone
-          // are kept on it.
-          if (!companyUsable) {
-            result.skipped["no-company"] += 1;
-            continue;
-          }
-          const companyId = await resolveCompany(mapped.company, industryId, result);
-          if (!companyId) {
-            result.skipped["no-company"] += 1;
-            continue;
-          }
-          await recordGenericChannel(companyId, mapped.channel);
-          result.companiesFromNamelessContacts += 1;
+        const mapped = mapContact(raw, resolveIndustry);
+        if (mapped.kind === "skipped") {
+          result.skipped[mapped.reason] += 1;
           continue;
         }
 
-        const existing = await db.contact.findUnique({
-          where: { actContactId: mapped.contact.actContactId },
-        });
+        const rawIndustry = raw.customFields?.user6;
+        // Only a spelling the table has no opinion on is a gap. One it maps to
+        // null ("NIL", "Poor info") is a decision already made, and reporting it
+        // would teach the reader to ignore the list.
+        if (
+          typeof rawIndustry === "string" &&
+          rawIndustry.trim() &&
+          !isKnownIndustry(rawIndustry)
+        ) {
+          unknownIndustries.add(rawIndustry.trim());
+        }
+        // Counts contacts imported; a company-only record imports none.
+        if (mapped.kind === "mapped" && !mapped.contact.phone) result.unresolvedPhones += 1;
 
-        if (existing) {
-          // A contact already in PathQuote keeps the company it is on, even if
-          // the ACT! text has since changed: resolving it again could create a
-          // second company and leave it empty. Refresh the one it has.
-          const current = await db.company.findUniqueOrThrow({
-            where: { id: existing.companyId },
-          });
-          await refreshCompany(current, mapped.company, industryId);
+        // A company-only record has no contact to carry the timestamp, but it is
+        // stored all the same, so it moves the cursor like any other.
+        const editedAt =
+          mapped.kind === "mapped" ? mapped.contact.actEditedAt : new Date(raw.edited);
+        if (!newestEdited || editedAt > newestEdited) {
+          newestEdited = editedAt;
+        }
 
-          const patch = fillOnlyEmpty(
-            existing,
-            {
-              lastName: mapped.contact.lastName,
-              email: mapped.contact.email,
-              phone: mapped.contact.phone,
-              position: mapped.contact.position,
-            },
-            ["lastName", "email", "phone", "position"],
-          );
-          await db.contact.update({
-            where: { id: existing.id },
-            data: {
-              ...patch,
-              actAccountMgr: mapped.contact.actAccountMgr,
-              actSyncState: "SYNCED",
-              actSourceEditedAt: mapped.contact.actEditedAt,
-              actSyncedAt: new Date(),
-            },
-          });
-          await writeSnapshot({ contactId: existing.id }, mapped.contact.snapshot);
-          result.contactsUpdated += 1;
-        } else {
-          if (!companyUsable) {
-            result.skipped["no-company"] += 1;
+        // PathQuote's Contact requires a company, and creating one needs both a
+        // name and an identity to group on. Decided from the mapped value with no
+        // lookups, so a dry run can report it.
+        const companyUsable =
+          Boolean(mapped.company.name) && chooseCompany(mapped.company, null, null).kind !== "skip";
+
+        if (options.dryRun) {
+          // A dry run cannot know whether a contact already exists, so it counts
+          // what a first import would skip -- which is the number worth comparing
+          // against the measured export. A real incremental run counts only
+          // genuinely new contacts here, because an existing one keeps the
+          // company it already has and is refreshed either way.
+          if (!companyUsable) result.skipped["no-company"] += 1;
+          else if (mapped.kind === "company-only") result.companiesFromNamelessContacts += 1;
+          continue;
+        }
+
+        try {
+          const industryId = mapped.company.industry
+            ? industryIdByName.get(mapped.company.industry) ?? null
+            : null;
+
+          if (mapped.kind === "company-only") {
+            // No person to create: the company goes through the same identity
+            // decision a named contact's would, and the generic mailbox and phone
+            // are kept on it.
+            if (!companyUsable) {
+              result.skipped["no-company"] += 1;
+              continue;
+            }
+            const companyId = await resolveCompany(mapped.company, industryId, result);
+            if (!companyId) {
+              result.skipped["no-company"] += 1;
+              continue;
+            }
+            await recordGenericChannel(companyId, mapped.channel);
+            result.companiesFromNamelessContacts += 1;
             continue;
           }
-          const companyId = await resolveCompany(mapped.company, industryId, result);
-          if (!companyId) {
-            // Belt and braces: companyUsable asks chooseCompany the same
-            // question, so this should not fire. Kept so the two can never
-            // drift apart into silently dropping a contact.
-            result.skipped["no-company"] += 1;
-            continue;
-          }
 
-          const created = await db.contact.create({
-            data: {
-              companyId,
-              firstName: mapped.contact.firstName,
-              lastName: mapped.contact.lastName,
-              email: mapped.contact.email,
-              phone: mapped.contact.phone,
-              position: mapped.contact.position,
-              actContactId: mapped.contact.actContactId,
-              actAccountMgr: mapped.contact.actAccountMgr,
-              actSyncState: "SYNCED",
-              actSourceEditedAt: mapped.contact.actEditedAt,
-              actSyncedAt: new Date(),
-            },
+          const existing = await db.contact.findUnique({
+            where: { actContactId: mapped.contact.actContactId },
           });
-          await writeSnapshot({ contactId: created.id }, mapped.contact.snapshot);
-          result.contactsCreated += 1;
+
+          if (existing) {
+            // A contact already in PathQuote keeps the company it is on, even if
+            // the ACT! text has since changed: resolving it again could create a
+            // second company and leave it empty. Refresh the one it has.
+            const current = await db.company.findUniqueOrThrow({
+              where: { id: existing.companyId },
+            });
+            await refreshCompany(current, mapped.company, industryId);
+
+            const patch = fillOnlyEmpty(
+              existing,
+              {
+                lastName: mapped.contact.lastName,
+                email: mapped.contact.email,
+                phone: mapped.contact.phone,
+                position: mapped.contact.position,
+              },
+              ["lastName", "email", "phone", "position"],
+            );
+            await db.contact.update({
+              where: { id: existing.id },
+              data: {
+                ...patch,
+                actAccountMgr: mapped.contact.actAccountMgr,
+                actSyncState: "SYNCED",
+                actSourceEditedAt: mapped.contact.actEditedAt,
+                actSyncedAt: new Date(),
+              },
+            });
+            await writeSnapshot({ contactId: existing.id }, mapped.contact.snapshot);
+            result.contactsUpdated += 1;
+          } else {
+            if (!companyUsable) {
+              result.skipped["no-company"] += 1;
+              continue;
+            }
+            const companyId = await resolveCompany(mapped.company, industryId, result);
+            if (!companyId) {
+              // Belt and braces: companyUsable asks chooseCompany the same
+              // question, so this should not fire. Kept so the two can never
+              // drift apart into silently dropping a contact.
+              result.skipped["no-company"] += 1;
+              continue;
+            }
+
+            const created = await db.contact.create({
+              data: {
+                companyId,
+                firstName: mapped.contact.firstName,
+                lastName: mapped.contact.lastName,
+                email: mapped.contact.email,
+                phone: mapped.contact.phone,
+                position: mapped.contact.position,
+                actContactId: mapped.contact.actContactId,
+                actAccountMgr: mapped.contact.actAccountMgr,
+                actSyncState: "SYNCED",
+                actSourceEditedAt: mapped.contact.actEditedAt,
+                actSyncedAt: new Date(),
+              },
+            });
+            await writeSnapshot({ contactId: created.id }, mapped.contact.snapshot);
+            result.contactsCreated += 1;
+          }
+        } catch (error) {
+          // One bad record must not end a 12,000-contact run, and must not be
+          // lost either: it is counted, the first is reported, and `failed`
+          // freezes the cursor so the next run reaches it again.
+          result.failed += 1;
+          if (result.firstFailureActContactId === null) {
+            result.firstFailureActContactId = raw.id;
+            result.firstFailureMessage = error instanceof Error ? error.message : String(error);
+          }
         }
-      } catch (error) {
-        // One bad record must not end a 12,000-contact run, and must not be
-        // lost either: it is counted, the first is reported, and `failed`
-        // freezes the cursor so the next run reaches it again.
-        result.failed += 1;
-        if (result.firstFailureActContactId === null) {
-          result.firstFailureActContactId = raw.id;
-          result.firstFailureMessage = error instanceof Error ? error.message : String(error);
-        }
+
+        options.onProgress?.(result.scanned);
       }
 
-      options.onProgress?.(result.scanned);
+      await checkpoint();
+      if (options.limit && result.scanned >= options.limit) break;
     }
 
-    await checkpoint();
-    if (options.limit && result.scanned >= options.limit) break;
+    result.unknownIndustries = [...unknownIndustries].sort();
+    result.cursorTo = options.dryRun ? newestEdited : checkpointed;
+
+    return result;
+  } finally {
+    // Closing the connection ends the session, and Postgres releases the
+    // session's advisory locks with it. Deliberately the only release path, so
+    // it is the one a killed run already depends on rather than a second
+    // mechanism that has to be kept working.
+    await lock.$disconnect();
   }
-
-  result.unknownIndustries = [...unknownIndustries].sort();
-  result.cursorTo = options.dryRun ? newestEdited : checkpointed;
-
-  return result;
 }
