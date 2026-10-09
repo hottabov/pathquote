@@ -140,7 +140,7 @@ function run(overrides: Partial<ActSyncRun> = {}): ActSyncRun {
     contactsUpdated: 11,
     companiesCreated: 2,
     companiesFromNamelessContacts: 0,
-    companyKeyCollisions: 0,
+    companiesKeyCollisions: 0,
     failed: 0,
     error: null,
     ...overrides,
@@ -178,7 +178,7 @@ describe("describeRun", () => {
   it("flags a key collision even on an otherwise clean run", () => {
     // Two different firms whose names normalise alike. Nothing is broken, but
     // a person should look, and nothing else on the page would say so.
-    const described = describeRun(run({ companyKeyCollisions: 1 }));
+    const described = describeRun(run({ companiesKeyCollisions: 1 }));
     expect(described.tone).toBe("warn");
     expect(described.detail).toContain("1 company key collision");
   });
@@ -230,7 +230,7 @@ export type ActSyncRun = {
   contactsUpdated: number;
   companiesCreated: number;
   companiesFromNamelessContacts: number;
-  companyKeyCollisions: number;
+  companiesKeyCollisions: number;
   failed: number;
   /** The message, when the run threw. */
   error: string | null;
@@ -287,9 +287,9 @@ export function describeRun(run: ActSyncRun): RunDescription {
   const headline = changes.length > 0 ? changes.join(", ") : "No changes";
 
   const notes: string[] = [];
-  if (run.companyKeyCollisions > 0) {
+  if (run.companiesKeyCollisions > 0) {
     notes.push(
-      `${plural(run.companyKeyCollisions, "company key collision", "company key collisions")} -- two firms whose names normalise alike`,
+      `${plural(run.companiesKeyCollisions, "company key collision", "company key collisions")} -- two firms whose names normalise alike`,
     );
   }
   if (run.companiesFromNamelessContacts > 0) {
@@ -299,7 +299,7 @@ export function describeRun(run: ActSyncRun): RunDescription {
   }
 
   return {
-    tone: run.companyKeyCollisions > 0 ? "warn" : "ok",
+    tone: run.companiesKeyCollisions > 0 ? "warn" : "ok",
     headline,
     detail: notes.length > 0 ? notes.join(". ") : null,
     trigger,
