@@ -693,9 +693,9 @@ Push, let CI build, and confirm the Settings section appears at `/settings/act-s
 - [ ] **Step 2: Install the units**
 
 ```bash
-scp -P 3498 scripts/ops/pq-act-sync.sh root@VPS:/usr/local/bin/
-scp -P 3498 scripts/ops/pq-act-sync.service scripts/ops/pq-act-sync.timer root@VPS:/etc/systemd/system/
-ssh -p 3498 root@VPS 'chmod 700 /usr/local/bin/pq-act-sync.sh && systemctl daemon-reload && systemctl enable --now pq-act-sync.timer'
+scp -P 3498 scripts/ops/pq-act-sync.sh scripts/ops/pq-backup-alert.sh root@74.208.106.34:/usr/local/bin/
+scp -P 3498 scripts/ops/pq-act-sync.service scripts/ops/pq-act-sync.timer scripts/ops/pq-backup-alert@.service root@74.208.106.34:/etc/systemd/system/
+ssh -p 3498 root@74.208.106.34 'chmod 700 /usr/local/bin/pq-act-sync.sh /usr/local/bin/pq-backup-alert.sh && systemctl daemon-reload && systemctl enable --now pq-act-sync.timer'
 ```
 
 - [ ] **Step 3: Run it once by hand, before trusting the timer**

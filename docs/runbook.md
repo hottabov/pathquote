@@ -331,9 +331,9 @@ tail /var/log/pq-alert.log                   # "alert sent to ...: <subject>"
 Installing or updating from the repository:
 
 ```bash
-scp -P 3498 scripts/ops/pq-backup.sh scripts/ops/pq-backup-alert.sh root@VPS:/usr/local/bin/
-scp -P 3498 scripts/ops/pq-backup-*.service scripts/ops/pq-backup-*.timer root@VPS:/etc/systemd/system/
-ssh -p 3498 root@VPS 'chmod 700 /usr/local/bin/pq-backup*.sh && systemctl daemon-reload && systemctl enable --now pq-backup-db.timer pq-backup-files.timer'
+scp -P 3498 scripts/ops/pq-backup.sh scripts/ops/pq-backup-alert.sh root@74.208.106.34:/usr/local/bin/
+scp -P 3498 scripts/ops/pq-backup-*.service scripts/ops/pq-backup-*.timer root@74.208.106.34:/etc/systemd/system/
+ssh -p 3498 root@74.208.106.34 'chmod 700 /usr/local/bin/pq-backup*.sh && systemctl daemon-reload && systemctl enable --now pq-backup-db.timer pq-backup-files.timer'
 ```
 
 rclone config: `/root/.config/rclone/rclone.conf`, remote `gdrive`, mode 600.
