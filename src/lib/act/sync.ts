@@ -1,6 +1,5 @@
-import { Prisma, PrismaClient, type Company } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { db } from "@/lib/db";
+import { Prisma, type PrismaClient, type Company } from "@prisma/client";
+import { createPrismaClient, db } from "@/lib/db";
 import { ActClient } from "@/lib/act/client";
 import { chooseCompany } from "@/lib/act/company-identity";
 import { buildIndustryLookup } from "@/lib/act/industries";
@@ -27,10 +26,17 @@ import type { GenericChannel, MappedCompany, SkipReason } from "@/lib/act/types"
 const CURSOR_KEY = "act.sync.cursor";
 
 // An advisory lock rather than a `locked` column, because the lock belongs to
-// the database session and is gone the moment the connection closes. A run that
-// is killed, crashes, or loses the box releases it on the way out; a column set
-// to true stays set, and wedges every later run until a person clears it by
-// hand.
+// the database session and Postgres drops it when the session ends. A run that
+// is killed or crashes closes its socket on the way out, and the lock goes with
+// it; a column set to true stays set, and wedges every later run until a person
+// clears it by hand.
+//
+// The case that is not instant is a host that vanishes without closing the
+// socket -- a yanked cable, a box hard-powered-off. It sends no FIN, so
+// Postgres keeps the session, and the lock, until it notices the socket is
+// dead. What decides when is the server's own `tcp_keepalives_idle`, nothing
+// this code can set, and the default is two hours. So: still a window, but one
+// that closes by itself rather than waiting for a person to find it.
 //
 // The number is arbitrary and only has to stay fixed. It is a bare key in a
 // namespace shared with the whole database, carrying nothing that says what it
@@ -291,12 +297,25 @@ export type SyncOptions = {
  * Open a connection of the sync's own, for the advisory lock to sit on.
  *
  * A session advisory lock belongs to the connection that took it, and `db` is a
- * pool: outside a transaction every query checks a connection out and hands it
- * straight back, so the unlock is not guaranteed to reach the connection
- * holding the lock -- and pg closes a connection that has sat idle for ten
- * seconds, which would drop the lock part way through a ten-minute run. One
- * client, one connection, idle reaping off, for exactly as long as the run
- * lasts.
+ * pool: outside a transaction every query takes whichever connection is free
+ * and hands it back at once, so the lock would end up on a connection that
+ * later queries reuse and that `pg-pool` reaps after it has sat idle for ten
+ * seconds -- dropping the lock part way through a ten-minute run. Nothing here
+ * issues an unlock: release is the session ending, which is why the session has
+ * to be one this run owns.
+ *
+ * So: the app's own client, a pool of one, idle reaping off. That keeps one
+ * connection for the run in the ordinary case, not by guarantee -- a Postgres
+ * restart or a dropped connection ends the session, and the lock with it, after
+ * which `pg-pool` opens a replacement and the rest of the run is unlocked. The
+ * adapter attaches its own `error` listener to the pool it creates
+ * (@prisma/adapter-pg 7.10.0, `dist/index.js` line 817), so a connection dying
+ * under us is reported rather than left as an unhandled `error` event, which on
+ * a pg pool would end the process. Losing the lock mid-run means two runs can
+ * overlap, which is the situation that existed before this lock and which the
+ * unique indexes on `Contact.actContactId` and `Company.actCompanyKey` already
+ * survive. This lock is here to stop two runs wasting ten minutes each, not to
+ * be airtight.
  *
  * Wrapping the run in `db.$transaction` would pin a connection too, but it
  * would make the whole sync one transaction, and the per-page cursor
@@ -304,10 +323,30 @@ export type SyncOptions = {
  * resume-after-interruption property described at the top of this file.
  */
 function openLockConnection(): PrismaClient {
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error("DATABASE_URL is not set");
-  return new PrismaClient({
-    adapter: new PrismaPg({ connectionString: url, max: 1, idleTimeoutMillis: 0 }),
+  // This connection has to reach Postgres directly. A *session* advisory lock
+  // means nothing through a transaction-mode pooler (PgBouncer and the like):
+  // the lock would stick to a server backend that goes back into the pooler's
+  // pool still holding it, with nothing left that can release it. There is no
+  // pooler in front of this database, and putting one there would break this.
+  return createPrismaClient({
+    // One connection beyond the main pool's 10, per process that syncs, and a
+    // caller that loses the race still opens one and closes it again. Worst
+    // case here: the nightly job's 10 + 1, the web server's 10, and a button
+    // click plus a second impatient click = 2, so 23 against the server's
+    // default `max_connections` of 100. 77 spare.
+    max: 1,
+    // Never reap this connection while it is idle: holding the session open is
+    // the whole point, and the run is mostly waiting on ACT! rather than
+    // querying.
+    idleTimeoutMillis: 0,
+    // Guards the opposite direction to the note at SYNC_LOCK_KEY: node-postgres
+    // leaves TCP keepalive off, so if the database host or the network goes away
+    // mid-run, this socket waits on an answer that is never coming. With
+    // keepalive the kernel probes, the connection fails, and the adapter's pool
+    // listener reports it rather than the run hanging. It does nothing for a
+    // vanished *app* host -- that takes its probes with it, and only the
+    // server's keepalive settings end the session still holding the lock.
+    keepAlive: true,
   });
 }
 
@@ -321,6 +360,10 @@ export async function syncContacts(
     // the Sync now button behind a ten-minute import and leave the admin
     // watching a spinner with nothing to read. Failing at once lets the caller
     // say that somebody else is already syncing.
+    //
+    // Taken before the `dryRun` branch on purpose. A dry run during a live sync
+    // would be counting a database that is being rewritten underneath it, so
+    // its report -- the whole output of a dry run -- would be fiction.
     const [{ locked }] = await lock.$queryRaw<{ locked: boolean }[]>`
       SELECT pg_try_advisory_lock(${SYNC_LOCK_KEY}) AS locked
     `;
@@ -539,8 +582,16 @@ export async function syncContacts(
   } finally {
     // Closing the connection ends the session, and Postgres releases the
     // session's advisory locks with it. Deliberately the only release path, so
-    // it is the one a killed run already depends on rather than a second
-    // mechanism that has to be kept working.
-    await lock.$disconnect();
+    // the mechanism every normal run exercises is the one a `kill -9` depends
+    // on, rather than a second mechanism that has to be kept working. The cost
+    // of that choice: if this disconnect fails there is nothing else to release
+    // the lock, and it is held until this connection dies by other means.
+    //
+    // Swallowed either way. A run that got through 12,000 contacts has to
+    // report what it did, and a run that threw has to report why -- neither is
+    // improved by being replaced with how the cleanup went.
+    await lock.$disconnect().catch((error: unknown) => {
+      console.error("act: sync lock not released; held until this connection dies", error);
+    });
   }
 }
