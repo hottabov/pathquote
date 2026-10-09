@@ -18,9 +18,17 @@ export type SyncTrigger = "schedule" | "manual";
 export type ActSyncRun = {
   startedAt: string;
   /**
-   * Null when the run did not come back: it threw, and `error` says why, or it
-   * was killed outright and nothing ever wrote the ending. Those two are told
-   * apart by `error`, and describeRun says something different for each.
+   * Null in three different situations: the run is going on right now, it threw
+   * (and `error` says why), or it was killed outright and nothing ever wrote the
+   * ending.
+   *
+   * `error` separates the thrown run from the other two. It does NOT separate a
+   * run that is still going from one that was killed -- both leave a null ending
+   * and no error, because the record written at the start of a run is the same
+   * record either way. Only isSyncRunning() in sync.ts can tell those apart, by
+   * asking whether the advisory lock is still held, and describeRun takes its
+   * answer as the `running` option. Read "null with no error" as killed on its
+   * own and you report a live sync as a dead one.
    */
   finishedAt: string | null;
   trigger: SyncTrigger;
@@ -45,8 +53,20 @@ export type RunDescription = {
 };
 
 /**
- * The counters a record carries. SyncResult supplies every one of them, which
- * is why the three builders below take it directly.
+ * The counters a record carries.
+ *
+ * A Pick of ActSyncRun, not of SyncResult -- but SyncResult structurally
+ * satisfies it, so sync.ts hands its own result object to the builders
+ * unchanged, with no mapping step in between to be kept in sync with this list.
+ *
+ * Which is the reason the two closing builders copy these six across by name
+ * (`onlyCounts` below) instead of spreading what they were given. SyncResult
+ * also carries `scanned`, `skipped`, `unknownIndustries`,
+ * `firstFailureActContactId`, `firstFailureMessage`, `recorded` and two Date
+ * objects, and a spread would put every one of them in the stored JSON: a
+ * Setting row quietly growing fields nobody asked for, two of them Dates that
+ * come back from the round trip as strings. The named copy is what keeps the
+ * stored record to the shape declared above.
  */
 export type RunCounts = Pick<
   ActSyncRun,
@@ -84,18 +104,27 @@ export function startedRun(trigger: SyncTrigger, startedAt: Date): ActSyncRun {
   };
 }
 
-/** The same record once the run came back: the counters it ended with, and an ending. */
-export function finishedRun(started: ActSyncRun, counts: RunCounts, finishedAt: Date): ActSyncRun {
+/**
+ * The six counters, and nothing else that came with them.
+ *
+ * The one place the list is written out, so the two closing builders cannot
+ * drift apart on it. See RunCounts for why it is a named copy rather than a
+ * spread of the caller's object.
+ */
+function onlyCounts(counts: RunCounts): RunCounts {
   return {
-    ...started,
     contactsCreated: counts.contactsCreated,
     contactsUpdated: counts.contactsUpdated,
     companiesCreated: counts.companiesCreated,
     companiesFromNamelessContacts: counts.companiesFromNamelessContacts,
     companiesKeyCollisions: counts.companiesKeyCollisions,
     failed: counts.failed,
-    finishedAt: finishedAt.toISOString(),
   };
+}
+
+/** The same record once the run came back: the counters it ended with, and an ending. */
+export function finishedRun(started: ActSyncRun, counts: RunCounts, finishedAt: Date): ActSyncRun {
+  return { ...started, ...onlyCounts(counts), finishedAt: finishedAt.toISOString() };
 }
 
 /**
@@ -105,9 +134,15 @@ export function finishedRun(started: ActSyncRun, counts: RunCounts, finishedAt: 
  * No `finishedAt`, deliberately. A run that threw did not finish, and the
  * record says so; `error` is what tells describeRun to lead with the message
  * rather than with "Started and never finished".
+ *
+ * Built here rather than through finishedRun, which would have meant handing
+ * that function a `new Date()` only to throw it away a line later. Nothing in
+ * this module reads the clock now, so every record it builds is a function of
+ * its arguments alone and its tests can assert whole records rather than the
+ * fields that happen to be stable.
  */
 export function failedRun(started: ActSyncRun, counts: RunCounts, error: unknown): ActSyncRun {
-  return { ...finishedRun(started, counts, new Date()), finishedAt: null, error: messageOf(error) };
+  return { ...started, ...onlyCounts(counts), finishedAt: null, error: messageOf(error) };
 }
 
 /**
@@ -185,11 +220,20 @@ export function describeRun(
     // held and `running` is true of a run that is already over. The message is
     // the better thing to say in that instant, and in every instant after it.
     if (running) {
+      // No estimate of how long. The neighbouring comments in sync.ts call this
+      // a ten-minute run and a `--full` import of 12,000 contacts can go past
+      // that, so any number named here is a promise the code cannot keep: a
+      // director who reloads after four minutes, reads the same line again and
+      // was told "a few minutes" cannot tell waiting from wedged.
+      //
+      // "Reload this page" assumes the reader does the reloading, which is true
+      // today because nothing revalidates the Settings page. Whoever wires that
+      // section up has to keep it true or change this sentence.
       return {
         tone: "ok",
         headline: "Running now",
         detail:
-          "It is reading ACT! at the moment. Reload this page in a few minutes and it will say what changed.",
+          "It is reading ACT! now. Reload this page and it will say what changed once it has finished.",
         trigger,
       };
     }

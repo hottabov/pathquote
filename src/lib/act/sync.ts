@@ -166,13 +166,23 @@ async function writeRunRecord(run: ActSyncRun): Promise<void> {
  * reports "Started and never finished" about a run that worked. Wrong, but
  * wrong in the safe direction: it sends somebody to a log that has the real
  * error in it, where reporting success would bury it.
+ *
+ * `write` names which of the two it was, and the record goes in the log with
+ * it. Without those, the one person who ever reads this line cannot tell a run
+ * that worked and lost its success from a run that threw and lost its error,
+ * and the counters -- the only surviving copy of what a ten-minute run actually
+ * did -- are gone with the record.
  */
-async function recordQuietly(run: ActSyncRun): Promise<boolean> {
+async function recordQuietly(run: ActSyncRun, write: "ending" | "failure"): Promise<boolean> {
   try {
     await writeRunRecord(run);
     return true;
   } catch (error) {
-    console.error("act: the sync ran but its last-run record could not be written", error);
+    console.error(
+      `act: the ${write} record could not be written to ${LAST_RUN_KEY}; the record from the start of the run stands, so Settings will report this run as started and never finished. The record that was lost:`,
+      run,
+      error,
+    );
     return false;
   }
 }
@@ -184,6 +194,28 @@ async function recordQuietly(run: ActSyncRun): Promise<boolean> {
  * at the start and fills it in at the end, so "running right now" and "died
  * without finishing" are the same record; what separates them is whether the
  * advisory lock is still held.
+ *
+ * Call this FIRST, then read the record. The two reads cannot be atomic, and the
+ * order decides how a run that starts in the gap between them is reported,
+ * because describeRun consults `running` ONLY when the record it was given has
+ * no ending:
+ *
+ *   - this order pairs an older lock answer with a newer record. The run that
+ *     starts in the gap gives `running: false` and its own start record, which
+ *     reads as "Started and never finished" about a sync that is working.
+ *     Wrong, but it is the alarming kind of wrong and the next reload says
+ *     "Running now".
+ *   - the other order -- record first, lock second -- pairs an older record with
+ *     a newer lock answer, which is the stale pair: the PREVIOUS run's finished
+ *     record with `running: true`. describeRun, handed an ending, never reaches
+ *     the running branch at all, so the page reports last night's "No changes",
+ *     calmly, while a sync is going. That is the silent lie the double write
+ *     exists to close, reached from the other side.
+ *
+ * A run that ENDS in the gap comes out the same way round: ask about the lock
+ * first and the record read picks up the ending, which is the right answer; ask
+ * second and a run that has just succeeded is reported as one that never came
+ * back.
  *
  * The predicate is the documented encoding of a one-key advisory lock, which is
  * not guessable and is not what most people assume (see the pg_locks docs,
@@ -568,6 +600,12 @@ export async function syncContacts(
     // overwrite the record belonging to the run that is actually going. What
     // guarantees that is the throw above, not the guard in the catch.
     //
+    // That ordering leaves one window it cannot close: a process killed between
+    // taking the lock and this upsert landing leaves no record of itself, and
+    // the page shows the previous run. One database round trip wide, against a
+    // ten-minute run, and the only way to narrow it is to write before the lock,
+    // which trades it for the worse bug above.
+    //
     // A dry run writes nothing, at the start or at the end. It changed nothing,
     // and replacing last night's real record with a rehearsal would be a lie
     // of a different shape.
@@ -768,7 +806,7 @@ export async function syncContacts(
 
     // The second write: the same record, now with an ending and the counters.
     if (!options.dryRun) {
-      result.recorded = await recordQuietly(finishedRun(started, result, new Date()));
+      result.recorded = await recordQuietly(finishedRun(started, result, new Date()), "ending");
     }
 
     return result;
@@ -786,7 +824,7 @@ export async function syncContacts(
       // is overwriting the record of the run that is actually going.
       !(error instanceof SyncAlreadyRunningError)
     ) {
-      await recordQuietly(failedRun(started, result, error));
+      await recordQuietly(failedRun(started, result, error), "failure");
     }
     throw error;
   } finally {

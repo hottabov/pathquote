@@ -219,11 +219,18 @@ describe("the three records one run can leave", () => {
     // The counters matter here: a run that threw on contact 9,000 stored
     // 9,000 contacts, and the second line of describeRun's error branch
     // reports the failures among them.
+    //
+    // Asserted whole, which it can be because no builder here reads the clock:
+    // the whole record is a function of its three arguments, so there is no
+    // field this test has to leave alone.
     const record = failedRun(startedRun("manual", startedAt), counts, new Error("authorize 401"));
-    expect(record.finishedAt).toBeNull();
-    expect(record.error).toBe("authorize 401");
-    expect(record.contactsCreated).toBe(4);
-    expect(record.failed).toBe(3);
+    expect(record).toEqual({
+      ...counts,
+      startedAt: "2026-10-09T17:00:00.000Z",
+      finishedAt: null,
+      trigger: "manual",
+      error: "authorize 401",
+    });
     expect(describeRun(record).headline).toContain("authorize 401");
   });
 
