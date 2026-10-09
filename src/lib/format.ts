@@ -112,3 +112,42 @@ export function relativeDate(date: Date): string {
   if (diffDays < 7) return `${diffDays} days ago`;
   return date.toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
 }
+
+/**
+ * "2 hours ago" / "27 hours ago" / "3 days ago" — the same idea as
+ * `relativeDate` above, but down to the minute and hour.
+ *
+ * Added for the ACT! sync section (Settings -> ACT! sync), which answers "is
+ * this stale?" about a job that runs once a night. `relativeDate` cannot answer
+ * it: a sync that ran at 03:00 and one that ran at 23:00 are both "Today", and
+ * a reader looking at a stale page wants to know which.
+ *
+ * Hours run to 48 rather than rolling into days at 24, because the useful
+ * reading of a nightly job is "27 hours ago" — it missed a night — where "1 day
+ * ago" hides exactly that. Past two days it is days, where the hour stops
+ * mattering.
+ *
+ * `now` is a parameter, not `new Date()` inside: that is what lets this be
+ * tested at every boundary without fake timers, which this repo's test suite
+ * does not have (see vitest.config.ts on `isolate: false`). A clock that is
+ * behind the timestamp — a server and a database disagreeing by a second —
+ * reads as "just now" rather than as a negative number of minutes.
+ *
+ * No date library, by instruction. `Intl.RelativeTimeFormat` would do the
+ * wording, but it has to be told the unit and the number anyway, which is all
+ * the arithmetic below, and it renders "in 2 hours" for the clock-skew case
+ * this deliberately flattens.
+ */
+export function relativeTime(date: Date, now: Date = new Date()): string {
+  const seconds = Math.round((now.getTime() - date.getTime()) / 1000);
+  if (seconds < 45) return "just now";
+
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} ${minutes === 1 ? "minute" : "minutes"} ago`;
+
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} ${hours === 1 ? "hour" : "hours"} ago`;
+
+  const days = Math.round(hours / 24);
+  return `${days} days ago`;
+}

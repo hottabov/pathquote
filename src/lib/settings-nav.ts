@@ -15,6 +15,7 @@ import {
   Factory,
   LifeBuoy,
   ArrowLeftRight,
+  RefreshCw,
 } from "lucide-react";
 import { isAdminRole } from "./roles";
 
@@ -61,6 +62,13 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
   // Its own section rather than a Catalogue sub-page because it is a global,
   // destructive action, not another list to administer.
   { href: "/settings/import-export", label: "Import / Export", icon: ArrowLeftRight, adminOnly: true },
+  // The nightly ACT! pull: when it last ran, what it did, and a button for
+  // when somebody cannot wait for tonight. Its own section rather than a tab
+  // on another one because it is operational, not a list to curate — there is
+  // nothing here to edit, add or retire. Every other admin section hands you
+  // rows to look after; this one reports on a job that runs on its own at
+  // 03:00 and gives you one way to interrupt it.
+  { href: "/settings/act-sync", label: "ACT! sync", icon: RefreshCw, adminOnly: true },
   // Open to every signed-in user, same as Account/Preferences — a MANAGER
   // is exactly who most needs to reach the developer about a pricing or
   // technical problem (see src/app/(app)/settings/support/page.tsx).
