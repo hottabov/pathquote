@@ -54,13 +54,20 @@ export function ActSyncPanel({
       let settled: SyncAttempt;
       try {
         settled = describeSyncAttempt({ answered: true, result: await action() });
-      } catch {
-        // Deliberately swallowing the thrown value, not reporting it. Whatever
-        // reaches here is about the HTTP exchange, not about the sync: the 504
-        // case arrives as Next's own generic "An unexpected response was
-        // received from the server.", which would read on this page as a
-        // sentence about ACT! and would be the one wrong answer the section can
-        // give.
+      } catch (error) {
+        // Logged but not shown. Whatever reaches here is about the HTTP
+        // exchange, not about the sync: the 504 case arrives as Next's own
+        // generic "An unexpected response was received from the server.", which
+        // would read on this page as a sentence about ACT! and would be the one
+        // wrong answer the section can give.
+        //
+        // The console is where it goes instead of nowhere. The server side of
+        // this button logs its failures (`console.error` in
+        // src/lib/actions/act-sync.ts), and discarding the value here left a
+        // 504, an `E715` stale action id after a deploy and a real bug in this
+        // component looking identical from the outside -- three different
+        // things to do about them, and nothing anywhere saying which it was.
+        console.error("act: the Sync now action did not return", error);
         settled = describeSyncAttempt({ answered: false });
       }
 

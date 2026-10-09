@@ -212,6 +212,27 @@ describe("describeActSyncStatus — the reload control", () => {
     );
     expect(telling.summary.detail).toContain("Reload this page");
     expect(telling.reload).toBe(true);
+
+    // The dangerous direction, which the one example above leaves open. The
+    // superset guarantee has three links -- the sentence appears only while
+    // running, `reload` is true exactly while running, so the sentence is never
+    // printed without the control -- and until now only the second was pinned
+    // across every state. This pins the first: no state that is not running may
+    // ask for a reload it is not offering. `?? ""` so a null detail asserts
+    // rather than skips.
+    const quiet = [
+      status({ running: false }),
+      status({ lastRun: run({ finishedAt: null }), running: false }),
+      status({ lastRun: run({ failed: 2 }), running: false }),
+      status({ lastRun: run({ companiesKeyCollisions: 1 }), running: false }),
+      status({ lastRun: null, running: false, cursor: null }),
+      status({ lastRun: null, lastRunUnreadable: true, running: false }),
+    ];
+    for (const state of quiet) {
+      const view = describeActSyncStatus(state, NOW);
+      expect(view.reload).toBe(false);
+      expect(view.summary.detail ?? "").not.toContain("Reload this page");
+    }
   });
 });
 
@@ -226,9 +247,10 @@ describe("describeActSyncStatus — the Sync now button", () => {
 
   it("withholds it entirely when nothing is stored", () => {
     // With no stored position "the changes since last time" means every contact
-    // in ACT! -- ~17,500, ten minutes or more -- and the page is cut off by
-    // nginx long before that, leaving a gateway error over a sync still
-    // running. A disabled button would not explain that; this does.
+    // in ACT! -- ~17,500, ten minutes or more -- longer than any proxy read
+    // timeout anybody sets by hand, so the likely outcome is a gateway error
+    // over a sync still running. A disabled button would not explain that; this
+    // does.
     const view = describeActSyncStatus(status({ cursor: null }), NOW);
     expect(view.runNow.kind).toBe("withhold");
     if (view.runNow.kind !== "withhold") throw new Error("unreachable");
@@ -244,6 +266,33 @@ describe("describeActSyncStatus — the Sync now button", () => {
     expect(
       describeActSyncStatus(status({ lastRun: run({ failed: 1 }), cursor: null }), NOW).runNow.kind,
     ).toBe("withhold");
+  });
+
+  it("withholds it on a null cursor under a record that reports a clean run", () => {
+    // The screen singled out above was the easy half: `failed: 1` makes the
+    // summary say so too, in rose, which is not a confusing page. This is the
+    // confusing one -- "3 contacts added, 11 updated" in slate, directly above
+    // "The first import has to be run on the server" in amber -- and it is
+    // reachable two further ways that also never checkpoint (see `checkpoint`
+    // in src/lib/act/sync.ts): any `--limit` sample run, which is how a
+    // developer would first try this on the box, and a run in which every
+    // record was skipped, though that one reads "No changes" rather than a
+    // count.
+    //
+    // Nothing is added to reconcile the two, and that is a decision rather than
+    // an omission. The page already reconciles them, twice and in the cards
+    // whose subject it is: "Caught up to -- Nothing yet", which says the next
+    // sync reads every contact, and the withheld button, which says PathQuote
+    // has not caught up to any point in ACT!'s history yet. A third sentence
+    // would be a third wording of one fact, which is the defect this branch
+    // has spent its length removing -- and it would have to come from
+    // summaryFor, which would mean describeRun's words answering for a field
+    // the record does not carry.
+    const view = describeActSyncStatus(status({ lastRun: run(), cursor: null }), NOW);
+    expect(view.runNow.kind).toBe("withhold");
+    expect(view.summary.headline).toBe("3 contacts added, 11 updated, 2 companies added");
+    expect(view.summary.tone).toBe("ok");
+    expect(view.caughtUpTo.headline).toBe("Nothing yet");
   });
 
   it("still offers it while a sync is running, and says what will happen", () => {
@@ -286,11 +335,14 @@ describe("describeActSyncStatus — the schedule and the stored position", () =>
 });
 
 describe("describeSyncAttempt", () => {
-  it("reports a clean run as finished", () => {
-    expect(describeSyncAttempt({ answered: true, result: {} })).toEqual({
-      outcome: "done",
-      message: "Sync finished — PathQuote is up to date with ACT!",
-    });
+  it("reports a clean run as finished, and claims nothing more than that", () => {
+    // It used to end "— PathQuote is up to date with ACT!", which a clean run
+    // does not earn: contacts whose company has no usable name are skipped, the
+    // stored position moves past them anyway, and those counts reach neither
+    // the record nor this page. What changed is in the section beneath.
+    const attempt = describeSyncAttempt({ answered: true, result: {} });
+    expect(attempt).toEqual({ outcome: "done", message: "Sync finished." });
+    expect(attempt.message).not.toContain("up to date");
   });
 
   it("passes a warning through as a note, not a failure", () => {
@@ -325,9 +377,12 @@ describe("describeSyncAttempt", () => {
     expect(attempt.outcome).toBe("no-answer");
     expect(attempt.outcome).not.toBe("failed");
     expect(attempt.message.toLowerCase()).not.toContain("failed");
-    // And says the two things that are true: it did not stop, and a reload will
-    // show where it got to.
-    expect(attempt.message).toContain("does not stop");
+    // And says the two things that are true: giving up waiting is not what
+    // stops a run, and a reload will show where it got to. Scoped to a sync
+    // that started, not flat, because this branch is also reached by a 502 from
+    // a node restart mid-run and by a stale action id after a deploy (`E715`),
+    // the second of which can arrive with no sync ever having been started.
+    expect(attempt.message).toContain("does not stop a sync that had already started");
     expect(attempt.message).toContain("Reload this page");
   });
 });

@@ -78,6 +78,29 @@ export type RunCounts = Pick<
   | "failed"
 >;
 
+/**
+ * What a run that dropped some contacts leaves to say about them, said once.
+ *
+ * Two places need this sentence: describeRun's `failed` branch below, which the
+ * Settings section renders, and the warning runActSyncNow returns to the admin
+ * who pressed Sync now (src/lib/actions/act-sync.ts), which the toast shows on
+ * top of that same section a moment before it refreshes. Two wordings of one
+ * fact invite reading them as two different facts, so there is one wording and
+ * both sites interpolate it.
+ *
+ * A const rather than two copies and a comment promising they match: the copy
+ * in the action was pinned by nothing, so nothing would have failed when one of
+ * them was reworded and the other was not.
+ *
+ * True because `failed > 0` freezes the checkpoint for the rest of the run (see
+ * `checkpoint` in src/lib/act/sync.ts), so the next sync asks ACT! for a window
+ * that still contains them. The thrown-run branch deliberately does not make
+ * this promise and so does not use this string -- a run that threw on page nine
+ * has already moved the position eight times.
+ */
+export const FAILED_CONTACTS_DETAIL =
+  "Nothing was skipped — those contacts will be tried again on the next sync. If it keeps happening, ask your developer to look into it.";
+
 const NO_COUNTS: RunCounts = {
   contactsCreated: 0,
   contactsUpdated: 0,
@@ -391,10 +414,9 @@ export function describeRun(
       // director. What it means to him is that the contacts that failed are
       // still waiting rather than lost, which is what the first half now says.
       //
-      // True because `failed > 0` freezes the checkpoint for the rest of the
-      // run (see `checkpoint` in src/lib/act/sync.ts: "`failed` freezes the
-      // cursor so the next run reaches it again"), so the next sync asks ACT!
-      // for a window that still contains them.
+      // Why the first half is true, and why the Sync now action interpolates
+      // this same const rather than keeping its own copy: see
+      // FAILED_CONTACTS_DETAIL above.
       //
       // The second half is the same offer the killed-run branch above makes,
       // and for the same reason: the count is all this record carries, so
@@ -402,8 +424,7 @@ export function describeRun(
       // message is in the service log, but only the nightly run prints it
       // there, so this does not promise he will find it -- it names the person
       // who can.
-      detail:
-        "Nothing was skipped — those contacts will be tried again on the next sync. If it keeps happening, ask your developer to look into it.",
+      detail: FAILED_CONTACTS_DETAIL,
       trigger,
     };
   }

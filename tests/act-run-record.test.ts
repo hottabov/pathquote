@@ -81,10 +81,13 @@ describe("describeRun", () => {
     // NOT make that promise -- a run that threw on page nine has already moved
     // the position eight times -- which is why the two details differ.
     //
-    // Pinned as a whole string, not a substring, because runActSyncNow quotes
-    // it word for word into the warning its toast shows: the two are one
+    // Pinned as a whole string, not a substring, because runActSyncNow puts
+    // this same sentence in the warning its toast shows: the two are one
     // sentence about one fact, and a page that says this under a toast saying
-    // something slightly different reads as two different facts.
+    // something slightly different reads as two different facts. It is the
+    // exported FAILED_CONTACTS_DETAIL at both sites rather than two copies, so
+    // the literal below is now the only place the words are written down twice
+    // -- which is what a test is for.
     expect(describeRun(run({ failed: 2 })).detail).toBe(
       "Nothing was skipped — those contacts will be tried again on the next sync. If it keeps happening, ask your developer to look into it.",
     );

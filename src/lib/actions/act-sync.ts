@@ -2,7 +2,7 @@
 
 import { requireAdmin } from "@/lib/authz";
 import { actClientFromEnv } from "@/lib/act/client";
-import { messageOf } from "@/lib/act/run-record";
+import { FAILED_CONTACTS_DETAIL, messageOf } from "@/lib/act/run-record";
 import { SyncAlreadyRunningError, syncContacts } from "@/lib/act/sync";
 import { plural } from "@/lib/plural";
 import { revalidateActSync } from "@/lib/revalidate";
@@ -99,15 +99,14 @@ export async function runActSyncNow(): Promise<ActionResultWithWarning> {
       // here fires the panel's success toast over a run that dropped contacts,
       // and the admin walks away from the screen believing it all went in.
       //
-      // Everything after the count is describeRun's failure detail word for
-      // word (src/lib/act/run-record.ts), because the `finally` below
-      // revalidates and the section the toast is sitting on top of is about to
-      // say exactly this. Two wordings of one fact invite reading them as two
-      // different facts -- which is why this string moved when that one did:
-      // the detail stopped mentioning the cursor, a word with no meaning on a
-      // page the director reads, and this copy of it had to stop too.
+      // Everything after the count IS describeRun's failure detail -- the same
+      // const, not a copy of its words -- because the `finally` below
+      // revalidates and the section this toast sits on top of is about to say
+      // exactly this. Two wordings of one fact invite reading them as two
+      // different facts, and while this was a second copy held in step by a
+      // comment, nothing would have failed when one of them was reworded.
       return {
-        warning: `${plural(result.failed, "contact", "contacts")} failed. Nothing was skipped — those contacts will be tried again on the next sync. If it keeps happening, ask your developer to look into it.`,
+        warning: `${plural(result.failed, "contact", "contacts")} failed. ${FAILED_CONTACTS_DETAIL}`,
       };
     }
 

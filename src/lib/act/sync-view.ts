@@ -204,11 +204,13 @@ function summaryFor(
  *
  * A null cursor is the whole reason this is a decision rather than a button.
  * With nothing stored, "the changes since last time" means every contact in
- * ACT! -- ~17,500 of them, 88 pages -- which is ten minutes at best and is
- * capped by nginx's read timeout long before it finishes (see the HOW LONG THIS
- * BLOCKS note on runActSyncNow). The click would leave a gateway error on
- * screen, a sync still running behind it, and nobody able to tell which. So
- * that state gets an explanation and no button at all.
+ * ACT! -- ~17,500 of them, 88 pages -- which is ten minutes at best, and longer
+ * than any proxy read timeout anybody sets by hand (see the HOW LONG THIS
+ * BLOCKS note on runActSyncNow: nginx's documented default is 60 seconds, and
+ * what the live WordOps template sets has not been read off the VPS). The click
+ * would most likely leave a gateway error on screen, a sync still running
+ * behind it, and nobody able to tell which. So that state gets an explanation
+ * and no button at all.
  *
  * A sync already running does NOT withhold the button: pressing it loses the
  * advisory-lock race and comes back with the lock's own sentence, which is a
@@ -221,7 +223,7 @@ function runNowFor(cursor: Date | null, running: boolean): ActSyncRunNow {
       kind: "withhold",
       headline: "The first import has to be run on the server",
       detail:
-        "PathQuote has not caught up to any point in ACT!'s history yet, so there is no short list of recent changes to fetch — this would read every contact in ACT!, about 17,500 of them, and take ten minutes or more. This page stops waiting long before that, which would leave you unable to tell a working import from a stuck one. Ask your developer to run the first import on the server. After that there is only ever a night's worth of changes to fetch and this takes a few seconds.",
+        "PathQuote has not caught up to any point in ACT!'s history yet, so there is no short list of recent changes to fetch — this would read every contact in ACT!, about 17,500 of them, and take ten minutes or more. This page will most likely stop waiting before it finishes, which would leave you unable to tell a working import from a stuck one. Ask your developer to run the first import on the server. After that there is only ever a night's worth of changes to fetch and this takes a few seconds.",
     };
   }
 
@@ -330,8 +332,17 @@ export function describeSyncAttempt(
   if (!settled.answered) {
     return {
       outcome: "no-answer",
+      // Scoped to a sync that started, because this branch is reached by more
+      // than the timeout it was written for. A node restart mid-request (502)
+      // and a stale action id after a deploy (`E715`, the `x-action-redirect`
+      // and content-type checks in Next's server-action-reducer) both land
+      // here with no sync running at all -- the second with no sync ever having
+      // been started. "The sync does not stop when that happens" is a promise
+      // about a run that may not exist; that giving up waiting is not what
+      // stops one is true in every case. The advice after it is conditioned on
+      // what the reload actually says, so it routes all three correctly.
       message:
-        "PathQuote gave up waiting for an answer, so it cannot say how the sync went — but the sync does not stop when that happens. Reload this page: if it says Running now, leave it alone and it will finish on its own.",
+        "PathQuote gave up waiting for an answer, so it cannot say how the sync went — and giving up waiting does not stop a sync that had already started. Reload this page: if it says Running now, leave it alone and it will finish on its own.",
     };
   }
 
@@ -339,5 +350,13 @@ export function describeSyncAttempt(
   // in runActSyncNow returns both.
   if (settled.result.error) return { outcome: "failed", message: settled.result.error };
   if (settled.result.warning) return { outcome: "note", message: settled.result.warning };
-  return { outcome: "done", message: "Sync finished — PathQuote is up to date with ACT!" };
+  // Ends at "finished", and deliberately does not say PathQuote is now up to
+  // date with ACT!. A clean run does not earn that: contacts whose company has
+  // no usable name are counted as skipped, the stored position moves past them
+  // anyway (see `newestEdited` being set before the `companyUsable` test in
+  // src/lib/act/sync.ts), and the skipped counts are not in the stored record
+  // or anywhere on this page -- only in the CLI's own output. So a run can
+  // finish clean having left contacts behind, and the toast must not promise
+  // otherwise. What changed is in the section beneath, which has the counts.
+  return { outcome: "done", message: "Sync finished." };
 }
