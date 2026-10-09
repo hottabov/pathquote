@@ -5,13 +5,19 @@
  *   npm run act:sync -- --limit 200            # a careful first write
  *   npm run act:sync                           # delta since the stored cursor
  *   npm run act:sync -- --full                 # ignore the cursor, read all
+ *   npm run act:sync -- --trigger=schedule     # what the nightly timer runs
  *
  * The `--` matters. Without it npm keeps the flags for itself and the script
  * starts with none -- a full write. The script detects that and refuses.
  *
- * Arguments are strict: exactly --full, --dry-run and --limit (as `--limit N`
- * or `--limit=N`, N a positive whole number). Anything else is an error.
- * A banner naming the mode, the limit and the target database is printed first.
+ * Arguments are strict: exactly --full, --dry-run, --limit (as `--limit N` or
+ * `--limit=N`, N a positive whole number) and --trigger (schedule or manual,
+ * default manual). Anything else is an error. A banner naming the mode, the
+ * limit, the trigger and the target database is printed first.
+ *
+ * Every run that writes also leaves a last-run record for Settings to show --
+ * once when it starts and again when it ends, so a run killed partway still
+ * says it began. A dry run leaves none.
  *
  * Exit status: 0 clean, 1 the run threw or some contacts failed to store,
  * 2 bad arguments or no identifiable database. Run it on the VPS: the ACT!
@@ -67,6 +73,7 @@ async function main() {
     full: args.full,
     dryRun: args.dryRun,
     limit: args.limit,
+    trigger: args.trigger,
     onProgress: (scanned) => {
       if (scanned % 500 === 0) console.log(`  ${scanned} scanned`);
     },
@@ -114,6 +121,19 @@ async function main() {
   console.log("");
   const cursorLabel = args.dryRun ? "cursor would move to" : "cursor now";
   console.log(`${cursorLabel}: ${result.cursorTo ? result.cursorTo.toISOString() : "unchanged"}`);
+
+  // So a `systemctl start` log says whether Settings will show this run, and
+  // under which name. A record that did not get written is not a failure of
+  // the sync -- the contacts are in -- but it is why the page would say
+  // something odd tomorrow, and this is the line that explains it.
+  console.log(`trigger: ${args.trigger}`);
+  console.log(
+    args.dryRun
+      ? "last-run record: none (a dry run is never recorded)"
+      : result.recorded
+        ? "last-run record: written"
+        : "last-run record: NOT written -- the error is above; Settings will say this run never finished",
+  );
 
   if (result.failed > 0) process.exitCode = 1;
 }
