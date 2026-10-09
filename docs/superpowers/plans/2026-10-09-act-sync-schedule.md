@@ -510,12 +510,14 @@ Description=PathQuote: nightly ACT! contact sync
 #
 # Named zone rather than UTC so the hour survives daylight saving, same as the
 # backup timers.
+#
+# No RandomizedDelaySec: Task 6 prints this schedule to the director in words
+# ("Every night at 3:00 am, Melbourne time."), and jitter would make that
+# sentence either untrue or vague for no gain -- there is one VPS and one ACT!
+# server, so there is no herd to spread off a shared endpoint.
 OnCalendar=*-*-* 03:00:00 Australia/Melbourne
 # A run missed while the VPS was down happens at next boot instead.
 Persistent=true
-# Up to five minutes of jitter, so the sync and anything else on the hour do
-# not start in lockstep.
-RandomizedDelaySec=300
 
 [Install]
 WantedBy=timers.target

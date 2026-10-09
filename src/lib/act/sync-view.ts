@@ -31,6 +31,12 @@ import type { ActSyncStatus } from "@/lib/queries/act-sync";
  * that actually decides it (`OnCalendar=*-*-* 03:00:00 Australia/Melbourne`).
  * Nothing in the app can read a systemd unit, so this is a transcription: if
  * that line changes, this one has to change with it.
+ *
+ * An exact hour, which the timer now keeps exact on purpose: it carried a
+ * `RandomizedDelaySec=300` that made an on-time run start at 03:04 and this
+ * sentence untrue. The jitter went rather than this sentence, because it was
+ * spreading a herd of one machine off an endpoint of one. The comment beside
+ * `OnCalendar` says so, so nobody adds it back without reading why.
  */
 export const NIGHTLY_SCHEDULE = "Every night at 3:00 am, Melbourne time.";
 
