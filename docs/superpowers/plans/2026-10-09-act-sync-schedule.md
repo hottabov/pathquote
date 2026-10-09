@@ -610,6 +610,11 @@ Import `RefreshCw` from `lucide-react`. Check `tests/` for a test over `SETTINGS
 
 `requireAdminPage()`, read the last run, render a `SectionCard` per the pattern in `src/app/(app)/settings/users/[userId]/page.tsx`.
 
+Two things carried forward from the Task 2 review, to settle on this page:
+
+- The `failed` branch's detail still says "the cursor did not move". It is accurate there — `checkpoint()` bails once `failed > 0` — but "cursor" is developer vocabulary on a page written for the director, and the sentence loses nothing as "Nothing was skipped — fix the cause and run it again."
+- With both notes firing, `detail` is three sentences. Render it as a paragraph, not a single clipped line.
+
 It should answer, in this order: **when did it last run**, **what did it do**, **is anything wrong**, and **run it now**. Show the time as both absolute and relative ("2 hours ago") — relative answers "is this stale?" at a glance, absolute answers "was that before or after I edited the record?".
 
 Also show the stored cursor, which is the ACT! `edited` timestamp the sync has reached. It is the one number that explains a surprising result, and reading it currently needs SQL.
