@@ -45,9 +45,17 @@ export type { ActionResultWithWarning };
  *     decides which: a refused connection fails in moments and the run throws
  *     almost at once, where a host that swallows the connection instead -- the
  *     NAT rule withdrawn, the IIS box wedged -- costs the full 93 seconds for
- *     the very first request. ACT! merely slow is the expensive one: 88 pages
- *     that each answer in 29 seconds is ~43 minutes, and no timeout anywhere
- *     in this app stops it.
+ *     the very first request. ACT! merely slow is the expensive one, and it has
+ *     two figures that are easy to confuse because they come from different
+ *     arithmetic:
+ *       - NOTHING RETRIES. Every page answers in 29 seconds, just inside the
+ *         timeout, so every one succeeds first time: 88 x 29s is ~43 minutes.
+ *       - EVERYTHING RETRIES. Each page's first two attempts time out and its
+ *         third answers: 30 + 1 + 30 + 2 + 30 is 93 seconds, so 88 x 93s is
+ *         ~2h16m. That is the ceiling -- the slowest a run can be and still
+ *         finish -- and the 43 minutes is NOT it. Quote one or the other; the
+ *         three-attempts-plus-backoff reasoning belongs to the 2h16m.
+ *     No timeout anywhere in this app stops either of them.
  *
  * What bounds it is not in this repository. nginx's `proxy_read_timeout`
  * defaults to 60 seconds, and the proxy configuration written out in
@@ -70,8 +78,8 @@ export type { ActionResultWithWarning };
  *
  * Which is what makes this acceptable as it stands -- the ceiling is reached
  * by the page giving up on a run that goes on to succeed, not by work being
- * lost halfway. A job queue is the real answer to a button that can take forty
- * minutes and is not worth building for one whose ordinary case is seconds.
+ * lost halfway. A job queue is the real answer to a button that can take two
+ * hours and is not worth building for one whose ordinary case is seconds.
  * What is required instead is that the section around this button tells the
  * truth about the wait; and if 60 seconds turns out to bite in practice,
  * `proxy_read_timeout` on the VPS is a one-line change.

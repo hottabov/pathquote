@@ -39,12 +39,21 @@ const CURSOR_KEY = "act.sync.cursor";
 // it; a column set to true stays set, and wedges every later run until a person
 // clears it by hand.
 //
-// The case that is not instant is a host that vanishes without closing the
-// socket -- a yanked cable, a box hard-powered-off. It sends no FIN, so
-// Postgres keeps the session, and the lock, until it notices the socket is
-// dead. What decides when is the server's own `tcp_keepalives_idle`, nothing
-// this code can set, and the default is two hours. So: still a window, but one
-// that closes by itself rather than waiting for a person to find it.
+// The case that is not instant is a connection that dies without its socket
+// being closed: this container's network namespace torn down under a process
+// that is still alive, or the systemd-networkd fault in docs/runbook.md §6
+// ("systemd-networkd steals Docker's veth interfaces"), which un-enslaves every
+// veth from docker0 so packets stop at layer 2 while both ends still believe
+// the connection is open. No FIN reaches Postgres, so it keeps the session, and
+// the lock, until it notices the socket is dead. What decides when is the
+// server's own `tcp_keepalives_idle`, nothing this code can set, and the
+// default is two hours. So: still a window, but one that closes by itself
+// rather than waiting for a person to find it.
+//
+// Not a power cut, on this deployment: `postgres` is a Compose service on the
+// same VPS as the app and DATABASE_URL points at `postgres:5432`
+// (docker-compose.yml, runbook §1), so losing the box loses the cluster with
+// it and it restarts with no sessions and no lock to wedge.
 //
 // The number is arbitrary and only has to stay fixed. It is a bare key in a
 // namespace shared with the whole database, carrying nothing that says what it
@@ -511,9 +520,10 @@ function openLockConnection(): PrismaClient {
     // leaves TCP keepalive off, so if the database host or the network goes away
     // mid-run, this socket waits on an answer that is never coming. With
     // keepalive the kernel probes, the connection fails, and the adapter's pool
-    // listener reports it rather than the run hanging. It does nothing for a
-    // vanished *app* host -- that takes its probes with it, and only the
-    // server's keepalive settings end the session still holding the lock.
+    // listener reports it rather than the run hanging. It does nothing for the
+    // other end of that same break -- this side's probes go nowhere once the
+    // network is gone, and only the server's own keepalive settings end the
+    // session still holding the lock. That is the note at SYNC_LOCK_KEY.
     keepAlive: true,
   },
   {

@@ -19,12 +19,15 @@ import { describeSyncAttempt, type SyncAttempt } from "@/lib/act/sync-view";
  *
  * THE TRY/CATCH IS THE POINT OF THIS COMPONENT. This is the one button in the
  * app whose server action can fail to come back while its work carries on: the
- * worst case the delta can produce is ~43 minutes and nothing in the
- * application bounds it, so nginx answers 504 at its `proxy_read_timeout` while
- * the sync keeps the lock, finishes, and writes its record. In Next.js 16 that
- * arrives here as a REJECTED promise carrying "An unexpected response was
- * received from the server." -- see the long note on `describeSyncAttempt` for
- * how that was read off Next's own reducer rather than assumed. Without the
+ * delta's bad case is ~43 minutes (88 pages each answering in 29 seconds, none
+ * of them retrying) and its ceiling is ~2h16m (every page needing all three
+ * attempts, 93 seconds each -- see the two figures spelled out on
+ * runActSyncNow), and nothing in the application bounds either, so nginx
+ * answers 504 at its `proxy_read_timeout` while the sync keeps the lock,
+ * finishes, and writes its record. In Next.js 16 that arrives here as a
+ * REJECTED promise carrying "An unexpected response was received from the
+ * server." -- see the long note on `describeSyncAttempt` for how that was read
+ * off Next's own reducer rather than assumed. Without the
  * catch, that rejection escapes the transition and takes the whole route down
  * to its error boundary, replacing the page that was about to be able to answer
  * the question. With it, the reader is told the truth: no answer came back, the
