@@ -4,7 +4,7 @@
 // it do, is anything wrong, can I run it now -- and every one of them has cases
 // that are easy to get wrong in a way that looks right: "Never run" about a
 // sync that runs nightly, a Sync now button offered when pressing it would
-// start a forty-minute import, a 504 reported as a failed sync. Those are
+// start a ten-minute import, a 504 reported as a failed sync. Those are
 // decisions, not markup, so they live in one pure function with a test per case
 // (tests/act-sync-view.test.ts) and the page renders what it is handed. Same
 // reasoning that put describeRun in ./run-record.ts rather than in a component.
@@ -138,26 +138,39 @@ function melbourneTime(date: Date): string {
 /**
  * What the last run did.
  *
- * `describeRun` owns every word about a record that can be read. The two
- * branches below are the states it has no record to describe, and both of them
- * are states where saying the obvious thing would be wrong:
+ * `describeRun` owns every word about a record that can be read. The branches
+ * below are the states it has no record to describe, and every one of them is a
+ * state where saying the obvious thing would be wrong:
  *
  *   - `lastRunUnreadable`: a sync HAS run and left a record this version cannot
  *     parse (see parseStoredRun). "Never run" would be wrong about a job that
  *     runs every night, and wrong in the way nobody investigates. It is also
  *     not an ACT! problem and not something the director can act on, so it says
  *     whose problem it is.
- *   - no record at all: the sync has never run.
+ *   - no record and a stored position: a sync has run; nothing recorded it.
+ *     This is the state the release that added this page lands in, because the
+ *     first full import (production, 2026-10-08) ran before `act.sync.lastRun`
+ *     existed -- it left a cursor and no run record. So this is the FIRST thing
+ *     the director reads here, and "Never run" is three false statements at
+ *     once: 17,529 contacts have come across, the first import does not need
+ *     running on the server, and the Caught up to card two inches below names
+ *     the date it got to. The cursor is what separates this from the branch
+ *     under it, which is why this function is given it.
+ *   - no record and no stored position: the sync has never run.
  *
- * `running` is checked before either, because a live sync makes both of those
- * headlines false -- and a missing record while a run is going is itself worth
- * saying out loud, since the worker writes one before it reads its first
- * contact.
+ * `running` is checked before any of them, because a live sync makes all those
+ * headlines false -- and a missing record while a run is going is worth saying
+ * out loud, since the worker writes one before it reads its first contact. (In
+ * the deploy state above, that branch is also what a `--dry-run` shows while it
+ * holds the lock, since a dry run records nothing at either end. Its "should
+ * not happen" is an overstatement of that one case: transient, developer-only,
+ * and gone when the dry run ends.)
  */
 function summaryFor(
   lastRun: ActSyncRun | null,
   lastRunUnreadable: boolean,
   running: boolean,
+  cursor: Date | null,
 ): ActSyncSummary {
   if (lastRun) {
     const described = describeRun(lastRun, { running });
@@ -186,6 +199,27 @@ function summaryFor(
       headline: "A sync has run — PathQuote cannot read what it recorded",
       detail:
         "The last run left a record this version of PathQuote does not understand, so there is no way to say here how it went. The sync itself may well be working: this is a PathQuote problem, not an ACT! one. Ask your developer to look at it.",
+      trigger: null,
+    };
+  }
+
+  // A stored position with no record: contacts are in, the bookkeeping is not.
+  // Tone `ok` rather than `warn`, which is the one judgement in this branch.
+  // Nothing is wrong and there is nothing to do: the state fixes itself at the
+  // next run, tonight at the latest, and it is what every install of this
+  // release opens on. Amber across the top of a working page on day one is how
+  // a reader learns that amber here means nothing.
+  //
+  // The nightly hour is deliberately not repeated in this sentence. It is
+  // transcribed from the timer unit in exactly one place (NIGHTLY_SCHEDULE),
+  // printed by the card below this one, and a second hand-kept copy is how the
+  // page comes to disagree with the unit that decides it.
+  if (cursor) {
+    return {
+      tone: "ok",
+      headline: "No run recorded yet",
+      detail:
+        "Contacts have already come across from ACT! — PathQuote has read everything edited up to the date shown under Caught up to below. What is missing is only the record of the run that did it: this page starts reporting runs from the first one after this release, so tonight's nightly sync will fill it in. Press Sync now if you would rather not wait for it.",
       trigger: null,
     };
   }
@@ -281,7 +315,7 @@ export function describeActSyncStatus(status: ActSyncStatus, now: Date = new Dat
           relative: relativeTime(new Date(lastRun.startedAt), now),
         }
       : null,
-    summary: summaryFor(lastRun, lastRunUnreadable, running),
+    summary: summaryFor(lastRun, lastRunUnreadable, running, cursor),
     reload: running,
     runNow: runNowFor(cursor, running),
     caughtUpTo: caughtUpToFor(cursor),

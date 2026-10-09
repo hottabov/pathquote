@@ -364,7 +364,7 @@ export function describeRun(
     // the better thing to say in that instant, and in every instant after it.
     if (running) {
       // No estimate of how long. The neighbouring comments in sync.ts call this
-      // a ten-minute run and a `--full` import of 12,000 contacts can go past
+      // a ten-minute run and a `--full` import of ~17,500 contacts can go past
       // that, so any number named here is a promise the code cannot keep: a
       // director who reloads after four minutes, reads the same line again and
       // was told "a few minutes" cannot tell waiting from wedged.
@@ -395,11 +395,26 @@ export function describeRun(
       };
     }
 
+    // No "press Sync now" here, and that is the second wording of this detail
+    // rather than an oversight. The button is not always on the page: Settings
+    // withholds it whenever there is no stored position (runNowFor in
+    // src/lib/act/sync-view.ts), and a killed run with no stored position is
+    // exactly the state a killed FIRST full import leaves behind -- nothing
+    // checkpoints until a page completes. So the imperative named a control
+    // that was not there, in the one state it was reachable in.
+    //
+    // Dropped rather than routed through sync-view.ts, which is where the
+    // cursor is known. Doing that would mean this module handing out a detail
+    // for somebody else to replace, and sync-view.ts re-deriving WHICH branch
+    // was taken from a RunDescription that deliberately does not say. The
+    // sentence that replaces it is true in both pairings and needs no cursor to
+    // be sure of: the next run -- tonight's, or one somebody starts -- carries
+    // on from where this one got to.
     return {
       tone: "error",
       headline: "Started and never finished",
       detail:
-        "The server restarted, or the sync was stopped partway. Nothing was lost — press Sync now to bring it up to date. If it keeps happening, ask your developer to check the service log.",
+        "The server restarted, or the sync was stopped partway. Nothing was lost — the next sync carries on from where this one got to. If it keeps happening, ask your developer to check the service log.",
       trigger,
     };
   }

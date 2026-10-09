@@ -150,10 +150,64 @@ describe("describeActSyncStatus — what the last run did", () => {
     expect(view.summary.trigger).toBeNull();
   });
 
-  it("says 'Never run' only when nothing has been recorded at all", () => {
+  it("says 'Never run' only when nothing has been recorded AND nothing is stored", () => {
     const view = describeActSyncStatus(status({ lastRun: null, cursor: null }), NOW);
     expect(view.summary.headline).toBe("Never run");
     expect(view.summary.tone).toBe("warn");
+    expect(view.summary.detail).toContain("nothing has come across from ACT! yet");
+    // Pinned together with the cursor, because the bug this pair closed was a
+    // `cursor: null` standing beside every "Never run" assertion in this file
+    // while the code read no cursor at all: the state the deploy actually lands
+    // in -- a cursor and no record -- was asserted nowhere, and got this
+    // headline.
+    expect(view.caughtUpTo.headline).toBe("Nothing yet");
+  });
+
+  it("does not say 'Never run' about an import that has already happened", () => {
+    // THE DEPLOY STATE. `act.sync.lastRun` is new on this branch, so the
+    // production full import of 2026-10-08 left a cursor and no run record, and
+    // this is what the director sees on the first page load after the release.
+    // "Never run" was three false statements at once there: 17,529 contacts had
+    // come across, the first import did not need running on the server, and the
+    // Caught up to card below said so in the same breath.
+    const view = describeActSyncStatus(status({ lastRun: null }), NOW);
+    expect(view.summary.headline).toBe("No run recorded yet");
+    expect(view.summary.headline.toLowerCase()).not.toContain("never");
+    expect(view.summary.detail).toContain("Contacts have already come across from ACT!");
+    expect(view.summary.detail?.toLowerCase()).not.toContain("never");
+    // Not an error and not an action item: it fixes itself at the next run, and
+    // every install of this release opens on it.
+    expect(view.summary.tone).toBe("ok");
+    // Nobody started a run, so there is nothing to attribute and no timestamp.
+    expect(view.summary.trigger).toBeNull();
+    expect(view.when).toBeNull();
+  });
+
+  it("agrees with the two cards beneath it in that state", () => {
+    // The three things on one screen, read as a set. The summary used to
+    // contradict both of the others: it sent the reader to the server for a
+    // first import while the card below offered him the button and called it
+    // seconds, and it said nothing had come across directly above the date it
+    // had come across up to.
+    const view = describeActSyncStatus(status({ lastRun: null }), NOW);
+    expect(view.summary.detail).toContain("Caught up to");
+    expect(view.summary.detail).toContain("Press Sync now");
+    expect(view.caughtUpTo.headline).toBe(
+      "Everything edited in ACT! up to 10 Oct 2026, 2:58 am Melbourne time",
+    );
+    expect(view.runNow.kind).toBe("offer");
+    if (view.runNow.kind !== "offer") throw new Error("unreachable");
+    // The hint stands unchanged: a stored position means there IS a short list
+    // of changes to fetch, which is the only claim it makes. What it must not
+    // do is say "a few seconds" beside a summary telling him to go to the
+    // server, and that half is gone.
+    expect(view.runNow.hint).toContain("Usually a few seconds");
+    expect(view.summary.detail).not.toContain("run on the server");
+    // And the nightly hour is not transcribed a second time here: the schedule
+    // card holds the only copy in the app (NIGHTLY_SCHEDULE), kept in step by
+    // hand with the timer unit, and a second copy is how the page comes to
+    // disagree with the unit that decides it.
+    expect(view.summary.detail).not.toContain("3:00");
   });
 
   it("puts a live run ahead of both of those headlines", () => {
@@ -168,6 +222,18 @@ describe("describeActSyncStatus — what the last run did", () => {
     );
     expect(missing.summary.headline).toBe("Running now");
     expect(missing.summary.detail).toContain("nothing was recorded when it started");
+
+    // Including ahead of the new no-record-with-cursor headline, which is the
+    // pairing the deploy state produces the moment anything takes the lock:
+    // the first nightly run inside the round trip before its start record
+    // lands, or a `--dry-run`, which records nothing at either end. "No run
+    // recorded yet" is true of the record and useless about the sync that is
+    // reading ACT! right now.
+    const liveOnDeployState = describeActSyncStatus(
+      status({ lastRun: null, running: true }),
+      NOW,
+    );
+    expect(liveOnDeployState.summary.headline).toBe("Running now");
 
     const unreadable = describeActSyncStatus(
       status({ lastRun: null, lastRunUnreadable: true, running: true }),
@@ -226,6 +292,7 @@ describe("describeActSyncStatus — the reload control", () => {
       status({ lastRun: run({ failed: 2 }), running: false }),
       status({ lastRun: run({ companiesKeyCollisions: 1 }), running: false }),
       status({ lastRun: null, running: false, cursor: null }),
+      status({ lastRun: null, running: false }),
       status({ lastRun: null, lastRunUnreadable: true, running: false }),
     ];
     for (const state of quiet) {

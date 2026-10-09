@@ -129,10 +129,47 @@ function emptySkips(): Record<SkipReason, number> {
   };
 }
 
+/**
+ * The stored position, or null when there isn't a readable one.
+ *
+ * The `Number.isNaN` is the whole point of this function having a doc comment.
+ * `Setting.value` is a bare Json column with no shape enforced by the database,
+ * so a corrupt or hand-edited `editedAt` is a string that is not a date, and
+ * `new Date("whatever")` is an Invalid Date rather than a throw. Nothing in
+ * this file would notice: the only reader here is `contactsEditedSince`, whose
+ * `if (since)` test an Invalid Date passes, so it reaches `.toISOString()` and
+ * throws `RangeError: Invalid time value` from inside the page generator.
+ *
+ * What made it worth guarding is the second reader, which arrived with the
+ * Settings page: `getActSyncStatus` hands this date to `melbourneTime`, which
+ * calls `formatToParts` on it -- the same RangeError, from a server component,
+ * which is a 500 on the whole route. The row beside this one is guarded
+ * meticulously (isTimestamp, parseStoredRun) precisely so an unreadable record
+ * degrades into a sentence instead of a stack trace; the cursor is rendered on
+ * that same page and was not. caughtUpToFor(null) already has words for it.
+ *
+ * Not reachable from any writer in this repo -- writeCursor stores
+ * `toISOString()` of a Date -- so this closes the asymmetry, not a live bug.
+ *
+ * What it costs: a corrupt row now reads as no stored position, so the next run
+ * reads every contact in ACT! instead of failing. That is a full import nobody
+ * asked for, and it is NOT silent -- it is announced in the three places that
+ * speak about this: the page's Caught up to card says "Nothing yet ... the next
+ * sync starts from the very beginning and reads every contact", the button is
+ * withheld with the first-import explanation, and the CLI prints
+ * `cursor: none (first run)` before it starts. It is also additive: the import
+ * is the same delta code with no `since`, every write goes through
+ * fill-only-empty, and it ends by storing the true newest `edited`, so the row
+ * heals itself. The alternative -- keep the Invalid Date -- is a nightly run
+ * that throws at page one and a Settings page that 500s, which is a worse
+ * answer to the same bad row.
+ */
 export async function readCursor(): Promise<Date | null> {
   const row = await db.setting.findUnique({ where: { key: CURSOR_KEY } });
   const value = row?.value as { editedAt?: string } | null;
-  return value?.editedAt ? new Date(value.editedAt) : null;
+  if (!value?.editedAt) return null;
+  const editedAt = new Date(value.editedAt);
+  return Number.isNaN(editedAt.getTime()) ? null : editedAt;
 }
 
 async function writeCursor(editedAt: Date): Promise<void> {
@@ -161,13 +198,13 @@ async function writeRunRecord(run: ActSyncRun): Promise<void> {
  * Write the record and never throw.
  *
  * For the two writes at the END of a run, where the work is already done and
- * committed. A 12,000-contact import that succeeded must not be reported as a
+ * committed. A full import that succeeded must not be reported as a
  * failure because a one-row upsert after it did not land, and a run that threw
  * has to report why it threw rather than how its bookkeeping went.
  *
  * The start write is deliberately not wrapped: it happens before any work, and
  * a database that will not take one small upsert is not going to get through
- * twelve thousand of them, so stopping there with that error is the clearer
+ * seventeen thousand of them, so stopping there with that error is the clearer
  * answer than a ten-minute run that was always going to fail.
  *
  * What a lost ending write costs: the start record stays as it was, with
@@ -627,7 +664,8 @@ export async function syncContacts(
     result.cursorFrom = since;
 
     // Industry is a small fixed table, so read it once rather than asking per
-    // contact -- 12,000 lookups to answer at most 31 distinct questions.
+    // contact -- one lookup per contact, ~17,500 of them on a full import, to
+    // answer at most 31 distinct questions.
     const industryIdByName = new Map(
       (await db.industry.findMany({ select: { id: true, name: true } })).map((row) => [
         row.name,
@@ -794,7 +832,7 @@ export async function syncContacts(
             result.contactsCreated += 1;
           }
         } catch (error) {
-          // One bad record must not end a 12,000-contact run, and must not be
+          // One bad record must not end a full import, and must not be
           // lost either: it is counted, the first is reported, and `failed`
           // freezes the cursor so the next run reaches it again.
           result.failed += 1;
@@ -845,7 +883,7 @@ export async function syncContacts(
     // of that choice: if this disconnect fails there is nothing else to release
     // the lock, and it is held until this connection dies by other means.
     //
-    // Swallowed either way. A run that got through 12,000 contacts has to
+    // Swallowed either way. A run that got through 17,500 contacts has to
     // report what it did, and a run that threw has to report why -- neither is
     // improved by being replaced with how the cleanup went.
     await lock.$disconnect().catch((error: unknown) => {

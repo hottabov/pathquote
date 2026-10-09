@@ -45,10 +45,10 @@ describe("describeRun", () => {
   });
 
   it("groups thousands in a count", () => {
-    // The first full import is ~12,000 contacts. Pinned because a bare
-    // `${run.contactsUpdated}` would read "12000" and look like a simpler way
-    // to write the same thing.
-    expect(describeRun(run({ contactsUpdated: 12000 })).headline).toContain("12,000");
+    // The first full import is ~17,500 contacts (17,529 measured in production
+    // on 2026-10-08). Pinned because a bare `${run.contactsUpdated}` would read
+    // "17529" and look like a simpler way to write the same thing.
+    expect(describeRun(run({ contactsUpdated: 17529 })).headline).toContain("17,529");
   });
 
   it("says so plainly when a run changed nothing", () => {
@@ -151,6 +151,14 @@ describe("describeRun", () => {
     expect(describeRun(run({ finishedAt: null }), { running: false }).headline).toBe(
       "Started and never finished",
     );
+    // And names no control, because this module cannot know whether that one is
+    // on the page. The detail used to end "press Sync now to bring it up to
+    // date", which Settings withholds whenever there is no stored position --
+    // the state a killed first full import leaves behind, since nothing
+    // checkpoints until a page completes. What replaced it is true whether the
+    // button is there or not.
+    expect(described.detail).not.toContain("Sync now");
+    expect(described.detail).toContain("the next sync carries on");
   });
 
   it("keeps the failed count when the run also threw", () => {
