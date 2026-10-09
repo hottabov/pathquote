@@ -338,9 +338,36 @@ that is the ordinary outcome and zeros read like a fault."
 **Files:**
 - Modify: `src/lib/act/sync.ts`
 
-- [ ] **Step 1: Record the run, however it ends**
+- [ ] **Step 1: Record the run, however it ends — including when it never ends**
 
-`syncContacts` already returns a `SyncResult`. Capture `startedAt` before the work, and write the record in both the success and the failure path — a run that threw is exactly the one somebody wants to see on the page.
+Write the record **twice**: once when the run starts, with `finishedAt: null`, and again when it finishes or throws.
+
+That is not belt-and-braces, it is the only way one case can be told. A `kill -9`, an OOM, or a reboot mid-run runs no catch block. Write only at the end and such a run leaves no record at all, so the page shows last night's successful run as though it were current — a silent lie, and the worst answer this page can give. Writing at the start leaves a record saying the run began and never came back, which `describeRun` already has a branch for.
+
+It also costs one extra upsert per run, against a run that takes minutes.
+
+**The complication this creates, which must be handled here or the page lies the other way:** *during* a legitimate run the record also has `finishedAt: null`, so a page loaded mid-sync would say "Started and never finished" about a run that is going perfectly. The two states are distinguished by whether the advisory lock from Task 1 is currently held:
+
+| `finishedAt` | lock held | what it means |
+|---|---|---|
+| set | — | finished; `describeRun` says how it went |
+| null | yes | running right now |
+| null | no | died without finishing |
+
+So export a `isSyncRunning()` from `src/lib/act/sync.ts` that answers it:
+
+```sql
+SELECT EXISTS (
+  SELECT 1 FROM pg_locks
+  WHERE locktype = 'advisory' AND objid = <the low half of SYNC_LOCK_KEY>
+) AS running
+```
+
+Check how Postgres splits a single-argument advisory lock key across `classid`/`objid` before writing that predicate, and verify it against a real lock rather than reasoning about it — getting it wrong means either "running forever" or "never running", both of which look like the feature is broken.
+
+Then give `describeRun` an optional second argument `{ running: boolean }`, defaulting to false, and gate its never-finished branch on it. The tests for that branch stay; add one for the running case.
+
+`syncContacts` already returns a `SyncResult`. Capture `startedAt` before the work.
 
 Add a `trigger: SyncTrigger` to `SyncOptions`, defaulting to `"manual"`, so the CLI and the action can label their runs. A dry run records nothing: it changed nothing, and overwriting the last real run's record with a rehearsal would be misleading.
 
@@ -625,6 +652,15 @@ Follow the shape of §4 exactly — a table of unit, schedule, log and what it c
 - the `scp` + `daemon-reload` + `enable --now` install lines
 - that the four `ACT_*` values come from `/opt/pathquote/.env`, and that the API is IP-allowlisted to this VPS so it cannot be run from anywhere else
 - that the Settings page shows the last run, so the first place to look is the browser, not the log
+- **a wedged advisory lock.** The sync holds a Postgres session advisory lock for the length of a run, released by ending that session. A killed or crashed run closes its socket and loses the lock with it. A host that *vanishes* — power cut, hypervisor loss — sends no FIN, so Postgres keeps the session until its own `tcp_keepalives_idle` reaps it: **about 2h11m on the defaults** (7200s + 75s × 9). Nothing in the application can shorten that; the levers are `tcp_keepalives_idle` in `postgresql.conf`, which affects every session on the server, or an admin running `pg_terminate_backend` on the holder. Give the query that finds it:
+
+```sql
+SELECT pid, state, backend_start, query
+FROM pg_stat_activity
+WHERE pid IN (SELECT pid FROM pg_locks WHERE locktype = 'advisory');
+```
+
+  The symptom is every run — nightly and button alike — reporting that a sync is already running when none is. Say plainly that this is the only state needing a manual unwedge, and that waiting the two hours also works.
 
 - [ ] **Step 2: Commit**
 
