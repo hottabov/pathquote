@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { AlertTriangle, CalendarClock, RefreshCw, RotateCw } from "lucide-react";
+import { AlertTriangle, CalendarClock, Play, RefreshCw, RotateCw } from "lucide-react";
 import { requireAdminPage } from "@/lib/authz";
 import { getActSyncStatus } from "@/lib/queries/act-sync";
 import { runActSyncNow } from "@/lib/actions/act-sync";
@@ -39,10 +39,11 @@ const SUMMARY_TONE: Record<ActSyncView["summary"]["tone"], string> = {
  *
  * No sentence about the sync is written in this file and no condition here
  * picks one. `describeActSyncStatus` (src/lib/act/sync-view.ts) turns one read
- * of the status into the view below and is tested over every state the pair of
+ * of the status into the view below and is tested over every state the three
  * reads can produce -- never run, a clean night, a name collision, failed
  * contacts, a run that was killed, a run going on right now, a record this
- * version cannot read, and no stored position at all. What is left here is
+ * version cannot read, no stored position at all, and a stored position with no
+ * record, which is the state this release itself lands in. What is left here is
  * layout: which card a part goes in, and how a tone looks.
  *
  * `requireAdminPage` rather than a plain session check: a manager must not be
@@ -84,7 +85,13 @@ export default async function ActSyncPage() {
                 {view.summary.tone === "ok" ? null : (
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
                 )}
-                <span className="font-medium">{view.summary.headline}</span>
+              {/* `break-words`, with `min-w-0` so the span is allowed to
+                  shrink below its own content: this headline is "Failed:
+                  <whatever the driver or ACT! said>", which can be a
+                  connection string or a URL with no space in it, and an
+                  unbroken token runs out through the border of the box at
+                  phone width. */}
+                <span className="min-w-0 font-medium break-words">{view.summary.headline}</span>
               </p>
               {view.summary.trigger ? (
                 <StatusBadge tone="slate">{view.summary.trigger}</StatusBadge>
@@ -119,8 +126,15 @@ export default async function ActSyncPage() {
         </div>
       </SectionCard>
 
+      {/* An icon, like the two cards either side of it. SectionCard's tile is
+          size-9 beside a gap-3, so the one card without an icon has its title
+          48px to the left of its neighbours' -- down a single column, that is a
+          misalignment you see before you read anything. `Play` rather than the
+          button's own RefreshCw, which is already this page's mark for the sync
+          itself. */}
       <SectionCard
         title="Sync now"
+        icon={<Play className="size-5" />}
         description="Fetches the changes made in ACT! since the last sync, without waiting for tonight."
       >
         {view.runNow.kind === "offer" ? (

@@ -100,7 +100,12 @@ export function ActSyncPanel({
         >
           <p className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-            <span>{attempt.message}</span>
+            {/* `break-words`, with `min-w-0` so the span may shrink below its
+                own content: on the `failed` outcome this is the thrown message
+                verbatim -- a driver error or an HTTP one, which can be a
+                connection string or a URL carrying no space to break at, and
+                an unbroken token runs out through the border at phone width. */}
+            <span className="min-w-0 break-words">{attempt.message}</span>
           </p>
           {attempt.outcome === "no-answer" ? (
             <Button

@@ -246,11 +246,39 @@ keeps tagged images) and every build is in GHCR by SHA:
 
 ```bash
 cd /opt/pathquote
+systemctl disable --now pq-act-sync.timer     # first, always — see below
 TAG=<previous commit sha> docker compose up -d app
 curl -fsS http://127.0.0.1:3010/api/health
+git checkout <previous commit sha>            # only if the checkout moves too
 ```
 
 If that SHA's image was pruned, `TAG=<sha> docker compose pull app` first.
+
+**Stop the sync timer before the image moves**, and leave it off until the box
+is back on code that knows `--trigger=schedule`. `pq-act-sync.sh` picks its
+image with `TAG=$(git rev-parse HEAD)` in `/opt/pathquote` (§4c), so the nightly
+run follows *the checkout*, not the container `docker compose up -d app`
+started — which cuts both ways:
+
+- roll the app image back and leave the checkout where it is, and the 03:00 run
+  still runs the new code against the rolled-back app;
+- roll the checkout back past the commit that added the flag, and the run exits
+  2 — bad arguments — at 03:00 **every night**, emailing the director each time
+  (`OnFailure=pq-backup-alert@%n.service`). Loud and diagnosable rather than
+  dangerous, and entirely avoidable with the one line above.
+
+Re-enable it with `systemctl enable --now pq-act-sync.timer` once the box is
+forward again; `disable --now` is permanent until somebody says otherwise, and a
+silently un-synced week is the failure this ordering trades for.
+
+Do **not** remove `pq-backup-alert@.service` or `/usr/local/bin/pq-backup-alert.sh`
+as part of a rollback. All three units — both backup timers and the sync — name
+that one alert unit in `OnFailure=`, so removing it leaves the backups unable to
+tell anybody they failed, which is worse than anything being rolled back. The
+versions this branch installs are backward compatible: the script flavours
+itself from the failed unit's name and `pq-backup*` still gets the backup
+wording and the backup log, so the older backup units keep working against it
+unchanged.
 
 A rollback does **not** revert migrations. If the bad deploy migrated the
 schema, roll back to a commit whose code still works against the current
@@ -455,7 +483,14 @@ the backups are (install lines below). One script, one schedule:
 
 The timer is DST-aware and catches up at next boot after a missed run
 (`Persistent=true`), like the backup timers, and sits an hour before the 04:00
-dump so the dump captures what the sync imported. The hour is exact on purpose:
+dump so that on an ordinary night — a night's delta, seconds to a minute or two
+— the dump captures what the sync imported. On a slow-ACT! night it does not:
+the delta's ordinary bad case is ~43 minutes and its ceiling ~2h16m (see "Sync
+now", and what bounds it, below), so the 04:00 dump can start with a sync still
+running. That costs the dump nothing — `pg_dump` reads a single MVCC snapshot,
+so it captures a consistent database whether the sync has finished, not started
+or is halfway through; it only means that night's ACT! changes may appear in the
+next dump rather than this one. The hour is exact on purpose:
 there is no `RandomizedDelaySec`, because the Settings page prints the schedule
 to the director in words ("Every night at 3:00 am, Melbourne time.") and jitter
 would make that sentence either untrue or vague. The comment beside
@@ -484,6 +519,14 @@ the changes, backups are unaffected. The alert's own output goes to
 `/settings/act-sync`, ADMIN only. It shows when the last run started, what it
 did, whether anything needs a person, the nightly schedule, and how far through
 ACT!'s own edit history PathQuote has read.
+
+**On the first load after this release it says "No run recorded yet", and that
+is correct.** `act.sync.lastRun` arrived with this branch, so the full import of
+2026-10-08 left a stored position and no run record: 17,529 contacts are in,
+and the page has nothing to describe until the first run after the deploy. The
+first nightly run fills it in, or **Sync now** does it immediately. The state
+that would be wrong there is "Never run", which is what the page said before
+this release was finished.
 
 It is the first place to look because the worker records every run twice — once
 at the start with `finishedAt: null`, once when it ends. A run killed mid-flight
