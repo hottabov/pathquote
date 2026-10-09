@@ -45,6 +45,86 @@ export type RunDescription = {
 };
 
 /**
+ * The counters a record carries. SyncResult supplies every one of them, which
+ * is why the three builders below take it directly.
+ */
+export type RunCounts = Pick<
+  ActSyncRun,
+  | "contactsCreated"
+  | "contactsUpdated"
+  | "companiesCreated"
+  | "companiesFromNamelessContacts"
+  | "companiesKeyCollisions"
+  | "failed"
+>;
+
+const NO_COUNTS: RunCounts = {
+  contactsCreated: 0,
+  contactsUpdated: 0,
+  companiesCreated: 0,
+  companiesFromNamelessContacts: 0,
+  companiesKeyCollisions: 0,
+  failed: 0,
+};
+
+/**
+ * The record a run writes when it starts -- counters at zero, no ending.
+ *
+ * Written before the first contact is read, which is what makes a run that is
+ * killed outright (a reboot, an OOM, a `kill -9`) leave a record at all. See
+ * the second branch of describeRun for what that record then says.
+ */
+export function startedRun(trigger: SyncTrigger, startedAt: Date): ActSyncRun {
+  return {
+    startedAt: startedAt.toISOString(),
+    finishedAt: null,
+    trigger,
+    ...NO_COUNTS,
+    error: null,
+  };
+}
+
+/** The same record once the run came back: the counters it ended with, and an ending. */
+export function finishedRun(started: ActSyncRun, counts: RunCounts, finishedAt: Date): ActSyncRun {
+  return {
+    ...started,
+    contactsCreated: counts.contactsCreated,
+    contactsUpdated: counts.contactsUpdated,
+    companiesCreated: counts.companiesCreated,
+    companiesFromNamelessContacts: counts.companiesFromNamelessContacts,
+    companiesKeyCollisions: counts.companiesKeyCollisions,
+    failed: counts.failed,
+    finishedAt: finishedAt.toISOString(),
+  };
+}
+
+/**
+ * The same record once the run threw: the counters it had reached, no ending,
+ * and the message.
+ *
+ * No `finishedAt`, deliberately. A run that threw did not finish, and the
+ * record says so; `error` is what tells describeRun to lead with the message
+ * rather than with "Started and never finished".
+ */
+export function failedRun(started: ActSyncRun, counts: RunCounts, error: unknown): ActSyncRun {
+  return { ...finishedRun(started, counts, new Date()), finishedAt: null, error: messageOf(error) };
+}
+
+/**
+ * Words for whatever was thrown.
+ *
+ * Never empty, because describeRun leads with `error` only when it is truthy:
+ * an `new Error()` with no message -- or a driver error that arrives with a
+ * blank one -- would otherwise fall through to the killed-run branch, and a run
+ * that threw would be reported as one that was stopped partway. A run that has
+ * an error gets words for it even when the error itself had none.
+ */
+function messageOf(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.trim() || "the sync threw an error that carried no message";
+}
+
+/**
  * One run, in words.
  *
  * Three tones, and the middle one earns its place: a run that imported
@@ -65,9 +145,17 @@ export type RunDescription = {
  *    systemd service). Without this branch such a record falls through to the
  *    clean-run path and a run that never came back is reported as "No changes",
  *    which is the one wrong answer this page can give.
+ *
+ *    `running` is what separates that from a run that is going on right now,
+ *    which has the same record: no ending written yet. The record cannot tell
+ *    them apart -- only whether the advisory lock is currently held can, which
+ *    is isSyncRunning in sync.ts, and the caller passes the answer in.
  * 3. `failed` -- individual contacts threw and the run carried on past them.
  */
-export function describeRun(run: ActSyncRun): RunDescription {
+export function describeRun(
+  run: ActSyncRun,
+  { running = false }: { running?: boolean } = {},
+): RunDescription {
   const trigger = run.trigger === "manual" ? "Run by hand" : "Scheduled";
 
   if (run.error) {
@@ -92,6 +180,20 @@ export function describeRun(run: ActSyncRun): RunDescription {
   }
 
   if (!run.finishedAt) {
+    // Ordered after `error` on purpose: a run that threw records its message
+    // and only then releases the lock, so for that instant the lock is still
+    // held and `running` is true of a run that is already over. The message is
+    // the better thing to say in that instant, and in every instant after it.
+    if (running) {
+      return {
+        tone: "ok",
+        headline: "Running now",
+        detail:
+          "It is reading ACT! at the moment. Reload this page in a few minutes and it will say what changed.",
+        trigger,
+      };
+    }
+
     return {
       tone: "error",
       headline: "Started and never finished",

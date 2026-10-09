@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { describeRun, type ActSyncRun } from "../src/lib/act/run-record";
+import {
+  describeRun,
+  failedRun,
+  finishedRun,
+  startedRun,
+  type ActSyncRun,
+  type RunCounts,
+} from "../src/lib/act/run-record";
 
 function run(overrides: Partial<ActSyncRun> = {}): ActSyncRun {
   return {
@@ -65,12 +72,41 @@ describe("describeRun", () => {
     expect(described.headline).toContain("authorize failed (401)");
   });
 
+  it("says a run with no ending is going on right now when the lock is held", () => {
+    // The record of a run in progress is identical to the record of one that
+    // was killed: written at the start, no ending yet. Only the advisory lock
+    // separates them (isSyncRunning in sync.ts), so the caller passes the
+    // answer in -- and without this the nightly sync, while it is working
+    // perfectly, reports itself as having died.
+    const described = describeRun(
+      run({ finishedAt: null, contactsCreated: 0, contactsUpdated: 0, companiesCreated: 0 }),
+      { running: true },
+    );
+    expect(described.tone).toBe("ok");
+    expect(described.headline).toBe("Running now");
+    expect(described.headline).not.toContain("never finished");
+    expect(described.detail).toContain("Reload this page");
+  });
+
+  it("still leads with the message when a run that threw has not let go of the lock yet", () => {
+    // The failed record is written before the lock connection closes, so for
+    // that instant both are true. The message is the more useful of the two.
+    const described = describeRun(run({ finishedAt: null, error: "ECONNRESET" }), {
+      running: true,
+    });
+    expect(described.tone).toBe("error");
+    expect(described.headline).toContain("ECONNRESET");
+  });
+
   it("does not call a killed run a clean one", () => {
     // No ending written and no error: the run was stopped rather than having
     // failed on its own, which is what a reboot or a kill -9 leaves behind once
     // the record is written at the start of a run. Every counter is still at
     // its opening value, so without a branch of its own this reads as "No
     // changes" -- a run that never came back reported as a quiet success.
+    // Called with no second argument on purpose: nothing running is the
+    // default, so a caller that cannot be bothered to ask gets the cautious
+    // answer rather than the reassuring one.
     const described = describeRun(
       run({
         finishedAt: null,
@@ -80,7 +116,13 @@ describe("describeRun", () => {
       }),
     );
     expect(described.tone).toBe("error");
+    expect(described.headline).toBe("Started and never finished");
     expect(described.headline).not.toContain("No changes");
+    // And explicitly not-running says the same thing, since that is the state
+    // the Settings page will actually pass for a run that died.
+    expect(describeRun(run({ finishedAt: null }), { running: false }).headline).toBe(
+      "Started and never finished",
+    );
   });
 
   it("keeps the failed count when the run also threw", () => {
@@ -129,5 +171,72 @@ describe("describeRun", () => {
   it("says which trigger started it", () => {
     expect(describeRun(run({ trigger: "manual" })).trigger).toBe("Run by hand");
     expect(describeRun(run({ trigger: "schedule" })).trigger).toBe("Scheduled");
+  });
+});
+
+describe("the three records one run can leave", () => {
+  const startedAt = new Date("2026-10-09T17:00:00.000Z");
+  const finishedAt = new Date("2026-10-09T17:09:30.000Z");
+  const counts: RunCounts = {
+    contactsCreated: 4,
+    contactsUpdated: 12,
+    companiesCreated: 1,
+    companiesFromNamelessContacts: 2,
+    companiesKeyCollisions: 1,
+    failed: 3,
+  };
+
+  it("opens with every counter at zero and no ending", () => {
+    // What a run that is killed leaves behind, and the reason the counters
+    // cannot be read as "it did nothing" -- describeRun's no-ending branch
+    // never reaches them.
+    expect(startedRun("schedule", startedAt)).toEqual({
+      startedAt: "2026-10-09T17:00:00.000Z",
+      finishedAt: null,
+      trigger: "schedule",
+      contactsCreated: 0,
+      contactsUpdated: 0,
+      companiesCreated: 0,
+      companiesFromNamelessContacts: 0,
+      companiesKeyCollisions: 0,
+      failed: 0,
+      error: null,
+    });
+  });
+
+  it("closes with the counters and an ending, keeping the start it opened with", () => {
+    const started = startedRun("schedule", startedAt);
+    expect(finishedRun(started, counts, finishedAt)).toEqual({
+      ...counts,
+      startedAt: "2026-10-09T17:00:00.000Z",
+      finishedAt: "2026-10-09T17:09:30.000Z",
+      trigger: "schedule",
+      error: null,
+    });
+  });
+
+  it("records a run that threw with the counters it had reached and no ending", () => {
+    // The counters matter here: a run that threw on contact 9,000 stored
+    // 9,000 contacts, and the second line of describeRun's error branch
+    // reports the failures among them.
+    const record = failedRun(startedRun("manual", startedAt), counts, new Error("authorize 401"));
+    expect(record.finishedAt).toBeNull();
+    expect(record.error).toBe("authorize 401");
+    expect(record.contactsCreated).toBe(4);
+    expect(record.failed).toBe(3);
+    expect(describeRun(record).headline).toContain("authorize 401");
+  });
+
+  it("finds words for a throw that had none", () => {
+    // describeRun leads with `error` only when it is truthy, so an empty
+    // message would send a run that threw down the killed-run branch and
+    // report it as having been stopped partway. Anything thrown gets words.
+    const started = startedRun("manual", startedAt);
+    for (const thrown of [new Error(""), new Error("   "), undefined, null, ""]) {
+      const record = failedRun(started, counts, thrown);
+      expect(record.error).toBeTruthy();
+      expect(describeRun(record).headline).toContain("Failed:");
+    }
+    expect(failedRun(started, counts, "ACT! said no").error).toBe("ACT! said no");
   });
 });

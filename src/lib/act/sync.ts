@@ -5,6 +5,14 @@ import { chooseCompany } from "@/lib/act/company-identity";
 import { buildIndustryLookup } from "@/lib/act/industries";
 import { formatGenericChannel, mapContact } from "@/lib/act/map";
 import { fillOnlyEmpty } from "@/lib/act/merge";
+import {
+  LAST_RUN_KEY,
+  failedRun,
+  finishedRun,
+  startedRun,
+  type ActSyncRun,
+  type SyncTrigger,
+} from "@/lib/act/run-record";
 import type { GenericChannel, MappedCompany, SkipReason } from "@/lib/act/types";
 
 // Pull contacts from ACT! into PathQuote.
@@ -92,6 +100,13 @@ export type SyncResult = {
    * where it is not stored, it is where a real run would have moved it.
    */
   cursorTo: Date | null;
+  /**
+   * Whether this run was saved as the last run, for a caller that has to say
+   * so in a log. False for a dry run, which is never recorded, and false if
+   * the closing write failed -- in which case the record left behind is the
+   * one written at the start, and console has the reason.
+   */
+  recorded: boolean;
 };
 
 function emptySkips(): Record<SkipReason, number> {
@@ -117,6 +132,116 @@ async function writeCursor(editedAt: Date): Promise<void> {
     create: { key: CURSOR_KEY, value: { editedAt: editedAt.toISOString() } },
     update: { value: { editedAt: editedAt.toISOString() } },
   });
+}
+
+/**
+ * Store what this run did, as the one and only last-run record.
+ *
+ * Written on the main pool, not the lock connection: it has to outlive the
+ * lock connection's disconnect, and there is nothing session-bound about it.
+ */
+async function writeRunRecord(run: ActSyncRun): Promise<void> {
+  await db.setting.upsert({
+    where: { key: LAST_RUN_KEY },
+    create: { key: LAST_RUN_KEY, value: run as unknown as Prisma.InputJsonValue },
+    update: { value: run as unknown as Prisma.InputJsonValue },
+  });
+}
+
+/**
+ * Write the record and never throw.
+ *
+ * For the two writes at the END of a run, where the work is already done and
+ * committed. A 12,000-contact import that succeeded must not be reported as a
+ * failure because a one-row upsert after it did not land, and a run that threw
+ * has to report why it threw rather than how its bookkeeping went.
+ *
+ * The start write is deliberately not wrapped: it happens before any work, and
+ * a database that will not take one small upsert is not going to get through
+ * twelve thousand of them, so stopping there with that error is the clearer
+ * answer than a ten-minute run that was always going to fail.
+ *
+ * What a lost ending write costs: the start record stays as it was, with
+ * `finishedAt` null, and no lock is held once the run exits -- so Settings
+ * reports "Started and never finished" about a run that worked. Wrong, but
+ * wrong in the safe direction: it sends somebody to a log that has the real
+ * error in it, where reporting success would bury it.
+ */
+async function recordQuietly(run: ActSyncRun): Promise<boolean> {
+  try {
+    await writeRunRecord(run);
+    return true;
+  } catch (error) {
+    console.error("act: the sync ran but its last-run record could not be written", error);
+    return false;
+  }
+}
+
+/**
+ * Is a sync running right now?
+ *
+ * Needed because the record alone cannot say. A run writes `finishedAt: null`
+ * at the start and fills it in at the end, so "running right now" and "died
+ * without finishing" are the same record; what separates them is whether the
+ * advisory lock is still held.
+ *
+ * The predicate is the documented encoding of a one-key advisory lock, which is
+ * not guessable and is not what most people assume (see the pg_locks docs,
+ * "Advisory locks can be acquired on keys consisting of either a single bigint
+ * value or two integer values"):
+ *
+ *   - a bigint key -- `pg_try_advisory_lock(8472001)`, what this file takes --
+ *     is split with its HIGH half in `classid` and its LOW half in `objid`, and
+ *     `objsubid` = 1. `(classid::bigint << 32) | objid::bigint` is the docs'
+ *     own expression for putting it back together, so it is used verbatim here
+ *     rather than splitting the key in the other direction and hoping.
+ *   - two int4 keys -- `pg_try_advisory_lock(a, b)` -- land as classid = a,
+ *     objid = b, with `objsubid` = 2. So objsubid is not decoration: without
+ *     it, some other feature's two-key lock on (0, 8472001) would read as ours.
+ *
+ * `database` matters too: pg_locks is cluster-wide while advisory locks are
+ * per-database, so without it a sync against another database on the same
+ * server would look like one against this one.
+ *
+ * Measured, not reasoned: on PostgreSQL 16.2 this returned false with no lock
+ * held, false with only the two-key lock on the same numbers held, true while
+ * `pg_try_advisory_lock(8472001)` was held on another session, true while a
+ * second caller's `pg_try_advisory_lock` was failing against it, and false
+ * again once that session closed. To re-check it on the server:
+ *
+ *   psql "$DATABASE_URL" -c "select pg_try_advisory_lock(8472001)" \
+ *     -c "select locktype, database, classid, objid, objsubid, granted
+ *           from pg_locks where locktype = 'advisory'"
+ *
+ * (one psql invocation, so both run on the same session -- the lock dies with
+ * it, which is the whole design.) Expect one row: classid 0, objid 8472001,
+ * objsubid 1, granted true.
+ *
+ * Read-only on purpose. The alternative -- take the lock on a throwaway
+ * connection and see whether you got it -- cannot disagree with the writer
+ * about the encoding, but a status check that TAKES the lock is a status check
+ * that can cause what it reports: in the window between taking and releasing
+ * it, a real sync starting is told somebody else is already syncing, and a
+ * missed release wedges the real thing. Asking is the honest shape for
+ * answering a question about somebody else's run; the cost is this predicate,
+ * which is why it was checked against a live lock rather than argued.
+ *
+ * Runs on the main pool: pg_locks is a view of the whole server, so it does not
+ * matter which connection asks.
+ */
+export async function isSyncRunning(): Promise<boolean> {
+  const [{ running }] = await db.$queryRaw<{ running: boolean }[]>`
+    SELECT EXISTS (
+      SELECT 1
+        FROM pg_locks
+       WHERE locktype = 'advisory'
+         AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+         AND ((classid::bigint << 32) | objid::bigint) = ${SYNC_LOCK_KEY}
+         AND objsubid = 1
+         AND granted
+    ) AS running
+  `;
+  return running;
 }
 
 /**
@@ -290,6 +415,17 @@ export type SyncOptions = {
   dryRun?: boolean;
   /** Stop after this many contacts. For a first careful run. */
   limit?: number;
+  /**
+   * Who asked for this run, as the Settings page reports it. The nightly timer
+   * passes "schedule"; the Sync now button passes "manual".
+   *
+   * Defaults to "manual" because that is the honest answer for a caller that
+   * did not say -- somebody at a shell. Defaulting the other way would label
+   * every hand-run sync as the nightly job and hide the fact that a person did
+   * it, where this way round the worst a forgotten flag does is credit the
+   * timer's work to a person.
+   */
+  trigger?: SyncTrigger;
   onProgress?: (scanned: number) => void;
 };
 
@@ -347,6 +483,29 @@ function openLockConnection(): PrismaClient {
     // vanished *app* host -- that takes its probes with it, and only the
     // server's keepalive settings end the session still holding the lock.
     keepAlive: true,
+  },
+  {
+    // The one place this run can say "the lock is gone" out loud.
+    //
+    // The adapter reports a dying idle connection through Prisma's `debug()`,
+    // which prints nothing unless DEBUG is set, so without this a lock
+    // connection dropping mid-run is entirely silent: the run carries on
+    // unlocked, a second sync can start alongside it, and the only trace is
+    // two overlapping runs in the log with no explanation. One line in the
+    // journal, written when it happens, is what turns that into a five-minute
+    // diagnosis -- and this is a background job whose only reader is
+    // `journalctl`, so console is the right channel.
+    //
+    // Not recorded in the run record: the record has no field for it, and
+    // inventing one to carry a maybe ("the lock was probably lost") is not
+    // something the Settings page can do anything with. The person who needs
+    // this is the developer reading the service log.
+    onPoolError: (error) => {
+      console.error(
+        "act: the sync's lock connection failed; the advisory lock is gone and another sync could start alongside this one",
+        error,
+      );
+    },
   });
 }
 
@@ -354,6 +513,31 @@ export async function syncContacts(
   client: ActClient,
   options: SyncOptions = {},
 ): Promise<SyncResult> {
+  // Declared out here so the catch below can record the counters the run had
+  // reached rather than zeros: a run that threw on contact 9,000 stored 9,000
+  // contacts, and a record saying it did nothing would be the same kind of lie
+  // as no record at all. Nothing writes to it before the lock is held.
+  const result: SyncResult = {
+    scanned: 0,
+    contactsCreated: 0,
+    contactsUpdated: 0,
+    companiesCreated: 0,
+    companiesFromNamelessContacts: 0,
+    companiesKeyCollisions: 0,
+    skipped: emptySkips(),
+    unresolvedPhones: 0,
+    unknownIndustries: [],
+    failed: 0,
+    firstFailureActContactId: null,
+    firstFailureMessage: null,
+    cursorFrom: null,
+    cursorTo: null,
+    recorded: false,
+  };
+  // Set only once the lock is held, so it doubles as the catch's test for
+  // "this run owns the record".
+  let started: ActSyncRun | null = null;
+
   const lock = openLockConnection();
   try {
     // pg_try_advisory_lock, not pg_advisory_lock: the blocking form would queue
@@ -371,8 +555,28 @@ export async function syncContacts(
       throw new SyncAlreadyRunningError();
     }
 
+    // The record is written twice: here, and again when the run ends or
+    // throws. Not belt and braces -- a `kill -9`, an OOM or a reboot runs no
+    // catch block and no finally, so a run that only writes at the end leaves
+    // NO record of having started, and the page goes on showing last night's
+    // success as though it were current. That is the worst answer this page
+    // can give, because it is wrong and it looks right. Written at the start,
+    // the same crash leaves a record that says the run began and never came
+    // back, which describeRun has words for.
+    //
+    // After the lock, never before: a caller that loses the race must not
+    // overwrite the record belonging to the run that is actually going. What
+    // guarantees that is the throw above, not the guard in the catch.
+    //
+    // A dry run writes nothing, at the start or at the end. It changed nothing,
+    // and replacing last night's real record with a rehearsal would be a lie
+    // of a different shape.
+    started = startedRun(options.trigger ?? "manual", new Date());
+    if (!options.dryRun) await writeRunRecord(started);
+
     const { resolve: resolveIndustry, isKnown: isKnownIndustry } = buildIndustryLookup();
     const since = options.full ? null : await readCursor();
+    result.cursorFrom = since;
 
     // Industry is a small fixed table, so read it once rather than asking per
     // contact -- 12,000 lookups to answer at most 31 distinct questions.
@@ -383,22 +587,6 @@ export async function syncContacts(
       ]),
     );
 
-    const result: SyncResult = {
-      scanned: 0,
-      contactsCreated: 0,
-      contactsUpdated: 0,
-      companiesCreated: 0,
-      companiesFromNamelessContacts: 0,
-      companiesKeyCollisions: 0,
-      skipped: emptySkips(),
-      unresolvedPhones: 0,
-      unknownIndustries: [],
-      failed: 0,
-      firstFailureActContactId: null,
-      firstFailureMessage: null,
-      cursorFrom: since,
-      cursorTo: null,
-    };
     const unknownIndustries = new Set<string>();
     let newestEdited: Date | null = null;
     let checkpointed: Date | null = null;
@@ -578,7 +766,29 @@ export async function syncContacts(
     result.unknownIndustries = [...unknownIndustries].sort();
     result.cursorTo = options.dryRun ? newestEdited : checkpointed;
 
+    // The second write: the same record, now with an ending and the counters.
+    if (!options.dryRun) {
+      result.recorded = await recordQuietly(finishedRun(started, result, new Date()));
+    }
+
     return result;
+  } catch (error) {
+    // Catch, record, rethrow. The caller still has to know it failed -- the
+    // CLI's exit status and the button's error message both come from the
+    // throw -- but the record is the only thing anyone will read tomorrow.
+    if (
+      started !== null &&
+      !options.dryRun &&
+      // Belt and braces. `started` is null until the lock is held, so a caller
+      // that lost the race cannot reach here with a record to amend; this says
+      // the same thing again next to the write it protects, because the two
+      // facts sit a hundred lines apart and what it costs to have them drift
+      // is overwriting the record of the run that is actually going.
+      !(error instanceof SyncAlreadyRunningError)
+    ) {
+      await recordQuietly(failedRun(started, result, error));
+    }
+    throw error;
   } finally {
     // Closing the connection ends the session, and Postgres releases the
     // session's advisory locks with it. Deliberately the only release path, so
