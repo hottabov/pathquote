@@ -318,10 +318,13 @@ export function describeRun(
       // reader most wants to know -- that nothing was lost -- so both say it.
       // Silence on that point reads as the worst case.
       //
-      // Not "the cursor did not move", which the branch below can say and this
-      // one cannot: the cursor is checkpointed after every fully processed page
-      // (see sync.ts), so a run that threw on page nine has moved it eight
-      // times. What is true either way is that it only ever moves past records
+      // What they do NOT share is a promise about where the next run starts.
+      // The branch below can say those contacts will be tried again, because a
+      // failed contact freezes the checkpoint for the rest of the run; this one
+      // cannot, because the position IS checkpointed after every fully
+      // processed page (see sync.ts), so a run that threw on page nine has
+      // already moved it eight times and the pages before the throw are behind
+      // it. What is true either way is that it only ever moves past records
       // already stored, so nothing was skipped and the next run resumes there.
       detail:
         run.failed > 0
@@ -343,9 +346,23 @@ export function describeRun(
       // director who reloads after four minutes, reads the same line again and
       // was told "a few minutes" cannot tell waiting from wedged.
       //
-      // "Reload this page" assumes the reader does the reloading, which is true
-      // today because nothing revalidates the Settings page. Whoever wires that
-      // section up has to keep it true or change this sentence.
+      // "Reload this page" assumes the reader does the reloading, and the
+      // section built on this -- src/app/(app)/settings/act-sync/page.tsx --
+      // kept that true rather than rewording it. The page does not poll.
+      //
+      // What made the sentence worth re-checking is that runActSyncNow
+      // revalidates that route in a `finally`, so a click which comes back does
+      // refresh the page on its own. It just never refreshes INTO this branch:
+      // by the time the action returns, the run has ended and the record has an
+      // ending, so the page renders what changed instead. The two states that
+      // actually show this sentence are the two nothing refreshes -- the
+      // nightly job running while an admin opens the page, and a click that got
+      // a gateway timeout off a sync that is still going.
+      //
+      // Which is why the page puts a Reload control beside the sentence
+      // whenever a sync holds the lock: that is a superset of the states this
+      // branch is reached in, so the instruction is never given without the
+      // means to follow it. See `reload` in src/lib/act/sync-view.ts.
       return {
         tone: "ok",
         headline: "Running now",
@@ -368,8 +385,25 @@ export function describeRun(
     return {
       tone: "error",
       headline: `${plural(run.failed, "contact", "contacts")} failed`,
+      // Was "The cursor did not move, so nothing was skipped". Accurate, and
+      // the mechanism rather than the consequence -- "cursor" is this
+      // repository's word, not a word on a page whose only reader is the
+      // director. What it means to him is that the contacts that failed are
+      // still waiting rather than lost, which is what the first half now says.
+      //
+      // True because `failed > 0` freezes the checkpoint for the rest of the
+      // run (see `checkpoint` in src/lib/act/sync.ts: "`failed` freezes the
+      // cursor so the next run reaches it again"), so the next sync asks ACT!
+      // for a window that still contains them.
+      //
+      // The second half is the same offer the killed-run branch above makes,
+      // and for the same reason: the count is all this record carries, so
+      // "fix the cause" on its own is advice he cannot act on. The per-contact
+      // message is in the service log, but only the nightly run prints it
+      // there, so this does not promise he will find it -- it names the person
+      // who can.
       detail:
-        "The cursor did not move, so nothing was skipped — fix the cause and run it again.",
+        "Nothing was skipped — those contacts will be tried again on the next sync. If it keeps happening, ask your developer to look into it.",
       trigger,
     };
   }

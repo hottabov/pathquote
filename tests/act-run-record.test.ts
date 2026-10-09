@@ -68,6 +68,29 @@ describe("describeRun", () => {
     expect(described.headline).toContain("1 contact failed");
   });
 
+  it("says what happens to the contacts that failed, without saying 'cursor'", () => {
+    // This detail used to read "The cursor did not move, so nothing was
+    // skipped -- fix the cause and run it again." Accurate, and in this
+    // repository's vocabulary rather than that of the one person who reads the
+    // page it is rendered on (Settings -> ACT! sync). It now says the same
+    // thing as a consequence: those contacts are waiting, not lost.
+    //
+    // True because `failed > 0` freezes the checkpoint for the rest of the run
+    // (`checkpoint` in src/lib/act/sync.ts), so the next sync asks ACT! for a
+    // window that still contains them. The error branch above deliberately does
+    // NOT make that promise -- a run that threw on page nine has already moved
+    // the position eight times -- which is why the two details differ.
+    //
+    // Pinned as a whole string, not a substring, because runActSyncNow quotes
+    // it word for word into the warning its toast shows: the two are one
+    // sentence about one fact, and a page that says this under a toast saying
+    // something slightly different reads as two different facts.
+    expect(describeRun(run({ failed: 2 })).detail).toBe(
+      "Nothing was skipped — those contacts will be tried again on the next sync. If it keeps happening, ask your developer to look into it.",
+    );
+    expect(describeRun(run({ failed: 2 })).detail).not.toContain("cursor");
+  });
+
   it("leads with the error when the run never finished", () => {
     const described = describeRun(run({ finishedAt: null, error: "authorize failed (401)" }));
     expect(described.tone).toBe("error");

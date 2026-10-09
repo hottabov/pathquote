@@ -99,12 +99,15 @@ export async function runActSyncNow(): Promise<ActionResultWithWarning> {
       // here fires the panel's success toast over a run that dropped contacts,
       // and the admin walks away from the screen believing it all went in.
       //
-      // The second sentence is describeRun's failure detail word for word
-      // (src/lib/act/run-record.ts), because the `finally` below revalidates and
-      // the section the toast is sitting on top of is about to say exactly this.
-      // Two wordings of one fact invite reading them as two different facts.
+      // Everything after the count is describeRun's failure detail word for
+      // word (src/lib/act/run-record.ts), because the `finally` below
+      // revalidates and the section the toast is sitting on top of is about to
+      // say exactly this. Two wordings of one fact invite reading them as two
+      // different facts -- which is why this string moved when that one did:
+      // the detail stopped mentioning the cursor, a word with no meaning on a
+      // page the director reads, and this copy of it had to stop too.
       return {
-        warning: `${plural(result.failed, "contact", "contacts")} failed. The cursor did not move, so nothing was skipped — fix the cause and run it again.`,
+        warning: `${plural(result.failed, "contact", "contacts")} failed. Nothing was skipped — those contacts will be tried again on the next sync. If it keeps happening, ask your developer to look into it.`,
       };
     }
 
