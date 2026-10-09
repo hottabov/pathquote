@@ -41,8 +41,9 @@ export class ActApiError extends Error {
   }
 }
 
-/** A full run is ~60 sequential requests to an IIS box behind a NAT rule. One
- * hung connection or a single 502 must not end it. */
+/** A full run is ~88 sequential requests to an IIS box behind a NAT rule -- the
+ * 17,529 contacts measured on 2026-10-08, in pages of PAGE_SIZE. One hung
+ * connection or a single 502 must not end it. */
 const REQUEST_TIMEOUT_MS = 30_000;
 const MAX_ATTEMPTS = 3;
 /** Wait before attempt n+1 is n times this: 1s, then 2s. */
@@ -221,7 +222,7 @@ export class ActClient {
    * Ordered by `edited` so a run interrupted halfway can resume from the last
    * record it stored rather than starting again. `$skip` rather than a keyset
    * cursor because the API offers no stable tiebreaker on equal timestamps;
-   * at 12,000 records over ~60 pages the depth cost is irrelevant.
+   * at 17,529 records over ~88 pages the depth cost is irrelevant.
    */
   async *contactsEditedSince(since: Date | null): AsyncGenerator<ActContact[]> {
     let skip = 0;

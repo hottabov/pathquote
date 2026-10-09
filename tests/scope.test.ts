@@ -179,7 +179,7 @@ describe("companyWhereForUser with a country grant", () => {
   });
 
   // The dangerous mistake. `User.visibleCountries` defaults to `[]`, so a
-  // wildcard reading of "empty" shows every new user all ~12,000 clients.
+  // wildcard reading of "empty" shows every new user all ~8,800 clients.
   describe("an empty grant is not all", () => {
     it("is not the unrestricted filter", () => {
       expect(companyWhereForUser({ ...manager, visibleCountries: [] })).not.toEqual({});

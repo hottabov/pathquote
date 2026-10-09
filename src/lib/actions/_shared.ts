@@ -23,10 +23,20 @@ import { IMAGE_URL_PATTERN } from "@/lib/uploads";
 export type ActionResult = { error?: string };
 
 /**
- * `ActionResult` plus a non-blocking note about a save that *did* succeed —
- * an ADMIN pushing a discount past a cap a MANAGER would have been blocked
- * by, a support message stored but not emailed. Callers show `warning` as a
- * toast, not as the inline `error` treatment.
+ * `ActionResult` plus a non-blocking note. Two kinds of outcome return one,
+ * and what they share is the only thing a caller branches on: `warning` set
+ * with no `error`, so `if (result.error)` stays false and the page shows a
+ * toast rather than the inline red `error` treatment.
+ *
+ *   - A save that *did* succeed, with a caveat worth saying: an ADMIN pushing
+ *     a discount past a cap a MANAGER would have been blocked by, a support
+ *     message stored but not emailed (`submitSupportMessage` in ./support.ts).
+ *   - An outcome that is not this caller's failure and asks nothing of the
+ *     admin -- where nothing was saved at all. `runActSyncNow` in
+ *     ./act-sync.ts losing the advisory-lock race returns the lock's own
+ *     sentence this way: the nightly job, or another admin, is doing that work
+ *     right now, so the click changed nothing and there is nothing to fix.
+ *     Red would send someone looking for a fault that does not exist.
  *
  * Kept as an extension rather than folded into `ActionResult` so that the
  * majority of actions, which can never warn, do not advertise a field their

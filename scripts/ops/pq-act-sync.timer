@@ -1,0 +1,37 @@
+[Unit]
+Description=PathQuote ACT! sync: contacts and companies from the CRM, nightly
+
+[Timer]
+# Melbourne local time, so the run keeps its hour across daylight saving, and
+# the same zone the backup timers use: one night-time window across the whole
+# box is easier to hold in your head than two. The hour before the 04:00 dump,
+# deliberately -- on an ordinary night the sync lands first, so the dump
+# captures what it imported rather than yesterday's state. On a slow-ACT! night
+# it does not: the delta's ordinary bad case is ~43 minutes and its ceiling
+# ~2h16m (runbook §4c, "Sync now", and what bounds it), so the dump can start
+# while a sync is still running. That costs the dump nothing -- pg_dump reads
+# one MVCC snapshot, so it captures a consistent database either way, either
+# before that run's writes or partway through them, never a torn mixture -- it
+# only means the night's ACT! changes may land in the next dump instead of this
+# one. It is also after hours in Melbourne, where the
+# ACT! server itself sits on the office LAN. In the US it is the previous day,
+# between 08:00 Pacific and 13:00 Eastern depending on which side of each
+# country's daylight saving the date falls -- 03:00 Melbourne is 16:00 UTC
+# while we are on AEDT and 17:00 UTC while we are on AEST. That is working time
+# over there and costs nothing: the sync only reads from ACT!, and the US
+# managers work in ACT! itself, not in PathQuote's imported copy.
+#
+# The hour is exact on purpose: no RandomizedDelaySec here. Settings -> ACT!
+# sync prints this schedule to the director in words ("Every night at 3:00 am,
+# Melbourne time." -- NIGHTLY_SCHEDULE in src/lib/act/sync-view.ts), so any
+# jitter added here makes that sentence either untrue or vague, and an on-time
+# 03:04 run read as a late one. Jitter spreads a herd of machines off a shared
+# endpoint; there is one VPS and one ACT! server, so there is no herd here --
+# nothing to buy, and the price would be the one sentence he reads about when
+# this runs.
+OnCalendar=*-*-* 03:00:00 Australia/Melbourne
+# A run missed while the VPS was down happens at next boot instead.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -19,17 +19,28 @@ function error(argv: string[], env: Record<string, string | undefined> = {}): st
 }
 
 describe("parseActSyncArgs", () => {
-  it("defaults to a delta write with no limit", () => {
-    expect(ok([])).toEqual({ full: false, dryRun: false, limit: undefined });
+  it("defaults to a delta write with no limit, run by hand", () => {
+    expect(ok([])).toEqual({ full: false, dryRun: false, limit: undefined, trigger: "manual" });
   });
 
-  it("accepts the three flags", () => {
-    expect(ok(["--full"])).toEqual({ full: true, dryRun: false, limit: undefined });
-    expect(ok(["--dry-run"])).toEqual({ full: false, dryRun: true, limit: undefined });
-    expect(ok(["--dry-run", "--full", "--limit", "50"])).toEqual({
+  it("accepts the four flags", () => {
+    expect(ok(["--full"])).toEqual({
+      full: true,
+      dryRun: false,
+      limit: undefined,
+      trigger: "manual",
+    });
+    expect(ok(["--dry-run"])).toEqual({
+      full: false,
+      dryRun: true,
+      limit: undefined,
+      trigger: "manual",
+    });
+    expect(ok(["--dry-run", "--full", "--limit", "50", "--trigger", "schedule"])).toEqual({
       full: true,
       dryRun: true,
       limit: 50,
+      trigger: "schedule",
     });
   });
 
@@ -77,9 +88,56 @@ describe("parseActSyncArgs", () => {
     expect(error(["--limit", "5", "--limit=10"])).toContain("more than once");
   });
 
+  describe("--trigger", () => {
+    it("takes either spelling and labels the run", () => {
+      expect(ok(["--trigger", "schedule"]).trigger).toBe("schedule");
+      expect(ok(["--trigger=schedule"]).trigger).toBe("schedule");
+      expect(ok(["--trigger=manual"]).trigger).toBe("manual");
+      expect(ok(["--trigger=schedule", "--full"]).full).toBe(true);
+    });
+
+    it("refuses a value it does not know instead of falling back to manual", () => {
+      // The whole point of the flag is that the nightly run says so. A typo
+      // that quietly became "manual" would leave the Settings page saying a
+      // person did it, with nothing anywhere to contradict that.
+      expect(error(["--trigger=nightly"])).toContain('must be schedule or manual, got "nightly"');
+      expect(error(["--trigger", "cron"])).toContain('got "cron"');
+      expect(error(["--trigger="])).toContain('got ""');
+      expect(error(["--trigger"])).toContain("got nothing");
+      expect(error(["--trigger", "Schedule"])).toContain('got "Schedule"');
+    });
+
+    it("does not take the next flag as its value", () => {
+      expect(error(["--trigger", "--dry-run"])).toContain('"--dry-run"');
+    });
+
+    it("refuses --trigger given twice", () => {
+      expect(error(["--trigger=manual", "--trigger=schedule"])).toContain("more than once");
+    });
+
+    it("refuses when npm swallowed it", () => {
+      // `npm run act:sync --trigger=schedule` -- no `--` -- hands the script
+      // nothing, and a unit file written that way would silently record the
+      // nightly run as a hand run.
+      expect(error([], { npm_config_trigger: "schedule" })).toContain("npm swallowed --trigger");
+      expect(ok(["--trigger=schedule"], { npm_config_trigger: "schedule" }).trigger).toBe(
+        "schedule",
+      );
+    });
+  });
+
   it("names the accepted set in every refusal", () => {
-    for (const argv of [["--nope"], ["--limit"], ["--limit", "0"], ["--limit", "5", "--limit", "6"]]) {
-      expect(error(argv)).toContain("Accepted: --full, --dry-run, --limit N (or --limit=N)");
+    for (const argv of [
+      ["--nope"],
+      ["--limit"],
+      ["--limit", "0"],
+      ["--limit", "5", "--limit", "6"],
+      ["--trigger=nightly"],
+      ["--trigger"],
+    ]) {
+      expect(error(argv)).toContain(
+        "Accepted: --full, --dry-run, --limit N (or --limit=N), --trigger schedule|manual (or --trigger=...)",
+      );
     }
   });
 
@@ -105,6 +163,7 @@ describe("parseActSyncArgs", () => {
         full: false,
         dryRun: false,
         limit: undefined,
+        trigger: "manual",
       });
     });
   });
@@ -162,27 +221,37 @@ describe("describeDatabase", () => {
 
 describe("formatBanner", () => {
   const db = { host: "db.example.com", port: "5432", name: "pathquote" };
+  const args = (overrides: Partial<ActSyncArgs> = {}): ActSyncArgs => ({
+    full: false,
+    dryRun: false,
+    limit: undefined,
+    trigger: "manual",
+    ...overrides,
+  });
 
   it("says WRITE for a write run and dry run for a dry run", () => {
-    const write = formatBanner({ full: false, dryRun: false, limit: undefined }, db);
-    const dry = formatBanner({ full: false, dryRun: true, limit: undefined }, db);
+    const write = formatBanner(args(), db);
+    const dry = formatBanner(args({ dryRun: true }), db);
     expect(write).toContain("mode      WRITE");
     expect(dry).toContain("mode      dry run");
     expect(dry).not.toContain("WRITE");
   });
 
   it("names the limit, or says there is none", () => {
-    expect(formatBanner({ full: false, dryRun: false, limit: 200 }, db)).toContain(
-      "limit     200 contacts",
-    );
-    expect(formatBanner({ full: false, dryRun: false, limit: undefined }, db)).toContain(
-      "limit     none",
-    );
+    expect(formatBanner(args({ limit: 200 }), db)).toContain("limit     200 contacts");
+    expect(formatBanner(args(), db)).toContain("limit     none");
   });
 
   it("names the database and nothing that identifies a login", () => {
-    const banner = formatBanner({ full: true, dryRun: false, limit: undefined }, db);
+    const banner = formatBanner(args({ full: true }), db);
     expect(banner).toContain("database  db.example.com:5432/pathquote");
     expect(banner).toContain("--full");
+  });
+
+  it("says which trigger the run will be recorded as", () => {
+    // The nightly unit's only job beyond running at all is to pass this, so
+    // the banner is where a `systemctl start` log proves it arrived.
+    expect(formatBanner(args({ trigger: "schedule" }), db)).toContain("trigger   schedule");
+    expect(formatBanner(args(), db)).toContain("trigger   manual");
   });
 });

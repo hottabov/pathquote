@@ -51,10 +51,28 @@ describe("activeSettingsNavHref", () => {
       "/settings/option-conflict-groups",
       "/settings/regions",
       "/settings/import-export",
+      "/settings/act-sync",
       "/settings/support",
     ]) {
       expect(activeSettingsNavHref(path)).toBe(path);
     }
+  });
+
+  it("gates ACT! sync behind admin rights -- it can trigger a write from ACT!", () => {
+    const item = SETTINGS_NAV_ITEMS.find((i) => i.href === "/settings/act-sync");
+    expect(item).toBeDefined();
+    expect(item!.label).toBe("ACT! sync");
+    expect(item!.adminOnly).toBe(true);
+    expect(visibleSettingsNavItems("MANAGER").map((i) => i.href)).not.toContain("/settings/act-sync");
+    expect(visibleSettingsNavItems("ADMIN").map((i) => i.href)).toContain("/settings/act-sync");
+  });
+
+  it("puts ACT! sync straight after Import / Export", () => {
+    // Both are operational rather than lists to curate, and the order is what
+    // keeps them together: the nav is read top to bottom, and a reporting
+    // section wedged between two editors reads as another editor.
+    const hrefs = SETTINGS_NAV_ITEMS.map((i) => i.href);
+    expect(hrefs.indexOf("/settings/act-sync")).toBe(hrefs.indexOf("/settings/import-export") + 1);
   });
 
   it("gates Import / Export behind admin rights -- it deletes catalogue rows", () => {

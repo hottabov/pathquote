@@ -25,7 +25,7 @@
 //   documentWhereForUser      READ and WRITE quotes. Unrelated to countries.
 //
 // Why delete has its own filter (decision D2, 2026-10-08): a country grant
-// exists so a manager can find and keep correct the ~12,000 clients imported
+// exists so a manager can find and keep correct the ~8,800 clients imported
 // from ACT!, none of which has an owner. Fixing an address is a daily act and
 // is cheap to undo. Deleting a client is rare and cannot be undone, and the
 // imported companies are exactly the ones at risk -- `Document.company` is

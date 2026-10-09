@@ -8,15 +8,24 @@
 // The rule throughout is that anything not understood is an error. A flag
 // that is silently ignored is a flag that does not do what its author thinks.
 
+import type { SyncTrigger } from "@/lib/act/run-record";
+
 export type ActSyncArgs = {
   full: boolean;
   dryRun: boolean;
   limit: number | undefined;
+  /**
+   * Who the run is recorded as. The nightly timer passes `--trigger schedule`;
+   * a person at a shell passes nothing and gets "manual", which is what they
+   * are. See SyncOptions.trigger for why that is the safer default.
+   */
+  trigger: SyncTrigger;
 };
 
 export type ParseResult = { ok: true; args: ActSyncArgs } | { ok: false; error: string };
 
-export const ACCEPTED_ARGS = "--full, --dry-run, --limit N (or --limit=N)";
+export const ACCEPTED_ARGS =
+  "--full, --dry-run, --limit N (or --limit=N), --trigger schedule|manual (or --trigger=...)";
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -46,6 +55,8 @@ export function parseActSyncArgs(argv: readonly string[], env: Env = {}): ParseR
   let dryRun = false;
   let limit: number | undefined;
   let limitSeen = false;
+  let trigger: SyncTrigger = "manual";
+  let triggerSeen = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -67,6 +78,18 @@ export function parseActSyncArgs(argv: readonly string[], env: Env = {}): ParseR
         return fail(`--limit needs a positive whole number, got ${got}`);
       }
       limit = parsed;
+    } else if (arg === "--trigger" || arg.startsWith("--trigger=")) {
+      if (triggerSeen) return fail("--trigger was given more than once");
+      triggerSeen = true;
+
+      // Same two spellings and the same take-the-next-token rule as --limit,
+      // so `--trigger --dry-run` is a bad value rather than a silent default.
+      const raw = arg === "--trigger" ? argv[++i] : arg.slice("--trigger=".length);
+      if (raw !== "schedule" && raw !== "manual") {
+        const got = raw === undefined ? "nothing" : JSON.stringify(raw);
+        return fail(`--trigger must be schedule or manual, got ${got}`);
+      }
+      trigger = raw;
     } else {
       return fail(`unknown argument ${JSON.stringify(arg)}`);
     }
@@ -76,6 +99,10 @@ export function parseActSyncArgs(argv: readonly string[], env: Env = {}): ParseR
     ["--dry-run", env.npm_config_dry_run === "true" && !dryRun],
     ["--full", env.npm_config_full === "true" && !full],
     ["--limit", Boolean(env.npm_config_limit) && !limitSeen],
+    // npm turns any unknown `--foo=bar` into npm_config_foo, so a timer unit
+    // written without the `--` would label the nightly run as a hand run and
+    // nobody would notice until the Settings page said so.
+    ["--trigger", Boolean(env.npm_config_trigger) && !triggerSeen],
   ];
   for (const [flag, wasSwallowed] of swallowed) {
     if (wasSwallowed) {
@@ -86,7 +113,7 @@ export function parseActSyncArgs(argv: readonly string[], env: Env = {}): ParseR
     }
   }
 
-  return { ok: true, args: { full, dryRun, limit } };
+  return { ok: true, args: { full, dryRun, limit, trigger } };
 }
 
 export type DatabaseTarget = { host: string; port: string; name: string };
@@ -133,12 +160,20 @@ export function formatBanner(args: ActSyncArgs, database: DatabaseTarget): strin
   const since = args.full
     ? "everything (--full: the stored cursor is ignored)"
     : "changes since the stored cursor";
+  // Said in the banner because it is part of what the run was asked to do, and
+  // because the nightly unit's whole contribution is this one word: a journal
+  // entry that says "manual" is a unit that lost its flag.
+  const trigger =
+    args.trigger === "schedule"
+      ? "schedule -- Settings will call it the nightly run"
+      : "manual -- Settings will call it run by hand";
 
   return [
     "act:sync",
     `  mode      ${mode}`,
     `  limit     ${limit}`,
     `  reads     ${since}`,
+    `  trigger   ${trigger}`,
     `  database  ${database.host}:${database.port}/${database.name}`,
   ].join("\n");
 }
