@@ -315,8 +315,8 @@ per run, so an emptied `/opt/backups` cannot wipe Drive. A failed run starts
 `pq-backup-alert@<unit>.service`, which emails marketing@pathfindercut.com
 through the app's SMTP account (`SMTP_*`, `EMAIL_FROM` in `.env`). Logs: the
 backups write `/var/log/pq-backup.log`; the alert unit answers for the ACT!
-sync as well now, so it writes its own `/var/log/pq-alert.log` rather than
-putting "alert sent: ACT! sync FAILED" in the middle of the backup log.
+sync as well now (§4c), so it writes its own `/var/log/pq-alert.log` rather
+than putting "alert sent: ACT! sync FAILED" in the middle of the backup log.
 
 ```bash
 systemctl list-timers 'pq-backup*'           # next runs
@@ -324,7 +324,7 @@ systemctl start pq-backup-db.service         # dump now (do this before a risky 
 systemctl start pq-backup-files.service      # uploads now
 tail /var/log/pq-backup.log                  # "db backup ok: ..." / "files backup ok: ..."
 rclone lsl gdrive:PathQuote/backups
-/usr/local/bin/pq-backup-alert.sh --test     # check the failure email still arrives
+/usr/local/bin/pq-backup-alert.sh --test     # check the failure email still arrives (backup wording; §4c for the sync one)
 tail /var/log/pq-alert.log                   # "alert sent to ...: <subject>"
 ```
 
@@ -436,6 +436,203 @@ admin).
 `npm run quotes:purge` (dry run) / `npm run quotes:purge -- --yes` clears
 quotes and resets numbering on a **local** database. It refuses to run unless
 `DATABASE_URL` points at localhost.
+
+## 4c. Nightly ACT! sync
+
+PathQuote imports contacts and companies from the company's ACT! Premium CRM.
+Added 2026-10-09; until then it ran only when a developer typed
+`npm run act:sync`. Source in `scripts/ops/`, installed on the VPS the same way
+the backups are (install lines below). One script, one schedule:
+
+| | ACT! contact sync |
+|---|---|
+| Unit | `pq-act-sync.timer` → `pq-act-sync.service` → `pq-act-sync.sh` |
+| When | daily 03:00 Australia/Melbourne, exactly on the hour |
+| Runs | `docker compose run --rm -T tools npm run act:sync -- --trigger=schedule` in `/opt/pathquote`, with `TAG` exported from `git rev-parse HEAD` |
+| Reads | what changed in ACT! since the stored position — one night of edits is a page or two of 200 contacts, a few seconds |
+| Log | `/var/log/pq-act-sync.log`, one `act:sync start`/`act:sync ok` line per run, both naming the image SHA |
+| Record | every run writes itself into a `Setting` row, shown at `/settings/act-sync` |
+
+The timer is DST-aware and catches up at next boot after a missed run
+(`Persistent=true`), like the backup timers, and sits an hour before the 04:00
+dump so the dump captures what the sync imported. The hour is exact on purpose:
+there is no `RandomizedDelaySec`, because the Settings page prints the schedule
+to the director in words ("Every night at 3:00 am, Melbourne time.") and jitter
+would make that sentence either untrue or vague. The comment beside
+`OnCalendar` says so — do not add it back without reading it.
+
+There is no `flock` here, unlike `pq-backup.sh`. One sync at a time is enforced
+inside the worker instead, as a Postgres session advisory lock (`SYNC_LOCK_KEY`
+in `src/lib/act/sync.ts`), because the **Sync now** button in Settings starts
+the same work from inside the `app` container — a file lock on this box would
+hold off a second copy of the script and leave the button free to run on top of
+the nightly import.
+
+A failed run starts the same alert unit the backups use (§4) —
+`OnFailure=pq-backup-alert@%n.service`, so the instance it is handed is this
+unit's own name, `pq-act-sync.service` — which emails
+marketing@pathfindercut.com through the app's SMTP account. The alert is
+flavoured by that name rather than being backup-specific any more: a sync
+failure gets the subject `[PathQuote] Nightly ACT! sync FAILED on` the
+hostname, tails `/var/log/pq-act-sync.log` rather than the backup log, and says
+what the failure costs — ACT! and PathQuote have drifted, the next run picks up
+the changes, backups are unaffected. The alert's own output goes to
+`/var/log/pq-alert.log`.
+
+### Look at the Settings page before any log
+
+`/settings/act-sync`, ADMIN only. It shows when the last run started, what it
+did, whether anything needs a person, the nightly schedule, and how far through
+ACT!'s own edit history PathQuote has read.
+
+It is the first place to look because the worker records every run twice — once
+at the start with `finishedAt: null`, once when it ends. A run killed mid-flight
+therefore reads as "Started and never finished" instead of leaving last night's
+success looking current. No log tail distinguishes those two; the page does.
+
+The one case the page cannot show is a failure *before* the run takes the lock —
+a stale or missing image, compose down, no `DATABASE_URL`, ACT! not answering.
+Nothing is recorded, so the page goes on reporting the previous run, which is
+why the alert email carries the log instead of pointing at the page. The two
+rows behind it, if you need them from psql rather than the browser, are the
+`Setting` keys `act.sync.lastRun` and `act.sync.cursor`.
+
+### Everyday commands
+
+```bash
+systemctl list-timers 'pq-act-sync*'         # next run
+systemctl start pq-act-sync.service          # sync now, from the box
+journalctl -u pq-act-sync -n 20 --no-pager   # whether the unit itself ran at all
+tail -40 /var/log/pq-act-sync.log            # "act:sync ok: image <sha>"
+tail /var/log/pq-alert.log                   # "alert sent to <address>: <subject>"
+/usr/local/bin/pq-backup-alert.sh --test pq-act-sync.service   # the sync-flavoured failure email
+/usr/local/bin/pq-backup-alert.sh --test                       # bare --test is still the backup one
+```
+
+`systemctl start pq-act-sync.service` runs the script, which always passes
+`--trigger=schedule`, so a run started by hand this way is still recorded and
+shown as the nightly run. A run under `npm run act:sync` with no `--trigger`
+records itself as run by hand, which is what it is.
+
+What the exit status means, because the alert hangs off it:
+
+| Exit | Means |
+|---|---|
+| 0 | the run finished — or another sync already held the lock, which is not this run's failure and deliberately raises no alert. The log line says plainly that nothing was read and nothing was written. |
+| 1 | the run threw, or some contacts could not be stored. The cursor stops advancing at the first failure, so the next run reads them again. |
+| 2 | bad arguments, or `DATABASE_URL` missing or not a Postgres URL with a host and a database name. Nothing was read and nothing was written. |
+
+### The first import has to be run on the server
+
+With no stored position in ACT!'s edit history, "the changes since last time"
+means every contact in ACT! — about 17,500 of them, 88 pages — which is ten
+minutes at best. The Settings page knows this and withholds the button in that
+state, explaining that the first import belongs on the server. Do it there:
+
+```bash
+cd /opt/pathquote
+TAG=$(git rev-parse HEAD) docker compose run --rm tools npm run act:sync -- --dry-run --limit 50
+TAG=$(git rev-parse HEAD) docker compose run --rm tools npm run act:sync -- --full
+```
+
+The dry run reads ACT! and writes nothing, which is how to confirm credentials
+and mapping before the first write. `TAG` is not optional: without it compose
+resolves `:latest`, and nothing on this box ever refreshes that tag, so the run
+silently uses whatever image was built months ago. The `--` is not optional
+either — without it npm keeps the flags and the script starts with none, which
+is a full write; it detects that and refuses.
+
+### "Sync now", and what bounds it
+
+The button on `/settings/act-sync` runs the same delta, recorded as a run by
+hand. A night's changes take seconds. The worst case it can produce is about
+43 minutes — 88 pages of 200 contacts, each HTTP exchange bounded by 3 attempts
+of a 30-second timeout plus 1s and 2s of backoff (`src/lib/act/client.ts`) —
+and nothing in the application bounds it: `next.config.ts` declares no
+`serverActions` limit, `maxDuration` means nothing to a long-running
+`node server.js` behind a reverse proxy, and Node's own response timeout is off.
+
+What bounds it is nginx's `proxy_read_timeout`. **That number has not been
+measured on this server yet.** nginx's documented default is 60 seconds and
+that is what the code's comments assume; the proxy block in §3 sets no timeouts
+at all, and the live site is a WordOps proxy site (§6) whose generated template
+is not in this repo. Read it off the box and replace this paragraph with the
+real number:
+
+```bash
+nginx -T 2>/dev/null | grep -n 'proxy_read_timeout\|proxy_send_timeout'
+```
+
+When it trips, nginx answers 504, the page reports that no answer came back —
+and **the sync carries on**. Nothing cancels a server action because the client
+went away, so it keeps the lock, finishes, and writes its record. Reload the
+page: it says a sync is running now, and a later reload says what changed. A
+second click meanwhile loses the lock race and says so.
+
+### A wedged advisory lock
+
+The one state here that needs manual intervention. The symptom is every run —
+nightly and button alike — reporting that a sync is already running when none
+is.
+
+The lock belongs to a Postgres *session*, so it is released by that session
+ending. A run that is killed or crashes closes its socket on the way out and the
+lock goes with it, which covers every ordinary failure. The case that does not
+is a host that *vanishes* — power cut, hypervisor loss — because it sends no
+FIN: Postgres keeps the session, and the lock, until its own TCP keepalives give
+up on the socket. On the defaults that is about 2h11m (`tcp_keepalives_idle`
+7200s, then 9 probes 75s apart). Nothing in the application can shorten it, so
+waiting it out is a real answer and usually the right one — the next nightly run
+is at 03:00 either way.
+
+To find the holder:
+
+```bash
+docker compose exec -T postgres psql -U pathquote -d pathquote -c "
+SELECT pid, state, backend_start, query
+FROM pg_stat_activity
+WHERE pid IN (SELECT pid FROM pg_locks WHERE locktype = 'advisory');"
+```
+
+Ours is the lock whose `pg_locks` row has `objid` 8472001 and `objsubid` 1. A
+`backend_start` older than any run you can account for, with `state` of `idle`,
+is the dead session. End it — replace `<pid>`, angle brackets and all, with the
+pid the query above printed:
+
+```bash
+docker compose exec -T postgres psql -U pathquote -d pathquote -c \
+  "SELECT pg_terminate_backend(<pid>);"
+```
+
+The only other lever is `tcp_keepalives_idle` in `postgresql.conf`, which
+applies to every session on that server rather than just this one.
+
+### Installing or updating from the repository
+
+```bash
+scp -P 3498 scripts/ops/pq-act-sync.sh scripts/ops/pq-backup-alert.sh root@VPS:/usr/local/bin/
+scp -P 3498 scripts/ops/pq-act-sync.service scripts/ops/pq-act-sync.timer scripts/ops/pq-backup-alert@.service root@VPS:/etc/systemd/system/
+ssh -p 3498 root@VPS 'chmod 700 /usr/local/bin/pq-act-sync.sh /usr/local/bin/pq-backup-alert.sh && systemctl daemon-reload && systemctl enable --now pq-act-sync.timer'
+```
+
+`VPS` stands in for the production host, `74.208.106.34` as in §4b's examples,
+and 3498 is its sshd port (§6: WordOps moves sshd off 22).
+
+`pq-backup-alert.sh` and `pq-backup-alert@.service` are in those lines because
+both changed when the sync arrived: the script learned the sync wording and
+which log to tail, and the unit now writes `/var/log/pq-alert.log` instead of
+the backup log. `daemon-reload` is what picks up that unit change. Install only
+the three new files and a sync failure emails the director about a backup, with
+40 lines of the wrong log underneath it.
+
+### Environment
+
+`ACT_BASE`, `ACT_DB`, `ACT_USER` and `ACT_PASS` come from
+`/opt/pathquote/.env`, the same file the app reads, so the timer and the button
+use one set of credentials. `ACT_USER` is the Act! display name, not a login
+id. The ACT! Web API is IP-allowlisted to this VPS: any other address, a laptop
+included, gets `403` however correct the credentials, so this sync cannot be run
+from anywhere else. Full reference: `docs/act-integration-reference.md`.
 
 ## 5. Troubleshooting
 
