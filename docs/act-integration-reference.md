@@ -334,6 +334,48 @@ Each request has a 30 second timeout. A network error, a timeout or a `5xx` is r
 
 A response that is neither an array nor an object with an array `value` is an error, not an empty page. It names the shape it saw. Treating it as empty would have made a changed envelope look like a successful run with nothing to do.
 
+### What the first full import produced
+
+Production, 2026-10-08. A baseline: without one, "is 865 unresolved phones a
+problem?" has no answer. Compare a later run against this before concluding
+anything has gone wrong.
+
+| | |
+|---|---|
+| scanned | 17,529 |
+| contacts created | 10,399 |
+| contacts updated | 72 |
+| companies created | 8,735 |
+| companies with no contact | 536 |
+| phones unresolved | 865 |
+| company key collisions | 0 |
+| failed | 0 |
+| skipped: inactive-status | 6,320 |
+| skipped: personal | 175 |
+| skipped: not-a-contact | 23 |
+| skipped: no-company | 4 |
+
+Afterwards, in the database: 8,809 companies carrying `actSyncedAt`, of which
+130 have no country; 10,471 contacts with an `actContactId`; 485 companies with
+no contact at all; 0 `ActSnapshot` rows with the wrong number of owners.
+`actStatus` is `Prospect` on 8,122 and `Customer` on 687, and nothing else —
+the two-status filter, confirmed in the data rather than in the log.
+
+Two numbers that look wrong and are not:
+
+**`contacts updated` 72 on a first import.** 10,399 + 72 = 10,471, and the
+database holds 10,471, so nothing was missed: 72 contacts were returned twice
+within the one run. The country-correction script had set ~271 records to the
+same `edited` timestamp minutes earlier, and `$skip` paging over a cluster of
+identical sort keys has no stable order between pages. Harmless, because
+fill-only-empty makes the second pass a no-op — but it is the `$skip`
+instability made visible, and the mitigation is the periodic `--full` that
+re-reads everything.
+
+**`companies created` 8,735 against 8,809 in the table.** The difference is 74:
+the 2 companies the preflight had already keyed, plus the 72 above, whose
+companies were matched rather than created on the second pass.
+
 ## 11. Infrastructure
 
 **Working end to end as of 2026-10-06.** Verified from the VPS: `GET /act.web.api/` returns `200` and `/authorize` returns a token, over HTTPS on the public hostname.
