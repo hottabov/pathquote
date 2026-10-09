@@ -107,6 +107,19 @@ export function revalidateImportExport(): void {
   revalidatePath("/settings/import-export");
 }
 
+/**
+ * The ACT! sync section — the last-run panel and the Sync now button.
+ *
+ * The route does not exist yet: the section that will live there is the next
+ * piece of work, and this is here because the server action behind the button
+ * needs something to revalidate. If that page lands at a different path, this
+ * line is the one place to change it rather than a string buried in the
+ * action.
+ */
+export function revalidateActSync(): void {
+  revalidatePath("/settings/act-sync");
+}
+
 export function revalidateUserList(): void {
   revalidatePath("/settings/users");
 }
