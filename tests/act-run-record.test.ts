@@ -322,6 +322,32 @@ describe("parseStoredRun", () => {
     expect(parseStoredRun(stored({ ...written, failed: null }))).toBeNull();
   });
 
+  it("rejects a negative counter", () => {
+    expect(parseStoredRun(stored({ ...written, contactsUpdated: -1 }))).toBeNull();
+    expect(parseStoredRun(stored({ ...written, failed: -1 }))).toBeNull();
+
+    // Why it is worth rejecting rather than documenting: handed the same record
+    // unchecked, describeRun does not print "-1 updated". Every counter it
+    // reads sits behind a `> 0` test, `-1 > 0` is false, and the eleven updated
+    // contacts become a night with nothing in it.
+    const negative = { ...written, contactsCreated: -1, contactsUpdated: -1, companiesCreated: -1 };
+    expect(describeRun(negative).headline).toBe("No changes");
+  });
+
+  it("rejects a blank error message", () => {
+    // messageOf's whole reason for existing, from the other side: describeRun
+    // leads with `error` only when it is truthy, so a stored "" falls past the
+    // error branch and a run that threw is reported as "Started and never
+    // finished". A record carrying no ending AND no message is the one this
+    // boundary must not hand on.
+    const threw = { ...written, finishedAt: null, error: "" };
+    expect(parseStoredRun(stored(threw))).toBeNull();
+    expect(parseStoredRun(stored({ ...threw, error: "   " }))).toBeNull();
+
+    // What it would have said if it got through.
+    expect(describeRun(threw).headline).toBe("Started and never finished");
+  });
+
   it("rejects a trigger it does not recognise", () => {
     // Not pedantry: describeRun says "Scheduled" for anything that is not
     // "manual", so a third trigger name read off the row would label a run by

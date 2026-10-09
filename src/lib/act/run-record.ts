@@ -170,6 +170,21 @@ function isTrigger(value: unknown): value is SyncTrigger {
 }
 
 /**
+ * A stored error: words, not a blank.
+ *
+ * `typeof value === "string"` alone would admit `""`, and a blank message is
+ * the one value messageOf above exists to prevent ever being written -- because
+ * describeRun leads with `error` only when it is truthy, so an empty string
+ * falls past the error branch and a run that threw is reported as "Started and
+ * never finished". messageOf closes that for the records this module writes;
+ * this closes it for a record the column already holds, written by a version
+ * that had no messageOf or by a hand edit.
+ */
+function isErrorMessage(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+/**
  * A stored timestamp: a string the clock can actually be read off.
  *
  * `typeof value === "string"` alone is not enough. Nothing in this module reads
@@ -192,13 +207,22 @@ function isTimestamp(value: unknown): value is string {
  * own and print as themselves, so the pair costs one call and removes the need
  * to know that.
  *
- * Not checked for being a whole number or for being positive: nothing
- * downstream depends on either -- `formatCount` renders 3.5 as "3.5" and -1 as
- * "-1", neither of which is a crash or a misleading number -- and a guard that
- * rejects a record over something harmless costs the reader the whole record.
+ * Negative is rejected, because describeRun never formats a counter it has not
+ * first put behind a `> 0` test -- and `-1 > 0` is false, so a stored -1 is
+ * never printed as "-1": it is simply not mentioned, and the page reads a run
+ * that updated something as "No changes". That is the silent zero
+ * parseStoredRun's all-or-nothing rule exists to stop, reached from inside the
+ * guard meant to stop it. The bound costs nothing real -- no writer in this
+ * repo can produce a negative count, so the only record it turns away is one
+ * that was already wrong, and turning it away makes the page say "cannot read
+ * the record" rather than report a clean night.
+ *
+ * Not checked for being a whole number: nothing downstream depends on it, and
+ * `formatCount` renders 3.5 as "3.5", which is neither a crash nor a number
+ * that misleads anybody about what happened.
  */
 function isCount(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value);
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 /**
@@ -239,7 +263,7 @@ export function parseStoredRun(value: unknown): ActSyncRun | null {
   if (!isTimestamp(startedAt)) return null;
   if (!(finishedAt === null || isTimestamp(finishedAt))) return null;
   if (!isTrigger(trigger)) return null;
-  if (!(error === null || typeof error === "string")) return null;
+  if (!(error === null || isErrorMessage(error))) return null;
 
   // Through onlyCounts so the six names stay written in exactly one place: a
   // seventh counter added to RunCounts and not to this check would be read off

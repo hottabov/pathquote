@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/authz";
 import { actClientFromEnv } from "@/lib/act/client";
 import { messageOf } from "@/lib/act/run-record";
 import { SyncAlreadyRunningError, syncContacts } from "@/lib/act/sync";
+import { plural } from "@/lib/plural";
 import { revalidateActSync } from "@/lib/revalidate";
 import type { ActionResultWithWarning } from "./_shared";
 
@@ -13,9 +14,10 @@ export type { ActionResultWithWarning };
  * Pull whatever has changed in ACT! since the stored cursor, now, because an
  * admin pressed the button rather than because the nightly timer fired.
  *
- * `warning` rather than `error` for the one outcome that is not a failure --
- * see the catch below. Everything else about this is the ordinary action
- * shape.
+ * `warning` rather than `error` for the two outcomes that are not this
+ * caller's failure to report: a run that came back having dropped some
+ * contacts, and losing the lock race to a run already going. Everything else
+ * about this is the ordinary action shape.
  *
  * HOW LONG THIS BLOCKS, which is the thing worth knowing before wiring a
  * button to it. A server action holds the request until it returns, and
@@ -82,7 +84,7 @@ export async function runActSyncNow(): Promise<ActionResultWithWarning> {
     // scripts/act-sync.ts gets them. Nothing about which ACT! database to read
     // or who to read it as is taken from the request: the button is a trigger,
     // not a form.
-    await syncContacts(actClientFromEnv(), {
+    const result = await syncContacts(actClientFromEnv(), {
       // `trigger: "manual"` is the only option set, and in particular NOT
       // `full: true`. The button runs the delta. A full re-read is ~17,500
       // contacts and ten minutes or more of an HTTP request that somebody is
@@ -90,6 +92,22 @@ export async function runActSyncNow(): Promise<ActionResultWithWarning> {
       // act:sync -- --full` is still there for the person who means it.
       trigger: "manual",
     });
+
+    if (result.failed > 0) {
+      // The run came back, so the work it got through is saved -- a caveat on a
+      // save that succeeded, which is `warning` in its first sense. A plain `{}`
+      // here fires the panel's success toast over a run that dropped contacts,
+      // and the admin walks away from the screen believing it all went in.
+      //
+      // The second sentence is describeRun's failure detail word for word
+      // (src/lib/act/run-record.ts), because the `finally` below revalidates and
+      // the section the toast is sitting on top of is about to say exactly this.
+      // Two wordings of one fact invite reading them as two different facts.
+      return {
+        warning: `${plural(result.failed, "contact", "contacts")} failed. The cursor did not move, so nothing was skipped — fix the cause and run it again.`,
+      };
+    }
+
     return {};
   } catch (error) {
     if (error instanceof SyncAlreadyRunningError) {
@@ -106,10 +124,11 @@ export async function runActSyncNow(): Promise<ActionResultWithWarning> {
       // two start disagreeing.
       //
       // Returned as `warning`, not `error`, so the page can say it without the
-      // red treatment reserved for something that needs fixing. That stretches
-      // `warning` past its doc comment in ./_shared.ts, which describes a save
-      // that did succeed -- this click saved nothing. It is the closer of the
-      // two: nothing is wrong and there is nothing for the admin to do.
+      // red treatment reserved for something that needs fixing. This click
+      // saved nothing, which is the second of the two meanings `warning`
+      // carries -- not this caller's failure, and nothing for the admin to do;
+      // see the doc comment on ActionResultWithWarning in ./_shared.ts, which
+      // names this function as the example.
       return { warning: error.message };
     }
 
@@ -121,18 +140,28 @@ export async function runActSyncNow(): Promise<ActionResultWithWarning> {
     // opaque digest, and the sentence naming which of those three it was would
     // be left in the log.
     //
-    // Nothing is swallowed by returning it. The worker has already written the
-    // same message to the last-run record on its way out (the catch in
-    // syncContacts), which is what makes the failure visible even when this
-    // result never arrives -- a 504'd click, a closed tab -- and this line
-    // puts it in the service log, where the stack trace survives too.
+    // Returning it does not swallow it, and for one of those three it does not
+    // even have to. A failure raised inside syncContacts once the start record
+    // had landed -- the 401, a contact write rejected mid-run -- has already
+    // had this same message written to the last-run record by the worker on its
+    // way out (the catch in syncContacts), which is what keeps the failure
+    // visible when this result never arrives: a 504'd click, a closed tab.
+    //
+    // The other two leave no record to find. actClientFromEnv() throws before
+    // syncContacts is entered, so a missing ACT_* variable never gets as far as
+    // the start record; and a database refusing writes is precisely the case
+    // where recordQuietly cannot store the failure either. For those the line
+    // below is the only trace there will be, which is why it carries the error
+    // itself and not just a sentence -- the stack survives in the service log.
     console.error("act: the Sync now button's run failed", error);
     return { error: messageOf(error) };
   } finally {
-    // Every path, including both failures. A thrown run and a lost race both
-    // change what the page should say -- the first wrote a failure record, the
-    // second means another run is live -- so the page is stale after all three
-    // outcomes, not just the good one.
+    // Every path that reached the sync, including both failures. A thrown run
+    // and a lost race both change what the page should say -- the first wrote a
+    // failure record, the second means another run is live -- so the page is
+    // stale after all three outcomes, not just the good one. (requireAdmin()
+    // throws above the try, so a non-admin never gets here; nothing changed for
+    // them to see.)
     revalidateActSync();
   }
 }
