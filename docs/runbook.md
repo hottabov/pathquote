@@ -313,8 +313,10 @@ pathfindermarketingdept@gmail.com), so Drive holds exactly the local files and
 local rotation is Drive rotation. Deletions skip the Drive trash; at most 6
 per run, so an emptied `/opt/backups` cannot wipe Drive. A failed run starts
 `pq-backup-alert@<unit>.service`, which emails marketing@pathfindercut.com
-through the app's SMTP account (`SMTP_*`, `EMAIL_FROM` in `.env`). Log:
-`/var/log/pq-backup.log`.
+through the app's SMTP account (`SMTP_*`, `EMAIL_FROM` in `.env`). Logs: the
+backups write `/var/log/pq-backup.log`; the alert unit answers for the ACT!
+sync as well now, so it writes its own `/var/log/pq-alert.log` rather than
+putting "alert sent: ACT! sync FAILED" in the middle of the backup log.
 
 ```bash
 systemctl list-timers 'pq-backup*'           # next runs
@@ -323,6 +325,7 @@ systemctl start pq-backup-files.service      # uploads now
 tail /var/log/pq-backup.log                  # "db backup ok: ..." / "files backup ok: ..."
 rclone lsl gdrive:PathQuote/backups
 /usr/local/bin/pq-backup-alert.sh --test     # check the failure email still arrives
+tail /var/log/pq-alert.log                   # "alert sent to ...: <subject>"
 ```
 
 Installing or updating from the repository:

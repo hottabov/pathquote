@@ -7,10 +7,12 @@ Description=PathQuote ACT! sync: contacts and companies from the CRM, nightly
 # box is easier to hold in your head than two. The hour before the 04:00 dump,
 # deliberately -- the sync lands first, so the dump captures what it imported
 # rather than yesterday's state. It is also after hours in Melbourne, where the
-# ACT! server itself sits on the office LAN. In the US it is 09:00-12:00 the
-# previous day, which is working time there and costs nothing: the sync only
-# reads from ACT!, and the US managers work in ACT! itself, not in PathQuote's
-# imported copy.
+# ACT! server itself sits on the office LAN. In the US it is the previous day,
+# between 08:00 Pacific and 13:00 Eastern depending on which side of each
+# country's daylight saving the date falls -- 03:00 Melbourne is 16:00 UTC
+# while we are on AEDT and 17:00 UTC while we are on AEST. That is working time
+# over there and costs nothing: the sync only reads from ACT!, and the US
+# managers work in ACT! itself, not in PathQuote's imported copy.
 OnCalendar=*-*-* 03:00:00 Australia/Melbourne
 # A run missed while the VPS was down happens at next boot instead.
 Persistent=true

@@ -44,10 +44,18 @@ case "$UNIT" in
     WHAT="nightly ACT! sync"
     WHAT_SUBJECT="Nightly ACT! sync"
     WHAT_TEST="ACT! sync"
+    # No promise that Settings shows this. The run records itself only once it
+    # has the sync lock, so every failure before that point -- a stale or
+    # missing image, compose down, no DATABASE_URL, ACT! not answering -- leaves
+    # no record at all and the page goes on showing the previous run. Sending
+    # the director to a page that says "No changes" about tonight is the same
+    # class of lie this flavouring exists to stop, so the mail points at the log
+    # it is already carrying.
     CONSEQUENCE="ACT! and PathQuote have drifted: contacts and companies changed in ACT!
 since the last good run are not in PathQuote. Nothing is lost -- the next run
-picks them up -- and the Settings page shows this failure under ACT! sync.
-Backups are unaffected."
+picks them up. Backups are unaffected. The Settings page may still show the
+previous run, because a failure before the sync starts leaves no record of
+itself; the log below is what happened."
     ;;
   pq-backup*)
     LOG=/var/log/pq-backup.log
