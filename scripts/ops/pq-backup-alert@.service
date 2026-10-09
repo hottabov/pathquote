@@ -4,5 +4,11 @@ Description=Email marketing@pathfindercut.com that %i failed
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/pq-backup-alert.sh %i
-StandardOutput=append:/var/log/pq-backup.log
-StandardError=append:/var/log/pq-backup.log
+# Its own log, not the failed job's. This unit now answers for the backups and
+# for the ACT! sync, and the one thing it has to say -- whether the email went
+# out -- is the same sentence either way, naming the subject it sent. Appending
+# to /var/log/pq-backup.log would have put "alert sent: ACT! sync FAILED" in the
+# middle of the backup log, where the next person to read it after a bad night
+# would have to work out it was about something else.
+StandardOutput=append:/var/log/pq-alert.log
+StandardError=append:/var/log/pq-alert.log
