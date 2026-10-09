@@ -222,7 +222,7 @@ export class ActClient {
    * Ordered by `edited` so a run interrupted halfway can resume from the last
    * record it stored rather than starting again. `$skip` rather than a keyset
    * cursor because the API offers no stable tiebreaker on equal timestamps;
-   * at 12,000 records over ~60 pages the depth cost is irrelevant.
+   * at 17,529 records over ~88 pages the depth cost is irrelevant.
    */
   async *contactsEditedSince(since: Date | null): AsyncGenerator<ActContact[]> {
     let skip = 0;

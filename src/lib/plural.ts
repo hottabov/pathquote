@@ -13,18 +13,18 @@
 // module changes nothing anyone can see.
 //
 // The grouping earns its place at this scale: the first full ACT! import is
-// ~12,000 contacts, and "12,000 updated" is read at a glance where "12000
-// updated" has to be counted.
+// ~17,500 contacts (17,529 measured in production on 2026-10-08), and "17,529
+// updated" is read at a glance where "17529 updated" has to be counted.
 //
 // Imports nothing and touches no database, so it is usable from the
 // no-database test suite.
 
-/** A count with thousands separators: `7`, `12,000`. */
+/** A count with thousands separators: `7`, `17,529`. */
 export function formatCount(value: number): string {
   return value.toLocaleString("en-US");
 }
 
-/** A count and its noun: `1 contact`, `12,000 contacts`. */
+/** A count and its noun: `1 contact`, `17,529 contacts`. */
 export function plural(value: number, one: string, many: string): string {
   return `${formatCount(value)} ${value === 1 ? one : many}`;
 }

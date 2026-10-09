@@ -62,8 +62,9 @@ export type ActSyncStatus = {
  *
  * Not wrapped in React's `cache` like its neighbours in queries/settings.ts.
  * Those are read twice in one render from call sites that cannot see each
- * other. This has one caller -- the Settings section being built next -- so
- * the memo would be a wrapper with nothing to dedupe, and a memo over a
+ * other. This has one caller -- `ActSyncPage` in
+ * src/app/(app)/settings/act-sync/page.tsx, which reads it once -- so the memo
+ * would be a wrapper with nothing to dedupe, and a memo over a
  * question whose answer changes while the page renders ("is a sync running")
  * is not the sort of wrapper to add for symmetry.
  */

@@ -110,11 +110,12 @@ export function revalidateImportExport(): void {
 /**
  * The ACT! sync section — the last-run panel and the Sync now button.
  *
- * The route does not exist yet: the section that will live there is the next
- * piece of work, and this is here because the server action behind the button
- * needs something to revalidate. If that page lands at a different path, this
- * line is the one place to change it rather than a string buried in the
- * action.
+ * The route is `src/app/(app)/settings/act-sync/page.tsx`, at exactly this
+ * path, and it is `force-dynamic`: a cached render of a page whose subject is
+ * "is a sync running right now" answers the question wrongly. This still earns
+ * its place, because the Sync now action's `finally` revalidates the route the
+ * reader is standing on, and if that page ever moves this line is the one place
+ * to change rather than a string buried in the action.
  */
 export function revalidateActSync(): void {
   revalidatePath("/settings/act-sync");

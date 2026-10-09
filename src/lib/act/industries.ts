@@ -65,8 +65,8 @@ export type IndustryLookup = {
 /**
  * Index the alias table once by normalised key and answer both questions from
  * it. The previous implementation scanned all the aliases per call, normalising
- * both sides each time; over 12,000 contacts that is millions of
- * normalisations to answer 12,000 questions.
+ * both sides each time; over ~17,500 contacts that is millions of
+ * normalisations to answer ~17,500 questions.
  */
 export function buildIndustryLookup(data: ActIndustries = loadActIndustries()): IndustryLookup {
   const index = new Map<string, string | null>();
