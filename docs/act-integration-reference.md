@@ -248,13 +248,13 @@ A PathQuote quote that has been sent maps to `Proposal` (AU) or `Engage` (US).
 
 ## 10. Reading with a delta cursor
 
-The sync is `src/lib/act/sync.ts`, started by `npm run act:sync`. It is read-only against Act!.
+The sync is `src/lib/act/sync.ts`, started three ways: `npm run act:sync`, the nightly `pq-act-sync.timer` on the VPS, and the **Sync now** button at `/settings/act-sync`. It is read-only against Act!.
 
 ```
 GET /api/contacts?$top=200&$skip=0&$orderby=edited&$filter=edited ge 2026-09-01T00:00:00.000Z
 ```
 
-Pages of 200, oldest `edited` first, advancing `$skip` until a short page — about 60 requests for a full import. `syncContacts` is one operation meant to serve both a nightly job and a manual button, so there is no separate full-import path to drift from the incremental one. Phase 1 has only the CLI.
+Pages of 200, oldest `edited` first, advancing `$skip` until a short page — about 88 requests for a full import, measured against the 17,529 contacts the account can see (*What the first full import produced*, below). `syncContacts` is one operation serving all three of those callers, so there is no separate full-import path to drift from the incremental one. See `docs/runbook.md` §4c for the timer, the logs, and the one failure state that needs a person.
 
 ### What is filtered where
 

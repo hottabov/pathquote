@@ -659,12 +659,16 @@ Follow the shape of §4 exactly — a table of unit, schedule, log and what it c
 - the `scp` + `daemon-reload` + `enable --now` install lines
 - that the four `ACT_*` values come from `/opt/pathquote/.env`, and that the API is IP-allowlisted to this VPS so it cannot be run from anywhere else
 - that the Settings page shows the last run, so the first place to look is the browser, not the log
-- **a wedged advisory lock.** The sync holds a Postgres session advisory lock for the length of a run, released by ending that session. A killed or crashed run closes its socket and loses the lock with it. A host that *vanishes* — power cut, hypervisor loss — sends no FIN, so Postgres keeps the session until its own `tcp_keepalives_idle` reaps it: **about 2h11m on the defaults** (7200s + 75s × 9). Nothing in the application can shorten that; the levers are `tcp_keepalives_idle` in `postgresql.conf`, which affects every session on the server, or an admin running `pg_terminate_backend` on the holder. Give the query that finds it:
+- **a wedged advisory lock.** The sync holds a Postgres session advisory lock for the length of a run, released by ending that session. A killed or crashed run closes its socket and loses the lock with it. What sends no FIN is the sync container losing its network while the process lives — namespace torn down, or §6's systemd-networkd veth fault — so Postgres keeps the session until its own `tcp_keepalives_idle` reaps it: **about 2h11m on the defaults** (7200s + 75s × 9). Not a power cut: `postgres` is a Compose service on the same box, so that takes the cluster down too and leaves no session to wedge. Nothing in the application can shorten that; the levers are `tcp_keepalives_idle` in `postgresql.conf`, which affects every session on the server, or an admin running `pg_terminate_backend` on the holder. Give the query that finds it:
 
 ```sql
-SELECT pid, state, backend_start, query
-FROM pg_stat_activity
-WHERE pid IN (SELECT pid FROM pg_locks WHERE locktype = 'advisory');
+SELECT a.pid, a.state, a.backend_start, a.query
+FROM pg_stat_activity a JOIN pg_locks l ON l.pid = a.pid
+WHERE l.locktype = 'advisory'
+  AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+  AND ((l.classid::bigint << 32) | l.objid::bigint) = 8472001
+  AND l.objsubid = 1
+  AND l.granted;
 ```
 
   The symptom is every run — nightly and button alike — reporting that a sync is already running when none is. Say plainly that this is the only state needing a manual unwedge, and that waiting the two hours also works.
@@ -710,7 +714,7 @@ Start the service and press **Sync now** in the browser while it is running. The
 
 - [ ] **Step 4a: Measure the one number that is still a guess**
 
-Task 5 worked out that the button's worst case is **~43 minutes** (88 pages × 200 contacts, each exchange bounded by 3 attempts × 30s + backoff), and that nothing in the application bounds it: `next.config.ts` declares no `serverActions` block, `maxDuration` means nothing behind a proxy, and Node's response timeout is off. The only ceiling is nginx's `proxy_read_timeout` — **assumed to be the 60s default, read from nginx's documentation rather than from this server**, because the live site is a WordOps proxy site whose generated template is not in this repo.
+Task 5 worked out two figures for the button, from different arithmetic: **~43 minutes** when nothing retries (88 pages × 200 contacts, each answering in 29s just inside the timeout) and **~2h16m** as the ceiling when everything does (3 attempts × 30s + 1s + 2s = 93s per page). Neither is bounded by the application: `next.config.ts` declares no `serverActions` block, `maxDuration` means nothing behind a proxy, and Node's response timeout is off. The only ceiling is nginx's `proxy_read_timeout` — **assumed to be the 60s default, read from nginx's documentation rather than from this server**, because the live site is a WordOps proxy site whose generated template is not in this repo.
 
 Read the real value:
 

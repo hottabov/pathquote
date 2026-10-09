@@ -522,6 +522,70 @@ What the exit status means, because the alert hangs off it:
 | 1 | the run threw, or some contacts could not be stored. The cursor stops advancing at the first failure, so the next run reads them again. |
 | 2 | bad arguments, or `DATABASE_URL` missing or not a Postgres URL with a host and a database name. Nothing was read and nothing was written. |
 
+### A wedged advisory lock
+
+The one state here that needs manual intervention. The symptom is every run —
+nightly and button alike — reporting that a sync is already running when none
+is.
+
+The lock belongs to a Postgres *session*, so it is released by that session
+ending. A run that is killed or crashes closes its socket on the way out and the
+lock goes with it, which covers every ordinary failure. What does not close the
+socket is the sync's container losing the network out from under a process that
+is still alive: its network namespace torn down, or the systemd-networkd fault
+in §6 ("systemd-networkd steals Docker's veth interfaces"), which un-enslaves
+every `veth*` from `docker0` so packets stop at layer 2 while both ends still
+believe the connection is open. That fault is one file on the host
+(`/etc/systemd/network/05-docker-unmanaged.network`) away from coming back, so a
+rebuild that skips §6 is the realistic way into this state. No FIN reaches
+Postgres, so it keeps the session, and the lock, until its own TCP keepalives
+give up on the socket. On the defaults that is about 2h11m
+(`tcp_keepalives_idle` 7200s, then 9 probes 75s apart). Nothing in the
+application can shorten it, so waiting it out is a real answer and usually the
+right one — the next nightly run is at 03:00 either way.
+
+A power cut or a hypervisor loss is **not** this case on this box. `postgres` is
+a Compose service on the same VPS as the app and `DATABASE_URL` points at
+`postgres:5432` (§1), so anything that takes the host down takes the cluster
+with it: it comes back with no sessions at all, and no lock to wedge.
+
+To find the holder. The predicate is `isSyncRunning`'s, from
+`src/lib/act/sync.ts`, so what this prints can only be our own lock:
+
+```bash
+docker compose exec -T postgres psql -U pathquote -d pathquote -c "
+SELECT a.pid, a.state, a.backend_start, a.query
+FROM pg_stat_activity a JOIN pg_locks l ON l.pid = a.pid
+WHERE l.locktype = 'advisory'
+  AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+  AND ((l.classid::bigint << 32) | l.objid::bigint) = 8472001
+  AND l.objsubid = 1
+  AND l.granted;"
+```
+
+`objsubid = 1` is what separates our one-bigint key from another feature's
+two-integer lock on (0, 8472001), and the `database` clause is there because
+`pg_locks` is cluster-wide while advisory locks are per-database; both reasons
+are written out at `isSyncRunning`. Keep them, because the next command
+terminates one of these rows.
+
+Expect no rows when nothing holds the lock and exactly one while a sync runs.
+That row names itself twice over: its `query` is
+`SELECT pg_try_advisory_lock($1) AS locked` — the statement that took the lock,
+with the key bound as a parameter rather than written into the text — and its
+`state` is `idle`, because that session's only job is to hold the lock while the
+run talks to ACT! and to the database over other connections. A `backend_start`
+older than any run you can account for is the dead session. End it — replace
+`<pid>`, angle brackets and all, with the pid the query above printed:
+
+```bash
+docker compose exec -T postgres psql -U pathquote -d pathquote -c \
+  "SELECT pg_terminate_backend(<pid>);"
+```
+
+The only other lever is `tcp_keepalives_idle` in `postgresql.conf`, which
+applies to every session on that server rather than just this one.
+
 ### The first import has to be run on the server
 
 With no stored position in ACT!'s edit history, "the changes since last time"
@@ -545,10 +609,23 @@ is a full write; it detects that and refuses.
 ### "Sync now", and what bounds it
 
 The button on `/settings/act-sync` runs the same delta, recorded as a run by
-hand. A night's changes take seconds. The worst case it can produce is about
-43 minutes — 88 pages of 200 contacts, each HTTP exchange bounded by 3 attempts
-of a 30-second timeout plus 1s and 2s of backoff (`src/lib/act/client.ts`) —
-and nothing in the application bounds it: `next.config.ts` declares no
+hand. A night's changes take seconds. Two much larger numbers get quoted for
+this and they are not the same number, so they are both written out here:
+
+- **Nothing retries — ACT! is merely slow.** 88 pages of 200 contacts, each
+  answering in 29 seconds, just inside the 30-second timeout, so every page
+  succeeds on its first attempt: **about 43 minutes**. This is the ordinary bad
+  day.
+- **Everything retries.** One HTTP exchange is up to 3 attempts of that
+  30-second timeout with 1s and 2s of backoff between them
+  (`src/lib/act/client.ts`), so a page whose first two attempts time out and
+  whose third answers costs 93 seconds. 88 of those is **about 2h16m**, and
+  that is the ceiling — the slowest a run can be and still finish.
+
+Do not quote the 43 minutes with the retry arithmetic beside it: 3 × 30s + 3s
+is the 2h16m figure, not the 43-minute one.
+
+Nothing in the application bounds either of them: `next.config.ts` declares no
 `serverActions` limit, `maxDuration` means nothing to a long-running
 `node server.js` behind a reverse proxy, and Node's own response timeout is off.
 
@@ -569,54 +646,16 @@ went away, so it keeps the lock, finishes, and writes its record. Reload the
 page: it says a sync is running now, and a later reload says what changed. A
 second click meanwhile loses the lock race and says so.
 
-### A wedged advisory lock
-
-The one state here that needs manual intervention. The symptom is every run —
-nightly and button alike — reporting that a sync is already running when none
-is.
-
-The lock belongs to a Postgres *session*, so it is released by that session
-ending. A run that is killed or crashes closes its socket on the way out and the
-lock goes with it, which covers every ordinary failure. The case that does not
-is a host that *vanishes* — power cut, hypervisor loss — because it sends no
-FIN: Postgres keeps the session, and the lock, until its own TCP keepalives give
-up on the socket. On the defaults that is about 2h11m (`tcp_keepalives_idle`
-7200s, then 9 probes 75s apart). Nothing in the application can shorten it, so
-waiting it out is a real answer and usually the right one — the next nightly run
-is at 03:00 either way.
-
-To find the holder:
-
-```bash
-docker compose exec -T postgres psql -U pathquote -d pathquote -c "
-SELECT pid, state, backend_start, query
-FROM pg_stat_activity
-WHERE pid IN (SELECT pid FROM pg_locks WHERE locktype = 'advisory');"
-```
-
-Ours is the lock whose `pg_locks` row has `objid` 8472001 and `objsubid` 1. A
-`backend_start` older than any run you can account for, with `state` of `idle`,
-is the dead session. End it — replace `<pid>`, angle brackets and all, with the
-pid the query above printed:
-
-```bash
-docker compose exec -T postgres psql -U pathquote -d pathquote -c \
-  "SELECT pg_terminate_backend(<pid>);"
-```
-
-The only other lever is `tcp_keepalives_idle` in `postgresql.conf`, which
-applies to every session on that server rather than just this one.
-
 ### Installing or updating from the repository
 
 ```bash
-scp -P 3498 scripts/ops/pq-act-sync.sh scripts/ops/pq-backup-alert.sh root@VPS:/usr/local/bin/
-scp -P 3498 scripts/ops/pq-act-sync.service scripts/ops/pq-act-sync.timer scripts/ops/pq-backup-alert@.service root@VPS:/etc/systemd/system/
-ssh -p 3498 root@VPS 'chmod 700 /usr/local/bin/pq-act-sync.sh /usr/local/bin/pq-backup-alert.sh && systemctl daemon-reload && systemctl enable --now pq-act-sync.timer'
+scp -P 3498 scripts/ops/pq-act-sync.sh scripts/ops/pq-backup-alert.sh root@74.208.106.34:/usr/local/bin/
+scp -P 3498 scripts/ops/pq-act-sync.service scripts/ops/pq-act-sync.timer scripts/ops/pq-backup-alert@.service root@74.208.106.34:/etc/systemd/system/
+ssh -p 3498 root@74.208.106.34 'chmod 700 /usr/local/bin/pq-act-sync.sh /usr/local/bin/pq-backup-alert.sh && systemctl daemon-reload && systemctl enable --now pq-act-sync.timer'
 ```
 
-`VPS` stands in for the production host, `74.208.106.34` as in §4b's examples,
-and 3498 is its sshd port (§6: WordOps moves sshd off 22).
+That is the production host, the same address §4b's image-copy lines use, and
+3498 is its sshd port rather than a typo (§6: WordOps moves sshd off 22).
 
 `pq-backup-alert.sh` and `pq-backup-alert@.service` are in those lines because
 both changed when the sync arrived: the script learned the sync wording and
