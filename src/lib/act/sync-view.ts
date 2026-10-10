@@ -14,6 +14,27 @@
 // sentence sits in, and nothing else -- it contains no sentence about the sync
 // and no `if` that picks one.
 //
+// WHO READS THESE SENTENCES. Every one of them was written for the company
+// director, and the section was then opened to managers as well (adminOnly in
+// src/lib/settings-nav.ts). They were re-read against the wider audience and
+// kept as they are, which is a decision worth recording so it is not reopened
+// by halves:
+//
+//   - "ask your developer" is not a dead end to a manager who does not know
+//     who that is. It names the one thing to do about a PathQuote fault, and
+//     the means is on the same screen: PathQuote Support, a nav row below
+//     this section, is open to every signed-in user and addresses its message
+//     to whoever holds DEVELOPER (src/lib/actions/support.ts). Rewriting the
+//     sentences to say "report it through PathQuote Support" would route the
+//     director around a person he can simply telephone.
+//   - `runNowFor`'s withheld state still tells a manager that the first
+//     import belongs on the server, although a manager cannot run it. It is
+//     the only honest explanation for a card with no button, and the question
+//     it answers -- why has nothing come across from ACT! -- is one a manager
+//     asks. Naming who does it beats leaving them to guess.
+//   - Nothing here asks the reader for server access. The log and the server
+//     are named as the developer's business, never as something to go and do.
+//
 // Pure: no database, no React. `ActSyncStatus` is imported as a type only, so
 // nothing from @/lib/queries (and therefore nothing from Prisma) is pulled in
 // at runtime and the no-database test suite can import this file. The type

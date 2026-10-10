@@ -82,8 +82,8 @@ export type RunCounts = Pick<
  * What a run that dropped some contacts leaves to say about them, said once.
  *
  * Two places need this sentence: describeRun's `failed` branch below, which the
- * Settings section renders, and the warning runActSyncNow returns to the admin
- * who pressed Sync now (src/lib/actions/act-sync.ts), which the toast shows on
+ * Settings section renders, and the warning runActSyncNow returns to whoever
+ * pressed Sync now (src/lib/actions/act-sync.ts), which the toast shows on
  * top of that same section a moment before it refreshes. Two wordings of one
  * fact invite reading them as two different facts, so there is one wording and
  * both sites interpolate it.
@@ -178,8 +178,8 @@ export function failedRun(started: ActSyncRun, counts: RunCounts, error: unknown
  * an error gets words for it even when the error itself had none.
  *
  * Exported for the Sync now action (src/lib/actions/act-sync.ts), which has the
- * same problem from the other side: it returns the thrown message to the admin
- * who pressed the button, and a blank one would paint an empty red banner. The
+ * same problem from the other side: it returns the thrown message to whoever
+ * pressed the button, and a blank one would paint an empty red banner. The
  * two go through here so the banner and the stored record say the same words
  * about the same failure.
  */
@@ -425,9 +425,10 @@ export function describeRun(
       headline: `${plural(run.failed, "contact", "contacts")} failed`,
       // Was "The cursor did not move, so nothing was skipped". Accurate, and
       // the mechanism rather than the consequence -- "cursor" is this
-      // repository's word, not a word on a page whose only reader is the
-      // director. What it means to him is that the contacts that failed are
-      // still waiting rather than lost, which is what the first half now says.
+      // repository's word, not a word on a page read by the director and by
+      // the managers the section was later opened to. What it means to either
+      // of them is that the contacts that failed are still waiting rather
+      // than lost, which is what the first half now says.
       //
       // Why the first half is true, and why the Sync now action interpolates
       // this same const rather than keeping its own copy: see
@@ -435,10 +436,12 @@ export function describeRun(
       //
       // The second half is the same offer the killed-run branch above makes,
       // and for the same reason: the count is all this record carries, so
-      // "fix the cause" on its own is advice he cannot act on. The per-contact
-      // message is in the service log, but only the nightly run prints it
-      // there, so this does not promise he will find it -- it names the person
-      // who can.
+      // "fix the cause" on its own is advice no reader can act on. The
+      // per-contact message is in the service log, but only the nightly run
+      // prints it there, so this does not promise anybody will find it -- it
+      // names the person who can. Kept when managers gained the page: a
+      // manager has no readier way to the developer than being told to go to
+      // them, and one is a nav row below this (PathQuote Support).
       detail: FAILED_CONTACTS_DETAIL,
       trigger,
     };

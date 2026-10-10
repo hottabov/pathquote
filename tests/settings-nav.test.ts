@@ -18,14 +18,16 @@ describe("visibleSettingsNavItems", () => {
   });
 
   it("omits admin-only sections for a MANAGER, but keeps the open ones", () => {
-    // Preferences moved into the admin-only set (its values are business-wide
-    // defaults a manager cannot change), leaving just Account and Support.
+    // Three open sections, and the middle one is the recent change: ACT! sync
+    // reports on a job and offers one harmless button, where Preferences went
+    // the other way into the admin set (its values are business-wide defaults
+    // a manager cannot change). See `adminOnly` in src/lib/settings-nav.ts.
     const items = visibleSettingsNavItems("MANAGER");
-    expect(items.map((i) => i.label)).toEqual(["Account", "PathQuote Support"]);
+    expect(items.map((i) => i.label)).toEqual(["Account", "ACT! sync", "PathQuote Support"]);
   });
 
   it("treats a missing role the same as a non-admin", () => {
-    const expected = ["Account", "PathQuote Support"];
+    const expected = ["Account", "ACT! sync", "PathQuote Support"];
     expect(visibleSettingsNavItems(null).map((i) => i.label)).toEqual(expected);
     expect(visibleSettingsNavItems(undefined).map((i) => i.label)).toEqual(expected);
   });
@@ -58,13 +60,27 @@ describe("activeSettingsNavHref", () => {
     }
   });
 
-  it("gates ACT! sync behind admin rights -- it can trigger a write from ACT!", () => {
+  it("does NOT gate ACT! sync behind admin rights -- it is operational status, not settings", () => {
+    // It was adminOnly until managers were given it. The flag is asserted
+    // directly as well as through the filter so flipping it back fails here
+    // rather than only in the test below.
     const item = SETTINGS_NAV_ITEMS.find((i) => i.href === "/settings/act-sync");
     expect(item).toBeDefined();
     expect(item!.label).toBe("ACT! sync");
-    expect(item!.adminOnly).toBe(true);
-    expect(visibleSettingsNavItems("MANAGER").map((i) => i.href)).not.toContain("/settings/act-sync");
+    expect(item!.adminOnly).toBe(false);
     expect(visibleSettingsNavItems("ADMIN").map((i) => i.href)).toContain("/settings/act-sync");
+  });
+
+  it("shows ACT! sync to a plain MANAGER -- the decision this section was opened for", () => {
+    // The one test holding the decision itself: a manager who can see that an
+    // ACT! edit of theirs has not reached PathQuote reaches this page, and the
+    // Sync now button on it, without having to ask the developer. A
+    // REGIONAL_MANAGER is a MANAGER plus a wider row scope (isRegionalManagerRole,
+    // src/lib/roles.ts) and gets it for the same reason; an unrecognised role
+    // is covered by the non-admin expectations above.
+    for (const role of ["MANAGER", "REGIONAL_MANAGER"]) {
+      expect(visibleSettingsNavItems(role).map((i) => i.href)).toContain("/settings/act-sync");
+    }
   });
 
   it("puts ACT! sync straight after Import / Export", () => {

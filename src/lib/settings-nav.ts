@@ -23,11 +23,17 @@ export type SettingsNavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
-  /** Account and PathQuote Support are open to every signed-in user; every
-   * other section is ADMIN-or-DEVELOPER only (see isAdminRole). Preferences
-   * moved here from the open set: its values are business-wide defaults a
-   * manager cannot change, and showing them read-only advertised settings
-   * that are none of their concern. */
+  /** Account, PathQuote Support and ACT! sync are open to every signed-in
+   * user; every other section is ADMIN-or-DEVELOPER only (see isAdminRole).
+   *
+   * Preferences went the other way -- out of the open set and into the admin
+   * one -- and the contrast with ACT! sync is what the rule actually is, so
+   * both are worth having written down. Preferences holds business-wide
+   * defaults a manager cannot change, so showing them read-only advertised
+   * settings that were none of their concern. ACT! sync holds no settings at
+   * all: it reports the state of a job and offers one button, and both are
+   * things a manager acts on. See the ACT! sync entry below for why the
+   * button is open to them too, not just the reading of it. */
   adminOnly: boolean;
   /** Extra path prefixes (besides `href`) that should also mark this item
    * active. Catalogue bundles independent list pages — option conflict
@@ -65,13 +71,24 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
   // The nightly ACT! pull: when it last ran, what it did, and a button for
   // when somebody cannot wait for tonight. Its own section rather than a tab
   // on another one because it is operational, not a list to curate — there is
-  // nothing here to edit, add or retire. Every other admin section hands you
-  // rows to look after; this one reports on a job that runs on its own at
-  // 03:00 and gives you one way to interrupt it.
-  { href: "/settings/act-sync", label: "ACT! sync", icon: RefreshCw, adminOnly: true },
-  // Open to every signed-in user, same as Account/Preferences — a MANAGER
-  // is exactly who most needs to reach the developer about a pricing or
-  // technical problem (see src/app/(app)/settings/support/page.tsx).
+  // nothing here to edit, add or retire. The sections around it hand you rows
+  // to look after; this one reports on a job that runs on its own at 03:00
+  // and gives you one way to interrupt it.
+  //
+  // Open to every signed-in user, and that includes pressing Sync now rather
+  // than only reading the page. Pressing it is harmless: the sync is
+  // read-only against ACT!, what it writes into PathQuote fills blanks and
+  // never overwrites (`fillOnlyEmpty`, src/lib/act/merge.ts), the session
+  // advisory lock means a second press cannot start a second run, and a
+  // delta is seconds. The value is exactly what the restriction was costing
+  // -- a manager who can see that an edit they made in ACT! has not reached
+  // PathQuote can fix it themselves instead of waiting for the developer to
+  // be asked.
+  { href: "/settings/act-sync", label: "ACT! sync", icon: RefreshCw, adminOnly: false },
+  // Open to every signed-in user, same as Account and ACT! sync above (it
+  // said "Account/Preferences" until Preferences moved into the admin set) —
+  // a MANAGER is exactly who most needs to reach the developer about a
+  // pricing or technical problem (see src/app/(app)/settings/support/page.tsx).
   { href: "/settings/support", label: "PathQuote Support", icon: LifeBuoy, adminOnly: false },
 ];
 
