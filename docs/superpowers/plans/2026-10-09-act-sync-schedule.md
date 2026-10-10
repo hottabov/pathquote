@@ -714,15 +714,18 @@ Start the service and press **Sync now** in the browser while it is running. The
 
 - [ ] **Step 4a: Measure the one number that is still a guess**
 
-Task 5 worked out two figures for the button, from different arithmetic: **~43 minutes** when nothing retries (88 pages × 200 contacts, each answering in 29s just inside the timeout) and **~2h16m** as the ceiling when everything does (3 attempts × 30s + 1s + 2s = 93s per page). Neither is bounded by the application: `next.config.ts` declares no `serverActions` block, `maxDuration` means nothing behind a proxy, and Node's response timeout is off. The only ceiling is nginx's `proxy_read_timeout` — **assumed to be the 60s default, read from nginx's documentation rather than from this server**, because the live site is a WordOps proxy site whose generated template is not in this repo.
+Task 5 worked out two figures for the button, from different arithmetic: **~43 minutes** when nothing retries (88 pages × 200 contacts, each answering in 29s just inside the timeout) and **~2h16m** as the ceiling when everything does (3 attempts × 30s + 1s + 2s = 93s per page). Neither is bounded by the application: `next.config.ts` declares no `serverActions` block, `maxDuration` means nothing behind a proxy, and Node's response timeout is off. The only ceiling is nginx's `proxy_read_timeout`, which until this step was assumed to be the 60s default — read from nginx's documentation rather than from this server, because the live site is a WordOps proxy site whose generated template is not in this repo.
 
 Read the real value:
 
 ```bash
-nginx -T 2>/dev/null | grep -n 'proxy_read_timeout\|proxy_send_timeout'
+nginx -T 2>&1 | wc -l
+nginx -T 2>&1 | grep -c 'proxy_read_timeout'
 ```
 
-What happens when it trips is already understood and is acceptable: nginx answers 504, the page reports a failure, **and the sync carries on** — nothing cancels a server action when the client goes away, so it keeps the lock, finishes, and writes its record. A reload says "Running now", a later one says what changed. Record the actual number in the runbook so the next person does not have to rediscover it.
+**Measured 2026-10-10: `21450` and `0`.** The directive is set nowhere in the live configuration, so nginx's compiled-in default of **60 seconds** applies — the same number the code already assumed, now a fact about this server. Recorded in runbook §4c, with both commands kept there as a re-check for after a WordOps update rewrites the generated template.
+
+What happens when it trips is already understood and is acceptable: nginx answers 504, the page reports a failure, **and the sync carries on** — nothing cancels a server action when the client goes away, so it keeps the lock, finishes, and writes its record. A reload says "Running now", a later one says what changed.
 
 - [ ] **Step 5: Confirm the next run is scheduled**
 

@@ -259,13 +259,13 @@ function summaryFor(
  *
  * A null cursor is the whole reason this is a decision rather than a button.
  * With nothing stored, "the changes since last time" means every contact in
- * ACT! -- ~17,500 of them, 88 pages -- which is ten minutes at best, and longer
- * than any proxy read timeout anybody sets by hand (see the HOW LONG THIS
- * BLOCKS note on runActSyncNow: nginx's documented default is 60 seconds, and
- * what the live WordOps template sets has not been read off the VPS). The click
- * would most likely leave a gateway error on screen, a sync still running
- * behind it, and nobody able to tell which. So that state gets an explanation
- * and no button at all.
+ * ACT! -- ~17,500 of them, 88 pages -- which is ten minutes at best, and ten
+ * times the 60 seconds nginx waits on the VPS (measured 2026-10-10: the
+ * directive is set nowhere in 21,450 lines of live configuration, so nginx's
+ * compiled-in default applies -- see the HOW LONG THIS BLOCKS note on
+ * runActSyncNow). The click would leave a gateway error on screen, a sync still
+ * running behind it, and nobody able to tell which. So that state gets an
+ * explanation and no button at all.
  *
  * A sync already running does NOT withhold the button: pressing it loses the
  * advisory-lock race and comes back with the lock's own sentence, which is a

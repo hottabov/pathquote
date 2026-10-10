@@ -680,16 +680,26 @@ Nothing in the application bounds either of them: `next.config.ts` declares no
 `serverActions` limit, `maxDuration` means nothing to a long-running
 `node server.js` behind a reverse proxy, and Node's own response timeout is off.
 
-What bounds it is nginx's `proxy_read_timeout`. **That number has not been
-measured on this server yet.** nginx's documented default is 60 seconds and
-that is what the code's comments assume; the proxy block in §3 sets no timeouts
-at all, and the live site is a WordOps proxy site (§6) whose generated template
-is not in this repo. Read it off the box and replace this paragraph with the
-real number:
+What bounds it is nginx's `proxy_read_timeout`, and on this server that is
+**60 seconds**. Measured 2026-10-10: the directive is set nowhere in the live
+configuration — 21,450 lines of it, with zero occurrences — so nginx's own
+compiled-in default of 60s applies. Neither the proxy block in §3 nor the
+WordOps template (§6) that actually serves the site sets a timeout, which is
+what the code's comments had assumed; the number is now a fact about this box
+rather than a value read out of nginx's documentation.
+
+Re-check it after a WordOps update, which rewrites that generated template:
 
 ```bash
-nginx -T 2>/dev/null | grep -n 'proxy_read_timeout\|proxy_send_timeout'
+nginx -T 2>&1 | wc -l                           # 21450 on 2026-10-10
+nginx -T 2>&1 | grep -c 'proxy_read_timeout'    # 0: the compiled-in 60s applies
 ```
+
+60 seconds is comfortable for what the button actually does. A night's delta is
+seconds. Both larger figures above need a large backlog to read, and a backlog
+cannot build up now that the timer runs every night — so the 504 below is a
+real case rather than the expected one. It is not unreachable: a long ACT!
+outage followed by a click still gets there, which is why the page handles it.
 
 When it trips, nginx answers 504, the page reports that no answer came back —
 and **the sync carries on**. Nothing cancels a server action because the client
