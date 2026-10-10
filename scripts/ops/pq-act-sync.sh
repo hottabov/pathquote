@@ -56,6 +56,14 @@ echo "$(date -Is) act:sync start: image $TAG"
 # try for a TTY and fill the log with progress redraws. No check that the image
 # exists first -- compose pulls it if it is missing, and its own error is a
 # better one than anything written here, carried into the alert email as-is.
-docker compose run --rm -T tools npm run act:sync -- --trigger=schedule
+#
+# npm's update notifier is turned off because it is not free here. It printed
+# five lines about npm 12 at the end of the first production run, and the
+# failure email tails only the last forty lines of this log -- so on the night
+# that matters, an eighth of what the reader sees would be an advert. The
+# container's npm is whatever the image pins; a notice in a log nobody acts on
+# cannot change that.
+docker compose run --rm -T -e NPM_CONFIG_UPDATE_NOTIFIER=false \
+  tools npm run act:sync -- --trigger=schedule
 
 echo "$(date -Is) act:sync ok: image $TAG"
