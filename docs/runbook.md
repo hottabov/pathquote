@@ -637,6 +637,77 @@ docker compose exec -T postgres psql -U pathquote -d pathquote -c \
 The only other lever is `tcp_keepalives_idle` in `postgresql.conf`, which
 applies to every session on that server rather than just this one.
 
+### Proving the lock holds off the button
+
+Done on production 2026-10-10, and holding the lock from a second session is
+the only way that works. Starting the service and racing it with the button by
+hand does not: a night's delta is seconds, so the run is over before anyone
+reaches the browser. That was tried first and proved nothing.
+
+Take the lock in an interactive psql, which is the reliable form:
+
+```bash
+cd /opt/pathquote
+docker compose exec postgres psql -U pathquote -d pathquote
+```
+
+Then, in psql — press **Sync now** in the browser between the two statements:
+
+```sql
+SELECT pg_try_advisory_lock(8472001);   -- t: the lock is yours
+SELECT pg_advisory_unlock(8472001);     -- t: released
+\q
+```
+
+With the lock held, the button answered in amber with the lock's own sentence —
+"A sync is already running. Wait for it to finish and try again." — under the
+hint that promised it would ("A sync is already running, so this will not start
+a second one — it will come back and tell you to wait. Reload the page instead
+to see how the one that is going is getting on."). Not "Sync finished".
+
+**The page itself looks entirely normal while the lock is held this way, and
+that is the design, not a bug.** It reports the last run that finished: once a
+record has a finish time the page describes that outcome and stops caring
+whether the lock is held. Only the button refuses.
+
+What the page reports and what psql shows are the same question asked twice.
+This is `isSyncRunning`'s predicate (`src/lib/act/sync.ts`), so running it from
+a second terminal while the lock is held is a check on the page as much as on
+the lock:
+
+```bash
+cd /opt/pathquote
+docker compose exec -T postgres psql -U pathquote -d pathquote \
+  -c "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype='advisory' AND database=(SELECT oid FROM pg_database WHERE datname=current_database()) AND ((classid::bigint<<32)|objid::bigint)=8472001 AND objsubid=1 AND granted) AS running;"
+```
+
+`t` while held, `f` after the unlock. That is the first time this predicate has
+been confirmed against production's own Postgres — 16.15; until then it had
+only been measured in a sandbox, which the comment at `isSyncRunning` records.
+
+A lock taken by hand in an interactive session is released by
+`pg_advisory_unlock` or by `\q`. Kill the terminal without either and it is
+held until the connection dies, which is the wedged lock above, keepalives and
+all.
+
+**Do not background a one-liner to hold it for you.** This form self-releases
+when `pg_sleep` ends, which is what makes it attractive:
+
+```bash
+cd /opt/pathquote
+docker compose exec -T postgres psql -U pathquote -d pathquote \
+  -c "SELECT pg_try_advisory_lock(8472001); SELECT pg_sleep(180);" &
+```
+
+The lock was taken and released on time, but the shell printed `[1]+ Stopped`
+and a later `wait` warned `job 1[...] stopped`: a backgrounded
+`docker compose exec` that touches the controlling terminal gets SIGTTIN and
+the shell suspends it, `-T` or no `-T`. The psql inside the container keeps
+running, so the test is still valid — and the operator cannot tell that from
+the outside, which is the whole problem with it. Appending `</dev/null` before
+the `&` should stop the suspension; that has not been tried on this box, so it
+is a convenience to test, not the recipe to follow.
+
 ### The first import has to be run on the server
 
 With no stored position in ACT!'s edit history, "the changes since last time"

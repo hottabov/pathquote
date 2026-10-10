@@ -712,6 +712,8 @@ Expected: a delta run, `failed 0`, and the Settings page showing it within secon
 
 Start the service and press **Sync now** in the browser while it is running. The page must say a sync is already running, not start a second one. This is the one behaviour here that cannot be unit-tested, and it is the one that corrupts the cursor if it is wrong.
 
+**Racing the service this way does not work** — tried 2026-10-10, and a night's delta finishes in seconds, so the run is over before anyone reaches the browser. Hold the lock from a second psql session instead and press the button while it is held: runbook §4c, "Proving the lock holds off the button", which carries the recipe that did work and the trap in the backgrounded one-liner that looks like it should.
+
 - [ ] **Step 4a: Measure the one number that is still a guess**
 
 Task 5 worked out two figures for the button, from different arithmetic: **~43 minutes** when nothing retries (88 pages × 200 contacts, each answering in 29s just inside the timeout) and **~2h16m** as the ceiling when everything does (3 attempts × 30s + 1s + 2s = 93s per page). Neither is bounded by the application: `next.config.ts` declares no `serverActions` block, `maxDuration` means nothing behind a proxy, and Node's response timeout is off. The only ceiling is nginx's `proxy_read_timeout`, which until this step was assumed to be the 60s default — read from nginx's documentation rather than from this server, because the live site is a WordOps proxy site whose generated template is not in this repo.

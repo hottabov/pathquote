@@ -295,6 +295,12 @@ async function recordQuietly(run: ActSyncRun, write: "ending" | "failure"): Prom
  * it, which is the whole design.) Expect one row: classid 0, objid 8472001,
  * objsubid 1, granted true.
  *
+ * Confirmed against production's own cluster on 2026-10-10, PostgreSQL 16.15,
+ * which until then had never been asked: `t` while a second session held
+ * `pg_try_advisory_lock(8472001)`, `f` after it unlocked. docs/runbook.md §4c,
+ * "Proving the lock holds off the button", runs this predicate as the check on
+ * what the Settings page reports, so the two cannot drift apart unnoticed.
+ *
  * Read-only on purpose. The alternative -- take the lock on a throwaway
  * connection and see whether you got it -- cannot disagree with the writer
  * about the encoding, but a status check that TAKES the lock is a status check
