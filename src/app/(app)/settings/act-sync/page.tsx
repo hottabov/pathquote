@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { AlertTriangle, CalendarClock, Play, RefreshCw, RotateCw } from "lucide-react";
-import { requireAdminPage } from "@/lib/authz";
+import { requireSession } from "@/lib/authz";
 import { getActSyncStatus } from "@/lib/queries/act-sync";
 import { runActSyncNow } from "@/lib/actions/act-sync";
 import { describeActSyncStatus, type ActSyncView } from "@/lib/act/sync-view";
@@ -33,9 +33,17 @@ const SUMMARY_TONE: Record<ActSyncView["summary"]["tone"], string> = {
 };
 
 /**
- * Settings -> ACT! sync. Everything the director needs in order to trust the
- * nightly contact pull, in the order he asks about it: when did it last run,
+ * Settings -> ACT! sync. Everything a reader needs in order to trust the
+ * nightly contact pull, in the order they ask about it: when did it last run,
  * what did it do, is anything wrong, and can I run it now.
+ *
+ * Written for the director and now read by managers as well, which is the one
+ * thing to know before rewording anything here: the questions are the same
+ * either way, but "ask your developer" is advice a manager follows through
+ * PathQuote Support -- the next row down this same nav -- rather than by
+ * picking up the phone. Every sentence was re-read against both audiences and
+ * kept; the reasoning is recorded at the top of src/lib/act/sync-view.ts,
+ * which owns the words.
  *
  * No sentence about the sync is written in this file and no condition here
  * picks one. `describeActSyncStatus` (src/lib/act/sync-view.ts) turns one read
@@ -46,11 +54,16 @@ const SUMMARY_TONE: Record<ActSyncView["summary"]["tone"], string> = {
  * record, which is the state this release itself lands in. What is left here is
  * layout: which card a part goes in, and how a tone looks.
  *
- * `requireAdminPage` rather than a plain session check: a manager must not be
- * able to tell this route from one that does not exist (see its doc comment).
+ * `requireSession`, not `requireAdminPage`: this section is open to every
+ * signed-in user, so there is no role left to check -- see the `adminOnly`
+ * comment in src/lib/settings-nav.ts for why a manager gets this one and not
+ * the admin sections around it. The guard stays because it is the only thing
+ * refusing an unauthenticated request: the nav never offers this href to
+ * nobody, but a href is not a lock, and the proxy in front of the app is not
+ * the app's own answer (see requireSession).
  */
 export default async function ActSyncPage() {
-  await requireAdminPage();
+  await requireSession();
 
   const status = await getActSyncStatus();
   const view = describeActSyncStatus(status, new Date());

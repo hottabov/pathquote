@@ -1,6 +1,6 @@
 "use server";
 
-import { requireAdmin } from "@/lib/authz";
+import { requireSession } from "@/lib/authz";
 import { actClientFromEnv } from "@/lib/act/client";
 import { FAILED_CONTACTS_DETAIL, messageOf } from "@/lib/act/run-record";
 import { SyncAlreadyRunningError, syncContacts } from "@/lib/act/sync";
@@ -11,8 +11,20 @@ import type { ActionResultWithWarning } from "./_shared";
 export type { ActionResultWithWarning };
 
 /**
- * Pull whatever has changed in ACT! since the stored cursor, now, because an
- * admin pressed the button rather than because the nightly timer fired.
+ * Pull whatever has changed in ACT! since the stored cursor, now, because
+ * somebody pressed the button rather than because the nightly timer fired.
+ *
+ * `requireSession`, not `requireAdmin`: any signed-in user may press this, a
+ * MANAGER included, and the point of that is the manager who can see their
+ * own ACT! edit has not arrived and would otherwise have to ask for it. What
+ * makes it safe to hand over is that there is nothing here to get wrong --
+ * the sync only reads ACT!, its writes into PathQuote fill blanks and never
+ * overwrite (`fillOnlyEmpty`, src/lib/act/merge.ts), the advisory lock below
+ * means a second press cannot start a second run, and no option is taken from
+ * the request (see the `trigger` comment inside). The guard is not deleted,
+ * because there is still a caller to refuse: an unauthenticated POST to this
+ * action's id must not reach ACT!, and this is the app's own answer to it
+ * rather than the proxy's (see requireSession).
  *
  * `warning` rather than `error` for the two outcomes that are not this
  * caller's failure to report: a run that came back having dropped some
@@ -22,7 +34,7 @@ export type { ActionResultWithWarning };
  * HOW LONG THIS BLOCKS, which is the thing worth knowing before wiring a
  * button to it. A server action holds the request until it returns, and
  * Next.js dispatches a client's actions one at a time, so while this runs the
- * admin's other buttons queue behind it.
+ * presser's other buttons queue behind it.
  *
  * The ordinary case is seconds: a night's worth of edits is a page or two of
  * 200 from ACT! (PAGE_SIZE, src/lib/act/client.ts) and a handful of rows
@@ -85,7 +97,7 @@ export type { ActionResultWithWarning };
  * `proxy_read_timeout` on the VPS is a one-line change.
  */
 export async function runActSyncNow(): Promise<ActionResultWithWarning> {
-  await requireAdmin();
+  await requireSession();
 
   try {
     // Credentials come from the container's environment, the same way
@@ -105,7 +117,7 @@ export async function runActSyncNow(): Promise<ActionResultWithWarning> {
       // The run came back, so the work it got through is saved -- a caveat on a
       // save that succeeded, which is `warning` in its first sense. A plain `{}`
       // here fires the panel's success toast over a run that dropped contacts,
-      // and the admin walks away from the screen believing it all went in.
+      // and whoever pressed it walks away believing it all went in.
       //
       // Everything after the count IS describeRun's failure detail -- the same
       // const, not a copy of its words -- because the `finally` below
@@ -121,9 +133,11 @@ export async function runActSyncNow(): Promise<ActionResultWithWarning> {
     return {};
   } catch (error) {
     if (error instanceof SyncAlreadyRunningError) {
-      // Not a failure: the nightly timer, or another admin, is doing the work
-      // right now. The CLI reaches the same conclusion about the same error
-      // (see the catch at the bottom of scripts/act-sync.ts -- it exits 0 and
+      // Not a failure: the nightly timer, or somebody else at the same
+      // button, is doing the work right now -- and with the section open to
+      // every signed-in user, "somebody else" is now a likelier reason than
+      // it was. The CLI reaches the same conclusion about the same error (see
+      // the catch at the bottom of scripts/act-sync.ts -- it exits 0 and
       // explains itself), and this is the other half of that decision.
       //
       // Caught by type rather than by matching the message, for the reason the
@@ -136,14 +150,14 @@ export async function runActSyncNow(): Promise<ActionResultWithWarning> {
       // Returned as `warning`, not `error`, so the page can say it without the
       // red treatment reserved for something that needs fixing. This click
       // saved nothing, which is the second of the two meanings `warning`
-      // carries -- not this caller's failure, and nothing for the admin to do;
+      // carries -- not this caller's failure, and nothing for the reader to do;
       // see the doc comment on ActionResultWithWarning in ./_shared.ts, which
       // names this function as the example.
       return { warning: error.message };
     }
 
     // A real failure -- a 401 from ACT!, the ACT_* variables missing from the
-    // container, the database refusing a write -- reaches the admin as its own
+    // container, the database refusing a write -- reaches the reader as its own
     // message rather than being flattened into "something went wrong".
     // Returned rather than rethrown because that is the only way the message
     // itself arrives: a server action that throws reaches the browser as an
@@ -169,9 +183,10 @@ export async function runActSyncNow(): Promise<ActionResultWithWarning> {
     // Every path that reached the sync, including both failures. A thrown run
     // and a lost race both change what the page should say -- the first wrote a
     // failure record, the second means another run is live -- so the page is
-    // stale after all three outcomes, not just the good one. (requireAdmin()
-    // throws above the try, so a non-admin never gets here; nothing changed for
-    // them to see.)
+    // stale after all three outcomes, not just the good one. (requireSession()
+    // redirects above the try, so an unauthenticated caller never gets here;
+    // nothing changed for them to see, and there is no page of ours for them
+    // to be standing on.)
     revalidateActSync();
   }
 }
