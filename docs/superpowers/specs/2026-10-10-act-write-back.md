@@ -1,6 +1,6 @@
 # Phase 3: writing back to ACT!
 
-**Status:** design. Three decisions below need Vadym's answer, and one prerequisite blocks everything that attributes a record to a person.
+**Status:** design, decisions settled. One prerequisite blocks everything that attributes a record to a person (§9), and one fact must be checked on the VPS before building (the "Acc Mgr" picklist, §10 D2).
 
 **Why now:** phases 1 and 2 made ACT! → PathQuote work and put it on a nightly timer. Nothing goes the other way, so a quote sent from PathQuote leaves no trace in the CRM the business actually runs on, and a correction a manager makes while quoting never reaches ACT!.
 
@@ -42,7 +42,7 @@ The per-region stage map, also already fixed (reference §8):
 
 - **Pathfinder Sales Cycle** `2380e83d-cef4-4b6d-ad15-dc9a558431ab` — Initial Communication 5% · Needs Assessment 10% · Presentation 20% · **Proposal 40%** · Negotiation 65% · Verbal Commitment 90% · Sales Fulfillment 100%
 - **Pathfinder US Sales Process** `26ab3a1e-ff20-406d-a0b4-3b351955da45` — Assess 20% · **Engage 40%** · Build Develop 60% · Gain Commitment 80% · Execute Fulfilment 100%
-- A sent quote maps to `Proposal` (AU) or `Engage` (US).
+- A sent quote maps to `Proposal` (AU) or `Engage` (US). **UK uses the Pathfinder Sales Cycle**, decided 2026-10-12 — see §10 D1.
 
 ---
 
@@ -235,27 +235,63 @@ Without the mapping, every record PathQuote creates is owned by the `Marketing` 
 
 ---
 
-## 10. Decisions needed
+## 10. Decisions taken 2026-10-12
 
-### D1. The UK region has no ACT! sales process
+### D1. UK uses the Pathfinder Sales Cycle. Unifying the processes is a separate project.
 
-`REGIONS` ships **three** regions — AU, US and **UK** (`prisma/seed-lib.ts:97-142`). The stage map covers two. A UK quote has nowhere to go.
+An ACT! *sales process* is a named, ordered list of stages, each carrying a default close probability. It lives on the Opportunity — you choose one at creation, the opportunity then sits at one stage of it, and ACT! multiplies value by probability for weighted pipeline reporting. "UK has no process" meant there is no stage list for a British deal to sit in, not that UK has no manager.
 
-Options: skip Opportunity write-back for UK quotes and write only the History record; create a UK process in ACT! (an administrator task, not ours); or route UK onto the AU process.
+The two live processes are **not the same logic today**: seven stages against five, different names, different probabilities. So "identical for everyone" requires either picking one or creating a third and migrating open opportunities — a change inside ACT!, made by a person, touching live deals. PathQuote cannot impose it.
 
-**Recommendation: History only, no Opportunity, until a UK process exists** — and say so on the quote, so it is visible rather than silently absent.
+And it carries a risk worth naming: if PathQuote writes every new opportunity into the AU process while the US team keeps creating theirs in the US process, **the US pipeline splits into two populations** and the director's report gets worse because of the integration.
 
-### D2. What happens when the quote's author is not mapped to an ACT! user
+So, two independent actions:
 
-Given §9 will not be complete for everyone at once: block the write and show it as blocked, or write the record owned by `Marketing`?
+1. **Now:** write per region as reference §8 already fixes, with **UK → Pathfinder Sales Cycle** (the same ladder as AU; both are "rest of world" relative to the US). No disruption, and UK stops being a hole.
+2. **Separately, when wanted:** unify the processes in ACT! as a deliberate project — choose one ladder, migrate the open opportunities — after which PathQuote simply follows it. That is work in ACT!, not in this codebase.
 
-**Recommendation: block.** An Opportunity owned by Marketing is worse than no Opportunity, because it pollutes the pipeline the feature exists to produce, and it is invisible as an error. A blocked outbox row with a reason is visible and fixable in one click once the user is mapped.
+Vadym's instinct that one process should serve everyone is right as an end state. The order is what matters: unify in ACT! first, then let the integration follow, rather than letting the integration be the thing that fragments the pipeline.
 
-### D3. Does `ACCEPTED` close the Opportunity?
+### D2. The record is created by the service account; the real person goes in "Acc Mgr".
 
-A quote reaching `ACCEPTED` could move the stage to the 100% stage — Sales Fulfillment (AU) or Execute Fulfilment (US) — or leave closing as a human step in ACT!.
+This replaces the earlier recommendation to block the write, and it is a better answer: attribution is not lost. The record's creator is the authenticating account, and the human — including a distributor who has no ACT! login and never will — is named in a field people actually read.
 
-**Recommendation: move it.** `acceptQuote` already requires FINAL + SIGNED + an author signature, so it is a real commercial event, not a click. But this is the sales team's process rather than mine to decide, and it is the one of the three most worth overruling me on.
+So, when `User.actUserId` is mapped, set `recordManagerID` from it. When it is not — distributors who resell the machines, use PathQuote, and have no ACT! access — the record is owned by the service account and the **PathQuote user's name is written into "Acc Mgr"**.
+
+Two consequences.
+
+**"Acc Mgr" is `customFields/rep`, and it has a picklist named "Rep"** (reference §6, line 158). In ACT! a character field with a picklist is not necessarily restricted to it — unless "Limit to list" is set on the field, the list is a suggestion. Whether that flag is set here is **not** in the documentation. Verify with `GET /api/metadata/contact/fields` on the VPS **before building**: if the field does limit to its list, distributor names must either be added to the picklist or written somewhere else.
+
+**This field is currently read inbound only.** `Contact.actAccountMgr` is written by the sync from `customFields/rep` (`map.ts:132`) and feeds the visibility rule. Writing it outbound closes a loop: PathQuote writes a name, the next sync reads it back, and it feeds visibility. That is coherent — the field means the same thing in both directions — but it must be deliberate, and echo suppression (§7b) is mandatory, not optional.
+
+The service account is not hardcoded: it is already `ACT_USER` in `.env`, so replacing `Marketing` later is a configuration change. Nothing in code should carry its uuid.
+
+Good news for §9: there are 20 ACT! users and **email is the join key** to PathQuote users (reference §9), so most of the mapping can be matched automatically and only the remainder needs a person.
+
+### D3. `ACCEPTED` closes the Opportunity. Agreed.
+
+A quote reaching `ACCEPTED` moves the stage to the 100% stage — Sales Fulfillment (AU/UK) or Execute Fulfilment (US). `acceptQuote` already requires FINAL + SIGNED + an author signature, so it is a real commercial event rather than a click.
+
+---
+
+## 10a. When each write happens
+
+**Not when the record is saved.** Posting a contact to ACT! on "Save" would put a CRM outage in the path of saving a form, and would fill ACT! with half-typed clients a manager abandoned mid-quote.
+
+**The trigger is the first send of a quote** — the status transition into `SENT`, hooked at both call sites (§3b). That is the moment a client becomes commercially real. One outbox row per send, with ordered steps inside it:
+
+1. ensure the contact exists in ACT! — create it if not
+2. ensure the company exists — where `actCompanyId` is known, or once Stage 3 can tell
+3. create or update the Opportunity
+4. write the History 62 record
+
+**When the write actually goes out:** a best-effort attempt **immediately after the send**, off the request path via `after()` — the mechanism `signing-client.ts:418` already uses for completion emails. A manager who sends a quote and switches to ACT! sees it within seconds. If ACT! does not answer, the row stays queued and the **nightly drain at 03:00** takes it, which is also when replication to twelve laptops is least disruptive.
+
+So the ordinary case is seconds, not seventeen hours, while a failure is never lost and never blocks a sale.
+
+**Plus an explicit "send this client to ACT!" action** on a client card, for records worth having in ACT! before any quote exists. This is the distributor case: a distributor who adds fifty contacts and quotes three gets three automatically, and can push the rest deliberately. Writing all fifty automatically is a one-line condition if that is preferred, but then ACT! also receives everything that never becomes a deal.
+
+**One thing that must be visible:** a quote sent at 11:00 whose ACT! write failed is not in ACT! until 03:00. The quote must say so — "waiting to reach ACT!" — rather than leaving a manager to wonder.
 
 ---
 
