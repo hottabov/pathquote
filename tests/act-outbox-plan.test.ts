@@ -744,6 +744,19 @@ describe("nextStep: a create in flight", () => {
     ).toEqual({ kind: "write-product-line", line: "create" });
   });
 
+  it("plans the update after an adoption, which stores the found id alone: nothing it was made with is assumed", () => {
+    // The opportunity found by name: Document.actOpportunityId stored, not
+    // the row's opportunityActId, so update-opportunity decides on a fresh read.
+    const opportunityAdopted = quoteState({ actOpportunityId: ACT_OPPORTUNITY });
+    expect(nextStep(nothingDone, noHistory, opportunityAdopted)).toEqual({ kind: "update-opportunity" });
+    // The line found by item number: its id stored without a revision, so it
+    // is PATCHed to this revision -- and inside a win, before the status.
+    const lineAdopted = quoteState({ actOpportunityId: ACT_OPPORTUNITY, actProductLineId: ACT_PRODUCT_LINE });
+    expect(nextStep(opportunityStepDone, noHistory, lineAdopted)).toEqual({ kind: "write-product-line", line: "update" });
+    const accepted = { ...lineAdopted, signingStatus: "SIGNED", acceptedAt: ACCEPTED_AT, actContactPromotedForId: ACT_CONTACT };
+    expect(nextStep(nothingDone, journaled, accepted)).toEqual({ kind: "win-opportunity", line: "update" });
+  });
+
   it("blocks on a value it does not know, naming it", () => {
     const step = nextStep(inFlight("company"), noHistory, quoteState());
     expect(reasonOf(step)).toContain('"company"');

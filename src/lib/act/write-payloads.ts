@@ -740,10 +740,13 @@ export function summaryProductBody(quote: QuoteForAct): SummaryProductBody {
  * - `create`: nothing matches, so nothing was made. Create it.
  * - `adopt`: exactly one record matches. It is the one an earlier attempt
  *   created and never stored -- the answer lost, or the process gone between
- *   ACT!'s answer and the database write. Store `id` as if the create had
- *   answered with it, and carry on from there (for the line, PATCH it to this
- *   revision; for the opportunity, the row's update-opportunity is a fresh
- *   decision on it).
+ *   ACT!'s answer and the database write. The drain stores `id` ALONE --
+ *   Document.actOpportunityId, or Document.actProductLineId -- and asks the
+ *   planner again, which then plans the update (update-opportunity, or the
+ *   line's `update`): the record was made from an earlier attempt's body,
+ *   perhaps for an older revision, and is brought up to date by the same
+ *   decision on a fresh read as any other. Nothing it was made with is
+ *   assumed.
  * - `block`: more than one matches. PathQuote never deletes in ACT!, and has
  *   no way to tell which is its own, so a person has to; `count` is how many,
  *   for the blocked reason (src/lib/act/outbox-plan.ts).

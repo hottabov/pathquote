@@ -38,16 +38,20 @@
 //                                that was always in ACT!). On the contact, so
 //                                a contact created for one quote is already
 //                                "in ACT!" for every later one.
-//   Document.actOpportunityId    create-opportunity. The deal's opportunity,
-//                                one per quote, for every later revision.
+//   Document.actOpportunityId    create-opportunity, on creating it or on
+//                                adopting the one its lookup found (then
+//                                alone; see A CREATE IN FLIGHT). The deal's
+//                                opportunity, one per quote, for every later
+//                                revision.
 //   ActOutbox.opportunityActId   create-opportunity and update-opportunity.
 //                                This row's opportunity step is done. An
 //                                update mints no new id, so the row records
 //                                which opportunity it updated; that is what
 //                                stops a resumed row updating it twice.
 //   Document.actProductLineId    write-product-line or win-opportunity, when
-//                                it creates the line. The deal's one product
-//                                line, for every later revision to PATCH.
+//                                it creates the line or adopts the one its
+//                                lookup found. The deal's one product line,
+//                                for every later revision to PATCH.
 //   Document.actProductLineRevision
 //                                write-product-line or win-opportunity, every
 //                                time it writes the line: the
@@ -270,12 +274,12 @@
 // "product-line" (from write-product-line or win-opportunity) or "history".
 // A REQUIREMENT ON THE DRAIN: it sets the marker in a write of its own,
 // committed before the POST leaves, and clears it in the same transaction
-// that stores the new record's id -- or when the POST was refused (a 4xx) or
-// was not sent at all, either of which made nothing. It stays set when the
-// answer was lost (ActUntrackedCreateError with no createdId) and when the
-// drain itself died between ACT!'s answer and the store -- the case no error
-// reports, and the reason the marker exists. What happens next depends on the
-// record:
+// that stores the record's id, created or adopted -- or when the POST was
+// refused (a 4xx) or was not sent at all, either of which made nothing. It
+// stays set when the answer was lost (ActUntrackedCreateError with no
+// createdId) and when the drain itself died between ACT!'s answer and the
+// store -- the case no error reports, and the reason the marker exists. What
+// happens next depends on the record:
 //
 //   contact, history   nextStep blocks, before anything else (`done`
 //                      included): a person must look in ACT! before the row
@@ -291,9 +295,10 @@
 //                      opportunity by its fixed name among the contact's, the
 //                      line by its item number among the opportunity's
 //                      (opportunityLookup, productLineLookup in
-//                      src/lib/act/write-payloads.ts). One match is adopted,
-//                      as if the create had answered with it; none is
-//                      created; more than one blocks, with
+//                      src/lib/act/write-payloads.ts). One match is adopted:
+//                      its id is stored alone, and the next step planned is
+//                      the update, which decides on a fresh read like any
+//                      other; none is created; more than one blocks, with
 //                      duplicateOpportunitiesReason or
 //                      duplicateProductLinesReason, for a person to settle --
 //                      PathQuote never deletes in ACT!. The lookup is what
