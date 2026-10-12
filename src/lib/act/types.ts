@@ -43,6 +43,36 @@ export type ActContact = {
   edited: string;
 };
 
+/**
+ * One Act! user, trimmed to the fields the mapping reads.
+ *
+ * `id` is the uuid, which is the stable half of Record Manager: a contact
+ * carries both `recordManagerID` (this uuid) and `recordManager` (the display
+ * name), and only the uuid can be relied on. It is what User.actUserId holds.
+ *
+ * Everything but `id` is typed nullable because the swagger definition
+ * (act.web.api.models.Users.UserInfo) marks no field required, so any of them
+ * can be absent from the JSON. In the 20 users read on 2026-10-02
+ * (RAW/ACT/meta/users.json) each had a display name, a role and a status, 17
+ * of 20 had an email, and several had no lastLogOnDate.
+ */
+export type ActUser = {
+  id: string;
+  username: string | null;
+  displayName: string | null;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  /** `Active` or `Inactive` in the live data. */
+  status: string | null;
+  /** `Standard`, `Browse` or `Administrator` in the live data. A `Browse`
+   *  licence is read-only in Act!, which may matter to whoever writes records
+   *  as these users; it is reported, never matched on. */
+  role: string | null;
+  /** ISO 8601 with an offset, or null for a user who has never signed in. */
+  lastLogOnDate: string | null;
+};
+
 /** Custom-field keys the sync reads, by their API name. */
 export const ACT_FIELD = {
   /** Displayed as "Industry". A renamed stock user slot. */

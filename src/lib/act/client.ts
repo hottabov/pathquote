@@ -1,4 +1,4 @@
-import type { ActContact } from "@/lib/act/types";
+import type { ActContact, ActUser } from "@/lib/act/types";
 
 // HTTP against the Act! Web API. Every judgement this integration makes lives
 // in the pure modules beside this one; what is left here is transport, and it
@@ -14,7 +14,11 @@ import type { ActContact } from "@/lib/act/types";
 //   - Response envelopes are not consistent. /api/contacts returns
 //     { value: [...], Count: n }; /api/users and the metadata endpoints return
 //     a bare array. Reading .value off a bare array yields nothing and looks
-//     exactly like a permissions failure.
+//     exactly like a permissions failure. The /api/users half of that is in
+//     doubt: swagger describes a bare array, but the response captured from the
+//     live system into RAW/ACT/meta/users.json carries the { value, Count }
+//     envelope. Nothing here depends on which it is -- every list goes through
+//     unwrapRows, which takes either and throws on anything else.
 //   - Count is the size of the page, not a total.
 
 export type ActClientConfig = {
@@ -214,6 +218,31 @@ export class ActClient {
       apiVersion: payload?.apiVersion ?? "unknown",
       sdkVersion: payload?.sdkVersion ?? "unknown",
     };
+  }
+
+  /**
+   * Every Act! user, inactive ones and the integration account included.
+   *
+   * `GET /api/users` -- the path is in the reference's endpoint table
+   * (docs/act-integration-reference.md section 3) and in swagger.json as
+   * `Users_Get`, returning `act.web.api.models.Users.UserInfo`. Still a GET:
+   * this client remains read-only, and the users endpoint's POST is not
+   * reachable from here.
+   *
+   * Not paged, because the endpoint takes no parameters at all -- swagger lists
+   * `"parameters": []` for it, so there is no $top or $skip to send -- and the
+   * database has 20 users.
+   *
+   * The envelope is the reason this goes through unwrapRows rather than a cast.
+   * Swagger describes the response as a bare array, and the reference says the
+   * same; the copy captured from the live system
+   * (RAW/ACT/meta/users.json) is `{ "value": [...], "Count": 20 }` instead.
+   * Whichever is right today, unwrapRows accepts both and throws on anything
+   * else rather than quietly reporting no users, which is what a cast would do.
+   */
+  async users(): Promise<ActUser[]> {
+    const path = "/api/users";
+    return unwrapRows<ActUser>(await this.get(path), path);
   }
 
   /**
