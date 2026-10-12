@@ -29,10 +29,19 @@
 //   docker compose exec -T postgres psql -U pathquote -d pathquote -c \
 //     "SELECT o.id, d.number, o.\"createdAt\", o.\"blockedReason\" FROM \"ActOutbox\" o JOIN \"Document\" d ON d.id = o.\"documentId\" WHERE o.\"completedAt\" IS NULL ORDER BY o.\"createdAt\";"
 //
-// and close each one that must not reach ACT! by its id, replacing <id>:
+// (`npm run act:write-preflight` lists them too, check 8), and take each one
+// that must not reach ACT! out of the queue: "Don't send this quote to ACT!"
+// on the quote's page (dontSendDecision in src/lib/act/outbox-admin.ts).
+// When the page cannot be used, the same write by hand, by the row's id,
+// replacing <id>:
 //
 //   docker compose exec -T postgres psql -U pathquote -d pathquote -c \
-//     "UPDATE \"ActOutbox\" SET \"completedAt\" = now() AT TIME ZONE 'UTC', \"updatedAt\" = now() AT TIME ZONE 'UTC' WHERE id = '<id>' AND \"completedAt\" IS NULL;"
+//     "UPDATE \"ActOutbox\" SET \"completedAt\" = now() AT TIME ZONE 'UTC', \"blockedBy\" = 'admin', \"blockedReason\" = NULL, \"generation\" = \"generation\" + 1, \"updatedAt\" = now() AT TIME ZONE 'UTC' WHERE id = '<id>' AND \"completedAt\" IS NULL;"
+//
+// blockedBy 'admin' is what the quote's page reads as "Not sent to ACT!"
+// rather than "In ACT!" (describeQuoteAct in src/lib/act/quote-act-view.ts);
+// generation goes up by 1 as it does for the button's write, whose header
+// (src/lib/act/outbox-admin.ts) says why every administrator's write does.
 //
 // `now() AT TIME ZONE 'UTC'`, not now(): the columns hold UTC without a time
 // zone (enqueueStatement in src/lib/act/outbox-sql.ts says why that matters).

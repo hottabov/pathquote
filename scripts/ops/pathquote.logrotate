@@ -1,0 +1,40 @@
+# Rotation for every PathQuote log on the VPS: the backups, the nightly ACT!
+# sync, the 15-minute ACT! drain, the Monday report and the alert unit
+# (scripts/ops/*.service, each StandardOutput=append:/var/log/pq-<name>.log).
+#
+# Installed as /etc/logrotate.d/pathquote (docs/runbook.md, the write-back
+# section, "Log rotation"); Ubuntu's logrotate.timer runs it daily. Check it
+# with:  logrotate -d /etc/logrotate.d/pathquote
+#
+# No copytruncate, and no postrotate either: nothing holds these files open
+# between runs. Every unit is Type=oneshot, and systemd opens an append:
+# file afresh each time it starts the unit -- by its path, O_APPEND, created
+# if missing -- for that run's processes, which let go of it when they exit.
+# So once logrotate has renamed a log, the next run writes a new file at the
+# old name. A run that is going while logrotate renames the file finishes in
+# the renamed one (pq-act-drain.log.1, say); delaycompress leaves that file
+# uncompressed until the rotation after, so the run's last lines are never
+# compressed under it, and are still there to read. Any unit can be mid-run
+# when logrotate runs; the drain, every 15 minutes, is the likeliest.
+#
+# The one cost is the failure email (pq-backup-alert.sh), which tails 40
+# lines of the log by its name. A run that started after the rotation is
+# wholly in the new file, and the email carries it as before. A run that
+# started before it and failed after it wrote its lines to the .1 file, so
+# the email shows the new file's few lines instead; that run is in
+# /var/log/<the unit's log>.1.
+#
+# Monthly, or sooner once a log passes 10M -- maxsize is checked on every
+# daily run, so the drain's log, written 96 times a day, rotates when it is
+# big rather than waiting out the month. Twelve kept: a year of them, for a
+# log that stays under 10M a month.
+
+/var/log/pq-*.log {
+    monthly
+    maxsize 10M
+    rotate 12
+    compress
+    delaycompress
+    missingok
+    notifempty
+}
