@@ -130,10 +130,16 @@ export const COUNTRIES_PICKLIST_ID = "3e852010-1901-41e3-ac65-2b3ab6c25d2c";
  * 429 or a 408 (tryLaterStatus in src/lib/act/record-write.ts) says about
  * when to come back, which the drain takes as the least it waits
  * (retryAfterMs in src/lib/act/drain-rules.ts).
+ *
+ * `authorizing` is true when the answer was to the login itself
+ * (`authorize`), not to a request for a record: a 403 there is the service
+ * account's own access, which every request would meet, where a 403 on a
+ * record is that record (drainFailure in src/lib/act/drain-rules.ts).
  */
 export class ActApiError extends Error {
   readonly failure: WriteFailure;
   readonly retryAfter: string | null;
+  readonly authorizing: boolean;
 
   constructor(
     message: string,
@@ -141,12 +147,13 @@ export class ActApiError extends Error {
     readonly status: number,
     readonly body: string,
     failure: WriteFailure,
-    details: { retryAfter?: string | null } = {},
+    details: { retryAfter?: string | null; authorizing?: boolean } = {},
   ) {
     super(message);
     this.name = "ActApiError";
     this.failure = failure;
     this.retryAfter = details.retryAfter ?? null;
+    this.authorizing = details.authorizing ?? false;
   }
 }
 
@@ -581,7 +588,7 @@ export class ActClient {
         status,
         body,
         failureOf("GET", status),
-        { retryAfter },
+        { retryAfter, authorizing: true },
       );
     }
 

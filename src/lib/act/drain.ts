@@ -60,6 +60,7 @@ import {
 } from "@/lib/act/write-payloads";
 import {
   BLOCKED_BY,
+  deniedReason,
   drainFailure,
   lastErrorText,
   nextAttemptAt,
@@ -123,7 +124,8 @@ export type DrainOptions = {
  * `status`: `ran`; `busy`, another drain held the lock and nothing was done;
  * `switched-off`, the switch was off at the start or turned off part way, and
  * nothing more was sent; `stopped`, a fault every row would meet (the
- * service account not found, the login refused, a 403), or ACT! answering
+ * service account not found, the login refused, a 403 to the login or the
+ * users lookup -- not to one record, which blocks that row), or ACT! answering
  * "not now" (a 429 or a 408), ended the pass -- `stopReason` says which.
  */
 export type DrainResult = {
@@ -167,11 +169,16 @@ export async function readActWriteSwitch(): Promise<boolean> {
   return actWriteEnabled(await db.setting.findUnique({ where: { key: ACT_WRITE_SWITCH_KEY } }));
 }
 
-/** Ends the pass: the switch went off, or a fault every row would meet. */
+/**
+ * Ends the pass: the switch went off, or a fault every row would meet.
+ * `failed`, when set, is the ACT! failure behind it, which the row being
+ * worked backs off for; without it the row is left as it is, still due.
+ */
 class StopPass extends Error {
   constructor(
     readonly switchedOff: boolean,
     message: string,
+    readonly failed?: unknown,
   ) {
     super(message);
     this.name = "StopPass";
@@ -538,19 +545,28 @@ class Pass {
       try {
         outcome = await this.execute(row, step);
       } catch (error) {
-        // The switch, or the service account: not this row's fault, so the
-        // row is left as it is, still due, for the next pass.
-        if (error instanceof StopPass) throw error;
+        // The switch, or the service account: not this row's fault. The row
+        // backs off for the ACT! failure behind the stop, if there was one,
+        // and is otherwise left as it is, still due, for the next pass.
+        if (error instanceof StopPass) {
+          if (error.failed !== undefined) await this.backOff(row, step.kind, error.failed);
+          throw error;
+        }
         if (error instanceof BlockRow) {
           if (await this.block(row, error.reason, error.by)) return;
           continue;
         }
         const failure = drainFailure(error);
-        if (failure === "refused" && error instanceof ActApiError) {
+        if ((failure === "refused" || failure === "denied") && error instanceof ActApiError) {
           // Held: the drain's pass over blocked rows leaves it for a
-          // take-over or a person (BLOCKED_BY.act).
-          console.warn(`act: ACT! refused ${step.kind}`, { id: row.id, status: error.status, body: error.body.slice(0, 500) });
-          if (await this.block(row, refusedReason(step.kind, error.status, error.body), BLOCKED_BY.act)) return;
+          // take-over or a person (BLOCKED_BY.act). A 403 here is this
+          // record's, so the pass goes on to the next row.
+          console.warn(`act: ACT! ${failure} ${step.kind}`, { id: row.id, status: error.status, body: error.body.slice(0, 500) });
+          const reason =
+            failure === "denied"
+              ? deniedReason(step.kind, error.method, error.body)
+              : refusedReason(step.kind, error.status, error.body);
+          if (await this.block(row, reason, BLOCKED_BY.act)) return;
           continue;
         }
         if (failure === "untracked") this.result.untracked += 1;
@@ -609,11 +625,28 @@ class Pass {
     }
   }
 
-  /** The service account's ACT! user id, looked up once a pass; a pass that cannot find it stops. */
+  /**
+   * The service account's ACT! user id, looked up once a pass; a pass that
+   * cannot find it stops. So does a 403 to the lookup: that is the service
+   * account's own access, not any one record's, and every row would meet it.
+   */
   private async serviceAccount(): Promise<string> {
     if (this.serviceAccountId) return this.serviceAccountId;
     await this.beforeCall();
-    const id = serviceAccountUserId(await this.client.users(), this.client.loginName);
+    let users: Awaited<ReturnType<ActClient["users"]>>;
+    try {
+      users = await this.client.users();
+    } catch (error) {
+      if (error instanceof ActApiError && error.status === 403) {
+        throw new StopPass(
+          false,
+          `ACT! answered 403 to the users lookup, so PathQuote's login "${this.client.loginName}" (ACT_USER) is not allowed to read ACT!'s users -- check its licence and permissions`,
+          error,
+        );
+      }
+      throw error;
+    }
+    const id = serviceAccountUserId(users, this.client.loginName);
     if (!id) {
       throw new StopPass(
         false,
@@ -626,10 +659,11 @@ class Pass {
 
   /**
    * The Countries picklist, read once a pass. A list ACT! will not hand over
-   * (a 4xx on both paths picklistItems tries) is no reason to hold back every
-   * contact: the pass goes on with no items, so no country is sent, and ACT!'s
-   * answer to a create without one is what decides. A failure that may pass
-   * (a 5xx, no answer) fails the step, and the row backs off.
+   * (refused or denied on both paths picklistItems tries) is no reason to
+   * hold back every contact: the pass goes on with no items, so no country
+   * is sent, and ACT!'s answer to a create without one is what decides. A
+   * failure that may pass (a 5xx, no answer, a 429) fails the step, and the
+   * row backs off; a 401 or a redirect stops the pass, as anywhere.
    */
   private async countries(): Promise<readonly ActPicklistItem[]> {
     if (this.countryItems) return this.countryItems;
@@ -638,7 +672,8 @@ class Pass {
     try {
       items = await this.client.picklistItems(COUNTRIES_PICKLIST_ID);
     } catch (error) {
-      if (drainFailure(error) !== "refused") throw error;
+      const failure = drainFailure(error);
+      if (failure !== "refused" && failure !== "denied") throw error;
       console.warn("act: ACT! refused the Countries picklist; contacts are created with no country this pass", error);
       items = [];
     }

@@ -200,14 +200,14 @@ export function answerDetail(body: string): string {
 }
 
 /**
- * What happens next to a write ACT! refused, as the end of the sentence a
- * manager reads: it is held (BLOCKED_BY.act), and sent again only by a
- * take-over or a person. If what ACT! objects to is on its own record (an
- * off-list value on an old contact, say), fixing that record is what lets
- * the next attempt through.
+ * What happens next to a write ACT! refused or denied, as the end of the
+ * sentence a manager reads: it is held (BLOCKED_BY.act), and sent again only
+ * by a take-over or a person. If what ACT! objects to is on its own record
+ * (an off-list value on an old contact, say), fixing that record is what
+ * lets the next attempt through.
  */
 const HELD_UNTIL_RETRIED =
-  "PathQuote will not send it again on its own: check the record in ACT!, and it is tried again when this quote is next finalised, signed or accepted, or when your developer retries it.";
+  "it is tried again when this quote is next finalised, signed or accepted, or when your developer retries it.";
 
 /**
  * The blocked reason for a step ACT! refused: what was being done, ACT!'s
@@ -222,7 +222,21 @@ const HELD_UNTIL_RETRIED =
  */
 export function refusedReason(kind: ActStepKind, status: number, body: string): string {
   const said = answerDetail(body);
-  return `ACT! refused to ${stepAction(kind)}, answering ${status}${said ? ` ("${said}")` : ""} — ${HELD_UNTIL_RETRIED}`;
+  return `ACT! refused to ${stepAction(kind)}, answering ${status}${said ? ` ("${said}")` : ""} — PathQuote will not send it again on its own: check the record in ACT!, and ${HELD_UNTIL_RETRIED}`;
+}
+
+/**
+ * The blocked reason for a 403 on a request about a record: ACT! keeps some
+ * records to some of its users, and the service account is not one of them
+ * for this one. Not the service account's access as a whole -- a 403 to the
+ * login, or to the users lookup, stops the pass instead (drainFailure) --
+ * so only this row is held (BLOCKED_BY.act), and the rest of the pass goes
+ * on. `method` says whether there was a record yet: a create has none.
+ */
+export function deniedReason(kind: ActStepKind, method: string, body: string): string {
+  const said = answerDetail(body);
+  const what = method === "POST" ? `access when it tried to ${stepAction(kind)}` : `access to the record it needed to ${stepAction(kind)}`;
+  return `ACT! denied PathQuote ${what}, answering 403${said ? ` ("${said}")` : ""} — ACT! can keep a record to some of its users, and an ACT! administrator can give PathQuote's login access. PathQuote will not try again on its own: ${HELD_UNTIL_RETRIED}`;
 }
 
 /**
@@ -281,11 +295,19 @@ export function replanBlocked(
  *   refused    ACT! answered no: an ActApiError `refused` with a 4xx other
  *              than 401 and 403. The row is blocked with refusedReason, and
  *              held there (BLOCKED_BY.act).
- *   stop       not about this row: a 401 after re-authorising, a 403 (the
- *              service account's licence or permissions -- a `Browse`
- *              licence surfaces here), or a redirect not followed (ACT_BASE
- *              or the box's setup). Every row would get the same answer, so
- *              the row backs off and the pass stops.
+ *   denied     a 403 on a request about a record (ActApiError `authorizing`
+ *              false): ACT! keeps that record from the service account. The
+ *              row is blocked with deniedReason and held, like a refusal;
+ *              the pass goes on, since the next row's records may well be
+ *              open to it.
+ *   stop       not about this row: a 401 (after re-authorising, or to the
+ *              login itself), a 403 to the login (`authorizing`: the service
+ *              account's licence or permissions -- a `Browse` licence
+ *              surfaces here), or a redirect not followed (ACT_BASE or the
+ *              box's setup). Every row would get the same answer, so the row
+ *              backs off and the pass stops. (A 403 to the users lookup is
+ *              the account's too; the drain stops for that where it makes
+ *              the lookup.)
  *   try-later  ACT! said "not now": a 429 or a 408 (tryLaterStatus in
  *              src/lib/act/record-write.ts), on any request. The row backs
  *              off -- for at least as long as its Retry-After asks
@@ -300,14 +322,15 @@ export function replanBlocked(
  *   foreign    anything else -- the drain's own code, the database. Backs
  *              off like `failed`, but says nothing about ACT!.
  */
-export type DrainFailure = "refused" | "stop" | "try-later" | "untracked" | "failed" | "foreign";
+export type DrainFailure = "refused" | "denied" | "stop" | "try-later" | "untracked" | "failed" | "foreign";
 
 export function drainFailure(error: unknown): DrainFailure {
   if (error instanceof ActUntrackedCreateError) return "untracked";
   if (error instanceof ActApiError) {
     if (tryLaterStatus(error.status)) return "try-later";
     if (error.failure === "failed") return "failed";
-    if (error.status === 401 || error.status === 403 || (error.status >= 300 && error.status < 400)) return "stop";
+    if (error.status === 403) return error.authorizing ? "stop" : "denied";
+    if (error.status === 401 || (error.status >= 300 && error.status < 400)) return "stop";
     return error.failure === "refused" ? "refused" : "failed";
   }
   if (error instanceof ActNotSentError || error instanceof ActNoAnswerError) return "failed";

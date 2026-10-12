@@ -16,6 +16,7 @@ import {
   stepAction,
   wonCloseDate,
   BLOCKED_BY,
+  deniedReason,
   replanBlocked,
   type ActStepKind,
 } from "../src/lib/act/drain-rules";
@@ -222,6 +223,18 @@ describe("refusedReason", () => {
   });
 });
 
+describe("deniedReason", () => {
+  it("says ACT! denied access to the record, what to do, and that it is held", () => {
+    expect(deniedReason("promote-contact", "GET", '{"Message":"Access denied"}')).toBe(
+      'ACT! denied PathQuote access to the record it needed to make this quote\'s contact a Customer, answering 403 ("Access denied") — ACT! can keep a record to some of its users, and an ACT! administrator can give PathQuote\'s login access. PathQuote will not try again on its own: it is tried again when this quote is next finalised, signed or accepted, or when your developer retries it.',
+    );
+  });
+
+  it("does not call a create's target a record: there is none yet", () => {
+    expect(deniedReason("create-contact", "POST", "")).toMatch(/^ACT! denied PathQuote access when it tried to create this quote's contact, answering 403 — /);
+  });
+});
+
 describe("replanBlocked: what the drain's pass over blocked rows does with one", () => {
   const fixed: OutboxStep = { kind: "create-opportunity" };
   const noContact: OutboxStep = { kind: "blocked", reason: NO_CONTACT_REASON };
@@ -267,10 +280,17 @@ describe("drainFailure", () => {
     expect(drainFailure(api(422, "refused"))).toBe("refused");
   });
 
-  it("stops the pass for an answer every row would get: the login, the licence, a redirect", () => {
+  it("stops the pass for an answer every row would get: a 401, a 403 to the login itself, a redirect", () => {
     expect(drainFailure(api(401, "refused"))).toBe("stop");
-    expect(drainFailure(api(403, "refused"))).toBe("stop");
+    expect(drainFailure(new ActApiError("authorize failed (401)", "GET", 401, "", "refused", { authorizing: true }))).toBe("stop");
+    expect(drainFailure(new ActApiError("authorize failed (403)", "GET", 403, "", "refused", { authorizing: true }))).toBe("stop");
     expect(drainFailure(new ActApiError("x", "GET", 301, "", "refused"))).toBe("stop");
+  });
+
+  it("calls a 403 on a record denied, which blocks that row and lets the pass go on", () => {
+    expect(drainFailure(new ActApiError("GET /api/contacts/x failed (403)", "GET", 403, "", "refused"))).toBe("denied");
+    expect(drainFailure(new ActApiError("PATCH /api/contacts/x failed (403)", "PATCH", 403, "", "refused"))).toBe("denied");
+    expect(drainFailure(api(403, "refused"))).toBe("denied");
   });
 
   it("backs off for what may go through next time", () => {
