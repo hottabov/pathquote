@@ -5,7 +5,7 @@ import { chooseCompany } from "@/lib/act/company-identity";
 import { DRAIN_LOCK_KEY, drainActOutbox } from "@/lib/act/drain";
 import { buildIndustryLookup } from "@/lib/act/industries";
 import { formatGenericChannel, mapContact } from "@/lib/act/map";
-import { fillOnlyEmpty } from "@/lib/act/merge";
+import { changedInAct, fillOnlyEmpty } from "@/lib/act/merge";
 import {
   LAST_RUN_KEY,
   drainSummary,
@@ -17,6 +17,7 @@ import {
   type RunDrain,
   type SyncTrigger,
 } from "@/lib/act/run-record";
+import { DRAIN_BUSY_MESSAGE, drainLockApproach } from "@/lib/act/sync-drain-lock";
 import type { GenericChannel, MappedCompany, SkipReason } from "@/lib/act/types";
 
 // Pull contacts from ACT! into PathQuote -- after sending ACT! the quotes
@@ -27,12 +28,20 @@ import type { GenericChannel, MappedCompany, SkipReason } from "@/lib/act/types"
 // drift out of step with the incremental one.
 //
 // Writes first, then the read. A run that writes drains the ActOutbox
-// (drainActOutbox in src/lib/act/drain.ts) before it reads the cursor, so
-// the records the drain touches in ACT! are already stored as PathQuote's
-// own -- snapshot and actSourceEditedAt -- when the read meets them, and come
-// back as our echo rather than as a remote change. A drain that fails is
-// recorded and the read goes on: the inbound sync is worth having on a night
-// ACT! will not take a write. See syncContacts for the locks this needs.
+// (drainActOutbox in src/lib/act/drain.ts) before it reads the cursor, so a
+// contact the drain creates or promotes in ACT! is already stored with the
+// `edited` ACT! answered with, as actSourceEditedAt, when the read meets it
+// -- whenever ACT! answered with the record, which it does unless the answer
+// could not be read. The read compares the two (changedInAct in
+// src/lib/act/merge.ts): the same `edited` means nobody has touched the
+// record in ACT! since PathQuote stored it, so it is our own write coming
+// back -- or the boundary record the `ge` cursor reads a second time, below
+// -- and it is not counted as updated. It is still written as any other
+// record is: blanks filled, nothing a person typed overwritten, and the ACT!
+// bookkeeping (snapshot, account manager, sync time) stored afresh.
+// A drain that fails is recorded and the read goes on: the inbound sync is
+// worth having on a night ACT! will not take a write. See syncContacts for
+// the locks this needs.
 //
 // The cursor is the `edited` timestamp of the newest record successfully
 // stored, kept in Setting. It is checkpointed after every fully processed page,
@@ -77,17 +86,22 @@ const CURSOR_KEY = "act.sync.cursor";
 // (DRAIN_LOCK_KEY in src/lib/act/drain.ts).
 //
 // A run that writes holds BOTH, on its lock connection, for the whole run:
-// this one first, then the drain's, waited for (DRAIN_LOCK_WAIT_MS), and it
-// drains under them -- drainActOutbox with `lockHeldOn` set to that
-// connection, since a drain taking 8_472_002 itself would find it held and
-// do nothing. Holding only this key would leave another drain free to create
+// this one first, then the drain's -- waited for by the nightly run
+// (DRAIN_LOCK_WAIT_MS), asked for once by the Sync now button, which says
+// so and starts nothing when another drain has it (drainLockApproach in
+// src/lib/act/sync-drain-lock.ts) -- and it drains under them:
+// drainActOutbox with `lockHeldOn` set to that connection, since a drain
+// taking 8_472_002 itself would find it held and do nothing. Holding only
+// this key would leave another drain free to create
 // a contact in ACT! between the run's drain and its read, which the read
 // would then import as a second PathQuote contact for the same person (THE
 // INBOUND SYNC HOLDS THE DRAIN'S LOCK TOO, in src/lib/act/drain.ts).
 const SYNC_LOCK_KEY = 8_472_001;
 
 /**
- * How long a run waits for the drain's lock before it gives up: 15 minutes.
+ * How long a run that waits for the drain's lock -- the nightly one, or one
+ * run by hand at a shell; never the Sync now button, which does not wait --
+ * waits before it gives up: 15 minutes.
  *
  * Waits rather than skips because the night's read must not go without it
  * (SYNC_LOCK_KEY's comment), and another drain is never long: a pass stops
@@ -101,8 +115,8 @@ const SYNC_LOCK_KEY = 8_472_001;
  * Bounded with `lock_timeout`, which Postgres applies to an advisory lock's
  * wait as to any other. A run that waits this long and does not get it
  * throws, before it has read anything: recorded as a failure, emailed by the
- * nightly alert, and picked up by the next run -- not a read without the
- * lock.
+ * nightly alert when it is the nightly run, and picked up by the next run --
+ * not a read without the lock.
  */
 export const DRAIN_LOCK_WAIT_MS = 15 * 60 * 1000;
 
@@ -112,6 +126,21 @@ export class SyncAlreadyRunningError extends Error {
   constructor() {
     super("A sync is already running. Wait for it to finish and try again.");
     this.name = "SyncAlreadyRunningError";
+  }
+}
+
+/**
+ * Thrown, to a run that does not wait for the drain's lock (the Sync now
+ * button: `waitForDrainLock: false`), when another drain holds it. Thrown
+ * before the run writes its start record, so it leaves the stored record as
+ * it was -- the same rule as SyncAlreadyRunningError, and for the same
+ * reason: this run did nothing, and last night's record is still the true
+ * one. Not a failure either: quotes are going to ACT! as it should.
+ */
+export class DrainBusyError extends Error {
+  constructor() {
+    super(DRAIN_BUSY_MESSAGE);
+    this.name = "DrainBusyError";
   }
 }
 
@@ -563,10 +592,30 @@ export type SyncOptions = {
    */
   trigger?: SyncTrigger;
   /**
-   * How long to wait for the drain's lock. DRAIN_LOCK_WAIT_MS unless given;
-   * a check that has to see the wait run out passes less.
+   * Whether to wait for the drain's lock when another drain holds it: true
+   * for the CLI (scripts/act-sync.ts -- the nightly run, and a run by hand at
+   * a shell), false for the Sync now button (runActSyncNow in
+   * src/lib/actions/act-sync.ts). False asks once, before the start record,
+   * and throws DrainBusyError if it is held; drainLockApproach in
+   * src/lib/act/sync-drain-lock.ts says why each.
+   *
+   * Required, unlike everything else here: neither answer is safe for a
+   * caller that did not think about it -- a button that waits outlasts
+   * nginx and can replace a good record with a timeout, and a nightly run
+   * that does not wait can skip the night's read for a 15-minute tick.
+   */
+  waitForDrainLock: boolean;
+  /**
+   * How long to wait for the drain's lock, when waiting. DRAIN_LOCK_WAIT_MS
+   * unless given; a check that has to see the wait run out passes less.
    */
   drainLockWaitMs?: number;
+  /**
+   * The time budget of the run's own drain (DrainOptions.timeBudgetMs).
+   * DRAIN_TIME_BUDGET_MS in src/lib/act/drain.ts unless given; the button
+   * passes SYNC_NOW_DRAIN_BUDGET_MS (src/lib/act/sync-drain-lock.ts).
+   */
+  drainTimeBudgetMs?: number;
   onProgress?: (scanned: number) => void;
 };
 
@@ -684,11 +733,15 @@ function isLockTimeout(error: unknown): boolean {
  * Take DRAIN_LOCK_KEY on the run's lock connection, waiting up to `waitMs`
  * for whichever drain holds it (DRAIN_LOCK_WAIT_MS says why it waits).
  *
- * `lock_timeout` is set for the session, not around the one statement: the
- * session is this run's alone and ends with it, and nothing else run on it
- * waits for a lock -- the drain only reads pg_locks on it (holdsDrainLock in
- * src/lib/act/drain.ts). set_config rather than SET, because SET takes no
- * bind parameter and the wait is one.
+ * `lock_timeout` is set for the session rather than around the one
+ * statement -- set_config rather than SET, because SET takes no bind
+ * parameter and the wait is one -- and set to 0, which is no limit, as soon
+ * as the lock is held. Nothing run on this connection
+ * after it waits for a lock today (the drain only reads pg_locks on it:
+ * holdsDrainLock in src/lib/act/drain.ts), so the reset changes nothing now;
+ * it keeps a statement added here later from inheriting a 15-minute limit
+ * nobody chose for it. A wait that times out does not reset it: that throws,
+ * and the session ends with the run.
  *
  * $executeRaw, not $queryRaw: pg_advisory_lock returns void, which the pg
  * adapter cannot read back as a column ("Failed to deserialize column of type
@@ -706,11 +759,26 @@ async function waitForDrainLock(lock: PrismaClient, waitMs: number): Promise<voi
       `waited ${waitInWords(waitMs)} for quotes already being sent to ACT! to finish, and they had not, so this sync read nothing — reading while another send is going could import one contact twice. The next sync tries again; if this keeps happening, something is holding the quote-sending lock (${DRAIN_LOCK_KEY}) and your developer needs to look.`,
     );
   }
+  await lock.$executeRaw`SELECT set_config('lock_timeout', '0', false)`;
+}
+
+/**
+ * Take DRAIN_LOCK_KEY on the run's lock connection if nobody holds it, and
+ * throw DrainBusyError if somebody does: the Sync now button's way
+ * (drainLockApproach's `try`). pg_try_advisory_lock, as for SYNC_LOCK_KEY:
+ * it answers at once, and a boolean reads back where pg_advisory_lock's void
+ * does not.
+ */
+async function tryDrainLock(lock: PrismaClient): Promise<void> {
+  const [{ locked }] = await lock.$queryRaw<{ locked: boolean }[]>`
+    SELECT pg_try_advisory_lock(${DRAIN_LOCK_KEY}) AS locked
+  `;
+  if (!locked) throw new DrainBusyError();
 }
 
 export async function syncContacts(
   client: ActClient,
-  options: SyncOptions = {},
+  options: SyncOptions,
 ): Promise<SyncResult> {
   // Declared out here so the catch below can record the counters the run had
   // reached rather than zeros: a run that threw on contact 9,000 stored 9,000
@@ -734,8 +802,8 @@ export async function syncContacts(
     cursorTo: null,
     recorded: false,
   };
-  // Set only once the lock is held, so it doubles as the catch's test for
-  // "this run owns the record".
+  // Set only once the lock is held -- both locks, for the button -- so it
+  // doubles as the catch's test for "this run owns the record".
   let started: ActSyncRun | null = null;
 
   const lock = openLockConnection();
@@ -768,6 +836,13 @@ export async function syncContacts(
     // overwrite the record belonging to the run that is actually going. What
     // guarantees that is the throw above, not the guard in the catch.
     //
+    // And after the Sync now button's one try for the drain's lock, for the
+    // same reason from the other side: a press that finds quotes being sent
+    // has done nothing, and must not replace last night's record with one
+    // about itself. So the button asks here, before writing, and throws
+    // DrainBusyError with the record untouched. The nightly run waits for
+    // that lock instead, and does it after writing -- see below.
+    //
     // That ordering leaves one window it cannot close: a process killed between
     // taking the lock and this upsert landing leaves no record of itself, and
     // the page shows the previous run. One database round trip wide, against a
@@ -777,28 +852,37 @@ export async function syncContacts(
     // A dry run writes nothing, at the start or at the end. It changed nothing,
     // and replacing last night's real record with a rehearsal would be a lie
     // of a different shape.
+    const drainLock = drainLockApproach(options);
+    if (drainLock === "try") await tryDrainLock(lock);
     started = startedRun(options.trigger ?? "manual", new Date());
     if (!options.dryRun) await writeRunRecord(started);
 
     // The drain's lock, then the drain: see SYNC_LOCK_KEY and the top of this
-    // file. After the start record, so a run waiting here reads on the
-    // Settings page as running -- it holds SYNC_LOCK_KEY -- and one whose
-    // wait runs out is recorded as failed, with the reason, by the catch
-    // below. Before the cursor is read, so the writes land first.
+    // file. A run that waits for the lock does it after the start record, so
+    // a run waiting here reads on the Settings page as running -- it holds
+    // SYNC_LOCK_KEY -- and one whose wait runs out is recorded as failed,
+    // with the reason, by the catch below. The button already has the lock
+    // by now, from its try above. Before the cursor is read, so the writes
+    // land first.
     //
-    // A dry run takes neither the lock nor the drain. It sends nothing, by
-    // definition, and it stores nothing, so there is no import for another
-    // drain's contact create to duplicate -- the race this lock closes needs
-    // the read to write.
-    if (!options.dryRun) {
-      await waitForDrainLock(lock, options.drainLockWaitMs ?? DRAIN_LOCK_WAIT_MS);
+    // A dry run takes neither the lock nor the drain (drainLockApproach's
+    // `none` says why).
+    if (drainLock !== "none") {
+      if (drainLock === "wait") await waitForDrainLock(lock, options.drainLockWaitMs ?? DRAIN_LOCK_WAIT_MS);
       try {
-        result.drain = drainSummary(await drainActOutbox(client, { lockHeldOn: lock }));
+        result.drain = drainSummary(
+          await drainActOutbox(client, { lockHeldOn: lock, timeBudgetMs: options.drainTimeBudgetMs }),
+        );
       } catch (error) {
-        // drainActOutbox throws only when the database fails under it (a
-        // row's own failure is stored on the row). Recorded, and the read
-        // goes on: what it would cost to stop is the night's inbound
-        // changes, for a write that is tried again in 15 minutes anyway.
+        // drainActOutbox stores a row's own failure on the row, and throws
+        // for what is not one row's: the database failing under it;
+        // PathQuote's own code failing outside a row's step (the planner, a
+        // re-plan of the blocked rows); or the lock connection no longer
+        // holding DRAIN_LOCK_KEY when the pass checks it -- which, taken a
+        // moment ago on this connection, means the connection was lost and
+        // replaced (openLockConnection). Recorded, and the read goes on: what
+        // it would cost to stop is the night's inbound changes, for a write
+        // that is tried again in 15 minutes anyway.
         console.error("act: the drain before the read failed; the read goes on", error);
         result.drain = drainThrew(error);
       }
@@ -943,7 +1027,17 @@ export async function syncContacts(
               },
             });
             await writeSnapshot({ contactId: existing.id }, mapped.contact.snapshot);
-            result.contactsUpdated += 1;
+            // Counted only when ACT!'s `edited` has moved since PathQuote
+            // stored it (changedInAct says why that cannot miss a real edit).
+            // The two it leaves out are the drain's own writes coming back
+            // and the boundary record the `ge` cursor reads every night; both
+            // used to make a night nobody touched ACT! read "1 contact
+            // updated", or more. The writes above still run for them, as they
+            // always have: blanks filled, nothing typed in PathQuote
+            // overwritten, the ACT! bookkeeping stored afresh.
+            if (changedInAct(existing.actSourceEditedAt, mapped.contact.actEditedAt)) {
+              result.contactsUpdated += 1;
+            }
           } else {
             if (!companyUsable) {
               result.skipped["no-company"] += 1;
@@ -1010,12 +1104,15 @@ export async function syncContacts(
     if (
       started !== null &&
       !options.dryRun &&
-      // Belt and braces. `started` is null until the lock is held, so a caller
-      // that lost the race cannot reach here with a record to amend; this says
-      // the same thing again next to the write it protects, because the two
-      // facts sit a hundred lines apart and what it costs to have them drift
-      // is overwriting the record of the run that is actually going.
-      !(error instanceof SyncAlreadyRunningError)
+      // Belt and braces. `started` is null until the lock is held -- and,
+      // for the button, until the drain's lock is held too -- so a caller
+      // that lost either race cannot reach here with a record to amend; this
+      // says the same thing again next to the write it protects, because the
+      // two facts sit a hundred lines apart and what it costs to have them
+      // drift is overwriting the record of the run that is actually going,
+      // or last night's with a press that did nothing.
+      !(error instanceof SyncAlreadyRunningError) &&
+      !(error instanceof DrainBusyError)
     ) {
       await recordQuietly(failedRun(started, result, error), "failure");
     }

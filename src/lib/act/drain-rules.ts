@@ -453,8 +453,13 @@ export function stopsPass(failure: DrainFailure): boolean {
  * (the users lookup), or PathQuote's own code failing. The periodic drain's
  * CLI (scripts/act-drain.ts) fails its unit on `setup` and not on
  * `unavailable`: an ACT! that is down for a weekend would otherwise email
- * every 15 minutes, while a wrong ACT_PASS or a VPS address dropped from
- * the allow-list will not mend until somebody is told.
+ * about it, while a wrong ACT_PASS, or the VPS's address dropped from IIS's
+ * allow-list -- which answers with its HTML 403 -- will not mend until
+ * somebody is told. The VPS cut off by a firewall or the NAT rule instead is
+ * not told apart from ACT! being down: no answer at all, `unreachable`, so
+ * `unavailable`, exit 0, and no email from the drain. What catches that is
+ * the nightly sync's failure email: its run asks ACT! before it reads
+ * (scripts/act-sync.ts), gets no answer either, and fails its unit.
  */
 export function stopCause(failure: DrainFailure): "setup" | "unavailable" {
   return failure === "try-later" || failure === "unreachable" || failure === "failed" ? "unavailable" : "setup";

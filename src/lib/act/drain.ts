@@ -45,12 +45,15 @@
 // whole run, drain and read together, so no other drain can write between
 // them -- and drains under it by passing that connection as
 // DrainOptions.lockHeldOn, since a drain that tried to take the key itself
-// would find it held and do nothing (`busy`). It WAITS for DRAIN_LOCK_KEY
-// (pg_advisory_lock, bounded by lock_timeout) rather than skipping the
-// night when another drain holds it: a pass is over within about 10
-// minutes at worst (DRAIN_TIME_BUDGET_MS and the step in flight when it
-// runs out). While the sync holds it, every other drain finds it `busy` and
-// leaves its rows for the next pass.
+// would find it held and do nothing (`busy`). The nightly sync WAITS for
+// DRAIN_LOCK_KEY (pg_advisory_lock, bounded by lock_timeout) rather than
+// skipping the night when another drain holds it: a pass is over within
+// about 10 minutes at worst (DRAIN_TIME_BUDGET_MS and the step in flight
+// when it runs out). The Sync now button does not wait -- nginx would give
+// up on it first -- it asks once, and finding the key held starts nothing
+// and says so (drainLockApproach in src/lib/act/sync-drain-lock.ts). While
+// a sync holds it, every other drain finds it `busy` and leaves its rows for
+// the next pass.
 
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { createPrismaClient, db } from "@/lib/db";
@@ -145,7 +148,8 @@ const BATCH = 50;
  * Why 5 minutes. While a pass runs it holds DRAIN_LOCK_KEY and a database
  * connection, every fast path after a finalise, signature or acceptance finds
  * the lock busy and leaves its row for the next pass, and an inbound sync
- * that starts meanwhile waits for it before it drains and reads. The
+ * that starts meanwhile waits for it before it drains and reads -- the
+ * nightly one; the Sync now button's turns away and says so. The
  * periodic drain (pq-act-drain.timer) runs every 15 minutes, so 5 is a
  * third of that: a pass is over before the next one is due, and a backlog drains 5 minutes in
  * every 15 rather than in one sitting. A healthy step is a few requests of
@@ -178,7 +182,9 @@ export type DrainOptions = {
   onlyDocumentId?: string;
   /**
    * How long the pass may work, in real time whatever `now` says.
-   * DRAIN_TIME_BUDGET_MS unless given; a script or a check may pass less.
+   * DRAIN_TIME_BUDGET_MS unless given. The Sync now button's sync passes
+   * less (SYNC_NOW_DRAIN_BUDGET_MS in src/lib/act/sync-drain-lock.ts), and a
+   * script or a check may.
    */
   timeBudgetMs?: number;
   /**
@@ -352,7 +358,10 @@ function dueWhere(now: Date, onlyDocumentId: string | undefined): Prisma.ActOutb
 
 /**
  * Write unfinished rows into ACT!. Never throws for a row's own failure --
- * that is stored on the row -- only when the database itself fails.
+ * that is stored on the row. Throws when the database itself fails, when
+ * PathQuote's own code fails outside a row's step (the planner, the re-plan
+ * of the blocked rows), and when `lockHeldOn` is given a connection that
+ * does not hold DRAIN_LOCK_KEY.
  */
 export async function drainActOutbox(client: ActClient, options: DrainOptions = {}): Promise<DrainResult> {
   const result = emptyResult();
@@ -1136,8 +1145,11 @@ class Pass {
    * cursor, so the next sync reads this contact again (its filter is `edited
    * ge`), and for a contact PathQuote already holds it rewrites
    * actSourceEditedAt, the snapshot and actAccountMgr and fills empty fields
-   * without comparing anything with what is stored -- harmless here, because
-   * what it reads back is what the drain sent. What is stored here is what
+   * whatever is stored -- harmless here, because what it reads back is what
+   * the drain sent. The one thing it compares is `edited` with the
+   * actSourceEditedAt stored here, to decide whether to count the contact as
+   * updated (changedInAct in src/lib/act/merge.ts): the same value is this
+   * create coming back, and is not counted. What is stored here is what
    * ACT! holds until then, and what a conflict check would compare against;
    * nothing compares against it yet. With no record -- only the id came back
    * -- the snapshot waits for that sync to write it. The contact's in-flight

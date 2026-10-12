@@ -107,6 +107,11 @@ async function main() {
     dryRun: args.dryRun,
     limit: args.limit,
     trigger: args.trigger,
+    // Waits for a drain already going, where the Sync now button does not:
+    // no proxy stands between this and its caller, and the nightly read must
+    // not be skipped for a 15-minute tick (drainLockApproach in
+    // src/lib/act/sync-drain-lock.ts). A run by hand at a shell waits too.
+    waitForDrainLock: true,
     onProgress: (scanned) => {
       if (scanned % 500 === 0) console.log(`  ${scanned} scanned`);
     },
