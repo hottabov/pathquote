@@ -5,7 +5,7 @@ import {
   parseUserMapArgs,
 } from "../src/lib/act/user-map-args";
 
-const DATABASE = { host: "db", port: 5432, name: "pathquote" };
+const DATABASE = { host: "db", port: "5432", name: "pathquote" };
 
 /** What npm puts in the environment for `npm run act:map-users --apply` on npm
  *  10.9.8: it cannot match the word, so it reads a-p-p-l-y as single-letter
