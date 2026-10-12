@@ -1,6 +1,6 @@
 "use server";
 
-import { requireSession } from "@/lib/authz";
+import { requireActSync } from "@/lib/authz";
 import { actClientFromEnv } from "@/lib/act/client";
 import { FAILED_CONTACTS_DETAIL, messageOf } from "@/lib/act/run-record";
 import { SyncAlreadyRunningError, syncContacts } from "@/lib/act/sync";
@@ -14,17 +14,23 @@ export type { ActionResultWithWarning };
  * Pull whatever has changed in ACT! since the stored cursor, now, because
  * somebody pressed the button rather than because the nightly timer fired.
  *
- * `requireSession`, not `requireAdmin`: any signed-in user may press this, a
- * MANAGER included, and the point of that is the manager who can see their
- * own ACT! edit has not arrived and would otherwise have to ask for it. What
- * makes it safe to hand over is that there is nothing here to get wrong --
- * the sync only reads ACT!, its writes into PathQuote fill blanks and never
- * overwrite (`fillOnlyEmpty`, src/lib/act/merge.ts), the advisory lock below
- * means a second press cannot start a second run, and no option is taken from
- * the request (see the `trigger` comment inside). The guard is not deleted,
- * because there is still a caller to refuse: an unauthenticated POST to this
- * action's id must not reach ACT!, and this is the app's own answer to it
- * rather than the proxy's (see requireSession).
+ * `requireActSync`, not `requireAdmin`: a MANAGER may press this when an admin
+ * has ticked `User.actSyncVisible` for them, and the point of that is the
+ * manager who can see their own ACT! edit has not arrived and would otherwise
+ * have to ask for it. What makes it safe to hand over is that there is nothing
+ * here to get wrong -- the sync only reads ACT!, its writes into PathQuote
+ * fill blanks and never overwrite (`fillOnlyEmpty`, src/lib/act/merge.ts), the
+ * advisory lock below means a second press cannot start a second run, and no
+ * option is taken from the request (see the `trigger` comment inside).
+ *
+ * Not the bare `requireSession` it was between 2026-10-10 and the per-user
+ * grant, either, and this is the gate that makes the grant worth the name. A
+ * server action is reachable by its id from anywhere; withholding the nav row
+ * and the page from a distributor while leaving this callable would hide the
+ * button rather than refuse it. There are now two callers to refuse: a signed-in
+ * user without the grant, and an unauthenticated POST to this action's id,
+ * which must not reach ACT! and for which this is the app's own answer rather
+ * than the proxy's (see requireSession).
  *
  * `warning` rather than `error` for the two outcomes that are not this
  * caller's failure to report: a run that came back having dropped some
@@ -100,7 +106,7 @@ export type { ActionResultWithWarning };
  * directory -- nothing to edit, since nothing sets it today.
  */
 export async function runActSyncNow(): Promise<ActionResultWithWarning> {
-  await requireSession();
+  await requireActSync();
 
   try {
     // Credentials come from the container's environment, the same way
@@ -137,9 +143,9 @@ export async function runActSyncNow(): Promise<ActionResultWithWarning> {
   } catch (error) {
     if (error instanceof SyncAlreadyRunningError) {
       // Not a failure: the nightly timer, or somebody else at the same
-      // button, is doing the work right now -- and with the section open to
-      // every signed-in user, "somebody else" is now a likelier reason than
-      // it was. The CLI reaches the same conclusion about the same error (see
+      // button, is doing the work right now -- and with the section reaching
+      // past the admins, "somebody else" is a likelier reason than it was.
+      // The CLI reaches the same conclusion about the same error (see
       // the catch at the bottom of scripts/act-sync.ts -- it exits 0 and
       // explains itself), and this is the other half of that decision.
       //
@@ -186,10 +192,10 @@ export async function runActSyncNow(): Promise<ActionResultWithWarning> {
     // Every path that reached the sync, including both failures. A thrown run
     // and a lost race both change what the page should say -- the first wrote a
     // failure record, the second means another run is live -- so the page is
-    // stale after all three outcomes, not just the good one. (requireSession()
-    // redirects above the try, so an unauthenticated caller never gets here;
-    // nothing changed for them to see, and there is no page of ours for them
-    // to be standing on.)
+    // stale after all three outcomes, not just the good one. (requireActSync()
+    // redirects or throws above the try, so neither an unauthenticated caller
+    // nor one without the grant gets here; nothing changed for them to see,
+    // and there is no page of ours for them to be standing on.)
     revalidateActSync();
   }
 }

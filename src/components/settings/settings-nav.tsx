@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { activeSettingsNavHref, visibleSettingsNavItems } from "@/lib/settings-nav";
+import {
+  activeSettingsNavHref,
+  visibleSettingsNavItems,
+  type SettingsNavViewer,
+} from "@/lib/settings-nav";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,10 +22,14 @@ import { cn } from "@/lib/utils";
  *
  * Client component so it can read the current path (usePathname) to
  * highlight the active section — same reasoning as AppNav.
+ *
+ * Takes the whole viewer rather than a role: ACT! sync is a per-user grant now
+ * (see `SettingsNavViewer`). Both fields come from the session, read once by
+ * the layout — nothing here is a permission check, only which rows to draw.
  */
-export function SettingsNav({ role }: { role: string }) {
+export function SettingsNav({ viewer }: { viewer: SettingsNavViewer }) {
   const pathname = usePathname();
-  const items = visibleSettingsNavItems(role);
+  const items = visibleSettingsNavItems(viewer);
   // Resolved once for the whole nav rather than per item: which item wins is
   // a property of the item *set* (most specific prefix), not of any one of
   // them on its own -- see activeSettingsNavHref.

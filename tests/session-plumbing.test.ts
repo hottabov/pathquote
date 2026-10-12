@@ -56,6 +56,51 @@ describe("visibleCountries is declared wherever regionId is in src/types/next-au
   });
 });
 
+/**
+ * `actSyncVisible` takes the same four hops for the same reason, and fails the
+ * same way: miss one and it arrives undefined, `?? false` in the session
+ * callback reads that as no grant, and a manager who was given the ACT! sync
+ * section stops being offered it with no error anywhere. Parity with
+ * `regionId` again, since that is the field every hop already carries.
+ *
+ * Asserted separately from `visibleCountries` rather than folded in with it so
+ * a failure says which field went missing.
+ */
+describe("actSyncVisible follows regionId through src/auth.ts", () => {
+  const auth = readFileSync("src/auth.ts", "utf8");
+
+  it("is written to the token wherever regionId is", () => {
+    const regionWrites = count(auth, /token\.regionId\s*=/g);
+    expect(regionWrites).toBe(2);
+    expect(count(auth, /token\.actSyncVisible\s*=/g)).toBe(regionWrites);
+  });
+
+  it("is copied onto the session wherever regionId is", () => {
+    const regionCopies = count(auth, /session\.user\.regionId\s*=/g);
+    expect(regionCopies).toBe(1);
+    expect(count(auth, /session\.user\.actSyncVisible\s*=/g)).toBe(regionCopies);
+  });
+
+  it("is read from the database user, not from the token it is replacing", () => {
+    expect(count(auth, /token\.actSyncVisible\s*=\s*dbUser\.actSyncVisible/g)).toBe(2);
+  });
+});
+
+describe("actSyncVisible is declared wherever regionId is in src/types/next-auth.d.ts", () => {
+  const types = readFileSync("src/types/next-auth.d.ts", "utf8");
+
+  it("has one declaration per regionId declaration", () => {
+    const regionDeclarations = count(types, /^\s*regionId\??:/gm);
+    expect(regionDeclarations).toBe(6);
+    expect(count(types, /^\s*actSyncVisible\??:/gm)).toBe(regionDeclarations);
+  });
+
+  it("declares it required on the session user and the token, optional on User", () => {
+    expect(count(types, /^\s*actSyncVisible: boolean;/gm)).toBe(4);
+    expect(count(types, /^\s*actSyncVisible\?: boolean;/gm)).toBe(2);
+  });
+});
+
 // The client page memoises its lookup on primitives (React's `cache` compares
 // by identity), so the grant has to be passed through that memo as a primitive
 // too. Dropping it would fail closed: the clients list shows a manager their

@@ -210,6 +210,41 @@ export async function setUserActive(userId: string, active: boolean): Promise<Ac
 }
 
 /**
+ * Shows or hides the ACT! sync section for one user — `User.actSyncVisible`,
+ * which gates the nav row, the page at /settings/act-sync and the Sync now
+ * action together (`canSeeActSync`, src/lib/roles.ts).
+ *
+ * Its own action rather than a field of `updateUser`, for the reason
+ * `updateUserSchema`'s comment gives about `active` and this inherits whole: a
+ * checkbox that is simply absent from a submit is indistinguishable from one
+ * that was unticked, so any caller that stopped sending the field would revoke
+ * the section on every save of a phone number. It takes a boolean, not a
+ * FormData, so there is no absent case to misread.
+ *
+ * No `canModifyUser` guard, unlike `setUserActive`: there is no last-admin or
+ * self-lockout question to ask. An ADMIN or DEVELOPER sees the section by role
+ * whatever this column says, so nobody can turn it off for themselves or for
+ * the last admin and lose their way back.
+ */
+export async function setUserActSyncVisible(
+  userId: string,
+  visible: boolean
+): Promise<ActionResult> {
+  await requireAdmin();
+
+  const idParsed = idSchema.safeParse(userId);
+  if (!idParsed.success) return { error: NOT_FOUND_ERROR };
+
+  const target = await db.user.findUnique({ where: { id: userId } });
+  if (!target) return { error: NOT_FOUND_ERROR };
+
+  await db.user.update({ where: { id: userId }, data: { actSyncVisible: visible } });
+
+  revalidateUserPaths(userId);
+  return {};
+}
+
+/**
  * Hands every client company owned by `fromUserId` to `toUserId`.
  *
  * The problem this solves: a company is visible to a manager only if they own

@@ -18,6 +18,11 @@ declare module "next-auth" {
       /** Countries whose clients this user may read and edit; `"*"` is all of
        * them and `[]` is none. See `ScopeUser` in src/lib/scope.ts. */
       visibleCountries: string[];
+      /** Whether Settings offers this user the ACT! sync section, and whether
+       * its page and Sync now action will serve them. Not consulted for an
+       * ADMIN or DEVELOPER, who get the section by role — see `canSeeActSync`
+       * in src/lib/roles.ts. */
+      actSyncVisible: boolean;
     } & DefaultSession["user"];
   }
 
@@ -25,6 +30,7 @@ declare module "next-auth" {
     role?: Role;
     regionId?: string | null;
     visibleCountries?: string[];
+    actSyncVisible?: boolean;
   }
 }
 
@@ -34,6 +40,7 @@ declare module "next-auth/jwt" {
     role: Role;
     regionId: string | null;
     visibleCountries: string[];
+    actSyncVisible: boolean;
     /** Epoch ms of the last DB revalidation of this token (see src/auth.ts jwt callback). */
     revalidatedAt: number;
   }
@@ -48,6 +55,11 @@ declare module "@auth/core/types" {
       /** Countries whose clients this user may read and edit; `"*"` is all of
        * them and `[]` is none. See `ScopeUser` in src/lib/scope.ts. */
       visibleCountries: string[];
+      /** Whether Settings offers this user the ACT! sync section, and whether
+       * its page and Sync now action will serve them. Not consulted for an
+       * ADMIN or DEVELOPER, who get the section by role — see `canSeeActSync`
+       * in src/lib/roles.ts. */
+      actSyncVisible: boolean;
     } & DefaultSession["user"];
   }
 
@@ -55,6 +67,7 @@ declare module "@auth/core/types" {
     role?: Role;
     regionId?: string | null;
     visibleCountries?: string[];
+    actSyncVisible?: boolean;
   }
 }
 
@@ -64,6 +77,7 @@ declare module "@auth/core/jwt" {
     role: Role;
     regionId: string | null;
     visibleCountries: string[];
+    actSyncVisible: boolean;
     /** Epoch ms of the last DB revalidation of this token (see src/auth.ts jwt callback). */
     revalidatedAt: number;
   }

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { AlertTriangle, CalendarClock, Play, RefreshCw, RotateCw } from "lucide-react";
-import { requireSession } from "@/lib/authz";
+import { requireActSyncPage } from "@/lib/authz";
 import { getActSyncStatus } from "@/lib/queries/act-sync";
 import { runActSyncNow } from "@/lib/actions/act-sync";
 import { describeActSyncStatus, type ActSyncView } from "@/lib/act/sync-view";
@@ -37,13 +37,15 @@ const SUMMARY_TONE: Record<ActSyncView["summary"]["tone"], string> = {
  * nightly contact pull, in the order they ask about it: when did it last run,
  * what did it do, is anything wrong, and can I run it now.
  *
- * Written for the director and now read by managers as well, which is the one
- * thing to know before rewording anything here: the questions are the same
- * either way, but "ask your developer" is advice a manager follows through
- * PathQuote Support -- the next row down this same nav -- rather than by
- * picking up the phone. Every sentence was re-read against both audiences and
- * kept; the reasoning is recorded at the top of src/lib/act/sync-view.ts,
- * which owns the words.
+ * Written for the director and now read by the managers an admin has granted
+ * it to as well, which is the one thing to know before rewording anything
+ * here: the questions are the same either way, but "ask your developer" is
+ * advice a manager follows through PathQuote Support -- a row down this same
+ * nav -- rather than by picking up the phone. Every sentence was re-read
+ * against both audiences and kept; the reasoning is recorded at the top of
+ * src/lib/act/sync-view.ts, which owns the words. Nobody without the grant
+ * reads any of it, so there is no third audience to write for: a distributor
+ * with no ACT! access never reaches this page at all.
  *
  * No sentence about the sync is written in this file and no condition here
  * picks one. `describeActSyncStatus` (src/lib/act/sync-view.ts) turns one read
@@ -54,16 +56,23 @@ const SUMMARY_TONE: Record<ActSyncView["summary"]["tone"], string> = {
  * record, which is the state this release itself lands in. What is left here is
  * layout: which card a part goes in, and how a tone looks.
  *
- * `requireSession`, not `requireAdminPage`: this section is open to every
- * signed-in user, so there is no role left to check -- see the `adminOnly`
- * comment in src/lib/settings-nav.ts for why a manager gets this one and not
- * the admin sections around it. The guard stays because it is the only thing
- * refusing an unauthenticated request: the nav never offers this href to
- * nobody, but a href is not a lock, and the proxy in front of the app is not
- * the app's own answer (see requireSession).
+ * `requireActSyncPage`, not `requireAdminPage` and no longer the bare
+ * `requireSession` this was between 2026-10-10 and the per-user grant: the
+ * section is neither admin-only nor open to everyone. A non-admin reaches it
+ * only with `User.actSyncVisible` ticked (`canSeeActSync`, src/lib/roles.ts);
+ * an ADMIN or DEVELOPER reaches it by role. See the `adminOnly` and ACT! sync
+ * comments in src/lib/settings-nav.ts for why a granted manager gets this one
+ * and not the admin sections around it.
+ *
+ * This guard, not the nav, is what makes the grant a permission. The nav row
+ * is withheld from an ungated user, but a href is not a lock and a URL can be
+ * typed; `requireActSyncPage` answers that with `notFound()`, so the route is
+ * indistinguishable from one that does not exist. It also still refuses an
+ * unauthenticated request, which the proxy in front of the app is not the
+ * app's own answer to (see requireSession).
  */
 export default async function ActSyncPage() {
-  await requireSession();
+  await requireActSyncPage();
 
   const status = await getActSyncStatus();
   const view = describeActSyncStatus(status, new Date());

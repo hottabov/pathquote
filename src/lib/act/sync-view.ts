@@ -15,10 +15,15 @@
 // and no `if` that picks one.
 //
 // WHO READS THESE SENTENCES. Every one of them was written for the company
-// director, and the section was then opened to managers as well (adminOnly in
-// src/lib/settings-nav.ts). They were re-read against the wider audience and
-// kept as they are, which is a decision worth recording so it is not reopened
-// by halves:
+// director, and the section was then opened to managers as well -- now to the
+// managers an admin has ticked it for, one user at a time, because a
+// distributor with no ACT! access has no use for any of this (see the ACT!
+// sync entry in src/lib/settings-nav.ts and `canSeeActSync` in
+// src/lib/roles.ts). That narrowing changes nothing below: the audience to
+// write for is still the director and a manager who works in ACT!, and
+// everybody else now never reaches the page. The sentences were re-read
+// against both and kept as they are, which is a decision worth recording so
+// it is not reopened by halves:
 //
 //   - "ask your developer" is not a dead end to a manager who does not know
 //     who that is. It names the one thing to do about a PathQuote fault, and

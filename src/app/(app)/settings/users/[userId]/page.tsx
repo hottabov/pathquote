@@ -6,9 +6,15 @@ import { listActiveRegions } from "@/lib/queries/catalog";
 import { countActiveAdmins, getUserFootprint, listHandoverCandidates } from "@/lib/queries/users";
 import { getCatalogVisibilityTree } from "@/lib/queries/catalog-visibility-admin";
 import { getContactsVisibility } from "@/lib/queries/contacts-visibility-admin";
-import { updateUser, setUserPassword, setUserAvatar } from "@/lib/actions/users";
+import {
+  updateUser,
+  setUserPassword,
+  setUserAvatar,
+  setUserActSyncVisible,
+} from "@/lib/actions/users";
 import { setCatalogVisibility } from "@/lib/actions/catalog-visibility";
 import { setContactsVisibility } from "@/lib/actions/contacts-visibility";
+import { ActSyncVisibilityToggle } from "@/components/users/act-sync-visibility-toggle";
 import { EditUserForm } from "@/components/users/edit-user-form";
 import { UserAccessSection } from "@/components/users/user-access-section";
 import { SetPasswordForm } from "@/components/users/set-password-form";
@@ -50,6 +56,10 @@ export default async function EditUserPage({ params }: { params: Promise<Params>
   // An admin's country grant would change nothing (they see every client by
   // role), and the editor's per-country count is a scan of the client table,
   // so it is skipped for them rather than fetched and thrown away.
+  //
+  // The ACT! sync card below is the same shape of question with no fetch
+  // behind it -- `actSyncVisible` is already on `user` -- so it reuses this
+  // flag rather than asking the role again.
   const userIsAdmin = isAdminRole(user.role);
   const [visibilitySeries, footprint, handoverCandidates, contactsVisibility] = await Promise.all([
     getCatalogVisibilityTree(user.id),
@@ -144,6 +154,40 @@ export default async function EditUserPage({ params }: { params: Promise<Params>
             This user&rsquo;s role ({roleLabel(user.role)}) already sees every client in every country. A
             country grant would change nothing, so there is nothing to set here.
           </p>
+        )}
+      </SectionCard>
+
+      {/* Shown with an explanation rather than hidden or disabled on an
+          ADMIN's or DEVELOPER's own page, matching how Contacts visibility
+          above handles the same situation for an admin's country grant. Hiding
+          the card would leave an admin wondering where the setting went and
+          looking for it on the wrong screen; a dimmed checkbox would read as
+          "somebody has locked this" rather than "this question does not apply
+          to this user". The sentence says which it is, and that nobody can
+          lose the section for themselves.
+
+          Demoting an admin to MANAGER therefore makes a checkbox appear where
+          this sentence was: `updateUser` revalidates this route, so the card
+          is a control on the next render rather than needing a reload. The
+          value it shows is whatever the column already held -- true for anyone
+          who predates z64_act_sync_visible -- so an admin demoting a user
+          should look at it rather than assume. */}
+      <SectionCard
+        title="ACT! sync"
+        description="Whether Settings offers this user the ACT! sync section — the nightly ACT! pull's status, and the button that runs it now."
+      >
+        {userIsAdmin ? (
+          <p className="text-sm text-slate-500">
+            This user&rsquo;s role ({roleLabel(user.role)}) already has the ACT! sync section, and
+            always will. There is nothing to set here, and no way to take the section away from an
+            admin or a developer &mdash; including yourself.
+          </p>
+        ) : (
+          <ActSyncVisibilityToggle
+            userId={user.id}
+            visible={user.actSyncVisible}
+            action={setUserActSyncVisible}
+          />
         )}
       </SectionCard>
 

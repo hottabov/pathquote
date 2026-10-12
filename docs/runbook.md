@@ -516,17 +516,40 @@ the changes, backups are unaffected. The alert's own output goes to
 
 ### Look at the Settings page before any log
 
-`/settings/act-sync`, open to every signed-in user — a MANAGER included, and
-that includes pressing **Sync now**, not just reading the page (it was ADMIN
-only until 2026-10-10; see `adminOnly` in `src/lib/settings-nav.ts` for why
-this section is the exception and the admin sections around it are not). It
-shows when the last run started, what it did, whether anything needs a person,
-the nightly schedule, and how far through ACT!'s own edit history PathQuote has
-read.
+`/settings/act-sync` shows when the last run started, what it did, whether
+anything needs a person, the nightly schedule, and how far through ACT!'s own
+edit history PathQuote has read.
+
+**Who can reach it.** Every ADMIN and DEVELOPER, by role, always. Anybody else
+— a MANAGER or REGIONAL_MANAGER — only if an admin has ticked **Show the ACT!
+sync section to this user** on their page in Settings → Users, which sets
+`User.actSyncVisible`. A granted user gets the whole section, pressing **Sync
+now** included, not just the reading of it. An ungated one gets no nav row and
+a 404 on the URL, and the Sync now action refuses them too: all three gates ask
+`canSeeActSync` (`src/lib/roles.ts`).
+
+It went ADMIN-only → every signed-in user (2026-10-10) → per user, and the
+middle step is why: opening it to managers is right for the company's own
+managers, who work in ACT! daily and were the ones noticing an edit had not
+arrived, and wrong for distributors — outside resellers with no ACT! licence
+and no ACT! access at all. Their contacts still reach ACT! when they finalise a
+quote, but a page about a CRM they cannot open means nothing to them. No role
+tells those two kinds of manager apart, so an admin does. See `adminOnly` and
+the ACT! sync entry in `src/lib/settings-nav.ts` for why this section is not
+admin-only in the first place while the admin sections around it are.
+
+The column defaults to **false**, and `z64_act_sync_visible` set it **true**
+for every user that existed when it shipped. So nothing changed for anybody
+already using the system, a new distributor is hidden without anybody
+remembering to hide them, and a newly created real manager needs one tick
+before they see the section. A change reaches a signed-in user within a few
+minutes (the JWT revalidation window, `src/auth.ts`) or at their next sign-in.
 
 So a run recorded as **Run by hand** no longer means a developer or the
 director started it. If you are reconciling a surprise run against who was at a
-keyboard, the record stores only the trigger, not the user.
+keyboard, the record stores only the trigger, not the user — but the set of
+people who could have pressed it is admins, developers, and whoever has that
+tick.
 
 **On the first load after this release it says "No run recorded yet", and that
 is correct.** `act.sync.lastRun` arrived with this branch, so the full import of

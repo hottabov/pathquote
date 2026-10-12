@@ -63,6 +63,11 @@ export type UserDetail = {
    * Account settings page, never the admin user-edit screen or the
    * dashboard greeting. */
   signatureUrl: string | null;
+  /** `User.actSyncVisible` — whether Settings shows this user the ACT! sync
+   * section. Read here for the admin's checkbox on the user-edit screen only:
+   * the viewer's own value reaches a request through the session (see
+   * src/auth.ts), so no guard reads this. */
+  actSyncVisible: boolean;
 };
 
 /** A single user by id, or `null` if it doesn't exist — feeds the
@@ -92,6 +97,7 @@ export const getUser = cache(async function getUser(userId: string): Promise<Use
     magicLinkOnly: !user.passwordHash,
     image: user.image,
     signatureUrl: user.signatureUrl,
+    actSyncVisible: user.actSyncVisible,
   };
 });
 
