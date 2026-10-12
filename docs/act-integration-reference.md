@@ -42,7 +42,13 @@ Act-Database-Name: Pathfinder
 
 The username is the Act! **display name**, exactly as it appears in `Tools → Manage Users` — `John Hollo`, not `john`. A wrong username or an unregistered database name both return a bare `401` with no body, so the two are indistinguishable from the response alone.
 
-**The integration account is `Marketing`**, id `d90f208e-6468-4251-89d8-4937b0c70182`, promoted to the Manager role on 2026-10-05. The name is historical — it was a dormant account reused for its licence seat — and it is what will appear as the author of every history record and note the integration writes. Renaming it to something self-explanatory is deferred, not rejected; the credentials live in configuration, so a rename is a one-line change on our side.
+**The integration account is `Marketing`**, id `d90f208e-e1fd-4835-8811-541b0c4b81b9`, promoted to the Manager role on 2026-10-05. The name is historical — it was a dormant account reused for its licence seat — and it is what will appear as the author of every history record and note the integration writes. Renaming it to something self-explanatory is deferred, not rejected; the credentials live in configuration, so a rename is a one-line change on our side.
+
+The id above was previously recorded here as `d90f208e-6468-4251-89d8-4937b0c70182`, which is not a real account: it is `Marketing`'s first group spliced onto the last four groups of `Eadaoin Wright`'s id, assembled by eye from two adjacent rows. Corrected 2026-10-12 against `RAW/ACT/meta/users.json`.
+
+**`Marketing` carries no email address, and `marketing@pathfindercut.com` is not its address** — in Act! that mailbox belongs to `Eadaoin Wright` (`92fed6e6-6468-4251-89d8-4937b0c70182`), a dormant Standard account, last logon 2021-10-22, status Inactive. Worth stating because email is the join key between Act! users and PathQuote users (§9): the service account has no email, so it can never be matched to a person, which is the behaviour wanted. A PathQuote user carrying `marketing@pathfindercut.com` would join to Eadaoin Wright, not to the integration.
+
+`Marketing`'s role reads `Browse` in `RAW/ACT/meta/users.json`, which is read-only. That snapshot predates the promotion — its `lastLogOnDate` is 2026-10-02 and the promotion was 2026-10-05 — so the file is stale rather than the promotion having failed. **Confirm against a live `GET /api/users` before building write-back**, because `Browse` cannot write and the failure would arrive as a `403` deep inside the first queued write rather than at startup.
 
 Error codes documented by the API: `401` unauthorized, `403` forbidden, `4030` Act! incompatibility, `4031` subscription required, `4032` API access permission required.
 
