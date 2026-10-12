@@ -1,8 +1,8 @@
 // The request bodies a finalised quote sends to ACT!: the contact, when ACT!
 // does not have it yet; one History record per revision; the Opportunity that
 // stands for the whole deal, and the one product line that carries its amount;
-// the contact's promotion from Prospect to Customer, once the client signs or
-// the quote is accepted; and the opportunity's win, once the quote is accepted
+// the contact's promotion from Prospect to Customer, once the client's
+// signature stands; and the opportunity's win, once the quote is accepted
 // with the client's signature standing. Where a body depends on what ACT!
 // holds now (a later revision's opportunity update, its product line, the
 // win, the promotion), the function here takes that state as read back by the
@@ -979,8 +979,8 @@ function given(value: string | null): string | undefined {
  * contact created with it blank is lost twice over: the inbound sync skips it as
  * `inactive-status` (ACTIVE_STATUSES is Customer and Prospect only), and
  * contactPromotion leaves a blank status alone, so it never becomes a
- * Customer either. Somebody being quoted is a Prospect, and the signature or
- * acceptance then promotes them like any other.
+ * Customer either. Somebody being quoted is a Prospect, and the client's
+ * signature then promotes them like any other.
  *
  * EVERY FIELD IS THE ONE THE INBOUND SYNC READS IT BACK FROM (mapContact in
  * src/lib/act/map.ts), so the next sync sees the same person PathQuote has:
@@ -1051,7 +1051,7 @@ export function newContactBody(contact: ContactForAct, owner: NewContactOwner): 
 }
 
 /**
- * Whether winning the quote promotes its contact.
+ * Whether the client's signature promotes the quote's contact.
  *
  * - `promote`: the contact is a Prospect; `patch` makes it a Customer.
  * - `leave`: anything else. `already-customer` needs nothing; `not-prospect`
@@ -1064,8 +1064,9 @@ export type ContactPromotion =
   | { kind: "leave"; reason: "already-customer" | "not-prospect"; current: string | null };
 
 /**
- * A Prospect becomes a Customer when the client signs or the quote is
- * accepted, whichever comes first (the plan's addendum of 2026-10-12).
+ * A Prospect becomes a Customer once the client's signature stands (the
+ * plan's addendum of 2026-10-12). The acceptance is not a trigger of its own:
+ * promotionDue in src/lib/act/outbox-plan.ts says why.
  *
  * CHANGE ONLY WHAT WE OWN. `currentIdStatus` is the contact's `idStatus` as
  * the drain reads it back from ACT! just before, and only a Prospect is

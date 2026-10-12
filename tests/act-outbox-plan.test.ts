@@ -371,24 +371,16 @@ describe("nextStep: a won quote promotes its contact and wins its opportunity", 
     expect(nextStep(nothingDone, journaled, quote)).toEqual({ kind: "win-opportunity" });
   });
 
-  it("does not win an accepted quote whose signature does not stand, nor write its line for the win", () => {
+  it("does not win an accepted quote whose signature does not stand, nor write its line for the win, nor promote", () => {
     // The state as it stands, however it got there: accepted, and not
     // SIGNED. The planner has no void history to read, only these fields.
+    // The contact is not promoted either: promotion needs the signature too.
     for (const signingStatus of ["NOT_SENT", "SENT", "VIEWED", "DECLINED"]) {
-      const accepted = finishedDeal({ signingStatus, acceptedAt: ACCEPTED_AT, actContactPromotedForId: ACT_CONTACT });
+      const accepted = finishedDeal({ signingStatus, acceptedAt: ACCEPTED_AT });
       expect(nextStep(nothingDone, journaled, accepted)).toEqual({ kind: "done" });
       // The line behind the row's revision: no write-accepted-line either.
       expect(nextStep(nothingDone, { revision: 1, actHistoryId: ACT_HISTORY }, accepted)).toEqual({ kind: "done" });
     }
-    // Not promoted yet: the promotion is still due on the acceptance (a
-    // decision of its own), and it is the only step.
-    const { taken, world } = drive({
-      progress: nothingDone,
-      revision: journaled,
-      quote: finishedDeal({ signingStatus: "NOT_SENT", acceptedAt: ACCEPTED_AT }),
-    });
-    expect(taken).toEqual(["promote-contact"]);
-    expect(world.quote.actOpportunityWonAt).toBeNull();
   });
 
   it("does both, promotion first, when the quote is accepted before either has run", () => {
@@ -453,7 +445,7 @@ describe("nextStep: a won quote promotes its contact and wins its opportunity", 
 
   it("is blocked, not done, when a promotion is due and the quote has lost its contact", () => {
     // The blocking checks run before every step, these included.
-    const step = nextStep(nothingDone, journaled, finishedDeal({ contact: null, acceptedAt: ACCEPTED_AT }));
+    const step = nextStep(nothingDone, journaled, finishedDeal({ contact: null, signingStatus: "SIGNED" }));
     expect(reasonOf(step)).toMatch(/no contact/);
   });
 
@@ -466,12 +458,25 @@ describe("nextStep: a won quote promotes its contact and wins its opportunity", 
     expect(nextStep(nothingDone, journaled, quote)).toEqual({ kind: "create-opportunity" });
   });
 
-  it("promotes on an acceptance alone, with no signature standing", () => {
+  it("promotes on the signature alone: an acceptance with no signature standing promotes nobody", () => {
     // acceptQuote needs the client's signature, but voidSignature does not
     // clear acceptedAt: an accepted quote whose signature was voided is
-    // NOT_SENT and still accepted, and the acceptance is evidence enough.
+    // NOT_SENT and still accepted -- a stale flag, not a confirmation. Vadym's
+    // trigger is "the contact signed the quote".
     const quote = finishedDeal({ signingStatus: "NOT_SENT", acceptedAt: ACCEPTED_AT, actOpportunityWonAt: ACCEPTED_AT });
-    expect(nextStep(nothingDone, journaled, quote)).toEqual({ kind: "promote-contact" });
+    expect(nextStep(nothingDone, journaled, quote)).toEqual({ kind: "done" });
+    // The case the rule is for: A was promoted, the signature voided, the
+    // contact corrected to B. B has signed nothing yet, so B is no customer.
+    const corrected = {
+      ...quote,
+      contact: { actContactId: ACT_OTHER_CONTACT, firstName: "Dana", lastName: "Okafor" },
+      actContactPromotedForId: ACT_CONTACT,
+    };
+    expect(nextStep(nothingDone, journaled, corrected)).toEqual({ kind: "done" });
+    // B signs: now B is promoted.
+    expect(nextStep(nothingDone, journaled, { ...corrected, signingStatus: "SIGNED" })).toEqual({
+      kind: "promote-contact",
+    });
   });
 
   it("is blocked, not done, when a deal event is due in a region with no ACT! process", () => {
@@ -762,21 +767,18 @@ describe("a won deal shows the accepted figure (the drain and ACT! together)", (
     // takes that row over.
     const accepted = enqueue(finalisedAt100k(), 0, { signingStatus: "SIGNED", acceptedAt: ACCEPTED_AT });
     const refinalised = drain(enqueue(accepted, 1, { signingStatus: "NOT_SENT" }));
-    expect(refinalised.taken.map((t) => t.kind)).toEqual([
-      "update-opportunity",
-      "write-product-line",
-      "write-history",
-      "promote-contact",
-    ]);
+    expect(refinalised.taken.map((t) => t.kind)).toEqual(["update-opportunity", "write-product-line", "write-history"]);
     let sim = refinalised.sim;
     // An Open deal's line takes the revision's figure, as for any revision.
-    // The deal is not won.
+    // The deal is not won, and with the signature voided nobody is promoted.
     expect(sim.deal).toEqual({ status: "Open", stageNumber: 4, line: { revision: 1, total: 80000 } });
     expect(sim.world.quote.actOpportunityWonAt).toBeNull();
+    expect(sim.world.quote.actContactPromotedForId).toBeNull();
 
-    // The client signs R1: the win is due, and the line already shows R1.
+    // The client signs R1: the promotion and the win are due, and the line
+    // already shows R1.
     const signed = drain(enqueue(sim, 1, { signingStatus: "SIGNED" }));
-    expect(signed.taken).toEqual([{ kind: "win-opportunity" }]);
+    expect(signed.taken).toEqual([{ kind: "promote-contact" }, { kind: "win-opportunity" }]);
     sim = signed.sim;
     expect(sim.deal).toEqual({ status: "Won", stageNumber: 4, line: { revision: 1, total: 80000 } });
     expect(sim.world.quote.actOpportunityWonAt).toEqual(ACCEPTED_AT);
@@ -785,21 +787,21 @@ describe("a won deal shows the accepted figure (the drain and ACT! together)", (
   it("accept, void, re-finalise on a deal closed by hand: the re-signature writes the new figure, then wins", () => {
     const accepted = enqueue(byHand(finalisedAt100k(), "Lost"), 0, { signingStatus: "SIGNED", acceptedAt: ACCEPTED_AT });
     const refinalised = drain(enqueue(accepted, 1, { signingStatus: "NOT_SENT" }));
-    expect(refinalised.taken.map((t) => t.kind)).toEqual([
-      "update-opportunity",
-      "write-product-line",
-      "write-history",
-      "promote-contact",
-    ]);
+    expect(refinalised.taken.map((t) => t.kind)).toEqual(["update-opportunity", "write-product-line", "write-history"]);
     let sim = refinalised.sim;
-    // The line skipped, as for any revision of a closed deal; no
-    // write-accepted-line and no win while nobody has signed R1.
+    // The line skipped, as for any revision of a closed deal; no promotion,
+    // no write-accepted-line and no win while nobody has signed R1.
     expect(sim.deal).toEqual({ status: "Lost", stageNumber: 4, line: { revision: 0, total: 100000 } });
     expect(sim.world.quote.actProductLineRevision).toBe(0);
     expect(sim.world.quote.actOpportunityWonAt).toBeNull();
+    expect(sim.world.quote.actContactPromotedForId).toBeNull();
 
     const signed = drain(enqueue(sim, 1, { signingStatus: "SIGNED" }));
-    expect(signed.taken).toEqual([{ kind: "write-accepted-line", line: "update" }, { kind: "win-opportunity" }]);
+    expect(signed.taken).toEqual([
+      { kind: "promote-contact" },
+      { kind: "write-accepted-line", line: "update" },
+      { kind: "win-opportunity" },
+    ]);
     sim = signed.sim;
     expect(sim.deal).toEqual({ status: "Won", stageNumber: 4, line: { revision: 1, total: 80000 } });
     expect(sim.world.quote.actProductLineRevision).toBe(1);

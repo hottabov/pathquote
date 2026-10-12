@@ -21,8 +21,8 @@
 //                       revision, left alone when productLineWrite says so
 //                       (see THE PRODUCT LINE)
 //   write-history       one History record for this revision
-//   promote-contact     once the client has signed or the quote is accepted:
-//                       the contact goes from Prospect to Customer
+//   promote-contact     once the client's signature stands: the contact goes
+//                       from Prospect to Customer
 //   write-product-line  again, after the journal, when the client's signature
 //                       stands and the line is still behind this revision
 //                       (see A WON DEAL SHOWS THE LATEST SIGNED FIGURE)
@@ -223,14 +223,15 @@
 //     it had not finished -- runs its steps as any revision's does: the
 //     opportunity, the line as productLineWrite decides (an Open deal's takes
 //     the new figure, as it would for any revision; a closed deal's is left
-//     alone), the History, and the promotion if one is due (PROMOTION IS ONCE
-//     PER CONTACT). Then it is done: no win, and no write-accepted-line,
-//     which belongs to the win.
+//     alone) and the History. Then it is done: no win, no write-accepted-line,
+//     which belongs to the win, and no promotion, which needs the signature
+//     too (promotionDue).
 //   - When the client signs that revision, completeSigning's row finds
 //     acceptedAt still set, the signature standing and actOpportunityWonAt
-//     null: the win is due. write-accepted-line brings the line to that
-//     revision first if it does not show it, and the deal is won at the
-//     figure the client signed.
+//     null: the win is due. The contact is promoted first if it has not been
+//     (PROMOTION IS ONCE PER CONTACT); write-accepted-line brings the line to
+//     that revision if it does not show it; and the deal is won at the figure
+//     the client signed.
 //   - A void after the win changes nothing: actOpportunityWonAt is set, so the
 //     win is never planned again (THE WIN IS ONCE PER DEAL).
 //
@@ -275,15 +276,15 @@
 // exists before it is won.
 //
 // Both are read off the quote as it stands now. Promotion is due while the
-// client's signature stands (signingStatus SIGNED) or the quote is accepted,
-// until Document.actContactPromotedForId names the quote's contact as it is
-// now; the win while the quote is accepted and the client's signature stands,
-// until Document.actOpportunityWonAt is set (THE WIN NEEDS A STANDING
-// SIGNATURE). FORWARD ONLY: no step undoes either, so a voidSignature or an
-// unfinalise after the step ran changes nothing in ACT!. A signature voided
-// BEFORE the step ran leaves the win no longer due, until the client signs
-// again. It leaves the promotion no longer due too -- unless the quote was
-// accepted, since voidSignature does not clear acceptedAt.
+// client's signature stands (signingStatus SIGNED), until
+// Document.actContactPromotedForId names the quote's contact as it is now --
+// the signature alone, not the acceptance (promotionDue says why); the win
+// while the quote is accepted and the client's signature stands, until
+// Document.actOpportunityWonAt is set (THE WIN NEEDS A STANDING SIGNATURE).
+// FORWARD ONLY: no step undoes either, so a voidSignature or an unfinalise
+// after the step ran changes nothing in ACT!. A signature voided BEFORE the
+// step ran leaves neither due, until the client signs again -- accepted or
+// not, since both need the signature.
 //
 // Each fact records that the step is DONE, not that ACT! was changed. The
 // drain reads the contact's idStatus, or the opportunity's status, just
@@ -311,9 +312,9 @@
 // stands, rather than "promoted" for the deal as a whole. It is the contact's
 // ACT! id, the record the step changed: a contact ACT! does not have yet
 // (actContactId null) has not been promoted whatever is stored, and is
-// created first. One consequence: a voided quote that had been ACCEPTED keeps
-// acceptedAt, so its new contact is promoted at the re-finalise rather than at
-// the next signature.
+// created first. The corrected contact is promoted when they sign, and not
+// before: a voided quote that had been ACCEPTED keeps acceptedAt, but
+// promotion reads only the signature (promotionDue).
 //
 // STEPS RESUME, AND NO CREATE REPEATS BLIND. Every step stores its result before the
 // next step begins, and this planner looks at nothing but those stored
@@ -623,12 +624,23 @@ function hasName(contact: { firstName: string; lastName: string | null }): boole
 }
 
 /**
- * The client's signature or the acceptance makes a customer of the quote's
- * contact as it stands -- unless that contact is the one already promoted; see
- * PROMOTION IS ONCE PER CONTACT.
+ * The client's standing signature makes a customer of the quote's contact as
+ * it stands -- unless that contact is the one already promoted; see PROMOTION
+ * IS ONCE PER CONTACT.
+ *
+ * The signature alone, not "signature or acceptance". acceptQuote requires
+ * signingStatus SIGNED, so an acceptance can never arrive before a signature
+ * -- the "or accepted" arm only ever mattered after voidSignature, which
+ * leaves acceptedAt set as a stale flag. Honouring it would promote a contact
+ * corrected after a void before that person had signed anything, which is the
+ * same unsigned-confirmation the win refuses (THE WIN NEEDS A STANDING
+ * SIGNATURE). Vadym's own words for the trigger were "the contact signed the
+ * quote". His other trigger, "the quote's status changed in PathQuote", is the
+ * manual WON outcome in docs/specs/2026-10-12-quote-outcomes-and-reporting-
+ * backlog.md, not acceptQuote, and arrives with that feature.
  */
 function promotionDue(quote: QuoteState): boolean {
-  const won = quote.signingStatus === "SIGNED" || quote.acceptedAt !== null;
+  const won = quote.signingStatus === "SIGNED";
   if (!won) return false;
   // No contact, or one ACT! does not have yet, cannot be the one promoted.
   // Due, so the checks below block on it or create it.

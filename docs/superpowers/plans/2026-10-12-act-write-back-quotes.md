@@ -429,9 +429,10 @@ Requested by Vadym during execution: when a quote is won, the ACT! contact moves
 
 **The triggers.**
 
-- **Contact → Customer: when the client signs** (`signingStatus` reaches `SIGNED`, in `completeSigning`, `src/lib/actions/signing-client.ts`) **or** when the quote is accepted (`acceptQuote`), whichever comes first. The client's signature is the earliest evidence that this is a customer.
-- **Opportunity → Won: when the quote is accepted** (`acceptedAt`), as decided in spec §10 D3. `wonOpportunityBody` from Task 2 finally gets a caller here.
-- **Later:** the manual WON outcome from `docs/specs/2026-10-12-quote-outcomes-and-reporting-backlog.md` becomes a third trigger for both. Not in this plan.
+- **Contact → Customer: on a standing signature** (`signingStatus` `SIGNED`, set by `completeSigning`, `src/lib/actions/signing-client.ts`) — Vadym: "the contact signed the quote". Acceptance is not a trigger of its own: `acceptQuote` requires the signature, so it only ever added the case after `voidSignature`, which leaves `acceptedAt` set — and promoting then would make a customer of a corrected contact who has signed nothing.
+- **Opportunity → Won: when the quote is accepted with a standing signature** (`acceptedAt` set **and** `SIGNED`), per spec §10 D3. A quote voided after acceptance is not won until the client signs again, and then at the signed figure. `wonOpportunityBody` from Task 2 finally gets a caller here.
+- **A Won deal's product line shows the latest signed figure:** a revision re-finalised after a void leaves it alone; the client's signature on that revision writes it.
+- **Later:** the manual WON outcome from `docs/specs/2026-10-12-quote-outcomes-and-reporting-backlog.md` becomes a further trigger for both. Not in this plan.
 
 **Rules.**
 
