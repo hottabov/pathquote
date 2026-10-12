@@ -40,13 +40,16 @@
 //                                ActOutbox.quoteRevisionId, which the drain
 //                                follows to hand this planner that revision's
 //                                actHistoryId.
-//   Document.actContactPromotedAt
-//                                promote-contact. Once per deal, so on the
-//                                Document, not the row or the revision. Says
-//                                the step is done, not that ACT! changed (see
-//                                DEAL EVENTS).
+//   Document.actContactPromotedForId
+//                                promote-contact: the ACT! id of the contact
+//                                it was done for. On the Document, not the row
+//                                or the revision, and an id rather than a
+//                                time, because it is once per contact per
+//                                deal (see DEAL EVENTS). Says the step is
+//                                done, not that ACT! changed.
 //   Document.actOpportunityWonAt
-//                                win-opportunity. Once per deal, likewise.
+//                                win-opportunity. Once per deal: one
+//                                opportunity per deal, won once.
 //
 //   The quote -- existing columns, read as they stand now:
 //
@@ -59,8 +62,8 @@
 // Of these, Contact.actContactId dates from z60_act_sync;
 // ActOutbox.opportunityActId, ActOutbox.quoteRevisionId,
 // Document.actOpportunityId, QuoteRevision.actHistoryId,
-// Document.actContactPromotedAt and Document.actOpportunityWonAt were added by
-// z65_act_outbox.
+// Document.actContactPromotedForId and Document.actOpportunityWonAt were added
+// by z65_act_outbox.
 //
 // ONE HISTORY PER REVISION, so its progress is on the revision, not the row. A
 // manager can unfinalise a quote whose row has finished and re-finalise it
@@ -106,24 +109,40 @@
 //
 // Both are read off the quote as it stands now. Promotion is due while the
 // client's signature stands (signingStatus SIGNED) or the quote is accepted,
-// until Document.actContactPromotedAt is set; the win while the quote is
-// accepted, until Document.actOpportunityWonAt is set. FORWARD ONLY: no step
-// undoes either, so a voidSignature or an unfinalise after the step ran
-// changes nothing in ACT!. A signature voided BEFORE the step ran leaves the
-// promotion no longer due -- unless the quote was accepted, since
-// voidSignature does not clear acceptedAt.
+// until Document.actContactPromotedForId names the quote's contact as it is
+// now; the win while the quote is accepted, until Document.actOpportunityWonAt
+// is set. FORWARD ONLY: no step undoes either, so a voidSignature or an
+// unfinalise after the step ran changes nothing in ACT!. A signature voided
+// BEFORE the step ran leaves the promotion no longer due -- unless the quote
+// was accepted, since voidSignature does not clear acceptedAt.
 //
 // Each fact records that the step is DONE, not that ACT! was changed. The
 // drain reads the contact's idStatus, or the opportunity's status, just
 // before, and contactPromotion or wonOpportunityBody
 // (src/lib/act/write-payloads.ts) may send nothing: a contact that is not a
 // Prospect is not PathQuote's to change, and an opportunity already Won needs
-// nothing. Whether an opportunity found Lost or Inactive should end the step
-// the same way is an open question; see wonOpportunityBody.
+// nothing. Any other opportunity status, Lost included, is patched to Won:
+// the acceptance overturns it, by Vadym's decision (see wonOpportunityBody).
 //
-// Once per deal, so per Document: a quote whose contact is changed after the
-// promotion (a voided signature, a different contact, a new signature) does
-// not promote the new contact, because actContactPromotedAt is already set.
+// THE WIN IS ONCE PER DEAL, AND THAT IS WHAT LETS A LATER LOST STAND.
+// Document.actOpportunityWonAt is never cleared, so once it is set this
+// planner never returns win-opportunity again, for this row or any later one.
+// If somebody then marks the deal Lost by hand in ACT!, nothing sends Won
+// again: a later revision's update-opportunity does read the status, and
+// revisedOpportunityBody leaves any closed deal alone. It stays Lost, which is
+// the second half of the same decision.
+//
+// PROMOTION IS ONCE PER CONTACT. voidSignature exists for a wrong signatory,
+// among other things: the quote goes back to DRAFT, its contact can be
+// changed, and the quote is finalised and signed again. The contact who signs
+// then is not the one promoted before, and is just as much a customer. So the
+// fact is WHICH contact was promoted, compared with the quote's contact as it
+// stands, rather than "promoted" for the deal as a whole. It is the contact's
+// ACT! id, the record the step changed: a contact ACT! does not have yet
+// (actContactId null) has not been promoted whatever is stored, and is
+// created first. One consequence: a voided quote that had been ACCEPTED keeps
+// acceptedAt, so its new contact is promoted at the re-finalise rather than at
+// the next signature.
 //
 // STEPS RESUME, AND ONE WINDOW REPEATS. Every step stores its result before the
 // next step begins, and this planner looks at nothing but those stored
@@ -207,8 +226,11 @@ export type QuoteState = {
   signingStatus: string;
   /** Document.acceptedAt: set once the quote is accepted (acceptQuote). */
   acceptedAt: Date | null;
-  /** Document.actContactPromotedAt: set once promote-contact is done for this deal. */
-  actContactPromotedAt: Date | null;
+  /**
+   * Document.actContactPromotedForId: the ACT! contact id promote-contact was
+   * last done for on this deal, or null when it has not run.
+   */
+  actContactPromotedForId: string | null;
   /** Document.actOpportunityWonAt: set once win-opportunity is done for this deal. */
   actOpportunityWonAt: Date | null;
 };
@@ -232,12 +254,14 @@ export type OutboxStep =
  * off a contact.
  *
  * Unfinalize first, because only a draft's contact can be changed
- * (setDocumentClient in src/lib/actions/documents/lifecycle.ts). "Choose or
- * add": the usual cause is a company with no contacts at all, where there is
- * nobody to choose and the builder's "New contact" is the way out.
+ * (setDocumentClient in src/lib/actions/documents/lifecycle.ts) -- "if it is
+ * final", because the quote may be a draft already: a voidSignature puts it
+ * back to DRAFT, and its row can still be blocked. "Choose or add": the usual
+ * cause is a company with no contacts at all, where there is nobody to choose
+ * and the builder's "New contact" is the way out.
  */
 export const NO_CONTACT_REASON =
-  "This quote has no contact, so there is nobody in ACT! to attach it to — unfinalize it, choose or add a contact, and finalize it again.";
+  "This quote has no contact, so there is nobody in ACT! to attach it to — if it is final, unfinalize it, then choose or add a contact, and finalize it again.";
 
 /** ACT! is asked to create the contact, and a contact with no name is nothing to create. */
 export const NAMELESS_CONTACT_REASON =
@@ -255,10 +279,18 @@ function hasName(contact: { firstName: string; lastName: string | null }): boole
   return `${contact.firstName} ${contact.lastName ?? ""}`.trim() !== "";
 }
 
-/** The client's signature or the acceptance makes a customer; see DEAL EVENTS. */
+/**
+ * The client's signature or the acceptance makes a customer of the quote's
+ * contact as it stands -- unless that contact is the one already promoted; see
+ * PROMOTION IS ONCE PER CONTACT.
+ */
 function promotionDue(quote: QuoteState): boolean {
   const won = quote.signingStatus === "SIGNED" || quote.acceptedAt !== null;
-  return won && quote.actContactPromotedAt === null;
+  if (!won) return false;
+  // No contact, or one ACT! does not have yet, cannot be the one promoted.
+  // Due, so the checks below block on it or create it.
+  const actContactId = quote.contact?.actContactId ?? null;
+  return actContactId === null || actContactId !== quote.actContactPromotedForId;
 }
 
 function winDue(quote: QuoteState): boolean {

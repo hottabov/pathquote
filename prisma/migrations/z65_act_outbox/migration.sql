@@ -12,12 +12,14 @@
 -- header lists the stored fields it reads; this migration adds the ones that
 -- did not exist:
 --
---   Document.actOpportunityId      the deal's opportunity, one per quote
---   Document.actContactPromotedAt  promote-contact done, once per deal
---   Document.actOpportunityWonAt   win-opportunity done, once per deal
---   QuoteRevision.actHistoryId     the revision's History, one per revision
---   ActOutbox                      the queue itself, with opportunityActId
---                                  for the row's own opportunity step
+--   Document.actOpportunityId         the deal's opportunity, one per quote
+--   Document.actContactPromotedForId  the ACT! contact promote-contact was
+--                                     done for: once per contact per deal
+--   Document.actOpportunityWonAt      win-opportunity done, once per deal
+--   QuoteRevision.actHistoryId        the revision's History, one per
+--                                     revision
+--   ActOutbox                         the queue itself, with opportunityActId
+--                                     for the row's own opportunity step
 --
 -- Why ACT!'s ids are kept here rather than a PathQuote id stamped into an ACT!
 -- custom field is on the ActOutbox model in schema.prisma: the `PQ ` fields
@@ -69,7 +71,7 @@
 -- migration recorded as failed for `prisma migrate resolve`.
 
 -- AlterTable
-ALTER TABLE "Document" ADD COLUMN     "actContactPromotedAt" TIMESTAMP(3),
+ALTER TABLE "Document" ADD COLUMN     "actContactPromotedForId" TEXT,
 ADD COLUMN     "actOpportunityId" TEXT,
 ADD COLUMN     "actOpportunityWonAt" TIMESTAMP(3);
 

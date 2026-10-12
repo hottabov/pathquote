@@ -8,6 +8,9 @@ import {
 } from "../src/lib/act/outbox-plan";
 
 const ACT_CONTACT = "c0000000-0000-0000-0000-000000000001";
+const ACT_OTHER_CONTACT = "c0000000-0000-0000-0000-000000000002";
+/** The id ACT! gives a contact the drain creates: a new record, so a new id. */
+const ACT_CREATED_CONTACT = "c0000000-0000-0000-0000-000000000003";
 const ACT_OPPORTUNITY = "c0000000-0000-0000-0000-0000000000a0";
 const ACT_HISTORY = "c0000000-0000-0000-0000-0000000000b0";
 
@@ -15,7 +18,6 @@ const nothingDone: OutboxProgress = { opportunityActId: null };
 const noHistory: RevisionProgress = { actHistoryId: null };
 const journaled: RevisionProgress = { actHistoryId: ACT_HISTORY };
 
-const SIGNED_AT = new Date("2026-11-01T02:00:00.000Z");
 const ACCEPTED_AT = new Date("2026-11-02T01:00:00.000Z");
 
 const quoteState = (overrides: Partial<QuoteState> = {}): QuoteState => ({
@@ -24,7 +26,7 @@ const quoteState = (overrides: Partial<QuoteState> = {}): QuoteState => ({
   actOpportunityId: null,
   signingStatus: "NOT_SENT",
   acceptedAt: null,
-  actContactPromotedAt: null,
+  actContactPromotedForId: null,
   actOpportunityWonAt: null,
   ...overrides,
 });
@@ -45,7 +47,7 @@ type World = { progress: OutboxProgress; revision: RevisionProgress; quote: Quot
 function apply(world: World, step: OutboxStep): World {
   switch (step.kind) {
     case "create-contact":
-      return { ...world, quote: { ...world.quote, contact: { ...world.quote.contact!, actContactId: ACT_CONTACT } } };
+      return { ...world, quote: { ...world.quote, contact: { ...world.quote.contact!, actContactId: ACT_CREATED_CONTACT } } };
     case "create-opportunity":
       return {
         ...world,
@@ -58,7 +60,8 @@ function apply(world: World, step: OutboxStep): World {
       // Stored on the revision, not the row.
       return { ...world, revision: { actHistoryId: ACT_HISTORY } };
     case "promote-contact":
-      return { ...world, quote: { ...world.quote, actContactPromotedAt: SIGNED_AT } };
+      // The ACT! id of the contact it promoted, not a time.
+      return { ...world, quote: { ...world.quote, actContactPromotedForId: world.quote.contact!.actContactId } };
     case "win-opportunity":
       return { ...world, quote: { ...world.quote, actOpportunityWonAt: ACCEPTED_AT } };
     default:
@@ -145,6 +148,9 @@ describe("nextStep", () => {
     // "Choose or add": at a company with no contacts there is nobody to
     // choose, and "New contact" in the builder is the way out.
     expect(reason).toContain("choose or add a contact");
+    // A voided quote is a draft already, with nothing to unfinalize; the
+    // sentence must not tell its manager to do something they cannot.
+    expect(reason).toContain("if it is final, unfinalize it");
     expect(reason).toContain("—");
     expect(reason).not.toMatch(/^[A-Z_]+$/);
   });
@@ -231,7 +237,7 @@ describe("nextStep: a won quote promotes its contact and wins its opportunity", 
   it("wins the opportunity once the quote is accepted", () => {
     // Accepting needs the client's signature first, so the contact is
     // normally promoted already by then.
-    const quote = finishedDeal({ signingStatus: "SIGNED", acceptedAt: ACCEPTED_AT, actContactPromotedAt: SIGNED_AT });
+    const quote = finishedDeal({ signingStatus: "SIGNED", acceptedAt: ACCEPTED_AT, actContactPromotedForId: ACT_CONTACT });
     expect(nextStep(nothingDone, journaled, quote)).toEqual({ kind: "win-opportunity" });
   });
 
@@ -248,7 +254,7 @@ describe("nextStep: a won quote promotes its contact and wins its opportunity", 
     const quote = finishedDeal({
       signingStatus: "SIGNED",
       acceptedAt: ACCEPTED_AT,
-      actContactPromotedAt: SIGNED_AT,
+      actContactPromotedForId: ACT_CONTACT,
       actOpportunityWonAt: ACCEPTED_AT,
     });
     expect(nextStep(nothingDone, journaled, quote)).toEqual({ kind: "done" });
@@ -278,7 +284,7 @@ describe("nextStep: a won quote promotes its contact and wins its opportunity", 
   it("reverses nothing when the signature is voided after the promotion", () => {
     // voidSignature puts signingStatus back to NOT_SENT. The contact stays a
     // Customer in ACT!: there is no step that would demote it.
-    const quote = finishedDeal({ signingStatus: "NOT_SENT", actContactPromotedAt: SIGNED_AT });
+    const quote = finishedDeal({ signingStatus: "NOT_SENT", actContactPromotedForId: ACT_CONTACT });
     expect(nextStep(nothingDone, journaled, quote)).toEqual({ kind: "done" });
   });
 
@@ -299,7 +305,74 @@ describe("nextStep: a won quote promotes its contact and wins its opportunity", 
     // did its opportunity step first, and nothing clears
     // Document.actOpportunityId. Should the database say otherwise, the
     // win still waits for an opportunity to exist.
-    const quote = quoteState({ acceptedAt: ACCEPTED_AT, actContactPromotedAt: SIGNED_AT });
+    const quote = quoteState({ acceptedAt: ACCEPTED_AT, actContactPromotedForId: ACT_CONTACT });
     expect(nextStep(nothingDone, journaled, quote)).toEqual({ kind: "create-opportunity" });
+  });
+
+  it("promotes on an acceptance alone, with no signature standing", () => {
+    // acceptQuote needs the client's signature, but voidSignature does not
+    // clear acceptedAt: an accepted quote whose signature was voided is
+    // NOT_SENT and still accepted, and the acceptance is evidence enough.
+    const quote = finishedDeal({ signingStatus: "NOT_SENT", acceptedAt: ACCEPTED_AT, actOpportunityWonAt: ACCEPTED_AT });
+    expect(nextStep(nothingDone, journaled, quote)).toEqual({ kind: "promote-contact" });
+  });
+
+  it("is blocked, not done, when a deal event is due in a region with no ACT! process", () => {
+    // A row queued by a signature runs the same checks as a finalise row.
+    const step = nextStep(nothingDone, journaled, finishedDeal({ regionCode: "NZ", signingStatus: "SIGNED" }));
+    expect(reasonOf(step)).toContain("NZ");
+    expect(reasonOf(step)).toMatch(/developer/);
+  });
+
+  it("promotes a corrected contact: promotion is recorded per contact, not per deal", () => {
+    // Contact A signed and was promoted. The signature was voided (a wrong
+    // signatory), the quote went back to DRAFT, its contact was changed to B,
+    // and it was finalised and signed again. B is the customer now, and has
+    // not been promoted.
+    const quote = finishedDeal({
+      contact: { actContactId: ACT_OTHER_CONTACT, firstName: "Dana", lastName: "Okafor" },
+      signingStatus: "SIGNED",
+      actContactPromotedForId: ACT_CONTACT,
+    });
+    expect(nextStep(nothingDone, journaled, quote)).toEqual({ kind: "promote-contact" });
+    const { taken, world } = drive({ progress: nothingDone, revision: journaled, quote });
+    expect(taken).toEqual(["promote-contact"]);
+    expect(world.quote.actContactPromotedForId).toBe(ACT_OTHER_CONTACT);
+  });
+
+  it("creates a corrected contact ACT! does not have, then promotes it", () => {
+    // B exists only in PathQuote: whatever is stored, it cannot be the contact
+    // already promoted.
+    const { taken, world } = drive({
+      progress: nothingDone,
+      revision: journaled,
+      quote: finishedDeal({ contact: pathQuoteOnlyContact, signingStatus: "SIGNED", actContactPromotedForId: ACT_CONTACT }),
+    });
+    expect(taken).toEqual(["create-contact", "promote-contact"]);
+    expect(world.quote.actContactPromotedForId).toBe(ACT_CREATED_CONTACT);
+  });
+
+  it("does not promote the same contact twice when the quote is signed again", () => {
+    const quote = finishedDeal({ signingStatus: "SIGNED", actContactPromotedForId: ACT_CONTACT });
+    expect(nextStep(nothingDone, journaled, quote)).toEqual({ kind: "done" });
+  });
+
+  it("never wins the opportunity again once the win is recorded, so a Lost set by hand afterwards stands", () => {
+    // Vadym, 2026-10-12: "If after that someone changes it to Lost by hand in
+    // ACT!, it stays that way." The planner is never told the opportunity's
+    // status -- it could be Lost in ACT! by now -- and with the win recorded
+    // it never plans win-opportunity again: not for this row, and not for a
+    // row queued by a later revision or a second acceptance. (A revision's
+    // update-opportunity leaves a closed deal alone; revisedOpportunityBody.)
+    const quote = finishedDeal({
+      signingStatus: "SIGNED",
+      acceptedAt: ACCEPTED_AT,
+      actContactPromotedForId: ACT_CONTACT,
+      actOpportunityWonAt: ACCEPTED_AT,
+    });
+    expect(nextStep(nothingDone, journaled, quote)).toEqual({ kind: "done" });
+    const { taken } = drive({ progress: nothingDone, revision: noHistory, quote });
+    expect(taken).not.toContain("win-opportunity");
+    expect(taken).toEqual(["update-opportunity", "write-history"]);
   });
 });
