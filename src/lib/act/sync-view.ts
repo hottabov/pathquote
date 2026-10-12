@@ -188,8 +188,11 @@ const MELBOURNE_FORMAT = new Intl.DateTimeFormat("en-AU", {
  * `dayPeriod` is lowercased and stripped of full stops because en-AU renders it
  * "am", a locale fallback may render "AM", and some render "a.m."; all three
  * would otherwise show up as a difference nobody chose.
+ *
+ * Exported for the quote's own ACT! card (src/lib/act/quote-act-view.ts),
+ * which says when a quote is next tried, for the same readers.
  */
-function melbourneTime(date: Date): string {
+export function melbourneTime(date: Date): string {
   const parts = MELBOURNE_FORMAT.formatToParts(date);
   const part = (type: Intl.DateTimeFormatPartTypes): string =>
     parts.find((p) => p.type === type)?.value ?? "";
@@ -379,11 +382,14 @@ export const HELD_QUOTES_LISTED = 20;
  * it is on go by themselves: both `ok`, as describeDrain words them.
  *
  * Each held quote is listed by number, as a link to it, with its reason --
- * the sentence the drain or the planner stored for its manager. That list is
- * the only place in the app a reader can find out which quotes are held and
- * why (the drain's log aside): the quote's own page does not show it yet. FOR TASK 9: once the quote page
- * shows the ACT! state and the reason, the sentence that introduces the list
- * can say so too ("and on the quote's own page"); until then it must not.
+ * the sentence the drain or the planner stored for its manager. The quote's
+ * own page shows the same reason on its ACT! card (describeQuoteAct in
+ * src/lib/act/quote-act-view.ts), and is where an administrator can act on
+ * it: send it again, settle a held contact, or take it out of the queue
+ * (src/lib/act/outbox-admin.ts). The sentence that introduces the list says
+ * so in words true for a manager too, who reads the card but gets none of
+ * those buttons: "an administrator can act on it there", never "you can".
+ * This list is still the only place that gathers every held quote.
  */
 export function describeOutbox(outbox: ActOutboxStanding, now: Date): ActSyncOutboxView {
   const scope =
@@ -403,18 +409,18 @@ export function describeOutbox(outbox: ActOutboxStanding, now: Date): ActSyncOut
       // send would create the same person in ACT! a second time.
       notes.push(
         outbox.heldForContact === 1
-          ? `${one ? "It is" : "1 of them is"} held because PathQuote asked ACT! to create the contact on that quote and never heard whether it did — somebody has to look in ACT! before it can go on, so ask your developer, and do not delete or re-add that contact in PathQuote.`
-          : `${all ? (outbox.held === 2 ? "Both are" : "All of them are") : `${formatCount(outbox.heldForContact)} of them are`} held because PathQuote asked ACT! to create the contact on each and never heard whether it did — somebody has to look in ACT! before they can go on, so ask your developer, and do not delete or re-add those contacts in PathQuote.`,
+          ? `${one ? "It is" : "1 of them is"} held because PathQuote asked ACT! to create the contact on that quote and never heard whether it did — an administrator has to look in ACT! before it can go on, and settle it on the quote's page. Nobody should delete or re-add that contact in PathQuote.`
+          : `${all ? (outbox.held === 2 ? "Both are" : "All of them are") : `${formatCount(outbox.heldForContact)} of them are`} held because PathQuote asked ACT! to create the contact on each and never heard whether it did — an administrator has to look in ACT! before they can go on, and settle each on the quote's page. Nobody should delete or re-add those contacts in PathQuote.`,
       );
     }
 
     const listed = Math.min(outbox.held, outbox.heldQuotes.length);
     notes.push(
       one
-        ? "It is listed below with the reason PathQuote gives for holding it."
+        ? "It is listed below with the reason PathQuote gives for holding it. Its own page says the same, and an administrator can act on it there."
         : listed < outbox.held
-          ? `The ${formatCount(listed)} queued longest are listed below, each with the reason PathQuote gives for holding it.`
-          : "Each is listed below with the reason PathQuote gives for holding it.",
+          ? `The ${formatCount(listed)} queued longest are listed below, each with the reason PathQuote gives for holding it. Each quote's own page says the same, and an administrator can act on it there.`
+          : "Each is listed below with the reason PathQuote gives for holding it. Each quote's own page says the same, and an administrator can act on it there.",
     );
     if (outbox.oldestHeldQueuedAt) {
       notes.push(

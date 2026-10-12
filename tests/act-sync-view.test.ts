@@ -604,21 +604,23 @@ describe("describeOutbox — the queue as it stands", () => {
     expect(view).toEqual({
       tone: "warn",
       headline: "1 quote is held back from ACT!",
-      detail: "It is listed below with the reason PathQuote gives for holding it. It was queued for ACT! 3 days ago.",
+      detail:
+        "It is listed below with the reason PathQuote gives for holding it. Its own page says the same, and an administrator can act on it there. It was queued for ACT! 3 days ago.",
       held: [{ label: "Q-AU-2026-014", href: "/quotes/doc14", reason: NO_CONTACT_REASON }],
       more: null,
       scope: null,
     });
   });
 
-  it("never sends the reader to the quote's own page, which does not show it yet", () => {
-    // Task 9 puts the reason on the quote. Until then this list is the only
-    // place it can be read, and the words point at the list.
+  it("sends the reader to the quote's own page, in words true for a manager, who gets no buttons there", () => {
+    // The quote's ACT! card shows the same reason, and an administrator's
+    // actions under it. A manager reads this too, so it says what an
+    // administrator can do there, never what "you" can.
     const view = describeOutbox(outbox({ held: 2, oldestHeldQueuedAt: OLDEST, heldQuotes: [quote(1), quote(2)] }), NOW);
     expect(view.detail).toBe(
-      "Each is listed below with the reason PathQuote gives for holding it. The oldest was queued for ACT! 3 days ago.",
+      "Each is listed below with the reason PathQuote gives for holding it. Each quote's own page says the same, and an administrator can act on it there. The oldest was queued for ACT! 3 days ago.",
     );
-    expect(view.detail).not.toContain("own page");
+    expect(view.detail).not.toMatch(/\byou\b/i);
   });
 
   it("says plainly that a quote held for its contact needs somebody to look in ACT!, and which contact not to touch", () => {
@@ -628,7 +630,7 @@ describe("describeOutbox — the queue as it stands", () => {
     );
     expect(one.tone).toBe("warn");
     expect(one.detail).toBe(
-      "It is held because PathQuote asked ACT! to create the contact on that quote and never heard whether it did — somebody has to look in ACT! before it can go on, so ask your developer, and do not delete or re-add that contact in PathQuote. It is listed below with the reason PathQuote gives for holding it. It was queued for ACT! 3 days ago.",
+      "It is held because PathQuote asked ACT! to create the contact on that quote and never heard whether it did — an administrator has to look in ACT! before it can go on, and settle it on the quote's page. Nobody should delete or re-add that contact in PathQuote. It is listed below with the reason PathQuote gives for holding it. Its own page says the same, and an administrator can act on it there. It was queued for ACT! 3 days ago.",
     );
     const mixed = describeOutbox(
       outbox({ held: 3, heldForContact: 1, oldestHeldQueuedAt: OLDEST, heldQuotes: [quote(1), quote(2), quote(3)] }),
@@ -640,7 +642,7 @@ describe("describeOutbox — the queue as it stands", () => {
       NOW,
     ).detail!;
     expect(many).toMatch(
-      /^2 of them are held because PathQuote asked ACT! to create the contact on each and never heard whether it did — somebody has to look in ACT! before they can go on, so ask your developer, and do not delete or re-add those contacts in PathQuote\./,
+      /^2 of them are held because PathQuote asked ACT! to create the contact on each and never heard whether it did — an administrator has to look in ACT! before they can go on, and settle each on the quote's page\. Nobody should delete or re-add those contacts in PathQuote\./,
     );
     expect(
       describeOutbox(outbox({ held: 2, heldForContact: 2, oldestHeldQueuedAt: OLDEST, heldQuotes: [quote(1), quote(2)] }), NOW).detail,
@@ -665,7 +667,7 @@ describe("describeOutbox — the queue as it stands", () => {
   it("says what is waiting beside what is held", () => {
     const held = { held: 1, oldestHeldQueuedAt: OLDEST, heldQuotes: [quote(1)] };
     expect(describeOutbox(outbox({ ...held, waiting: 2 }), NOW).detail).toBe(
-      "It is listed below with the reason PathQuote gives for holding it. It was queued for ACT! 3 days ago. 2 other quotes are waiting to go to ACT!, and go on their own — PathQuote sends queued quotes every 15 minutes.",
+      "It is listed below with the reason PathQuote gives for holding it. Its own page says the same, and an administrator can act on it there. It was queued for ACT! 3 days ago. 2 other quotes are waiting to go to ACT!, and go on their own — PathQuote sends queued quotes every 15 minutes.",
     );
     expect(describeOutbox(outbox({ ...held, waiting: 1, sendingOn: false }), NOW).detail).toContain(
       "1 other quote is waiting to go to ACT!, but sending to ACT! is switched off — it goes as soon as it is switched on.",

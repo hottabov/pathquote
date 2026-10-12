@@ -848,8 +848,9 @@ model Contact {
   /// already, and creating them again would put them in ACT! twice. While it
   /// is set and actContactId is null, the outbox planner blocks
   /// create-contact for EVERY quote on this contact, not only the one whose
-  /// write sent the POST, until a person has looked in ACT! -- nothing in
-  /// PathQuote clears it yet (FOR TASK 10 in src/lib/act/outbox-plan.ts). On
+  /// write sent the POST, until a person has looked in ACT! -- nothing the
+  /// drain does clears it then: an administrator does, on the quote's page,
+  /// or the developer by hand (FOR TASK 10 in src/lib/act/outbox-plan.ts). On
   /// the contact, not the outbox row, because the record being created is the
   /// contact, and every quote that uses it would create it. See A CONTACT
   /// CREATE IN FLIGHT in src/lib/act/outbox-plan.ts.
@@ -1808,6 +1809,13 @@ model ActOutbox {
   ///               passes, after their due rows and at most RECHECKS_PER_PASS
   ///               a pass (src/lib/act/drain-rules.ts), reason kept until
   ///               then: no write is re-sent by it, only the lookup.
+  ///   "admin"     on a FINISHED row only, set with completedAt: an
+  ///               administrator chose not to send the quote (src/lib/act/
+  ///               outbox-admin.ts). No pass reads a finished row; the
+  ///               quote's page reads this to say "not sent" rather than
+  ///               "in ACT!".
+  /// An administrator's "Try again now" on the quote's page also clears
+  /// blockedReason and this, for a row held by "act", "revision" or "drain".
   /// A column rather than a reading of blockedReason: that is a sentence for
   /// a manager, and rewording one must never turn a held refusal into one
   /// sent again every pass. A take-over clears it with blockedReason.

@@ -460,10 +460,13 @@
 // is still `done`: the marker is a fact about the contact, not about that
 // row. The block lifts when a person has looked: actContactId set to the
 // contact ACT! holds, or the marker cleared because ACT! holds nobody.
-// NOTHING IN PATHQUOTE DOES EITHER YET. A take-over keeps the marker, a
+// NOTHING THE DRAIN DOES CLEARS IT ON ITS OWN. A take-over keeps the marker, a
 // re-finalise is a take-over, and no pass clears it, however many hours
-// apart; UNTRACKED_CONTACT_REASON says so, and sends the manager to the
-// developer, who settles it by hand (FOR TASK 10, next). Nor may the manager
+// apart. An administrator settles it on the quote's page -- "ACT! has this
+// person" or "ACT! has nobody" (contactFoundDecision and
+// contactAbsentDecision in src/lib/act/outbox-admin.ts) -- or the developer
+// by hand when the app cannot (FOR TASK 10, next); UNTRACKED_CONTACT_REASON
+// says so, and sends the manager to an administrator. Nor may the manager
 // work round it: deleting the contact -- or its company, which deletes its
 // contacts -- sets its quotes' Document.contactId to null, so nothing holds
 // them any more, and the person added again is a new contact with no ACT! id
@@ -542,10 +545,23 @@
 //   null) -- the periodic drain, within 15 minutes, or the nightly sync's.
 //   (A fast path, over one quote, does the same for that quote alone.)
 //
-//   Task 9 adds an admin action on the quote that does this from the
-//   browser, with two choices: "ACT! has this person — id …" and "ACT! has
-//   nobody". Once it exists, the runbook points to it first and keeps the
-//   SQL above for when the app cannot be used.
+//   On the held quote's own page, an administrator has the two common cases
+//   as actions (src/lib/act/outbox-admin.ts, src/lib/actions/act-outbox.ts):
+//   "ACT! has this person", which takes the ACT! id and makes the first
+//   UPDATE above, guarded the same way and on the contact having no ACT! id
+//   yet, and "ACT! has nobody", which makes the release just above. Each also
+//   makes due, at once, every quote on the contact still blocked with
+//   UNTRACKED_CONTACT_REASON, rather than leaving that to the next full
+//   pass. The runbook points to them first, and keeps the SQL for when the
+//   app cannot be used.
+//
+//   THE MERGE STAYS SQL. "ACT! has this person" refuses when another
+//   PathQuote contact already carries that ACT! id, names it, and sends the
+//   administrator to the developer for the merge above. Expect that to be
+//   the usual case rather than the exception once an inbound sync has run
+//   since the create: a person ACT! did make is a Prospect, edited after the
+//   sync's cursor, so the nightly sync -- or a Sync now press -- imports them
+//   as a new PathQuote contact, and the duplicate is there by morning.
 //
 // A REQUIREMENT ON THE DRAIN (src/lib/act/drain.ts): after
 // create-opportunity, the two stores -- Document.actOpportunityId and the
@@ -581,9 +597,9 @@
 // manager can fix names the fix; a fault only PathQuote's configuration can
 // fix says "ask your developer"; a record that may or may not be in ACT!
 // says what happened and what has to happen before the write is tried again
-// -- for a contact, that PathQuote will not try again on its own and the
-// developer settles it (FOR TASK 10 above; an admin action for it is Task
-// 9's). The blocking checks run before every step,
+// -- for a contact, that PathQuote will not try again on its own and an
+// administrator settles it on the quote's page (FOR TASK 10 above). The
+// blocking checks run before every step,
 // not once: for a fresh row that means before anything is created in ACT!, so
 // a row blocked from the start leaves nothing behind. A row can also become
 // blocked partway -- unfinalise it after its contact or opportunity was
@@ -753,13 +769,28 @@ export function unmappedRegionReason(regionCode: string): string {
  * failed. PathQuote holds no record of whether ACT! made the contact, and
  * creating it again could put the same person in ACT! twice, so a person has
  * to look -- and nothing in PathQuote will look for them: no pass, take-over
- * or re-finalise clears the hold, which is the developer's to settle (FOR
+ * or re-finalise clears the hold, which an administrator settles on this
+ * quote's page after looking in ACT! (A CONTACT CREATE IN FLIGHT, and FOR
  * TASK 10, in the header). The sentence says both, and warns off the
  * workaround a manager might try, deleting and re-adding the contact, which
  * lifts the hold and creates the person again.
+ *
+ * Read by a manager, who sees this sentence on the quote but not the
+ * administrator's buttons under it, so it sends them to an administrator
+ * rather than naming the buttons.
+ *
+ * REWORDING IT is safe but not instant. A row the planner blocked with an
+ * older wording is rewritten with this one by the next full drain pass
+ * (`reblock`, replanBlocked in src/lib/act/drain-rules.ts); until then the
+ * Settings count of rows held for a contact (readOutboxStanding in
+ * src/lib/queries/act-sync.ts), the administrator's two contact actions on
+ * the quote, and the release of the contact's other quotes (heldForContact
+ * and heldForContactRelease in src/lib/act/outbox-admin.ts), which all match
+ * this exact text, pass that row over. The 2026-10-13 wording replaced "ask
+ * your developer" once the administrator's actions existed.
  */
 export const UNTRACKED_CONTACT_REASON =
-  "PathQuote asked ACT! to create this quote's contact and has no record of whether it did, so they may be in ACT! already, and creating them again could put the same person in ACT! twice — PathQuote will not try again on its own: ask your developer, and do not delete or re-add this contact.";
+  "PathQuote asked ACT! to create this quote's contact and has no record of whether it did, so they may be in ACT! already, and creating them again could put the same person in ACT! twice — PathQuote will not try again on its own: an administrator has to look in ACT! and settle it on this quote's page, and nobody should delete or re-add this contact.";
 
 /**
  * The sentence for a value in ActOutbox.createInFlight that nothing here

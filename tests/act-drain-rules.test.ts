@@ -206,7 +206,7 @@ describe("refusedReason", () => {
   it("says what was refused, what ACT! said, and what happens next, in a manager's sentence", () => {
     const reason = refusedReason("promote-contact", 400, '{"Message":"Account Mgr is not in the list"}');
     expect(reason).toBe(
-      'ACT! refused to make this quote\'s contact a Customer, answering 400 ("Account Mgr is not in the list") — PathQuote will not send it again on its own: check the record in ACT!, and it is tried again when this quote is next finalised, signed or accepted, or when your developer retries it.',
+      'ACT! refused to make this quote\'s contact a Customer, answering 400 ("Account Mgr is not in the list") — PathQuote will not send it again on its own: check the record in ACT!, and it is tried again when this quote is next finalised, signed or accepted, or when an administrator sends it again from this quote\'s page.',
     );
   });
 
@@ -232,7 +232,7 @@ describe("refusedReason", () => {
 describe("deniedReason", () => {
   it("says ACT! denied access to the record, what to do, and that it is held", () => {
     expect(deniedReason("promote-contact", "GET", '{"Message":"Access denied"}')).toBe(
-      'ACT! denied PathQuote access to the record it needed to make this quote\'s contact a Customer, answering 403 ("Access denied") — ACT! can keep a record to some of its users, and an ACT! administrator can give PathQuote\'s login access. PathQuote will not try again on its own: it is tried again when this quote is next finalised, signed or accepted, or when your developer retries it.',
+      'ACT! denied PathQuote access to the record it needed to make this quote\'s contact a Customer, answering 403 ("Access denied") — ACT! can keep a record to some of its users, and an ACT! administrator can give PathQuote\'s login access. PathQuote will not try again on its own: it is tried again when this quote is next finalised, signed or accepted, or when an administrator sends it again from this quote\'s page.',
     );
   });
 

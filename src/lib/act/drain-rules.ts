@@ -213,12 +213,18 @@ export function answerDetail(body: string): string {
 /**
  * What happens next to a write ACT! refused or denied, as the end of the
  * sentence a manager reads: it is held (BLOCKED_BY.act), and sent again only
- * by a take-over or a person. If what ACT! objects to is on its own record
+ * by a take-over or a person -- the person being an administrator, with "Try
+ * again now" on the quote's page (tryAgainDecision in
+ * src/lib/act/outbox-admin.ts). If what ACT! objects to is on its own record
  * (an off-list value on an old contact, say), fixing that record is what
  * lets the next attempt through.
+ *
+ * A row already held keeps the sentence it was blocked with: the drain's pass
+ * over blocked rows leaves a BLOCKED_BY.act row as it is (replanBlocked), so
+ * this wording reaches only rows refused from now on.
  */
 const HELD_UNTIL_RETRIED =
-  "it is tried again when this quote is next finalised, signed or accepted, or when your developer retries it.";
+  "it is tried again when this quote is next finalised, signed or accepted, or when an administrator sends it again from this quote's page.";
 
 /**
  * The blocked reason for a step ACT! refused: what was being done, ACT!'s
@@ -264,19 +270,32 @@ export function deniedReason(kind: ActStepKind, method: string, body: string): s
  *             answer cannot change by itself, and checking it every pass
  *             would only spend a place in the pass on a row that cannot move.
  *             A value of its own rather than `act`, because `act` says ACT!
- *             objected, and whoever reads the column -- a person, Task 9's
- *             quote view, Task 10's runbook -- would look in ACT! for a
+ *             objected, and whoever reads the column -- a person, the
+ *             quote's ACT! card (adminHelpFor in src/lib/act/quote-act-view.ts,
+ *             which words "Try again now" by it), Task 10's runbook -- would
+ *             look in ACT! for a
  *             refusal that never happened; the fix here is PathQuote's own
  *             data, which is why its reasons say "ask your developer".
  *   drain     duplicates a lookup found in ACT!: rechecked by later passes,
  *             after the due rows and at most RECHECKS_PER_PASS a pass.
  *             Somebody removing the extra records in ACT! is what lets it on,
  *             and PathQuote is not told of that, so it asks again.
+ *   admin     on a FINISHED row only: an administrator chose not to send the
+ *             quote ("Don't send this quote to ACT!", dontSendDecision in
+ *             src/lib/act/outbox-admin.ts). Written in the same statement that
+ *             sets completedAt, so no pass ever sees it -- every pass reads
+ *             unfinished rows only -- and replanBlocked never meets it. It is
+ *             what tells the quote's page "not sent" from "in ACT!", which a
+ *             finished row otherwise means.
+ *
+ * Any of the three, on an unfinished row, can also be cleared by an
+ * administrator's "Try again now" (tryAgainDecision, same file).
  */
 export const BLOCKED_BY = {
   act: "act",
   revision: "revision",
   drain: "drain",
+  admin: "admin",
 } as const;
 
 /**
@@ -505,7 +524,8 @@ export function drainFailure(error: unknown): DrainFailure {
 
 /**
  * ActOutbox.lastError for a step that failed and will be tried again: short,
- * for a person (Task 9 shows it on the quote), and saying whether the fault
+ * for a person (the quote's ACT! card shows it as written, describeQuoteAct
+ * in src/lib/act/quote-act-view.ts), and saying whether the fault
  * was ACT!'s or PathQuote's own.
  */
 export function lastErrorText(kind: ActStepKind, error: unknown): string {

@@ -101,8 +101,9 @@ export function formatDrainBanner(args: DrainArgs, database: DatabaseTarget): st
  *
  *   - `ran`, whatever it found: a row held back is listed, with its reason,
  *     on Settings (the queue card, describeOutbox in src/lib/act/sync-view.ts)
- *     -- not yet on its quote, which shows it from Task 9 -- and a row backing
- *     off is tried again by the next tick;
+ *     and on its quote's own page (describeQuoteAct in
+ *     src/lib/act/quote-act-view.ts) -- and a row backing off is tried again
+ *     by the next tick;
  *   - `busy`: another drain is doing the work -- at 03:00, the nightly sync's;
  *   - `switched-off`: somebody's decision, not a fault;
  *   - `out-of-time`: the rest go at the next tick;
