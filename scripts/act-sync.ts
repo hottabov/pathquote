@@ -1,5 +1,6 @@
 /**
- * Pull contacts from ACT! into PathQuote.
+ * Send ACT! the quotes queued for it, then pull contacts from ACT! into
+ * PathQuote.
  *
  *   npm run act:sync -- --dry-run --limit 50   # read and report, write nothing
  *   npm run act:sync -- --limit 200            # a careful first write
@@ -19,10 +20,21 @@
  * once when it starts and again when it ends, so a run killed partway still
  * says it began. A dry run leaves none.
  *
+ * Every run that writes drains the ActOutbox first, while the off switch
+ * (src/lib/act/write-switch.ts) is on, waiting up to 15 minutes for a drain
+ * already going (DRAIN_LOCK_WAIT_MS in src/lib/act/sync.ts); the report has
+ * a `drain` block. A dry run sends nothing.
+ *
  * Exit status: 0 clean -- and 0 when another sync already holds the lock, which
  * is not this invocation's failure, 1 the run threw or some contacts failed to
- * store, 2 bad arguments or no identifiable database. Run it on the VPS: the
- * ACT! API only answers to that address.
+ * store, 2 bad arguments or no identifiable database. What the drain did does
+ * not change it: a drain that failed is recorded and the read goes on, and
+ * the 15-minute drain's own unit (pq-act-drain.service) is what fails, and
+ * emails, for a fault in sending that needs a person -- failing here too
+ * would be a second email about the same thing. A wait for the drain's lock
+ * that runs out is a throw, and exits 1 like any other.
+ *
+ * Run it on the VPS: the ACT! API only answers to that address.
  *
  * Environment (see docs/act-integration-reference.md section 10):
  *   ACT_BASE=https://actapi.pathfindercut.com/act.web.api
@@ -34,10 +46,30 @@
 import "dotenv/config";
 import { actClientFromEnv } from "../src/lib/act/client";
 import { describeDatabase, formatBanner, parseActSyncArgs } from "../src/lib/act/cli-args";
+import type { RunDrain } from "../src/lib/act/run-record";
 import { SyncAlreadyRunningError, syncContacts, readCursor } from "../src/lib/act/sync";
 
 function row(label: string, value: string | number): void {
   console.log(`${label.padEnd(24)}${value}`);
+}
+
+/** The drain before the read, in the same rows as the rest of the report. */
+function printDrain(drain: RunDrain | null): void {
+  if (!drain) {
+    console.log("drain: none -- a dry run sends nothing");
+    return;
+  }
+  console.log("drain (quotes sent to ACT! before the read):");
+  row("  status", drain.stopCause ? `${drain.status} (${drain.stopCause})` : drain.status);
+  row("  quotes done", drain.rowsDone);
+  row("  writes to ACT!", drain.stepsWritten);
+  row("  held back", drain.blocked);
+  row("    for their contact", drain.heldForContact);
+  row("  backing off", drain.backingOff);
+  row("  untracked creates", drain.untracked);
+  row("  waiting, switch off", drain.waiting);
+  if (drain.stopReason) console.log(`  why: ${drain.stopReason}`);
+  if (drain.firstBlockedReason) console.log(`  first held back: ${drain.firstBlockedReason}`);
 }
 
 async function main() {
@@ -93,6 +125,7 @@ async function main() {
   for (const [reason, count] of Object.entries(result.skipped)) {
     if (count > 0) console.log(`  ${reason.padEnd(22)}${count}`);
   }
+  printDrain(result.drain);
 
   if (result.companiesKeyCollisions > 0) {
     console.log("");

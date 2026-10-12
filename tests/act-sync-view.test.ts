@@ -453,3 +453,41 @@ describe("describeSyncAttempt", () => {
     expect(attempt.message).toContain("Reload this page");
   });
 });
+
+describe("describeActSyncStatus — the quotes sent to ACT!", () => {
+  // describeRun owns the words (tests/act-run-record.test.ts); this pins that
+  // the section hands them through, tone and all, rather than dropping them.
+  const drain = {
+    status: "switched-off" as const,
+    stopReason: null,
+    stopCause: null,
+    rowsDone: 0,
+    stepsWritten: 0,
+    blocked: 0,
+    firstBlockedReason: null,
+    heldForContact: 0,
+    backingOff: 0,
+    untracked: 0,
+    waiting: 4,
+  };
+
+  it("says quotes are waiting behind the switch, and stays green", () => {
+    const view = describeActSyncStatus(status({ lastRun: run({ drain }) }), NOW);
+    expect(view.summary.tone).toBe("ok");
+    expect(view.summary.detail).toBe(
+      "4 quotes are waiting to go to ACT!, but sending to ACT! is switched off — they go as soon as it is switched on.",
+    );
+  });
+
+  it("turns the summary amber for a quote held back, with the quotes sent in the headline", () => {
+    const view = describeActSyncStatus(
+      status({ lastRun: run({ drain: { ...drain, status: "ran", waiting: 0, rowsDone: 2, blocked: 1 } }) }),
+      NOW,
+    );
+    expect(view.summary).toMatchObject({
+      tone: "warn",
+      headline: "3 contacts added, 11 updated, 2 companies added, 2 quotes sent to ACT!",
+      detail: "1 quote was held back from ACT! — the quote's own page says why, and what to do about it.",
+    });
+  });
+});

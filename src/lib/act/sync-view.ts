@@ -82,7 +82,11 @@ export type ActSyncSummary = {
   /** Drives the styling, the same three tones `describeRun` returns. */
   tone: RunDescription["tone"];
   headline: string;
-  /** Up to three sentences; render it as a paragraph. */
+  /**
+   * A few sentences -- more on a night the drain has things to say about the
+   * quotes it sent (describeDrain in src/lib/act/run-record.ts); render it as
+   * a paragraph.
+   */
   detail: string | null;
   /**
    * "Scheduled" / "Run by hand", or null when there is no readable record to

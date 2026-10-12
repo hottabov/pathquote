@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
+import type { DrainResult } from "../src/lib/act/drain";
+import { UNTRACKED_CONTACT_REASON, NO_CONTACT_REASON } from "../src/lib/act/outbox-plan";
 import {
   describeRun,
+  drainSummary,
+  drainThrew,
   failedRun,
   finishedRun,
   messageOf,
@@ -8,6 +12,7 @@ import {
   startedRun,
   type ActSyncRun,
   type RunCounts,
+  type RunDrain,
 } from "../src/lib/act/run-record";
 
 function run(overrides: Partial<ActSyncRun> = {}): ActSyncRun {
@@ -22,6 +27,7 @@ function run(overrides: Partial<ActSyncRun> = {}): ActSyncRun {
     companiesKeyCollisions: 0,
     failed: 0,
     error: null,
+    drain: null,
     ...overrides,
   };
 }
@@ -237,6 +243,7 @@ describe("the three records one run can leave", () => {
       companiesKeyCollisions: 0,
       failed: 0,
       error: null,
+      drain: null,
     });
   });
 
@@ -248,6 +255,7 @@ describe("the three records one run can leave", () => {
       finishedAt: "2026-10-09T17:09:30.000Z",
       trigger: "schedule",
       error: null,
+      drain: null,
     });
   });
 
@@ -266,6 +274,7 @@ describe("the three records one run can leave", () => {
       finishedAt: null,
       trigger: "manual",
       error: "authorize 401",
+      drain: null,
     });
     expect(describeRun(record).headline).toContain("authorize 401");
   });
@@ -409,5 +418,360 @@ describe("parseStoredRun", () => {
     // ActSyncRun and would not expect it.
     const fromLater = { ...written, contactsDeleted: 4 };
     expect(parseStoredRun(stored(fromLater))).toEqual(written);
+  });
+});
+
+// --- the drain ---------------------------------------------------------------
+
+/** A drain pass that sent nothing and found nothing: the ordinary night's. */
+function drained(overrides: Partial<RunDrain> = {}): RunDrain {
+  return {
+    status: "ran",
+    stopReason: null,
+    stopCause: null,
+    rowsDone: 0,
+    stepsWritten: 0,
+    blocked: 0,
+    firstBlockedReason: null,
+    heldForContact: 0,
+    backingOff: 0,
+    untracked: 0,
+    waiting: 0,
+    ...overrides,
+  };
+}
+
+function drainResult(overrides: Partial<DrainResult> = {}): DrainResult {
+  return {
+    status: "ran",
+    stopCause: null,
+    rowsDone: 0,
+    stepsWritten: 0,
+    blocked: [],
+    failed: [],
+    untracked: 0,
+    unblocked: 0,
+    skippedSwitchOff: 0,
+    stopReason: null,
+    ...overrides,
+  };
+}
+
+/** A clean run with nothing inbound, so only the drain has anything to say. */
+function quiet(drain: RunDrain | null): ActSyncRun {
+  return run({ contactsCreated: 0, contactsUpdated: 0, companiesCreated: 0, drain });
+}
+
+describe("drainSummary and drainThrew", () => {
+  it("keeps the counts, the first reason, and how many were held for their contact", () => {
+    const summary = drainSummary(
+      drainResult({
+        status: "stopped",
+        stopCause: "unavailable",
+        stopReason: "PathQuote could not create the opportunity: ACT! did not answer — timeout",
+        rowsDone: 3,
+        stepsWritten: 9,
+        blocked: [
+          { documentId: "d1", reason: NO_CONTACT_REASON },
+          { documentId: "d2", reason: UNTRACKED_CONTACT_REASON },
+          { documentId: "d3", reason: UNTRACKED_CONTACT_REASON },
+        ],
+        failed: [{ documentId: "d4", error: "x" }],
+        untracked: 1,
+        unblocked: 4,
+        skippedSwitchOff: 0,
+      }),
+    );
+    expect(summary).toEqual({
+      status: "stopped",
+      stopReason: "PathQuote could not create the opportunity: ACT! did not answer — timeout",
+      stopCause: "unavailable",
+      rowsDone: 3,
+      stepsWritten: 9,
+      blocked: 3,
+      firstBlockedReason: NO_CONTACT_REASON,
+      heldForContact: 2,
+      backingOff: 1,
+      untracked: 1,
+      waiting: 0,
+    });
+  });
+
+  it("records a drain that threw as failed, with words even for a blank throw", () => {
+    expect(drainThrew(new Error("connection terminated"))).toEqual(
+      drained({ status: "failed", stopReason: "connection terminated" }),
+    );
+    expect(drainThrew(new Error("  ")).stopReason).toBeTruthy();
+    // Prisma's message for a database failure, shape as measured: the last
+    // line is what went wrong, the rest is a frame of source code.
+    const prisma = new Error(
+      "\nInvalid `db.actOutbox.findMany()` invocation in\n/app/src/lib/act/drain.ts:645:40\n\n  644 async replanBlocked(\n→ 645   const blocked = await db.actOutbox.findMany(\nThe table `public.ActOutbox` does not exist in the current database.",
+    );
+    expect(drainThrew(prisma).stopReason).toBe("The table `public.ActOutbox` does not exist in the current database.");
+  });
+
+  it("goes onto the closing records, and onto no other field", () => {
+    // SyncResult carries `drain` as a RunDrain; the closing builders copy it
+    // by name, so a stray field on what they were handed stays out of the row.
+    const started = startedRun("schedule", new Date("2026-10-09T17:00:00.000Z"));
+    const counts: RunCounts = {
+      contactsCreated: 0,
+      contactsUpdated: 0,
+      companiesCreated: 0,
+      companiesFromNamelessContacts: 0,
+      companiesKeyCollisions: 0,
+      failed: 0,
+    };
+    const drain = { ...drained({ rowsDone: 2 }), unblocked: 7 } as RunDrain;
+    const finished = finishedRun(started, { ...counts, drain }, new Date("2026-10-09T17:01:00.000Z"));
+    expect(finished.drain).toEqual(drained({ rowsDone: 2 }));
+    expect(failedRun(started, { ...counts, drain }, new Error("x")).drain).toEqual(drained({ rowsDone: 2 }));
+    // A run that threw before it drained has none.
+    expect(failedRun(started, counts, new Error("x")).drain).toBeNull();
+  });
+});
+
+describe("parseStoredRun, and the drain", () => {
+  function stored(value: unknown): unknown {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  // Exactly what production's run record looks like the day this ships: the
+  // shape finishedRun wrote before `drain` existed, key for key.
+  const today = {
+    startedAt: "2026-10-12T16:00:00.412Z",
+    finishedAt: "2026-10-12T16:00:07.901Z",
+    trigger: "schedule",
+    contactsCreated: 0,
+    contactsUpdated: 14,
+    companiesCreated: 1,
+    companiesFromNamelessContacts: 0,
+    companiesKeyCollisions: 0,
+    failed: 0,
+    error: null,
+  };
+
+  it("still reads a record in today's exact shape, as one with no drain information", () => {
+    // Requiring `drain` would make this record unreadable, and the Settings
+    // page would say PathQuote cannot read it until the next run.
+    expect(parseStoredRun(stored(today))).toEqual({ ...today, drain: null });
+    expect(describeRun(parseStoredRun(stored(today))!)).toMatchObject({
+      tone: "ok",
+      headline: "14 contacts updated, 1 company added",
+      detail: null,
+    });
+  });
+
+  it("still reads today's start record and today's failed record", () => {
+    const start = { ...today, finishedAt: null, contactsUpdated: 0, companiesCreated: 0 };
+    expect(parseStoredRun(stored(start))).toEqual({ ...start, drain: null });
+    const threw = { ...today, finishedAt: null, error: "authorize failed (401)" };
+    expect(parseStoredRun(stored(threw))).toEqual({ ...threw, drain: null });
+  });
+
+  it("reads a stored null drain as no drain information", () => {
+    expect(parseStoredRun(stored({ ...today, drain: null }))).toEqual({ ...today, drain: null });
+  });
+
+  it("reads back a record with a drain on it", () => {
+    const record = { ...today, drain: drained({ rowsDone: 2, stepsWritten: 6, blocked: 1, firstBlockedReason: NO_CONTACT_REASON }) };
+    expect(parseStoredRun(stored(record))).toEqual(record);
+  });
+
+  it("holds a drain that is there to the standard of the rest of the record", () => {
+    const withDrain = (drain: unknown) => stored({ ...today, drain });
+    const missingOne: Record<string, unknown> = { ...drained() };
+    delete missingOne.backingOff;
+    for (const drain of [
+      missingOne,
+      { ...drained(), rowsDone: -1 },
+      { ...drained(), blocked: "2" },
+      { ...drained(), status: "exploded" },
+      { ...drained(), stopCause: "weather" },
+      { ...drained(), stopReason: "" },
+      { ...drained(), firstBlockedReason: "   " },
+      { ...drained(), firstBlockedReason: 7 },
+      [drained()],
+      "ran",
+      7,
+    ]) {
+      expect(parseStoredRun(withDrain(drain))).toBeNull();
+    }
+  });
+
+  it("does not pass on a field of the drain it does not know about", () => {
+    const record = { ...today, drain: { ...drained(), skippedRows: 4 } };
+    expect(parseStoredRun(stored(record))).toEqual({ ...today, drain: drained() });
+  });
+});
+
+describe("describeRun: what the drain did", () => {
+  it("says nothing when there is no drain information", () => {
+    expect(describeRun(quiet(null))).toMatchObject({ tone: "ok", headline: "No changes", detail: null });
+  });
+
+  it("says nothing when the drain had nothing to send", () => {
+    expect(describeRun(quiet(drained()))).toMatchObject({ tone: "ok", headline: "No changes", detail: null });
+  });
+
+  it("says nothing when sending is switched off and nothing is waiting", () => {
+    // Every night until somebody turns sending on, with nothing finalised.
+    expect(describeRun(quiet(drained({ status: "switched-off" })))).toMatchObject({
+      tone: "ok",
+      headline: "No changes",
+      detail: null,
+    });
+  });
+
+  it("says quotes are waiting when sending is switched off, without turning amber", () => {
+    // The state right after the write-back is deployed: sending is off on
+    // purpose, and finalised quotes are queuing behind it.
+    expect(describeRun(quiet(drained({ status: "switched-off", waiting: 3 })))).toEqual({
+      tone: "ok",
+      headline: "No changes",
+      detail: "3 quotes are waiting to go to ACT!, but sending to ACT! is switched off — they go as soon as it is switched on.",
+      trigger: "Scheduled",
+    });
+    expect(describeRun(quiet(drained({ status: "switched-off", waiting: 1 }))).detail).toBe(
+      "1 quote is waiting to go to ACT!, but sending to ACT! is switched off — it goes as soon as it is switched on.",
+    );
+  });
+
+  it("puts the quotes sent in the headline, after the contacts", () => {
+    expect(describeRun(run({ contactsCreated: 0, companiesCreated: 0, drain: drained({ rowsDone: 2 }) }))).toMatchObject({
+      tone: "ok",
+      headline: "11 contacts updated, 2 quotes sent to ACT!",
+    });
+    // Never "No changes" about a night that sent a quote.
+    expect(describeRun(quiet(drained({ rowsDone: 1 }))).headline).toBe("1 quote sent to ACT!");
+  });
+
+  it("turns amber for a quote held back, and sends the reader to the quote", () => {
+    expect(describeRun(quiet(drained({ blocked: 1, firstBlockedReason: NO_CONTACT_REASON })))).toMatchObject({
+      tone: "warn",
+      detail: "1 quote was held back from ACT! — the quote's own page says why, and what to do about it.",
+    });
+    expect(describeRun(quiet(drained({ blocked: 4, firstBlockedReason: NO_CONTACT_REASON }))).detail).toBe(
+      "4 quotes were held back from ACT! — each quote's own page says why, and what to do about it.",
+    );
+  });
+
+  it("says plainly that a quote held for its untracked contact needs a person", () => {
+    const one = describeRun(quiet(drained({ blocked: 1, heldForContact: 1, untracked: 1, firstBlockedReason: UNTRACKED_CONTACT_REASON })));
+    expect(one).toMatchObject({
+      tone: "warn",
+      detail:
+        "1 quote is held because PathQuote asked ACT! to create its contact and never heard whether it did — somebody has to look in ACT! before it can go on, so ask your developer, and do not delete or re-add that contact.",
+    });
+    // Counted once: the held-for-contact rows are among `blocked`, and not
+    // said again as held back.
+    const mixed = describeRun(quiet(drained({ blocked: 3, heldForContact: 2, untracked: 1 }))).detail!;
+    expect(mixed).toBe(
+      "2 quotes are held because PathQuote asked ACT! to create their contact and never heard whether it did — somebody has to look in ACT! before they can go on, so ask your developer, and do not delete or re-add those contacts. 1 quote was held back from ACT! — the quote's own page says why, and what to do about it.",
+    );
+  });
+
+  it("says nothing extra about an untracked create that is not a contact's", () => {
+    // An opportunity, product line or history PathQuote never heard back
+    // about is looked for in ACT! before it is made again; its row backs off.
+    expect(describeRun(quiet(drained({ untracked: 1, backingOff: 1 })))).toMatchObject({
+      tone: "ok",
+      detail: "1 quote did not get through to ACT! this time — PathQuote tries again on its own.",
+    });
+  });
+
+  it("stays green for quotes backing off, which retry on their own", () => {
+    expect(describeRun(quiet(drained({ backingOff: 2 })))).toMatchObject({
+      tone: "ok",
+      detail: "2 quotes did not get through to ACT! this time — PathQuote tries again on its own.",
+    });
+  });
+
+  it("stays green when ACT! was busy or away, and quotes no status codes at the reader", () => {
+    expect(
+      describeRun(quiet(drained({ status: "stopped", stopCause: "unavailable", stopReason: "ACT! answered 429", backingOff: 1 }))),
+    ).toMatchObject({
+      tone: "ok",
+      detail:
+        "ACT! was busy or not answering, so sending quotes stopped partway — the rest go on their own once it answers. 1 quote did not get through to ACT! this time — PathQuote tries again on its own.",
+    });
+  });
+
+  it("turns amber when sending stopped on something that will not mend itself, and quotes why", () => {
+    const reason =
+      'no ACT! user, or more than one, has the login "Marketing" (ACT_USER), so there is no record manager for a quote whose author has no ACT! user — check ACT_USER against ACT!\'s users';
+    expect(describeRun(quiet(drained({ status: "stopped", stopCause: "setup", stopReason: reason })))).toMatchObject({
+      tone: "warn",
+      detail: `Sending quotes to ACT! stopped: ${reason}. Quotes will not reach ACT! until this is put right — ask your developer.`,
+    });
+    // One full stop, not two, after a reason that brought its own.
+    expect(
+      describeRun(quiet(drained({ status: "stopped", stopCause: "setup", stopReason: "the login was refused." }))).detail,
+    ).toBe("Sending quotes to ACT! stopped: the login was refused. Quotes will not reach ACT! until this is put right — ask your developer.");
+  });
+
+  it("turns amber when the drain threw, and says nothing was lost", () => {
+    expect(describeRun(quiet(drained({ status: "failed", stopReason: "connection terminated" })))).toMatchObject({
+      tone: "warn",
+      headline: "No changes",
+      detail:
+        "Sending quotes to ACT! failed: connection terminated. Nothing was lost — the quotes stay queued and are tried again on their own; if this keeps happening, ask your developer.",
+    });
+  });
+
+  it("stays green when a pass ran out of time", () => {
+    expect(describeRun(quiet(drained({ status: "out-of-time", rowsDone: 40 })))).toEqual({
+      tone: "ok",
+      headline: "40 quotes sent to ACT!",
+      detail: "There were more quotes to send than one go allows — the rest are sent on their own shortly.",
+      trigger: "Scheduled",
+    });
+  });
+
+  it("says what it means when another send was under way", () => {
+    // Not reachable from the sync, which drains under its own lock -- but a
+    // status the record can hold has words.
+    expect(describeRun(quiet(drained({ status: "busy" })))).toMatchObject({
+      tone: "ok",
+      detail: "No quotes were sent this time because another send to ACT! was already under way — they go with the next.",
+    });
+  });
+
+  it("never makes a run worse than amber, and comes after the contact notes", () => {
+    const described = describeRun(
+      run({ companiesKeyCollisions: 1, drain: drained({ blocked: 1, firstBlockedReason: NO_CONTACT_REASON }) }),
+    );
+    expect(described.tone).toBe("warn");
+    expect(described.detail).toMatch(/^1 new client has a name that looks like.*1 quote was held back from ACT!/);
+  });
+
+  it("adds the drain to the second line of a run that threw, and keeps it red", () => {
+    const described = describeRun(
+      run({ finishedAt: null, error: "authorize failed (401)", drain: drained({ rowsDone: 2, blocked: 1 }) }),
+    );
+    expect(described).toMatchObject({
+      tone: "error",
+      headline: "Failed: authorize failed (401)",
+      detail:
+        "Nothing was skipped — everything it got through is saved, and the next run carries on from there. It sent 2 quotes to ACT! first, and those went through. 1 quote was held back from ACT! — the quote's own page says why, and what to do about it.",
+    });
+    expect(describeRun(run({ finishedAt: null, error: "x", drain: drained({ rowsDone: 1 }) })).detail).toContain(
+      "It sent 1 quote to ACT! first, and that one went through.",
+    );
+  });
+
+  it("adds the drain to the second line of a run with failed contacts", () => {
+    const described = describeRun(run({ failed: 2, drain: drained({ status: "switched-off", waiting: 5 }) }));
+    expect(described.tone).toBe("error");
+    expect(described.detail).toBe(
+      "Nothing was skipped — those contacts will be tried again on the next sync. If it keeps happening, ask your developer to look into it. 5 quotes are waiting to go to ACT!, but sending to ACT! is switched off — they go as soon as it is switched on.",
+    );
+  });
+
+  it("has nothing to add to a run that is going, or was killed", () => {
+    // Their record is the start record, whose drain is null.
+    const start = startedRun("schedule", new Date("2026-10-09T17:00:00.000Z"));
+    expect(describeRun(start, { running: true }).detail).not.toContain("quote");
+    expect(describeRun(start).detail).not.toContain("quote");
   });
 });

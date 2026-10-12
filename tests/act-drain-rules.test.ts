@@ -22,6 +22,7 @@ import {
   deniedReason,
   passWork,
   replanBlocked,
+  stopCause,
   stopsPass,
   type ActStepKind,
 } from "../src/lib/act/drain-rules";
@@ -406,6 +407,15 @@ describe("drainFailure", () => {
   it("stops the pass after a stop, a try-later or ACT! unreachable, and after nothing else", () => {
     const all = ["refused", "denied", "stop", "try-later", "unreachable", "untracked", "failed", "foreign"] as const;
     expect(all.filter(stopsPass)).toEqual(["stop", "try-later", "unreachable"]);
+  });
+
+  it("calls a stop unavailable only when ACT! was busy or away, and setup otherwise", () => {
+    // What decides whether the 15-minute unit fails, and emails: a weekend
+    // with ACT! off must not, a wrong password or a lost allow-list entry must.
+    const all = ["refused", "denied", "stop", "try-later", "unreachable", "untracked", "failed", "foreign"] as const;
+    expect(all.filter((failure) => stopCause(failure) === "unavailable")).toEqual(["try-later", "unreachable", "failed"]);
+    expect(stopCause(drainFailure(new ActApiError("x", "POST", 401, "", "refused")))).toBe("setup");
+    expect(stopCause(drainFailure(new ActNotSentError("GET /api/users", "ECONNREFUSED")))).toBe("unavailable");
   });
 
   it("calls a 429 or a 408 try-later, on a create or a read: back off, and stop the pass", () => {

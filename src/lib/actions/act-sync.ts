@@ -18,10 +18,16 @@ export type { ActionResultWithWarning };
  * has ticked `User.actSyncVisible` for them, and the point of that is the
  * manager who can see their own ACT! edit has not arrived and would otherwise
  * have to ask for it. What makes it safe to hand over is that there is nothing
- * here to get wrong -- the sync only reads ACT!, its writes into PathQuote
+ * here to get wrong -- the sync reads ACT!, its writes into PathQuote
  * fill blanks and never overwrite (`fillOnlyEmpty`, src/lib/act/merge.ts), the
  * advisory lock below means a second press cannot start a second run, and no
  * option is taken from the request (see the `trigger` comment inside).
+ *
+ * It also writes INTO ACT!: like every run that writes, it first sends the
+ * quotes queued for ACT! (drainActOutbox, at the top of syncContacts in
+ * src/lib/act/sync.ts). That gives the presser no reach of their own -- what
+ * it sends is the queue as it stands, under the off switch, and the same
+ * rows the 15-minute drain would send within the quarter hour anyway.
  *
  * Not the bare `requireSession` it was between 2026-10-10 and the per-user
  * grant, either, and this is the gate that makes the grant worth the name. A
@@ -74,6 +80,15 @@ export type { ActionResultWithWarning };
  *         finish -- and the 43 minutes is NOT it. Quote one or the other; the
  *         three-attempts-plus-backoff reasoning belongs to the 2h16m.
  *     No timeout anywhere in this app stops either of them.
+ *   - Another drain going when it is pressed: the 15-minute one, or a fast
+ *     path after a finalise. The run waits for its lock before it sends or
+ *     reads -- a pass is over in about 10 minutes at worst, and the wait
+ *     gives up at 15 (DRAIN_LOCK_WAIT_MS in src/lib/act/sync.ts), which is
+ *     then a thrown run with the reason. Usually the other pass is over in
+ *     seconds; when it is not, the page gives up waiting long before.
+ *   - The run's own drain, before the read: seconds when little is queued,
+ *     up to its 5-minute budget (DRAIN_TIME_BUDGET_MS in
+ *     src/lib/act/drain.ts) and the step in flight when a backlog is.
  *
  * What bounds it is not in this repository: nginx's `proxy_read_timeout`, and
  * on the VPS that is 60 seconds. Measured 2026-10-10 rather than assumed --

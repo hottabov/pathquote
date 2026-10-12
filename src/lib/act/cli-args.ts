@@ -153,9 +153,12 @@ export function describeDatabase(url: string | undefined): DatabaseTarget | null
 }
 
 export function formatBanner(args: ActSyncArgs, database: DatabaseTarget): string {
+  // "Sends queued quotes" belongs in the write mode's line because ACT! is
+  // the production CRM: a run that writes into it says so before it starts.
+  // "If sending is on" because the off switch decides, not this run.
   const mode = args.dryRun
-    ? "dry run -- reads ACT!, writes nothing"
-    : "WRITE -- creates and updates contacts and companies";
+    ? "dry run -- reads ACT!, writes nothing, sends nothing"
+    : "WRITE -- sends queued quotes to ACT! if sending is on, then creates and updates contacts and companies";
   const limit = args.limit === undefined ? "none" : `${args.limit} contacts`;
   const since = args.full
     ? "everything (--full: the stored cursor is ignored)"

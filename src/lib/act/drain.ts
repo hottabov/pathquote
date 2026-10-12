@@ -21,35 +21,36 @@
 // not ACT!'s own answer -- and once its time budget (DRAIN_TIME_BUDGET_MS) is
 // spent, leaving the rows it did not reach due for the next pass.
 //
-// Called after a finalise, a client's signature or an acceptance for that
-// one quote (`onlyDocumentId`, drainAfterResponse in
-// src/lib/act/drain-after.ts) -- today, the only caller. Task 8 adds the
-// drains over every row: a periodic one every 15 minutes (a systemd timer in
-// the `tools` container), and the nightly sync's, before it reads ACT!.
-// Until then the backoff only says when a row may be tried again; what tries
-// it is its quote's next event.
+// THREE CALLERS. After a finalise, a client's signature or an acceptance,
+// for that one quote (`onlyDocumentId`, drainAfterResponse in
+// src/lib/act/drain-after.ts). Every 15 minutes, over every due row
+// (scripts/act-drain.ts, run by pq-act-drain.timer in the `tools`
+// container). And at the start of every inbound sync that writes -- the
+// nightly one and the Sync now button's -- before it reads ACT!
+// (syncContacts in src/lib/act/sync.ts). The 15-minute pass is what makes
+// the backoff (backoffMs in src/lib/act/drain-rules.ts) a schedule: a row
+// that failed is tried again at the first pass after it falls due, not only
+// at its quote's next event.
 //
-// A REQUIREMENT ON TASK 8: THE NIGHTLY SYNC HOLDS THE DRAIN'S LOCK TOO, for
-// the whole run. Today the inbound sync holds only its own key (8_472_001),
-// not DRAIN_LOCK_KEY, so a fast-path contact create near 03:00 can race it:
-// ACT! answers the POST, the sync reads the new contact (its `edited` is
-// newer than the sync's cursor) and imports it as a new PathQuote Contact
-// before the drain has stored the id, and the drain's store then hits
-// Contact.actContactId's unique key. Nothing is created twice -- the contact
-// keeps its in-flight marker, and every quote on it is blocked with
-// UNTRACKED_CONTACT_REASON -- but PathQuote ends up with two contacts for one
-// person, for somebody to merge. Not fixed here: Task 8 takes DRAIN_LOCK_KEY
-// as well as its own, on its own lock connection, for the whole of the
-// nightly run, drain and read together, so no fast path can write between
+// THE INBOUND SYNC HOLDS THE DRAIN'S LOCK TOO, for its whole run. Without
+// it, another drain's contact create during a sync could race the read: ACT!
+// answers the POST, the sync reads the new contact (its `edited` is newer
+// than the sync's cursor) and imports it as a new PathQuote Contact before
+// the drain has stored the id, and the drain's store then hits
+// Contact.actContactId's unique key. Nothing would be created twice -- the
+// contact keeps its in-flight marker, and every quote on it is blocked with
+// UNTRACKED_CONTACT_REASON -- but PathQuote would end up with two contacts
+// for one person, for somebody to merge. So syncContacts takes
+// DRAIN_LOCK_KEY as well as its own, on its own lock connection, for the
+// whole run, drain and read together, so no other drain can write between
 // them -- and drains under it by passing that connection as
 // DrainOptions.lockHeldOn, since a drain that tried to take the key itself
 // would find it held and do nothing (`busy`). It WAITS for DRAIN_LOCK_KEY
-// (pg_advisory_lock) rather than skipping the night when a fast path holds
-// it: a fast path's pass is over within about 10 minutes at worst
-// (DRAIN_TIME_BUDGET_MS and the step in flight when it runs out). The same
-// requirement is written into Task 8 in
-// docs/superpowers/plans/2026-10-12-act-write-back-quotes.md, and beside
-// SYNC_LOCK_KEY in src/lib/act/sync.ts.
+// (pg_advisory_lock, bounded by lock_timeout) rather than skipping the
+// night when another drain holds it: a pass is over within about 10
+// minutes at worst (DRAIN_TIME_BUDGET_MS and the step in flight when it
+// runs out). While the sync holds it, every other drain finds it `busy` and
+// leaves its rows for the next pass.
 
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { createPrismaClient, db } from "@/lib/db";
@@ -95,6 +96,7 @@ import {
   drainFailure,
   lastErrorText,
   nextAttemptAt,
+  stopCause,
   stopsPass,
   opportunityNow,
   passWork,
@@ -120,11 +122,11 @@ import type { ActContact, ActPicklistItem } from "@/lib/act/types";
  * A key of its own, not the sync's: the two do different work, and a fast
  * path holding 8_472_001 would read on the Settings page as a sync running
  * (isSyncRunning in src/lib/act/sync.ts) and turn the Sync now button away.
- * What this lock keeps apart is two drains: the nightly one and a fast path
- * after a finalise, or two fast paths. Two at once could both find a row due,
- * both look a record up, find nothing, and both create it. The nightly sync
- * holds both keys and drains under them (A REQUIREMENT ON TASK 8, above, and
- * DrainOptions.lockHeldOn).
+ * What this lock keeps apart is two drains -- any two of the inbound sync's,
+ * the 15-minute one's and a fast path's after a finalise. Two at once could both
+ * find a row due, both look a record up, find nothing, and both create it.
+ * The inbound sync holds both keys and drains under them (THE INBOUND SYNC
+ * HOLDS THE DRAIN'S LOCK TOO, above, and DrainOptions.lockHeldOn).
  */
 export const DRAIN_LOCK_KEY = 8_472_002;
 
@@ -142,10 +144,10 @@ const BATCH = 50;
  *
  * Why 5 minutes. While a pass runs it holds DRAIN_LOCK_KEY and a database
  * connection, every fast path after a finalise, signature or acceptance finds
- * the lock busy and leaves its row for the next pass, and -- once Task 8
- * drains before the nightly inbound read -- that read waits for it. Task 8's
- * periodic drain is to run every 15 minutes, so 5 is a third of that: a pass
- * is over long before the next one is due, and a backlog drains 5 minutes in
+ * the lock busy and leaves its row for the next pass, and an inbound sync
+ * that starts meanwhile waits for it before it drains and reads. The
+ * periodic drain (pq-act-drain.timer) runs every 15 minutes, so 5 is a
+ * third of that: a pass is over before the next one is due, and a backlog drains 5 minutes in
  * every 15 rather than in one sitting. A healthy step is a few requests of
  * well under a second each, so 5 minutes is dozens of rows; a hung ACT! stops
  * the pass at its first unanswered request (`unreachable` in
@@ -186,10 +188,11 @@ export type DrainOptions = {
    * of its own and finds it `busy` if anybody else holds it -- the caller
    * included.
    *
-   * For Task 8's nightly sync, which holds DRAIN_LOCK_KEY for its whole run
-   * so that no fast path can write between its drain and its inbound read
-   * (A REQUIREMENT ON TASK 8, above): it takes the key on its own lock
-   * connection, as it takes SYNC_LOCK_KEY, and passes that connection here.
+   * For the inbound sync, which holds DRAIN_LOCK_KEY for its whole run so
+   * that no other drain can write between its drain and its read (THE
+   * INBOUND SYNC HOLDS THE DRAIN'S LOCK TOO, above): it takes the key on its
+   * own lock connection, as it takes SYNC_LOCK_KEY, and passes that
+   * connection here.
    * Nothing else should pass it. The pass checks, on that connection, that
    * this session holds the key -- pg_locks, the encoding isSyncRunning in
    * src/lib/act/sync.ts uses -- and throws if it does not: a drain told its
@@ -200,7 +203,9 @@ export type DrainOptions = {
 };
 
 /**
- * What a pass did, for the inbound sync to report (Task 8).
+ * What a pass did: for the inbound sync to record (drainSummary in
+ * src/lib/act/run-record.ts) and for the periodic drain's CLI to print
+ * (scripts/act-drain.ts).
  *
  * `status`: `ran`; `busy`, another drain held the lock and nothing was done;
  * `switched-off`, the switch was off at the start or turned off part way, and
@@ -215,6 +220,12 @@ export type DrainOptions = {
  */
 export type DrainResult = {
   status: "ran" | "busy" | "switched-off" | "stopped" | "out-of-time";
+  /**
+   * For a `stopped` pass, whether what stopped it clears by itself
+   * (`unavailable`: ACT! busy or away) or needs a person (`setup`); null for
+   * every other status. stopCause in src/lib/act/drain-rules.ts draws the line.
+   */
+  stopCause: "setup" | "unavailable" | null;
   /** Rows the planner reported done, and marked finished. */
   rowsDone: number;
   /** Steps that called ACT! and stored their result. */
@@ -248,6 +259,7 @@ export type DrainResult = {
 function emptyResult(): DrainResult {
   return {
     status: "ran",
+    stopCause: null,
     rowsDone: 0,
     stepsWritten: 0,
     blocked: [],
@@ -266,14 +278,19 @@ export async function readActWriteSwitch(): Promise<boolean> {
 
 /**
  * Ends the pass, and says how (DrainResult's status): the switch went off, a
- * fault every row would meet, or the time budget ran out. `failed`, when
- * set, is the ACT! failure behind it, which the row being worked backs off
- * for; without it the row is left as it is, still due.
+ * fault every row would meet, or the time budget ran out. `stopCause` is
+ * DrainResult's, set for `stopped` only. `failed`, when set, is the ACT!
+ * failure behind it, which the row being worked backs off for; without it
+ * the row is left as it is, still due. The message becomes DrainResult's
+ * `stopReason`, which the Settings page quotes for a `setup` stop
+ * (describeDrain in src/lib/act/run-record.ts) -- so a dash in it is an em
+ * dash, as in any string a browser shows.
  */
 class StopPass extends Error {
   constructor(
     readonly status: "switched-off" | "stopped" | "out-of-time",
     message: string,
+    readonly stopCause: "setup" | "unavailable" | null = null,
     readonly failed?: unknown,
   ) {
     super(message);
@@ -392,6 +409,7 @@ export async function drainActOutbox(client: ActClient, options: DrainOptions = 
         if (!(error instanceof StopPass)) throw error;
         result.status = error.status;
         result.stopReason = error.message;
+        result.stopCause = error.stopCause;
         // Row i was begun when the switch went off, so it is not "not tried".
         if (error.status === "switched-off") result.skippedSwitchOff = work.length - i - 1;
         console.warn(`act: drain pass stopped: ${error.message}`);
@@ -709,7 +727,7 @@ class Pass {
         if (error instanceof BlockRow) {
           const blocked = await this.block(row, error.reason, error.by);
           if (error.failed !== undefined && stopsPass(drainFailure(error.failed))) {
-            throw new StopPass("stopped", lastErrorText(step.kind, error.failed));
+            throw new StopPass("stopped", lastErrorText(step.kind, error.failed), stopCause(drainFailure(error.failed)));
           }
           if (blocked) return;
           continue;
@@ -731,7 +749,7 @@ class Pass {
         // lookup before the next create resolves it (A CREATE IN FLIGHT).
         if (createUnaccounted(error)) this.result.untracked += 1;
         const stored = await this.backOff(row, step.kind, error);
-        if (stopsPass(failure)) throw new StopPass("stopped", lastErrorText(step.kind, error));
+        if (stopsPass(failure)) throw new StopPass("stopped", lastErrorText(step.kind, error), stopCause(failure));
         if (stored) return;
         continue;
       }
@@ -805,8 +823,9 @@ class Pass {
       throw new StopPass(
         "stopped",
         error instanceof ActApiError && error.status === 403
-          ? `ACT! answered 403 to the users lookup, so PathQuote's login "${this.client.loginName}" (ACT_USER) is not allowed to read ACT!'s users -- check its licence and permissions`
+          ? `ACT! answered 403 to the users lookup, so PathQuote's login "${this.client.loginName}" (ACT_USER) is not allowed to read ACT!'s users — check its licence and permissions`
           : `the lookup of ACT!'s users failed, and the service account cannot be known without it: ${message}`,
+        stopCause(drainFailure(error)),
         error,
       );
     }
@@ -814,7 +833,8 @@ class Pass {
     if (!id) {
       throw new StopPass(
         "stopped",
-        `no ACT! user, or more than one, has the login "${this.client.loginName}" (ACT_USER), so there is no record manager for a quote whose author has no ACT! user -- check ACT_USER against ACT!'s users`,
+        `no ACT! user, or more than one, has the login "${this.client.loginName}" (ACT_USER), so there is no record manager for a quote whose author has no ACT! user — check ACT_USER against ACT!'s users`,
+        "setup",
       );
     }
     this.serviceAccountId = id;

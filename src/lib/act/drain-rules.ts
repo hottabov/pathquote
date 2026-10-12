@@ -33,22 +33,19 @@ export const BACKOFF_CAP_MS = 6 * 60 * 60 * 1000;
  * hours from the eighth failure on.
  *
  * This says when a row MAY next be tried, not when it is: nothing retries a
- * row on a clock of its own. A pass of the drain does, and today the only
- * passes are the fast paths after a finalise, a signature or an acceptance
- * (drainAfterResponse in src/lib/act/drain-after.ts), each for that one
- * quote -- so until Task 8 lands, a failed row is tried again only when its
- * own quote is next finalised, signed or accepted. Task 8 adds the drains
- * that make this schedule real: a periodic drain every 15 minutes (a systemd
- * timer in the `tools` container) beside the nightly one, each over every due
- * row. From then on a row is tried at the first pass after it falls due, so
- * each wait below is rounded up to that timer.
+ * row on a clock of its own. A pass of the drain does -- the periodic one
+ * every 15 minutes (scripts/act-drain.ts, pq-act-drain.timer in the `tools`
+ * container) and the inbound sync's, each over every due row, besides the
+ * fast path after the quote's own next finalise, signature or acceptance. A
+ * row is tried at the first pass after it falls due, so each wait below is
+ * rounded up to that timer.
  *
  * Five minutes first because the usual failure is a blip -- a dropped
  * connection, ACT!'s IIS recycling -- which is over by the next periodic
  * pass. Doubling, so a real outage costs a handful of requests rather than
- * one every pass. Capped at six hours, so that once the periodic drain runs, a
- * row that has been failing all night is tried a few times the next working
- * day, not only by the nightly drain. A row is never given up on: a take-over
+ * one every pass. Capped at six hours, so that a row that has been failing
+ * all night is tried a few times the next working day, not only by the
+ * nightly sync's drain. A row is never given up on: a take-over
  * (a new finalise, signature or acceptance) resets attempts and makes it due
  * at once, and a person can read attempts and lastError off the row.
  */
@@ -290,8 +287,8 @@ export const BLOCKED_BY = {
  * pass. Pass.replanBlocked in src/lib/act/drain.ts hands them over least
  * recently worked first, so beyond 10 they are rechecked in turn rather than
  * the same 10 every pass. 10 is a fifth of
- * the pass's 50 due rows: with Task 8's drain every 15 minutes, 40 such rows
- * are each asked about once an hour.
+ * the pass's 50 due rows: with the periodic drain every 15 minutes, 40 such
+ * rows are each asked about once an hour.
  */
 export const RECHECKS_PER_PASS = 10;
 
@@ -444,6 +441,23 @@ export function createUnaccounted(error: unknown): boolean {
 /** The failures after which the pass goes no further: see DrainFailure. */
 export function stopsPass(failure: DrainFailure): boolean {
   return failure === "stop" || failure === "try-later" || failure === "unreachable";
+}
+
+/**
+ * Why a pass stopped, for whoever runs it to judge (DrainResult's
+ * `stopCause`): `unavailable` when ACT! was busy or away -- it said "not
+ * now", did not answer, or answered with a failure worth trying again (a
+ * 5xx) -- which clears by itself; `setup` for everything else, which does
+ * not: a 401, a 403 to the login or one that is not ACT!'s own answer, a
+ * redirect (DrainFailure's `stop`), a refusal of a request every row needs
+ * (the users lookup), or PathQuote's own code failing. The periodic drain's
+ * CLI (scripts/act-drain.ts) fails its unit on `setup` and not on
+ * `unavailable`: an ACT! that is down for a weekend would otherwise email
+ * every 15 minutes, while a wrong ACT_PASS or a VPS address dropped from
+ * the allow-list will not mend until somebody is told.
+ */
+export function stopCause(failure: DrainFailure): "setup" | "unavailable" {
+  return failure === "try-later" || failure === "unreachable" || failure === "failed" ? "unavailable" : "setup";
 }
 
 /**

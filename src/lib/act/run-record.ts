@@ -6,8 +6,14 @@
 // answer to a question nobody has asked yet.
 //
 // Pure: no database, no React. The wording is the part worth testing, and the
-// counts it reads come straight from SyncResult.
+// counts it reads come straight from SyncResult. DrainResult is imported as a
+// type only, so nothing from src/lib/act/drain.ts (and therefore nothing from
+// Prisma) is pulled in at runtime and the no-database test suite can import
+// this file. UNTRACKED_CONTACT_REASON is a real import, from
+// src/lib/act/outbox-plan.ts, which is pure as well.
 
+import type { DrainResult } from "@/lib/act/drain";
+import { UNTRACKED_CONTACT_REASON } from "@/lib/act/outbox-plan";
 import { formatCount, plural } from "@/lib/plural";
 
 /** The Setting key the record lives under. */
@@ -40,6 +46,58 @@ export type ActSyncRun = {
   failed: number;
   /** The message, when the run threw. */
   error: string | null;
+  /**
+   * What the drain did before the run read ACT! -- the queued quotes it sent
+   * -- or null for no drain information. Null is not "nothing was sent": it
+   * is a record written before the drain was added (every record stored
+   * when this field arrived), the record a run writes as it starts, or a
+   * run that threw before it drained (the wait for the drain's lock ran
+   * out). A run that drained and sent nothing has a RunDrain with zeros.
+   */
+  drain: RunDrain | null;
+};
+
+/**
+ * One drain pass (drainActOutbox in src/lib/act/drain.ts), as a run record
+ * keeps it: the counts, not the rows. Built by drainSummary or drainThrew,
+ * never by hand.
+ *
+ * `status` is DrainResult's, plus `failed` for a drain that threw -- the
+ * database failing under it, which a DrainResult cannot say because there
+ * is none. `stopReason` is DrainResult's for `stopped`, `switched-off` and
+ * `out-of-time`, and the thrown message for `failed`.
+ */
+export type RunDrain = {
+  status: DrainResult["status"] | "failed";
+  stopReason: string | null;
+  /** DrainResult's: for `stopped`, whether it clears by itself. Null otherwise. */
+  stopCause: DrainResult["stopCause"];
+  /** Quotes whose rows were finished: everything they needed is in ACT!. */
+  rowsDone: number;
+  /** Writes to ACT! that were made and stored. */
+  stepsWritten: number;
+  /** Rows blocked during this pass, with a reason a person has to act on. */
+  blocked: number;
+  /** The first of those reasons, for whoever reads the record or the CLI. */
+  firstBlockedReason: string | null;
+  /**
+   * Of `blocked`, the rows held because PathQuote asked ACT! to create the
+   * quote's contact and never learned whether it did
+   * (UNTRACKED_CONTACT_REASON in src/lib/act/outbox-plan.ts). Counted apart
+   * because the page says something different about them: nothing on the
+   * quote settles it, and somebody has to look in ACT! for the person before
+   * any quote on that contact goes on.
+   */
+  heldForContact: number;
+  /** Rows that failed this pass and will be tried again, later each time. */
+  backingOff: number;
+  /** DrainResult's `untracked`: creates PathQuote never heard the outcome of. */
+  untracked: number;
+  /**
+   * DrainResult's `skippedSwitchOff`: rows due to go that were not sent
+   * because the switch was off.
+   */
+  waiting: number;
 };
 
 export type RunDescription = {
@@ -124,6 +182,7 @@ export function startedRun(trigger: SyncTrigger, startedAt: Date): ActSyncRun {
     trigger,
     ...NO_COUNTS,
     error: null,
+    drain: null,
   };
 }
 
@@ -145,9 +204,43 @@ function onlyCounts(counts: RunCounts): RunCounts {
   };
 }
 
+/**
+ * What a closing builder is handed: the six counters, and the drain if the
+ * run has drained. SyncResult satisfies it as it stands -- its `drain` is a
+ * RunDrain already, built by drainSummary or drainThrew.
+ */
+export type RunTotals = RunCounts & { drain?: RunDrain | null };
+
+/**
+ * The drain, and nothing else that came with it: a named copy for the reason
+ * onlyCounts is one, so a field added to whatever the caller hands over does
+ * not ride into the stored JSON.
+ */
+function onlyDrain(drain: RunDrain | null | undefined): RunDrain | null {
+  if (!drain) return null;
+  return {
+    status: drain.status,
+    stopReason: drain.stopReason,
+    stopCause: drain.stopCause,
+    rowsDone: drain.rowsDone,
+    stepsWritten: drain.stepsWritten,
+    blocked: drain.blocked,
+    firstBlockedReason: drain.firstBlockedReason,
+    heldForContact: drain.heldForContact,
+    backingOff: drain.backingOff,
+    untracked: drain.untracked,
+    waiting: drain.waiting,
+  };
+}
+
 /** The same record once the run came back: the counters it ended with, and an ending. */
-export function finishedRun(started: ActSyncRun, counts: RunCounts, finishedAt: Date): ActSyncRun {
-  return { ...started, ...onlyCounts(counts), finishedAt: finishedAt.toISOString() };
+export function finishedRun(started: ActSyncRun, totals: RunTotals, finishedAt: Date): ActSyncRun {
+  return {
+    ...started,
+    ...onlyCounts(totals),
+    drain: onlyDrain(totals.drain),
+    finishedAt: finishedAt.toISOString(),
+  };
 }
 
 /**
@@ -164,8 +257,70 @@ export function finishedRun(started: ActSyncRun, counts: RunCounts, finishedAt: 
  * its arguments alone and its tests can assert whole records rather than the
  * fields that happen to be stable.
  */
-export function failedRun(started: ActSyncRun, counts: RunCounts, error: unknown): ActSyncRun {
-  return { ...started, ...onlyCounts(counts), finishedAt: null, error: messageOf(error) };
+export function failedRun(started: ActSyncRun, totals: RunTotals, error: unknown): ActSyncRun {
+  return {
+    ...started,
+    ...onlyCounts(totals),
+    drain: onlyDrain(totals.drain),
+    finishedAt: null,
+    error: messageOf(error),
+  };
+}
+
+/**
+ * A drain pass as the record keeps it. `heldForContact` is read off the
+ * blocked rows' reasons -- the planner and the drain block an untracked
+ * contact's quotes with UNTRACKED_CONTACT_REASON and nothing else does.
+ */
+export function drainSummary(result: DrainResult): RunDrain {
+  return {
+    status: result.status,
+    stopReason: result.stopReason,
+    stopCause: result.stopCause,
+    rowsDone: result.rowsDone,
+    stepsWritten: result.stepsWritten,
+    blocked: result.blocked.length,
+    firstBlockedReason: result.blocked[0]?.reason ?? null,
+    heldForContact: result.blocked.filter((row) => row.reason === UNTRACKED_CONTACT_REASON).length,
+    backingOff: result.failed.length,
+    untracked: result.untracked,
+    waiting: result.skippedSwitchOff,
+  };
+}
+
+/**
+ * A drain that threw, as the record keeps it: no counts, because a thrown
+ * drain hands none back -- what it did before it threw is on its rows and
+ * in the log -- and the message, never blank.
+ *
+ * The message's last line only. What a drain throws is the database failing
+ * under it, and Prisma's message for that runs to a dozen lines -- the call,
+ * the file, a frame of source code -- with what went wrong on the last
+ * ("The table `public.ActOutbox` does not exist in the current database.",
+ * measured). The Settings page quotes this, and source code is not something
+ * to put in front of the director; the whole error is in the log
+ * (console.error in syncContacts).
+ */
+export function drainThrew(error: unknown): RunDrain {
+  const message = error instanceof Error ? error.message : String(error);
+  const lastLine = message
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .pop();
+  return {
+    status: "failed",
+    stopReason: lastLine || "the drain threw an error that carried no message",
+    stopCause: null,
+    rowsDone: 0,
+    stepsWritten: 0,
+    blocked: 0,
+    firstBlockedReason: null,
+    heldForContact: 0,
+    backingOff: 0,
+    untracked: 0,
+    waiting: 0,
+  };
 }
 
 /**
@@ -275,13 +430,23 @@ function isCount(value: unknown): value is number {
  * Fields this version does not know about are ignored rather than rejected, so
  * a newer version adding one does not blank the page for an older one.
  *
+ * `drain` is the one field allowed to be missing, and the exception is the
+ * same rule seen from the other side. Every record stored before the drain
+ * was added -- the one production holds the day this ships -- has no `drain`,
+ * and requiring it would make that record unreadable and the page say
+ * PathQuote cannot read it until the next run. So absent, like null, reads
+ * as "no drain information" (ActSyncRun's `drain`), which describeRun says
+ * nothing about. Present, it is held to the standard of the rest: one
+ * unreadable part of it makes the whole record unreadable, for the same
+ * silent-zero reason.
+ *
  * A type assertion plus named guards, which is what this repo does with a Json
  * column read back (`isCommissionTierArray`, src/lib/queries/settings.ts); no
  * schema library, because there is none in this layer to be consistent with.
  */
 export function parseStoredRun(value: unknown): ActSyncRun | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  const { startedAt, finishedAt, trigger, error } = value as Record<string, unknown>;
+  const { startedAt, finishedAt, trigger, error, drain } = value as Record<string, unknown>;
 
   if (!isTimestamp(startedAt)) return null;
   if (!(finishedAt === null || isTimestamp(finishedAt))) return null;
@@ -296,7 +461,171 @@ export function parseStoredRun(value: unknown): ActSyncRun | null {
   const counts = onlyCounts(value as RunCounts);
   if (!Object.values(counts).every(isCount)) return null;
 
-  return { startedAt, finishedAt, trigger, ...counts, error };
+  const storedDrain = drain === undefined || drain === null ? null : parseStoredDrain(drain);
+  if (storedDrain === "unreadable") return null;
+
+  return { startedAt, finishedAt, trigger, ...counts, error, drain: storedDrain };
+}
+
+const DRAIN_STATUSES: readonly RunDrain["status"][] = [
+  "ran",
+  "busy",
+  "switched-off",
+  "stopped",
+  "out-of-time",
+  "failed",
+];
+
+/** Null, or words: the guard isErrorMessage applies, for the same reason. */
+function isOptionalWords(value: unknown): value is string | null {
+  return value === null || isErrorMessage(value);
+}
+
+/**
+ * A stored drain, or "unreadable". Every field is required once the drain is
+ * there at all. Read through onlyDrain, as the six counters are read through
+ * onlyCounts, so the names are written in one place; and every field but the
+ * four named below is checked as a count, so a count added to RunDrain is
+ * checked here without being listed again -- and a field of another kind
+ * added without a check of its own makes every record unreadable in the
+ * first test that reads one back, rather than passing unchecked.
+ */
+function parseStoredDrain(value: unknown): RunDrain | "unreadable" {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return "unreadable";
+  const drain = onlyDrain(value as RunDrain);
+  if (!drain) return "unreadable";
+  const { status, stopReason, stopCause, firstBlockedReason, ...counts } = drain;
+  // An unknown status would fall through every branch describeDrain has and
+  // say nothing, which is the silent answer again.
+  if (!DRAIN_STATUSES.includes(status)) return "unreadable";
+  if (!(stopCause === null || stopCause === "setup" || stopCause === "unavailable")) return "unreadable";
+  if (!isOptionalWords(stopReason) || !isOptionalWords(firstBlockedReason)) return "unreadable";
+  if (!Object.values(counts).every(isCount)) return "unreadable";
+  return drain;
+}
+
+/** What describeDrain hands describeRun. */
+type DrainWords = {
+  /** "2 quotes sent to ACT!", for the headline of a clean run; null when none went. */
+  sent: string | null;
+  /** Whole sentences, each with its own full stop, in the order to read them. */
+  notes: string[];
+  /** Whether any of them needs a person: describeRun's `warn`. */
+  needsPerson: boolean;
+};
+
+/** A stored message, ready to have a full stop put after it. */
+function clause(text: string): string {
+  return text.trim().replace(/[.\s]+$/, "");
+}
+
+/**
+ * What the write side did, in words: the quotes the run's drain sent to ACT!
+ * before it read anything.
+ *
+ * Silent when there is nothing to say -- a drain that sent nothing because
+ * nothing was queued, and a switch that is off with nothing waiting behind
+ * it, which is every night until somebody turns sending on. Not silent when
+ * the switch is off and quotes ARE queued: that is the state right after the
+ * write-back is deployed, and the one fact the reader cannot get anywhere
+ * else is that finalised quotes are piling up rather than going.
+ *
+ * `needsPerson` decides the tone, and only these do: a quote held for its
+ * untracked contact (the developer has to look in ACT!), a quote held back
+ * for any other reason (its manager, or the developer, has to fix what its
+ * page names), a pass stopped by a fault that will not mend itself
+ * (`setup`), and a drain that threw. Each of those stays as it is until
+ * somebody acts, which is what amber says on this page. A quote that did not
+ * get through and will be tried again, ACT! too busy to finish, more quotes
+ * than one pass sends, and the switch being off are all `ok`: each clears
+ * itself, or -- the switch -- is somebody's decision already, and amber over
+ * the page the day the write-back ships, while sending is still off on
+ * purpose, is how a reader learns that amber here means nothing.
+ *
+ * Never `error`. That tone is for the sync not having worked -- the read --
+ * and a night whose read went through is not a failure because ACT! would
+ * not take a quote.
+ *
+ * Untracked creates are spoken of only through `heldForContact`. A contact
+ * PathQuote may have made in ACT! holds its quotes for a person, and they
+ * are counted among the blocked rows with UNTRACKED_CONTACT_REASON; any other
+ * untracked create -- an opportunity, a product line, a history -- is looked
+ * for in ACT! by the drain before it is made again (A CREATE IN FLIGHT in
+ * src/lib/act/outbox-plan.ts), so it needs nobody, and its row is among the
+ * ones backing off.
+ */
+function describeDrain(drain: RunDrain | null): DrainWords {
+  const words: DrainWords = { sent: null, notes: [], needsPerson: false };
+  if (!drain) return words;
+
+  if (drain.rowsDone > 0) words.sent = `${plural(drain.rowsDone, "quote", "quotes")} sent to ACT!`;
+
+  if (drain.status === "failed") {
+    words.needsPerson = true;
+    words.notes.push(
+      `Sending quotes to ACT! failed: ${clause(drain.stopReason ?? "no reason was recorded")}. Nothing was lost — the quotes stay queued and are tried again on their own; if this keeps happening, ask your developer.`,
+    );
+  }
+  if (drain.status === "stopped") {
+    if (drain.stopCause === "unavailable") {
+      // No reason quoted: it is a status code and a timeout in this
+      // repository's words, about something that has already mended itself
+      // or will. The record and the log keep it for whoever asks.
+      words.notes.push(
+        "ACT! was busy or not answering, so sending quotes stopped partway — the rest go on their own once it answers.",
+      );
+    } else {
+      // `setup`, or a stored null that should not be there: the side to err
+      // on is the one that sends somebody to look. The reason is quoted
+      // because it is the developer's starting point -- it names ACT_USER,
+      // the licence, the allow-list -- and the reader is told to take it to
+      // them.
+      words.needsPerson = true;
+      words.notes.push(
+        `Sending quotes to ACT! stopped: ${clause(drain.stopReason ?? "no reason was recorded")}. Quotes will not reach ACT! until this is put right — ask your developer.`,
+      );
+    }
+  }
+  if (drain.status === "out-of-time") {
+    words.notes.push("There were more quotes to send than one go allows — the rest are sent on their own shortly.");
+  }
+  if (drain.status === "busy") {
+    words.notes.push("No quotes were sent this time because another send to ACT! was already under way — they go with the next.");
+  }
+  if (drain.status === "switched-off" && drain.waiting > 0) {
+    words.notes.push(
+      `${plural(drain.waiting, "quote is", "quotes are")} waiting to go to ACT!, but sending to ACT! is switched off — ${drain.waiting === 1 ? "it goes" : "they go"} as soon as it is switched on.`,
+    );
+  }
+
+  if (drain.heldForContact > 0) {
+    words.needsPerson = true;
+    words.notes.push(
+      drain.heldForContact === 1
+        ? "1 quote is held because PathQuote asked ACT! to create its contact and never heard whether it did — somebody has to look in ACT! before it can go on, so ask your developer, and do not delete or re-add that contact."
+        : `${plural(drain.heldForContact, "quote is", "quotes are")} held because PathQuote asked ACT! to create their contact and never heard whether it did — somebody has to look in ACT! before they can go on, so ask your developer, and do not delete or re-add those contacts.`,
+    );
+  }
+  const heldBack = drain.blocked - drain.heldForContact;
+  if (heldBack > 0) {
+    words.needsPerson = true;
+    // The reason is on the quote (ActOutbox.blockedReason, shown on the
+    // quote's own page), worded for its manager. The record keeps only the
+    // first (firstBlockedReason), which is not printed here: it is written
+    // about "this quote", and this page cannot say which one that is.
+    words.notes.push(
+      heldBack === 1
+        ? "1 quote was held back from ACT! — the quote's own page says why, and what to do about it."
+        : `${plural(heldBack, "quote was", "quotes were")} held back from ACT! — each quote's own page says why, and what to do about it.`,
+    );
+  }
+  if (drain.backingOff > 0) {
+    words.notes.push(
+      `${plural(drain.backingOff, "quote", "quotes")} did not get through to ACT! this time — PathQuote tries again on its own.`,
+    );
+  }
+
+  return words;
 }
 
 /**
@@ -326,12 +655,27 @@ export function parseStoredRun(value: unknown): ActSyncRun | null {
  *    them apart -- only whether the advisory lock is currently held can, which
  *    is isSyncRunning in sync.ts, and the caller passes the answer in.
  * 3. `failed` -- individual contacts threw and the run carried on past them.
+ *
+ * What the drain did before the read (describeDrain) is added to whichever of
+ * these the run ends in: to the second line of the two failure branches, and
+ * to the headline and notes of a clean run. The killed and running branches
+ * have nothing to add -- their record is the one written at the start, whose
+ * `drain` is null.
  */
 export function describeRun(
   run: ActSyncRun,
   { running = false }: { running?: boolean } = {},
 ): RunDescription {
   const trigger = run.trigger === "manual" ? "Run by hand" : "Scheduled";
+  const drain = describeDrain(run.drain);
+  // For the two failure branches, whose headline is the failure: the quotes
+  // sent go on the second line, as a sentence.
+  const drainDetail = [
+    ...(run.drain && run.drain.rowsDone > 0
+      ? [`It sent ${plural(run.drain.rowsDone, "quote", "quotes")} to ACT! first, and ${run.drain.rowsDone === 1 ? "that one" : "those"} went through.`]
+      : []),
+    ...drain.notes,
+  ];
 
   if (run.error) {
     return {
@@ -349,10 +693,12 @@ export function describeRun(
       // already moved it eight times and the pages before the throw are behind
       // it. What is true either way is that it only ever moves past records
       // already stored, so nothing was skipped and the next run resumes there.
-      detail:
+      detail: [
         run.failed > 0
           ? `${plural(run.failed, "contact", "contacts")} had already failed when it stopped. Nothing was skipped — everything it got through is saved, and the next run carries on from there.`
           : "Nothing was skipped — everything it got through is saved, and the next run carries on from there.",
+        ...drainDetail,
+      ].join(" "),
       trigger,
     };
   }
@@ -443,7 +789,7 @@ export function describeRun(
       // again when which managers became an admin's choice: a manager who has
       // the page has no readier way to the developer than being told to go to
       // them, and one is a nav row below this (PathQuote Support).
-      detail: FAILED_CONTACTS_DETAIL,
+      detail: [FAILED_CONTACTS_DETAIL, ...drainDetail].join(" "),
       trigger,
     };
   }
@@ -465,6 +811,11 @@ export function describeRun(
   if (run.companiesCreated > 0) {
     changes.push(`${plural(run.companiesCreated, "company", "companies")} added`);
   }
+  // Last, though the drain ran first: the page is about the sync, and on a
+  // night with both, "3 contacts updated, 2 quotes sent to ACT!" reads in the
+  // order the reader asks about them. Never left out of the headline, which
+  // would otherwise say "No changes" about a night that sent quotes.
+  if (drain.sent) changes.push(drain.sent);
 
   // The ordinary outcome once this runs nightly: nobody touched ACT!
   // yesterday. "0 contacts added, 0 updated" reads like something went wrong.
@@ -492,8 +843,10 @@ export function describeRun(
     );
   }
 
+  notes.push(...drain.notes);
+
   return {
-    tone: run.companiesKeyCollisions > 0 ? "warn" : "ok",
+    tone: run.companiesKeyCollisions > 0 || drain.needsPerson ? "warn" : "ok",
     headline,
     detail: notes.length > 0 ? notes.join(" ") : null,
     trigger,

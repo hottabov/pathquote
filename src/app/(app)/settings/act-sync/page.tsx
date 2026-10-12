@@ -119,9 +119,11 @@ export default async function ActSyncPage() {
                 <StatusBadge tone="slate">{view.summary.trigger}</StatusBadge>
               ) : null}
             </div>
-            {/* A paragraph, not a clipped line: the detail runs to three
-                sentences in the cases that matter most, and the sentence that
-                gets cut off is always the one saying nothing was lost. */}
+            {/* A paragraph, not a clipped line: the detail runs to several
+                sentences in the cases that matter most -- more when the
+                drain has quotes to report -- and the sentence that would get
+                cut off is the one saying nothing was lost, or that a quote is
+                waiting on somebody. */}
             {view.summary.detail ? (
               <p className="mt-1 max-w-prose">{view.summary.detail}</p>
             ) : null}
