@@ -31,6 +31,7 @@
     "clients:normalise-place-names": "tsx scripts/normalise-place-names.ts",
     "act:sync-preflight": "tsx scripts/act-sync-preflight.ts",
     "act:map-users": "tsx scripts/map-act-users.ts",
+    "act:weekly-report": "tsx scripts/act-weekly-report.ts",
     "catalog:check-form-enum": "tsx scripts/check-production-form-enum.ts"
   },
   "dependencies": {

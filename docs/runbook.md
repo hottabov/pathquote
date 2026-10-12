@@ -805,6 +805,65 @@ id. The ACT! Web API is IP-allowlisted to this VPS: any other address, a laptop
 included, gets `403` however correct the credentials, so this sync cannot be run
 from anywhere else. Full reference: `docs/act-integration-reference.md`.
 
+## 4d. Monday ACT! activity report
+
+Every Monday each sales manager gets one email with last week's activity from
+ACT!, in the format marketing used to send by hand: Call Completed, E-mail Sent,
+Meeting Held (ACT! history types 1, 16, 6, counted by Record Manager) and
+Prospects generated (contacts they manage, created in the week, ID/Status
+Prospect). Added 2026-10-12.
+
+| | |
+|---|---|
+| Unit | `pq-act-weekly-report.timer` → `.service` → `pq-act-weekly-report.sh` |
+| When | Mondays 08:00 Australia/Melbourne; `Persistent=true` |
+| Period | the last finished Monday–Sunday week in Melbourne, whatever day it runs |
+| Runs | `docker compose run --rm -T tools npm run act:weekly-report`, `TAG` from `git rev-parse HEAD` |
+| Recipients | `src/lib/act/weekly-report-recipients.ts` — To is the manager's ACT! email, CC per manager; a change is a commit and a deploy |
+| Sends | through the app's SMTP (Resend), From `Pathfinder Marketing <EMAIL_FROM address>`, Reply-To marketing@ |
+| Log | `/var/log/pq-act-weekly-report.log` |
+| Failure | `pq-backup-alert@pq-act-weekly-report.service` emails marketing@ with the log |
+
+Read-only against ACT!, no database. Logic in `src/lib/act/weekly-report.ts`.
+
+### Before trusting it, and any time a number looks wrong
+
+```bash
+cd /opt/pathquote
+TAG=$(git rev-parse HEAD) docker compose run --rm -T tools npm run act:weekly-report -- --dry-run
+TAG=$(git rev-parse HEAD) docker compose run --rm -T tools npm run act:weekly-report -- --dry-run --from 2026-10-04 --to 2026-10-11
+TAG=$(git rev-parse HEAD) docker compose run --rm -T tools npm run act:weekly-report -- --send-to you@pathfindercut.com
+```
+
+`--dry-run` sends nothing and prints, per manager, the four numbers and every
+history type they have in the window, so a count can be checked against ACT!'s
+History tab. `--send-to` sends every report to one address with no CC.
+`--from`/`--to` are inclusive Melbourne days. The `--` is required; without it
+the script refuses rather than sending for real.
+
+`GET /api/History` filtered on `startTime` had not been exercised against the
+live box when this was written. If the dry run fails with a 400 on that path,
+that is where to look (`ActClient.historiesBetween`).
+
+Private history records are invisible to the integration account, so they are
+not counted.
+
+### Installing or updating
+
+```bash
+scp -P 3498 scripts/ops/pq-act-weekly-report.sh scripts/ops/pq-backup-alert.sh root@74.208.106.34:/usr/local/bin/
+scp -P 3498 scripts/ops/pq-act-weekly-report.service scripts/ops/pq-act-weekly-report.timer root@74.208.106.34:/etc/systemd/system/
+ssh -p 3498 root@74.208.106.34 'chmod 700 /usr/local/bin/pq-act-weekly-report.sh /usr/local/bin/pq-backup-alert.sh && systemctl daemon-reload && systemctl enable --now pq-act-weekly-report.timer'
+```
+
+`pq-backup-alert.sh` is in the list because it learned this unit's wording.
+
+```bash
+systemctl list-timers 'pq-act-weekly*'               # next Monday
+systemctl start pq-act-weekly-report.service         # send last week's reports now
+tail -40 /var/log/pq-act-weekly-report.log
+```
+
 ## 5. Troubleshooting
 
 **App won't respond / health check failing**

@@ -1,0 +1,11 @@
+[Unit]
+Description=PathQuote ACT! weekly activity report: one email per sales manager
+After=docker.service network-online.target
+Wants=network-online.target
+OnFailure=pq-backup-alert@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pq-act-weekly-report.sh
+StandardOutput=append:/var/log/pq-act-weekly-report.log
+StandardError=append:/var/log/pq-act-weekly-report.log

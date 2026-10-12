@@ -1,4 +1,4 @@
-import type { ActContact, ActPicklistItem, ActUser } from "@/lib/act/types";
+import type { ActContact, ActHistory, ActPicklistItem, ActUser } from "@/lib/act/types";
 
 // HTTP against the Act! Web API. Every judgement this integration makes lives
 // in the pure modules beside this one; what is left here is transport, and it
@@ -33,6 +33,9 @@ export type ActClientConfig = {
 const TOKEN_TTL_MS = 55 * 60 * 1000;
 
 const PAGE_SIZE = 200;
+
+/** A week of the whole office's history in one request, normally. */
+const HISTORY_PAGE_SIZE = 1000;
 
 /**
  * The picklist behind Account Mgr (`customFields/rep`), named `Rep` in Act!.
@@ -308,6 +311,47 @@ export class ActClient {
     }
 
     return unwrapRows<ActPicklistItem>(await this.get(documented), documented);
+  }
+
+  /**
+   * Every history record the account can see whose `startTime` falls in
+   * [from - 1 day, to + 1 day), oldest first.
+   *
+   * The day of slack either side is deliberate: the filter is sent as UTC
+   * instants and how this box compares `startTime` against them -- UTC or the
+   * server's local time -- has not been measured. Fetching a little wide and
+   * letting the caller cut to the exact window (countForManager does) is right
+   * whichever it is.
+   *
+   * `$top` of HISTORY_PAGE_SIZE rather than PAGE_SIZE: a week of history for
+   * the whole office fits in one or two pages, and every extra page is another
+   * `$skip` step over a sort key that can tie (reference section 10). The API
+   * caps `$top` at 5000. The caller de-duplicates by id regardless.
+   *
+   * `GET /api/History` is `History_GetOrFormat` in swagger.json; it is an OData
+   * collection like /api/contacts. Filtering on `startTime` is the one part not
+   * yet exercised against the live box -- `npm run act:weekly-report --
+   * --dry-run` on the VPS is where that is confirmed.
+   */
+  async historiesBetween(from: Date, to: Date): Promise<ActHistory[]> {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const lower = new Date(from.getTime() - DAY_MS).toISOString();
+    const upper = new Date(to.getTime() + DAY_MS).toISOString();
+    const rows: ActHistory[] = [];
+    let skip = 0;
+    for (;;) {
+      const params = new URLSearchParams({
+        $top: String(HISTORY_PAGE_SIZE),
+        $skip: String(skip),
+        $orderby: "startTime",
+        $filter: `startTime ge ${lower} and startTime lt ${upper}`,
+      });
+      const path = `/api/History?${params}`;
+      const page = unwrapRows<ActHistory>(await this.get(path), path);
+      rows.push(...page);
+      if (page.length < HISTORY_PAGE_SIZE) return rows;
+      skip += HISTORY_PAGE_SIZE;
+    }
   }
 
   /**

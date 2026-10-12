@@ -11,6 +11,8 @@
 #       backup wording, /var/log/pq-backup.log
 #   pq-act-sync.service
 #       sync wording, /var/log/pq-act-sync.log
+#   pq-act-weekly-report.service
+#       weekly-report wording, /var/log/pq-act-weekly-report.log
 #
 # Anything else is named as itself and the mail says it has no wording for it.
 # Telling the director his backup failed when it was the ACT! sync is the bug
@@ -39,6 +41,16 @@ if [ "$UNIT" = "--test" ]; then
 fi
 
 case "$UNIT" in
+  pq-act-weekly-report*)
+    LOG=/var/log/pq-act-weekly-report.log
+    WHAT="Monday ACT! activity report"
+    WHAT_SUBJECT="Weekly ACT! activity report"
+    WHAT_TEST="weekly report"
+    CONSEQUENCE="Some or all sales managers did not get this week's activity report. The
+log below names each manager and whether their email went. Re-send by hand
+on the VPS (it reports the last finished Mon-Sun week whatever day it runs):
+  systemctl start pq-act-weekly-report.service"
+    ;;
   pq-act-sync*)
     LOG=/var/log/pq-act-sync.log
     WHAT="nightly ACT! sync"

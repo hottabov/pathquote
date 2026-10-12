@@ -1,0 +1,13 @@
+[Unit]
+Description=PathQuote ACT! weekly activity report, Monday morning
+
+[Timer]
+# Monday 08:00 Melbourne: last Monday-to-Sunday week is complete, the 03:00
+# sync and 04:00 dump are long done, and the managers start the week with it.
+# The report always covers the last *finished* Mon-Sun week, so a run that
+# Persistent= catches up on later in the week still reports the right one.
+OnCalendar=Mon *-*-* 08:00:00 Australia/Melbourne
+Persistent=true
+
+[Install]
+WantedBy=timers.target

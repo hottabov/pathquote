@@ -44,6 +44,25 @@ export type ActContact = {
 };
 
 /**
+ * One history record (`act.web.api.models.Histories.History` in swagger.json),
+ * trimmed to the fields the weekly report reads.
+ *
+ * `startTime` is the Date column of Act!'s History tab -- when the call or
+ * meeting happened -- and `recordManagerID` the uuid of the user it belongs to.
+ * `historyTypeID` is one of the 71 types in RAW/ACT/meta/history_types.json.
+ */
+export type ActHistory = {
+  id: string;
+  historyTypeID: number;
+  historyType: { id: number; name: string | null } | null;
+  recordManagerID: string | null;
+  recordManager: string | null;
+  startTime: string | null;
+  created: string | null;
+  isPrivate: boolean | null;
+};
+
+/**
  * One Act! user, trimmed to the fields the mapping reads.
  *
  * `id` is the uuid, which is the stable half of Record Manager: a contact
