@@ -119,11 +119,12 @@ describe("formatUserMapBanner", () => {
     expect(banner).toContain("held back");
   });
 
-  it("says what APPLY writes, and that it is only actUserId", () => {
+  it("names both columns APPLY writes, and claims nothing beyond them", () => {
     const banner = formatUserMapBanner({ apply: true, includeInactive: false }, DATABASE);
     expect(banner).toContain("APPLY");
     expect(banner).toContain("User.actUserId");
-    expect(banner).not.toContain("actAccountMgr");
+    expect(banner).toContain("User.actAccountMgr");
+    expect(banner).toContain("nothing else");
   });
 
   it("says when the inactive matches are included", () => {

@@ -73,6 +73,25 @@ export type ActUser = {
   lastLogOnDate: string | null;
 };
 
+/**
+ * One item of an Act! picklist, as the items endpoint returns it.
+ *
+ * `value` is the string a field limited to the list will accept -- the whole
+ * point of reading these. `description` is free text an administrator may have
+ * typed beside the item; the `Rep` picklist's items had it empty. The shape is
+ * swagger's `act.web.api.models.MetaData.Picklists.DropDownPickListItem`,
+ * which declares exactly these three fields.
+ *
+ * `value` is typed nullable for the same reason every ActUser field is: swagger
+ * marks no field required, so a null is representable and the pure modules
+ * must cope rather than assume.
+ */
+export type ActPicklistItem = {
+  id: string;
+  value: string | null;
+  description: string | null;
+};
+
 /** Custom-field keys the sync reads, by their API name. */
 export const ACT_FIELD = {
   /** Displayed as "Industry". A renamed stock user slot. */

@@ -12,7 +12,8 @@
 import type { DatabaseTarget } from "@/lib/act/cli-args";
 
 export type UserMapArgs = {
-  /** Write actUserId on the matched users. Default false: report only. */
+  /** Write actUserId and actAccountMgr on the matched users. Default false:
+   *  report only. */
   apply: boolean;
   /** Also write the matches whose Act! user is not Active. */
   includeInactive: boolean;
@@ -106,7 +107,7 @@ export function parseUserMapArgs(argv: readonly string[], env: Env = {}): UserMa
 
 export function formatUserMapBanner(args: UserMapArgs, database: DatabaseTarget): string {
   const mode = args.apply
-    ? "APPLY -- writes User.actUserId on the matched users, nothing else"
+    ? "APPLY -- writes User.actUserId and User.actAccountMgr, nothing else"
     : "report only -- writes nothing (add --apply to write)";
   const inactive = args.includeInactive
     ? "included -- a match to a non-Active Act! user is written too"

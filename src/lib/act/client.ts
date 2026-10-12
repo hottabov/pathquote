@@ -1,4 +1,4 @@
-import type { ActContact, ActUser } from "@/lib/act/types";
+import type { ActContact, ActPicklistItem, ActUser } from "@/lib/act/types";
 
 // HTTP against the Act! Web API. Every judgement this integration makes lives
 // in the pure modules beside this one; what is left here is transport, and it
@@ -33,6 +33,22 @@ export type ActClientConfig = {
 const TOKEN_TTL_MS = 55 * 60 * 1000;
 
 const PAGE_SIZE = 200;
+
+/**
+ * The picklist behind Account Mgr (`customFields/rep`), named `Rep` in Act!.
+ *
+ * Pinned because it is an identifier, not data: the id came off the production
+ * box in the field metadata, `GET /api/metadata/contact/fields`, captured into
+ * RAW/ACT/meta/fields_contact.json, where the `customFields/rep` entry carries
+ * `picklist: { id: "65898243-...", name: "Rep", isLimitToList: true }`. It is
+ * stable for the life of the picklist.
+ *
+ * The id is pinned; the items are not. Nothing in this repo may hardcode the
+ * items -- an administrator edits them in Act!, and distributor names are being
+ * added, so a copied list would be stale almost immediately. Read them with
+ * ActClient.picklistItems.
+ */
+export const REP_PICKLIST_ID = "65898243-e8ef-4c0f-84d6-bbc93144eac0";
 
 export class ActApiError extends Error {
   constructor(
@@ -243,6 +259,55 @@ export class ActClient {
   async users(): Promise<ActUser[]> {
     const path = "/api/users";
     return unwrapRows<ActUser>(await this.get(path), path);
+  }
+
+  /**
+   * Every item of one Act! picklist: `[{ id, value, description }]`.
+   *
+   * Read rather than hardcoded on purpose. The `Rep` picklist behind Account
+   * Mgr is a list an administrator edits in Act!, and distributor names are
+   * about to be added to it, so a constant in this repo would be wrong within
+   * the week. See REP_PICKLIST_ID for the one id that is pinned.
+   *
+   * TWO PATHS, and this is the honest reason. The items read off the production
+   * box on 2026-10-12 came back from
+   * `/api/metadata/picklists/{id}/items`. That path is in no version of
+   * swagger.json we hold: swagger offers
+   * `/api/metadata/drop-down/lists/{list}/items`
+   * (`MetadataInfo_GetDropDownPickListItemsAndList`), whose response schema is
+   * exactly the `{ id, value, description }` that came back, and
+   * `/api/metadata/{recordType}/picklists/{id}`, which needs a record type in
+   * front and returns a list, not its items. So either this box routes a path
+   * swagger does not document, or the path was written down loosely and the
+   * documented one is what answered. Both cannot be checked from here -- the
+   * API is IP-allowlisted to the VPS -- and both return the same shape, so the
+   * measured path is tried first and a 404 falls through to the documented one.
+   * Delete the loser once a run on the box says which it was.
+   *
+   * Two explicit attempts rather than a loop, for the same reason `get` is
+   * written that way: a loop needs an unreachable throw after it, and an
+   * unreachable throw is a diagnostic that can never print.
+   *
+   * Through unwrapRows, like every other list here: the metadata endpoints are
+   * documented to return a bare array, /api/users may or may not, and a cast
+   * would turn a changed envelope into "the picklist is empty" -- which in this
+   * caller means "no Account Mgr value is writable", a quiet wrong answer
+   * instead of a loud one.
+   */
+  async picklistItems(listId: string): Promise<ActPicklistItem[]> {
+    const measured = `/api/metadata/picklists/${listId}/items`;
+    const documented = `/api/metadata/drop-down/lists/${listId}/items`;
+
+    try {
+      return unwrapRows<ActPicklistItem>(await this.get(measured), measured);
+    } catch (error) {
+      if (!(error instanceof ActApiError) || error.status !== 404) throw error;
+      console.warn(
+        `act: GET ${measured} is 404 on this box; falling back to the swagger-documented ${documented}`,
+      );
+    }
+
+    return unwrapRows<ActPicklistItem>(await this.get(documented), documented);
   }
 
   /**

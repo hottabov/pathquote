@@ -1,11 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
-  ACCOUNT_MGR_NOTE,
+  accountMgrWrites,
   entriesToWrite,
+  formatAccountMgrSection,
   formatReport,
+  matchAccountMgr,
   planUserMap,
   type ActUserRow,
   type PathQuoteUserRow,
+  type RepPicklistItem,
   type UserMapPlan,
 } from "../src/lib/act/user-map";
 
@@ -35,7 +38,15 @@ const pqUser = (
   role: "MANAGER",
   active: true,
   actUserId: null,
+  actAccountMgr: null,
   ...overrides,
+});
+
+/** A `Rep` picklist item. `value` is what the limit-to-list field accepts. */
+const repItem = (value: string | null, description: string | null = null): RepPicklistItem => ({
+  id: `item-${value ?? "null"}`,
+  value,
+  description,
 });
 
 const outcomeOf = (plan: UserMapPlan, email: string) =>
@@ -462,25 +473,18 @@ describe("formatReport", () => {
     );
   });
 
-  it("explains that actAccountMgr is left alone, and what resolving it needs", () => {
+  it("carries the Account Mgr section, which says what the rule for it is", () => {
     const report = formatReport(plan, { includeInactive: false }).join("\n");
-    expect(report).toContain("nothing is written to User.actAccountMgr");
+    expect(report).toContain("ACCOUNT MGR -- User.actAccountMgr, set only on an exact picklist match");
     expect(report).toContain("isLimitToList: true");
-    expect(report).toContain("/api/metadata/drop-down/lists/{list}/items");
   });
 
-  it("never claims to write actAccountMgr", () => {
-    const report = formatReport(plan, { includeInactive: true }).join("\n");
-    // The note is the only place the column is named, and it says it is not
-    // written. Guard against a later edit adding a line that says otherwise.
-    for (const line of report.split("\n")) {
-      if (!line.includes("actAccountMgr")) continue;
-      expect(line).toContain("nothing is written to User.actAccountMgr");
-    }
-  });
-
-  it("the Account Mgr note stands on its own, without the rest of the report", () => {
-    expect(ACCOUNT_MGR_NOTE.join("\n")).toContain("Account Mgr is customFields/rep");
+  it("says how many picklist items it had, so an empty picklist is not a silent one", () => {
+    // This plan was built with no picklist at all, so the only honest report is
+    // that nothing could be resolved -- not that the users have no item.
+    const report = formatReport(plan, { includeInactive: false }).join("\n");
+    expect(report).toContain("0 item(s) were read from the API for this run");
+    expect(report).toContain("WOULD SET: 0");
   });
 
   it("counts the same things in the summary as in the sections", () => {
@@ -494,5 +498,436 @@ describe("formatReport", () => {
     expect(value("Act! users")).toBe(2);
     expect(value("would be mapped")).toBe(plan.matched.length);
     expect(value("unmatched")).toBe(plan.unmatched.length);
+  });
+});
+
+describe("matchAccountMgr", () => {
+  const items = [repItem("Alan Seymour"), repItem("Kevin du Plessis"), repItem("Mr Sistemas")];
+
+  it("matches a display name that equals an item byte for byte", () => {
+    const match = matchAccountMgr("Alan Seymour", items);
+    expect(match).toEqual({ kind: "exact", value: "Alan Seymour", item: items[0] });
+  });
+
+  it("takes the value from the picklist item, not from the display name", () => {
+    // They are equal in this branch, so the assertion is about provenance: the
+    // picklist is the authority on what a limit-to-list field accepts, and this
+    // stays correct if the rule ever loosens.
+    const match = matchAccountMgr("Alan Seymour", items);
+    if (match.kind !== "exact") throw new Error("expected an exact match");
+    expect(match.value).toBe(match.item.value);
+  });
+
+  it("does NOT match on case alone, and reports the near-match instead", () => {
+    // The live shape of this: the Act! user is `Kevin du Plessis` and the
+    // Account Mgr value somebody typed onto 77 contacts is `Kevin Du Plessis`.
+    // A field with isLimitToList accepts one of those spellings and not the
+    // other, so normalising would answer "write it" for a string the picklist
+    // may not contain.
+    const match = matchAccountMgr("Kevin Du Plessis", items);
+    expect(match.kind).toBe("near");
+    if (match.kind !== "near") throw new Error("expected a near match");
+    expect(match.items.map((item) => item.value)).toEqual(["Kevin du Plessis"]);
+  });
+
+  it("does NOT match across surrounding whitespace either", () => {
+    const match = matchAccountMgr(" Alan Seymour ", items);
+    expect(match.kind).toBe("near");
+  });
+
+  it("prefers an exact match over a near one when both exist", () => {
+    const both = [repItem("alan seymour"), repItem("Alan Seymour")];
+    const match = matchAccountMgr("Alan Seymour", both);
+    expect(match).toMatchObject({ kind: "exact", value: "Alan Seymour" });
+  });
+
+  it("reports every near item when more than one folds to the same name", () => {
+    const match = matchAccountMgr("MR SISTEMAS", [repItem("Mr Sistemas"), repItem("mr sistemas")]);
+    if (match.kind !== "near") throw new Error("expected a near match");
+    expect(match.items).toHaveLength(2);
+  });
+
+  it("is `none` when no item resembles the name", () => {
+    expect(matchAccountMgr("Eadaoin Wright", items)).toEqual({ kind: "none" });
+  });
+
+  it("is `none` for an empty picklist, which is what an unread picklist looks like", () => {
+    expect(matchAccountMgr("Alan Seymour", [])).toEqual({ kind: "none" });
+  });
+
+  it("is `none` for a display name that is null, empty or whitespace", () => {
+    for (const name of [null, "", "   "]) {
+      expect(matchAccountMgr(name, items)).toEqual({ kind: "none" });
+    }
+  });
+
+  it("ignores an item whose value is null rather than matching a null name to it", () => {
+    expect(matchAccountMgr(null, [repItem(null)])).toEqual({ kind: "none" });
+    expect(matchAccountMgr("Alan Seymour", [repItem(null)])).toEqual({ kind: "none" });
+  });
+});
+
+describe("accountMgrWrites", () => {
+  const items = [repItem("Act a1"), repItem("Act a2"), repItem("Act a3")];
+
+  it("writes the exact item for a user this run maps", () => {
+    const plan = planUserMap(
+      [actUser("a1", "anna@example.com")],
+      [pqUser("u1", "anna@example.com")],
+      items,
+    );
+    expect(accountMgrWrites(plan, { includeInactive: false })).toEqual([
+      { user: plan.matched[0].user, actUser: plan.matched[0].actUser, value: "Act a1" },
+    ]);
+  });
+
+  it("writes it for a row an earlier run already mapped but left without a value", () => {
+    // The whole reason alreadyMapped is in the write set: no run before this
+    // change could set the second column, so every row mapped so far needs it.
+    const plan = planUserMap(
+      [actUser("a1", "anna@example.com")],
+      [pqUser("u1", "anna@example.com", { actUserId: "a1" })],
+      items,
+    );
+    expect(plan.alreadyMapped).toHaveLength(1);
+    expect(plan.matched).toEqual([]);
+    expect(accountMgrWrites(plan, { includeInactive: false }).map((write) => write.value)).toEqual([
+      "Act a1",
+    ]);
+  });
+
+  it("never overwrites a value somebody already typed", () => {
+    const plan = planUserMap(
+      [actUser("a1", "anna@example.com")],
+      [pqUser("u1", "anna@example.com", { actAccountMgr: "Act a1" })],
+      items,
+    );
+    expect(accountMgrWrites(plan, { includeInactive: false })).toEqual([]);
+    expect(plan.accountMgrConflicts).toEqual([]);
+  });
+
+  it("reports -- and does not repair -- a stored value that is not the item", () => {
+    const plan = planUserMap(
+      [actUser("a1", "anna@example.com")],
+      [pqUser("u1", "anna@example.com", { actAccountMgr: "Somebody Else" })],
+      items,
+    );
+    expect(accountMgrWrites(plan, { includeInactive: false })).toEqual([]);
+    expect(plan.accountMgrConflicts).toMatchObject([{ stored: "Somebody Else", value: "Act a1" }]);
+  });
+
+  it("writes nothing for a near-match, however the run was flagged", () => {
+    const plan = planUserMap(
+      [actUser("a1", "anna@example.com", { displayName: "Kevin Du Plessis" })],
+      [pqUser("u1", "anna@example.com")],
+      [repItem("Kevin du Plessis")],
+    );
+    expect(plan.matched).toHaveLength(1);
+    expect(accountMgrWrites(plan, { includeInactive: false })).toEqual([]);
+    expect(accountMgrWrites(plan, { includeInactive: true })).toEqual([]);
+    expect(plan.accountMgrGaps).toMatchObject([{ match: { kind: "near" } }]);
+  });
+
+  it("follows --include-inactive, so the two columns never disagree about a row", () => {
+    const plan = planUserMap(
+      [actUser("a1", "anna@example.com", { status: "Inactive" })],
+      [pqUser("u1", "anna@example.com")],
+      items,
+    );
+    expect(plan.inactiveMatched).toHaveLength(1);
+    expect(accountMgrWrites(plan, { includeInactive: false })).toEqual([]);
+    expect(accountMgrWrites(plan, { includeInactive: true }).map((write) => write.value)).toEqual([
+      "Act a1",
+    ]);
+  });
+
+  it("writes nothing for an ambiguous or unmatched row even when an item exists", () => {
+    const plan = planUserMap(
+      [actUser("a1", "anna@example.com"), actUser("a2", "anna@example.com")],
+      [pqUser("u1", "anna@example.com"), pqUser("u2", "dave@example.com")],
+      items,
+    );
+    expect(plan.ambiguous).toHaveLength(1);
+    expect(plan.unmatched).toHaveLength(1);
+    expect(accountMgrWrites(plan, { includeInactive: true })).toEqual([]);
+    // And nothing is reported as a gap either: the Act! user behind an
+    // ambiguous row is in doubt, so a gap against it would send an
+    // administrator to edit the wrong picklist item.
+    expect(plan.accountMgrGaps).toEqual([]);
+  });
+
+  it("writes nothing when the picklist was never read", () => {
+    const plan = planUserMap(
+      [actUser("a1", "anna@example.com")],
+      [pqUser("u1", "anna@example.com")],
+    );
+    expect(plan.repPicklistItems).toBe(0);
+    expect(accountMgrWrites(plan, { includeInactive: true })).toEqual([]);
+  });
+
+  it("is idempotent: the rows it would write are exactly the ones still null", () => {
+    const plan = planUserMap(
+      [actUser("a1", "anna@example.com")],
+      [pqUser("u1", "anna@example.com", { actUserId: "a1", actAccountMgr: "Act a1" })],
+      items,
+    );
+    expect(accountMgrWrites(plan, { includeInactive: true })).toEqual([]);
+    expect(entriesToWrite(plan, { includeInactive: true })).toEqual([]);
+  });
+});
+
+describe("formatAccountMgrSection", () => {
+  it("lists what it would set, with the value quoted", () => {
+    const plan = planUserMap(
+      [actUser("a1", "anna@example.com", { displayName: "Anna Example" })],
+      [pqUser("u1", "anna@example.com")],
+      [repItem("Anna Example")],
+    );
+    const section = formatAccountMgrSection(plan, { includeInactive: false }).join("\n");
+    expect(section).toContain("WOULD SET: 1");
+    expect(section).toContain('"Anna Example"');
+  });
+
+  it("puts the two spellings of a near-match side by side, quoted", () => {
+    // Quoted on purpose: the difference is a capital letter, and a reader
+    // cannot be asked to spot that in unquoted text.
+    const plan = planUserMap(
+      [actUser("a1", "kevin@example.com", { displayName: "Kevin Du Plessis" })],
+      [pqUser("u1", "kevin@example.com")],
+      [repItem("Kevin du Plessis")],
+    );
+    const section = formatAccountMgrSection(plan, { includeInactive: false }).join("\n");
+    expect(section).toContain("NEAR MATCH, NOT WRITTEN: 1");
+    expect(section).toContain('Act! display name  "Kevin Du Plessis"');
+    expect(section).toContain('picklist item      "Kevin du Plessis"');
+    expect(section).toContain("will not pick one for you");
+  });
+
+  it("names the users an administrator has to add an item for", () => {
+    const plan = planUserMap(
+      [actUser("a1", "anna@example.com", { displayName: "Anna Example" })],
+      [pqUser("u1", "anna@example.com")],
+      [repItem("Someone Else")],
+    );
+    const section = formatAccountMgrSection(plan, { includeInactive: false }).join("\n");
+    expect(section).toContain("NO PICKLIST ITEM: 1");
+    expect(section).toContain('"Anna Example"');
+    expect(section).toContain("Define Fields");
+  });
+
+  it("lists the picklist items that belong to no Act! user, with any description", () => {
+    const plan = planUserMap(
+      [actUser("a1", "anna@example.com", { displayName: "Anna Example" })],
+      [pqUser("u1", "anna@example.com")],
+      [repItem("Anna Example"), repItem("Mr Sistemas", "distributor")],
+    );
+    const section = formatAccountMgrSection(plan, { includeInactive: false }).join("\n");
+    expect(section).toContain("PICKLIST ITEMS THAT ARE NO ACT! USER: 1 of 2");
+    expect(section).toContain('"Mr Sistemas"  -- distributor');
+  });
+
+  it("says how many exact items are held back by an inactive Act! user", () => {
+    // Otherwise the omission is silent: an inactive match with a good item is
+    // in neither the write list nor the gap list, and a reader who knows that
+    // person has an item is left wondering where it went.
+    const plan = planUserMap(
+      [actUser("a1", "anna@example.com", { displayName: "Anna Example", status: "Inactive" })],
+      [pqUser("u1", "anna@example.com")],
+      [repItem("Anna Example")],
+    );
+    const held = formatAccountMgrSection(plan, { includeInactive: false }).join("\n");
+    expect(held).toContain("WOULD SET: 0");
+    expect(held).toContain("1 not listed: an exact item exists but the Act! user is not Active");
+
+    const included = formatAccountMgrSection(plan, { includeInactive: true }).join("\n");
+    expect(included).toContain("WOULD SET: 1");
+    expect(included).not.toContain("not listed");
+  });
+
+  it("says `none` in every empty subsection rather than leaving a blank", () => {
+    const plan = planUserMap([], [], []);
+    const section = formatAccountMgrSection(plan, { includeInactive: false });
+    expect(section.filter((line) => line.trim() === "none")).toHaveLength(5);
+  });
+
+  it("never says the column is left unwritten, because it no longer is", () => {
+    // The claim this section used to make. Eleven defects of the
+    // comment-asserts-what-the-code-does-not-do class were caught on this
+    // branch; this one is now caught by a test.
+    const plan = planUserMap(
+      [actUser("a1", "anna@example.com", { displayName: "Anna Example" })],
+      [pqUser("u1", "anna@example.com")],
+      [repItem("Anna Example")],
+    );
+    const report = formatReport(plan, { includeInactive: true }).join("\n");
+    expect(report).not.toContain("nothing is written to User.actAccountMgr");
+    expect(report).not.toContain("by design");
+    expect(accountMgrWrites(plan, { includeInactive: true })).toHaveLength(1);
+  });
+});
+
+/**
+ * The Act! users and the `Rep` picklist as they really are, so the rules above
+ * are checked against the data they were written for rather than only against
+ * invented rows.
+ *
+ * Users: RAW/ACT/meta/users.json, read 2026-10-02 (note: that file carries a
+ * UTF-8 BOM). Picklist: the 11 items read off the production box 2026-10-12.
+ * Act! ids are abbreviated except where a test is about a specific user.
+ */
+describe("the real Act! users against the real Rep picklist", () => {
+  const REP_PICKLIST = [
+    "Achim Degel",
+    "Alan Seymour",
+    "Brandon Clark",
+    "Chris Gilmartin",
+    "David Cook",
+    "John Hollo",
+    "John Kyprianou",
+    "Monte Kimball",
+    "Mr Sistemas",
+    "Roy Shurling",
+    "Wayne Walker",
+  ].map((value) => repItem(value));
+
+  const real = (displayName: string, email: string | null, status: string): ActUserRow => ({
+    id: `act-${displayName.toLowerCase().replace(/\W+/g, "-")}`,
+    displayName,
+    email,
+    status,
+    role: "Standard",
+  });
+
+  const ACT_USERS: ActUserRow[] = [
+    real("Alan Seymour", "AlanS@pathfindercut.com", "Active"),
+    real("Brandon Clark", "brandon.clark@pathfindercut.com", "Active"),
+    real("Chris Gilmartin", "chris@pathfindercut.com", "Active"),
+    real("Dan Castaneda", "dan.castaneda@pathfindercut.com", "Inactive"),
+    real("Dan Hall", "dan.hall@pathfindercut.com", "Inactive"),
+    real("David Cook", "davidc@pathfinderaus.com", "Inactive"),
+    { ...real("Eadaoin Wright", "marketing@pathfindercut.com", "Inactive"), id: "92fed6e6-6468-4251-89d8-4937b0c70182" },
+    real("Joe Bockrath", "joe.bockrath@pathfindercut.com", "Inactive"),
+    real("John Hollo", "john@pathfindercut.com", "Active"),
+    real("John Kyprianou", "johnk@pathfindercut.com", "Active"),
+    real("Kevin du Plessis", "kduplessis@iplastics.com.au", "Inactive"),
+    { ...real("Marketing", null, "Active"), id: "d90f208e-e1fd-4835-8811-541b0c4b81b9", role: "Browse" },
+    real("Martin Thornton", "martin.thornton@pathfindercut.com", "Inactive"),
+    real("Mike Collins", "mikecollins@pathfindercut.com", "Inactive"),
+    real("Monte Kimball", "monte@pathfindercut.com", "Active"),
+    real("Rick Weaver", null, "Inactive"),
+    real("Ross Kaigg", null, "Inactive"),
+    real("Roy Shurling", "roys@pathfindercut.com", "Active"),
+    real("Wayne Walker", "wayne@pathfindercut.com", "Active"),
+    real("Xavier Martel", "xavierm@pathfinderaus.com", "Inactive"),
+  ];
+
+  /** One PathQuote user per Act! user, on the same email, so every Act! user
+   *  that can be reached is reached and the picklist rule is what decides. */
+  const pqForEveryActUserWithEmail = ACT_USERS.filter((user) => user.email !== null).map(
+    (user, index) => pqUser(`u${index}`, user.email!.toLowerCase()),
+  );
+
+  it("marketing@pathfindercut.com is Eadaoin Wright, an inactive person -- NOT the Marketing service account", () => {
+    // The live foot-gun for an email-based join. The `Marketing` service
+    // account is what every Act! record PathQuote creates is owned by today,
+    // and it has no email at all; the address that looks like its own belongs
+    // to a different, disabled person. So a PathQuote user carrying
+    // marketing@pathfindercut.com maps to Eadaoin Wright -- held back for being
+    // inactive -- and never to the integration account.
+    const plan = planUserMap(
+      ACT_USERS,
+      [pqUser("u1", "marketing@pathfindercut.com")],
+      REP_PICKLIST,
+    );
+
+    expect(plan.matched).toEqual([]);
+    expect(plan.inactiveMatched).toHaveLength(1);
+    expect(plan.inactiveMatched[0].actUser.displayName).toBe("Eadaoin Wright");
+    expect(plan.inactiveMatched[0].actUser.id).toBe("92fed6e6-6468-4251-89d8-4937b0c70182");
+    expect(outcomeOf(plan, "marketing@pathfindercut.com")).toBe("inactive-match");
+
+    // The service account is reached by nothing, for the right reason.
+    const marketing = plan.unusedActUsers.find(
+      (entry) => entry.actUser.id === "d90f208e-e1fd-4835-8811-541b0c4b81b9",
+    );
+    expect(marketing).toMatchObject({ reason: "no-email" });
+
+    // And even forcing the inactive write in does not give that person an
+    // Account Mgr value: `Eadaoin Wright` is not in the picklist.
+    expect(entriesToWrite(plan, { includeInactive: true })).toHaveLength(1);
+    expect(accountMgrWrites(plan, { includeInactive: true })).toEqual([]);
+  });
+
+  it("resolves an Account Mgr value for the eight active real users and no one else", () => {
+    const plan = planUserMap(ACT_USERS, pqForEveryActUserWithEmail, REP_PICKLIST);
+    const written = accountMgrWrites(plan, { includeInactive: false }).map((write) => write.value);
+    expect(written.sort()).toEqual([
+      "Alan Seymour",
+      "Brandon Clark",
+      "Chris Gilmartin",
+      "John Hollo",
+      "John Kyprianou",
+      "Monte Kimball",
+      "Roy Shurling",
+      "Wayne Walker",
+    ]);
+  });
+
+  it("adds David Cook only when --include-inactive is given, because his user is Inactive", () => {
+    const plan = planUserMap(ACT_USERS, pqForEveryActUserWithEmail, REP_PICKLIST);
+    const forced = accountMgrWrites(plan, { includeInactive: true }).map((write) => write.value);
+    expect(forced).toContain("David Cook");
+    expect(forced).toHaveLength(9);
+  });
+
+  it("reports Kevin du Plessis as having no picklist item at all, not as a near-match", () => {
+    // Worth pinning because it is easy to misremember. The case clash
+    // `Kevin du Plessis` / `Kevin Du Plessis` is between the Act! user and the
+    // hand-typed Account Mgr values on 77 contacts -- it is NOT in this
+    // picklist, which contains no spelling of his name. So with this picklist
+    // the near-match report is empty, and the strict-write rule is justified by
+    // what it prevents rather than by anything it catches today.
+    const plan = planUserMap(ACT_USERS, pqForEveryActUserWithEmail, REP_PICKLIST);
+    expect(plan.accountMgrGaps.filter((gap) => gap.match.kind === "near")).toEqual([]);
+
+    const kevin = plan.accountMgrGaps.find(
+      (gap) => gap.actUser.displayName === "Kevin du Plessis",
+    );
+    expect(kevin?.match.kind).toBe("none");
+  });
+
+  it("names Achim Degel and Mr Sistemas as items belonging to no Act! user", () => {
+    const plan = planUserMap(ACT_USERS, pqForEveryActUserWithEmail, REP_PICKLIST);
+    expect(plan.unusedRepItems.map((item) => item.value)).toEqual(["Achim Degel", "Mr Sistemas"]);
+  });
+
+  it("every Act! user reached but absent from the picklist is reported, which is the list to add", () => {
+    const plan = planUserMap(ACT_USERS, pqForEveryActUserWithEmail, REP_PICKLIST);
+    const toAdd = plan.accountMgrGaps.map((gap) => gap.actUser.displayName).sort();
+    // The 9 picklist items that are users account for 9 of the 17 Act! users
+    // with an email; the other 8 are reached by a PathQuote row and have no
+    // item. `Marketing`, `Rick Weaver` and `Ross Kaigg` have no email, so they
+    // are not reached at all and are not on this list.
+    expect(toAdd).toEqual([
+      "Dan Castaneda",
+      "Dan Hall",
+      "Eadaoin Wright",
+      "Joe Bockrath",
+      "Kevin du Plessis",
+      "Martin Thornton",
+      "Mike Collins",
+      "Xavier Martel",
+    ]);
+  });
+
+  it("the picklist cannot change which Act! user a person maps to", () => {
+    // Account Mgr is decided on a second key, after the email join. Removing
+    // the picklist entirely must change nothing about actUserId.
+    const withList = planUserMap(ACT_USERS, pqForEveryActUserWithEmail, REP_PICKLIST);
+    const without = planUserMap(ACT_USERS, pqForEveryActUserWithEmail, []);
+    const ids = (plan: UserMapPlan) =>
+      entriesToWrite(plan, { includeInactive: true }).map((entry) => entry.actUser.id);
+    expect(ids(withList)).toEqual(ids(without));
+    expect(without.accountMgrGaps).toHaveLength(withList.accountMgrGaps.length + 9);
   });
 });

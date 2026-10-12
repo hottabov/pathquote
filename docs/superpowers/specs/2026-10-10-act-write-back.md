@@ -1,6 +1,6 @@
 # Phase 3: writing back to ACT!
 
-**Status:** design, decisions settled. One prerequisite blocks everything that attributes a record to a person (§9), and one fact must be checked on the VPS before building (the "Acc Mgr" picklist, §10 D2).
+**Status:** design, decisions settled. The prerequisite in §9 is **done** — `npm run act:map-users` fills both `User.actUserId` and `User.actAccountMgr` — and the fact that had to be checked on the VPS (the "Acc Mgr" picklist, §10 D2) **has been checked**: the field does limit to its list, and the list's items were read.
 
 **Why now:** phases 1 and 2 made ACT! → PathQuote work and put it on a nightly timer. Nothing goes the other way, so a quote sent from PathQuote leaves no trace in the CRM the business actually runs on, and a correction a manager makes while quoting never reaches ACT!.
 
@@ -225,13 +225,18 @@ Company field write-back comes after 4 and 5 and is deliberately not scheduled h
 
 ---
 
-## 9. Prerequisite: nobody is mapped to an ACT! user
+## 9. Prerequisite: mapping PathQuote users to ACT! users — DONE
 
-`User.actUserId` and `User.actAccountMgr` exist in the schema (307-309) and are **populated nowhere**. No script sets them, no UI edits them, nothing reads them. A grep finds only the schema and the `z60_act_sync` migration.
+**Resolved.** `npm run act:map-users` (`scripts/map-act-users.ts`, decisions in `src/lib/act/user-map.ts`) fills both columns, reporting by default and writing only with `--apply`:
 
-Without the mapping, every record PathQuote creates is owned by the `Marketing` service account — so twelve managers' quotes all appear in ACT! as Marketing's opportunities, and the pipeline is useless for exactly the person who asked for it.
+- `User.actUserId` from the ACT! user whose email is this person's, case-insensitively and trimmed, and on nothing weaker.
+- `User.actAccountMgr` from the `Rep` picklist item whose value equals that ACT! user's `displayName` exactly. Reference §9 has the rule and the 2026-10-12 results: 8 of the active users resolve, 8 reachable users have no item yet and are reported as work for the ACT! administrator.
 
-`GET /api/users` is available (reference §9). The work is a script to list ACT! users beside PathQuote users, plus a field on the user settings page. Small, and it gates everything in §8 step 2 onward.
+Neither column is overwritten, and nothing is written without an exact key, so the mapping cannot quietly attribute a record to the wrong person. It still has to run on the VPS, because of the IP allowlist (reference §11).
+
+What this originally said — that both columns are populated nowhere and no script sets them — was true when the spec was written and is kept here only as the problem statement: without the mapping, every record PathQuote creates is owned by the `Marketing` service account, so twelve managers' quotes all appear in ACT! as Marketing's opportunities and the pipeline is useless for exactly the person who asked for it.
+
+Still outstanding, and not blocking §8 step 2: a field on the user settings page, for the rows the script reports but cannot decide — an ambiguous email, or a manager whose display name is not yet in the `Rep` picklist.
 
 ---
 
@@ -260,7 +265,11 @@ So, when `User.actUserId` is mapped, set `recordManagerID` from it. When it is n
 
 Two consequences.
 
-**"Acc Mgr" is `customFields/rep`, and it has a picklist named "Rep"** (reference §6, line 158). In ACT! a character field with a picklist is not necessarily restricted to it — unless "Limit to list" is set on the field, the list is a suggestion. Whether that flag is set here is **not** in the documentation. Verify with `GET /api/metadata/contact/fields` on the VPS **before building**: if the field does limit to its list, distributor names must either be added to the picklist or written somewhere else.
+**"Acc Mgr" is `customFields/rep`, and it has a picklist named "Rep"** (reference §6, line 158). In ACT! a character field with a picklist is not necessarily restricted to it — unless "Limit to list" is set on the field, the list is a suggestion.
+
+**Checked, 2026-10-12: it does limit to its list.** `GET /api/metadata/contact/fields` gives `customFields/rep` a `picklist` of `{ id: "65898243-e8ef-4c0f-84d6-bbc93144eac0", name: "Rep", isLimitToList: true }` (captured in `RAW/ACT/meta/fields_contact.json`). So the answer to the conditional above is the first branch: a name that is not an item cannot be written into this field, and a distributor's name has to be added to the picklist first.
+
+Two of the 11 items read that day — `Achim Degel` and `Mr Sistemas` — are already distributor names belonging to no ACT! user, so somebody has been doing this by hand. That is the precedent, and it is the mechanism this spec should use: add the item, then write it. `npm run act:map-users` reports every reachable ACT! user with no item, which is the list to add.
 
 **This field is currently read inbound only.** `Contact.actAccountMgr` is written by the sync from `customFields/rep` (`map.ts:132`) and feeds the visibility rule. Writing it outbound closes a loop: PathQuote writes a name, the next sync reads it back, and it feeds visibility. That is coherent — the field means the same thing in both directions — but it must be deliberate, and echo suppression (§7b) is mandatory, not optional.
 

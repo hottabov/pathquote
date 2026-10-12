@@ -82,6 +82,7 @@ Administrator is deliberately not used. It adds `Manage Users`, `Define Fields`,
 | History types | `GET /api/history-types` |
 | Field metadata | `GET /api/metadata/{recordType}/fields` |
 | Picklists | `GET /api/metadata/{recordType}/picklists` |
+| Picklist items | `GET /api/metadata/drop-down/lists/{list}/items` — see §9, two paths |
 | Create a custom field | `POST /api/metadata/{recordType}/fields` |
 | Users | `GET /api/users` |
 | Webhooks | `GET,POST /api/webhooks` · `/{id}/suspend` · `/{id}/continue` |
@@ -260,7 +261,19 @@ TAG=$(git rev-parse HEAD) docker compose run --rm -T tools npm run act:map-users
 TAG=$(git rev-parse HEAD) docker compose run --rm -T tools npm run act:map-users -- --apply
 ```
 
-It deliberately does **not** write `User.actAccountMgr`. Account Mgr is `customFields/rep`, limited to the picklist named `Rep` (`isLimitToList: true`), and that picklist's items are not the users' display names: the 17,373-contact export holds 26 distinct non-empty Account Mgr values against 20 users, 10 of which match no user's display name — `Achim Degel`, `Mr Sistemas` and `AOS ArtOfService` are not users at all, and one real user differs by case alone (`Kevin du Plessis` the user, `Kevin Du Plessis` the Account Mgr value on 77 contacts). Resolving that column needs the picklist items — `GET /api/metadata/drop-down/lists/{list}/items`, list `65898243-e8ef-4c0f-84d6-bbc93144eac0` — and a person to pair them with users. Section 4 is where the field itself is documented.
+### Account Mgr, and why it is a second key
+
+The same script also fills `User.actAccountMgr`, on a different key and under a stricter rule. Account Mgr is `customFields/rep`, limited to the picklist named `Rep` (`isLimitToList: true`), so the only strings the field accepts are that picklist's items. PathQuote decides client visibility on the same column, so a plausible wrong value there does not fail — it hands one manager another's clients.
+
+So the rule is: **`actAccountMgr` is set only where an ACT! user's `displayName` equals a picklist item exactly.** A match that differs only in case or surrounding whitespace is reported with both spellings quoted and written never; a display name with no item at all is reported as the list for the ACT! administrator to add. Neither column is overwritten once set, and a stored Account Mgr value that differs from the picklist item is named in the report rather than repaired.
+
+The picklist is **read from the API on every run**, never hardcoded, because an administrator edits it — distributor names are being added. The list id is pinned (`REP_PICKLIST_ID` in `src/lib/act/client.ts`, read off the box in the `customFields/rep` field metadata); its contents are not.
+
+Two paths serve those items and only one of them is certain. The items read off the production box on 2026-10-12 came back from `GET /api/metadata/picklists/{id}/items`, which appears in no `swagger.json` we hold; swagger documents `GET /api/metadata/drop-down/lists/{list}/items` (`MetadataInfo_GetDropDownPickListItemsAndList`) whose response schema is exactly the `{ id, value, description }` that came back. `ActClient.picklistItems` tries the measured path and falls back to the documented one on a 404, logging which it used. **Delete the loser after the first run on the box.**
+
+Against the 11 items read on 2026-10-12 and the 20 users read on 2026-10-02: all 8 active real users match an item exactly (Alan Seymour, Brandon Clark, Chris Gilmartin, John Hollo, John Kyprianou, Monte Kimball, Roy Shurling, Wayne Walker). `David Cook` matches exactly but his ACT! user is Inactive, so his value is held back with his `actUserId` unless `--include-inactive`. `Achim Degel` and `Mr Sistemas` are items belonging to no ACT! user — distributors somebody added by hand. `Kevin du Plessis` is in the picklist under no spelling at all, which is worth knowing because the case clash often attributed to the picklist is elsewhere: it is between the ACT! user `Kevin du Plessis` and the hand-typed `Kevin Du Plessis` on 77 contacts in the export. With this picklist there are no near-matches, so the strict rule is justified by what it prevents rather than by anything it catches today.
+
+Section 4 is where the field itself is documented.
 
 ## 10. Reading with a delta cursor
 

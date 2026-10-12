@@ -1,14 +1,14 @@
 // Decide which ACT! user, if any, each PathQuote user is.
 //
-// Nothing populates User.actUserId today, and until something does, every
-// record PathQuote creates in ACT! would be owned by the integration account
-// (`Marketing`) -- twelve managers' quotes showing up as one person's
-// pipeline. This module is the decision half of the script that fills it in;
-// scripts/map-act-users.ts is the I/O around it.
+// This module is the decision half of `npm run act:map-users`;
+// scripts/map-act-users.ts is the I/O around it. Nothing else populates
+// User.actUserId, and without it every record PathQuote creates in ACT! is
+// owned by the integration account (`Marketing`) -- twelve managers' quotes
+// showing up as one person's pipeline.
 //
 // Pure and tested for the same reason preflight.ts is: the risk in the script
-// is writing the wrong id onto the wrong person, and that decision can be
-// checked without a database or a network.
+// is writing the wrong value onto the wrong person, in either column, and that
+// decision can be checked without a database or a network.
 //
 // The join key is email, case-insensitively and trimmed, and there is no
 // fallback to a name. A name match would silently pick a person where an email
@@ -20,8 +20,10 @@
 // `Kevin du Plessis`. An Act! user with no email is therefore matched to
 // nobody, which is reported rather than worked around.
 //
-// What this module deliberately does NOT decide: User.actAccountMgr. See
-// ACCOUNT_MGR_NOTE at the bottom of this file.
+// User.actAccountMgr is decided here too, on a different key and under a
+// stricter rule: an Act! user's display name must equal an item of the `Rep`
+// picklist exactly, or nothing is written for that person. See
+// matchAccountMgr.
 
 /** The subset of an Act! /api/users row the decision needs. */
 export type ActUserRow = {
@@ -48,10 +50,50 @@ export type PathQuoteUserRow = {
   active: boolean;
   /** What is stored now. Non-null means a previous run, or a person, mapped it. */
   actUserId: string | null;
+  /** The stored Account Mgr value. Non-null is never overwritten here. */
+  actAccountMgr: string | null;
 };
 
-/** A PathQuote user paired with the Act! user it resolved to. */
-export type MatchedEntry = { user: PathQuoteUserRow; actUser: ActUserRow };
+/**
+ * One item of the Act! `Rep` picklist, which is the vocabulary Account Mgr is
+ * limited to. `value` is the string the field will accept.
+ */
+export type RepPicklistItem = {
+  id: string;
+  value: string | null;
+  /** Free text beside the item in Act!. Empty on every item read so far, but
+   *  it is the only place a distributor item could say it is one, so it is
+   *  carried through to the report. */
+  description: string | null;
+};
+
+/**
+ * Which `Rep` item, if any, is this Act! user's Account Mgr value.
+ *
+ * `exact`  the display name equals an item's value, byte for byte. The only
+ *          case that is written, and what is written is the item's `value`,
+ *          never the display name -- they are equal here, and taking it from
+ *          the picklist is what keeps that true if this ever loosens.
+ * `near`   an item matches once case and surrounding whitespace are ignored,
+ *          and nothing matches exactly. Reported loudly, written never. This is
+ *          the Kevin du Plessis shape: the Act! user is `Kevin du Plessis` and
+ *          the hand-typed Account Mgr value on 77 contacts is
+ *          `Kevin Du Plessis`.
+ * `none`   no item resembles this display name. This is the list an
+ *          administrator has to add to.
+ */
+export type AccountMgrMatch =
+  | { kind: "exact"; value: string; item: RepPicklistItem }
+  | { kind: "near"; items: RepPicklistItem[] }
+  | { kind: "none" };
+
+/** A PathQuote user paired with the Act! user it resolved to, and with what
+ *  that Act! user's Account Mgr value would be. */
+export type MatchedEntry = {
+  user: PathQuoteUserRow;
+  actUser: ActUserRow;
+  accountMgr: AccountMgrMatch;
+};
 
 /**
  * Two readings of "ambiguous", both of which mean no write.
@@ -130,6 +172,33 @@ export type OutcomeLine = {
   detail: string;
 };
 
+/**
+ * A confirmed Act! user with no Account Mgr value to write. Nothing is written
+ * for these; the list is what an administrator has to act on, either by adding
+ * the item to the `Rep` picklist or by correcting the one that nearly matches.
+ */
+export type AccountMgrGap = {
+  user: PathQuoteUserRow;
+  actUser: ActUserRow;
+  /** Why there is nothing to write. An exact match is not a gap. */
+  match: Extract<AccountMgrMatch, { kind: "near" } | { kind: "none" }>;
+  /** The row's own outcome, so the report can say whether the row is being
+   *  mapped at all -- a gap on a held-back inactive match is less urgent than
+   *  one on a manager being mapped today. */
+  outcome: Outcome;
+};
+
+/** A row that already holds an Account Mgr value other than the item its Act!
+ *  user resolves to. Reported, never overwritten: somebody typed that value,
+ *  and replacing it moves clients between managers. */
+export type AccountMgrConflict = {
+  user: PathQuoteUserRow;
+  actUser: ActUserRow;
+  stored: string;
+  /** The exact picklist item this Act! user matches. */
+  value: string;
+};
+
 export type UserMapPlan = {
   /** Every PathQuote user read. Always equals `outcomes.length`, and the sum of
    *  the six category lengths below. */
@@ -151,6 +220,16 @@ export type UserMapPlan = {
   unusedActUsers: UnusedActUser[];
   /** Every PathQuote user, email order, one entry each. */
   outcomes: OutcomeLine[];
+  /** How many `Rep` picklist items this plan was given. Reported so a run that
+   *  resolved nothing says whether the picklist was empty or simply never
+   *  read. */
+  repPicklistItems: number;
+  /** Confirmed Act! users with no exact picklist item, email order. */
+  accountMgrGaps: AccountMgrGap[];
+  accountMgrConflicts: AccountMgrConflict[];
+  /** Picklist items that are no Act! user's display name -- the distributors
+   *  somebody added by hand, and anything stale. Context only. */
+  unusedRepItems: RepPicklistItem[];
 };
 
 /** The join key. An address that trims to nothing is no key at all. */
@@ -158,6 +237,65 @@ function emailKey(email: string | null): string | null {
   if (!email) return null;
   const trimmed = email.trim().toLowerCase();
   return trimmed ? trimmed : null;
+}
+
+/** Trimmed and lower-cased, for comparing a display name against a picklist
+ *  item when the question is "is this nearly the same string". Never used to
+ *  decide a write. */
+function looseKey(value: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed ? trimmed : null;
+}
+
+/**
+ * Which `Rep` picklist item is this Act! user's Account Mgr value.
+ *
+ * STRICT WRITE, LOUD REPORT, and the asymmetry is the whole design.
+ *
+ * Account Mgr is `customFields/rep`, a Character(50) field whose picklist has
+ * `isLimitToList: true` (RAW/ACT/meta/fields_contact.json, read off the
+ * production box), so the only strings Act! will accept in it are the
+ * picklist's item values. PathQuote decides client visibility on the same
+ * column (prisma/schema.prisma, `Contact.actAccountMgr`). A wrong value here
+ * therefore does not fail loudly, it hands one manager another manager's
+ * clients -- which is strictly worse than a null, because a null is visibly
+ * missing and a plausible wrong name is not.
+ *
+ * So only an exact match is written. A case-insensitive or trimmed match is
+ * reported and never written, for a reason this data demonstrates rather than
+ * a reason of principle: the Act! user is `Kevin du Plessis`, the Account Mgr
+ * value somebody typed onto 77 contacts is `Kevin Du Plessis`, and those two
+ * spellings are not interchangeable in a field limited to a list -- one of them
+ * is an item and the other is not. Normalising would make this function answer
+ * "yes, write it" for a string the picklist may not contain, and `isLimitToList`
+ * means Act! would reject the write at the far end, or worse, the item does
+ * exist under the other spelling and belongs to a different convention than
+ * ours. Reporting the near-match instead puts the two spellings side by side so
+ * a person can fix the picklist or the user, which takes one edit in Act! and
+ * then this function says yes on its own.
+ *
+ * What gets written is the item's `value`, not the display name. They are equal
+ * in the `exact` branch, so today it makes no difference; it is taken from the
+ * picklist because the picklist is the authority on what the field accepts, and
+ * that stays correct if this ever has to grow a looser rule.
+ */
+export function matchAccountMgr(
+  displayName: string | null,
+  items: readonly RepPicklistItem[],
+): AccountMgrMatch {
+  if (!displayName) return { kind: "none" };
+
+  for (const item of items) {
+    if (item.value !== null && item.value === displayName) {
+      return { kind: "exact", value: item.value, item };
+    }
+  }
+
+  const key = looseKey(displayName);
+  if (key === null) return { kind: "none" };
+  const near = items.filter((item) => looseKey(item.value) === key);
+  return near.length > 0 ? { kind: "near", items: near } : { kind: "none" };
 }
 
 /**
@@ -219,10 +357,17 @@ function byActUser(a: ActUserRow, b: ActUserRow): number {
  * Act! users with no email are never matched to anyone. They cannot be, and
  * there is no weaker key here to fall back to -- see the file header for why
  * display names are not one.
+ *
+ * `repPicklist` is the `Rep` picklist's items, read from the API by the caller.
+ * It decides Account Mgr and nothing else: it cannot make a row match, unmatch,
+ * or change group. Defaulting to empty means "no item is known", which makes
+ * every Account Mgr value unwritable -- the safe direction, and the report says
+ * how many items it had so an empty one is not mistaken for a resolved one.
  */
 export function planUserMap(
   actUsers: readonly ActUserRow[],
   pathQuoteUsers: readonly PathQuoteUserRow[],
+  repPicklist: readonly RepPicklistItem[] = [],
 ): UserMapPlan {
   const actById = new Map<string, ActUserRow>();
   for (const actUser of actUsers) actById.set(actUser.id, actUser);
@@ -283,7 +428,11 @@ export function planUserMap(
         continue;
       }
       if (key && emailKey(stored.email) === key) {
-        alreadyMapped.push({ user, actUser: stored });
+        alreadyMapped.push({
+          user,
+          actUser: stored,
+          accountMgr: matchAccountMgr(stored.displayName, repPicklist),
+        });
         outcomes.push({ user, outcome: "already-mapped", detail: describeActUser(stored) });
         continue;
       }
@@ -318,6 +467,7 @@ export function planUserMap(
     }
 
     const actUser = candidates[0];
+    const accountMgr = matchAccountMgr(actUser.displayName, repPicklist);
 
     const rivals = (key ? (pqByEmail.get(key) ?? []) : []).filter((other) => other.id !== user.id);
     if (rivals.length > 0) {
@@ -347,12 +497,12 @@ export function planUserMap(
     }
 
     if (!isActive(actUser.status)) {
-      inactiveMatched.push({ user, actUser });
+      inactiveMatched.push({ user, actUser, accountMgr });
       outcomes.push({ user, outcome: "inactive-match", detail: describeActUser(actUser) });
       continue;
     }
 
-    matched.push({ user, actUser });
+    matched.push({ user, actUser, accountMgr });
     outcomes.push({ user, outcome: "match", detail: describeActUser(actUser) });
   }
 
@@ -376,6 +526,53 @@ export function planUserMap(
     });
   }
 
+  // Account Mgr, over every row whose Act! user is confirmed: a stored mapping
+  // that still holds, a match this run would make, and a match held back for
+  // being inactive. Ambiguous, unmatched and drifted rows are deliberately out:
+  // their Act! user is in doubt, and a gap reported against the wrong Act! user
+  // sends an administrator to edit the wrong picklist item.
+  //
+  // The gap list ignores --include-inactive on purpose. Which rows get written
+  // is accountMgrWrites' business; this list is work for a person, and dropping
+  // an entry because of a flag on this run would hide it from them.
+  const confirmed: { entry: MatchedEntry; outcome: Outcome }[] = [
+    ...alreadyMapped.map((entry) => ({ entry, outcome: "already-mapped" as const })),
+    ...matched.map((entry) => ({ entry, outcome: "match" as const })),
+    ...inactiveMatched.map((entry) => ({ entry, outcome: "inactive-match" as const })),
+  ];
+
+  const accountMgrGaps: AccountMgrGap[] = [];
+  const accountMgrConflicts: AccountMgrConflict[] = [];
+  for (const { entry, outcome } of confirmed) {
+    const { user, actUser, accountMgr } = entry;
+    if (accountMgr.kind === "exact") {
+      // A stored value that is not the item this Act! user resolves to. Not an
+      // error and not repaired: somebody typed it, and overwriting it moves
+      // clients between managers.
+      if (user.actAccountMgr !== null && user.actAccountMgr !== accountMgr.value) {
+        accountMgrConflicts.push({
+          user,
+          actUser,
+          stored: user.actAccountMgr,
+          value: accountMgr.value,
+        });
+      }
+      continue;
+    }
+    accountMgrGaps.push({ user, actUser, match: accountMgr, outcome });
+  }
+
+  // Picklist items that are no Act! user's display name: `Achim Degel` and
+  // `Mr Sistemas` in the list read on 2026-10-12, both distributors somebody
+  // added by hand. Nothing to do about them -- they are here so the report
+  // shows the whole vocabulary rather than only the half we can reach.
+  const actUserNames = new Set(
+    actUsers.map((actUser) => actUser.displayName).filter((name): name is string => name !== null),
+  );
+  const unusedRepItems = repPicklist
+    .filter((item) => item.value === null || !actUserNames.has(item.value))
+    .sort((a, b) => (a.value ?? "").localeCompare(b.value ?? "") || a.id.localeCompare(b.id));
+
   return {
     pathQuoteUsers: pathQuoteUsers.length,
     actUsers: actUsers.length,
@@ -387,59 +584,180 @@ export function planUserMap(
     drift,
     unusedActUsers,
     outcomes,
+    repPicklistItems: repPicklist.length,
+    accountMgrGaps: accountMgrGaps.sort((a, b) => byEmail(a.user, b.user)),
+    accountMgrConflicts: accountMgrConflicts.sort((a, b) => byEmail(a.user, b.user)),
+    unusedRepItems,
   };
 }
-
-/**
- * Why `--apply` writes actUserId and leaves actAccountMgr null.
- *
- * The column is documented as "this user's name as it appears in ACT!'s
- * 'Account Mgr' field". Account Mgr is `customFields/rep`: a Character(50)
- * custom field bound to the picklist named `Rep`, whose `isLimitToList` is
- * true (RAW/ACT/meta/fields_contact.json, verified on the production box
- * 2026-10-12). Its valid values are therefore the picklist's items, and those
- * items are not the same strings as the Act! users' display names:
- *
- *   - The 17,373-contact export (RAW/ACT/PF_Contacts_20260819) holds 26
- *     distinct non-empty Account Mgr values against 20 Act! users, and 10 of
- *     those 26 are not any user's display name. `Achim Degel`, `Mr Sistemas`
- *     and `AOS ArtOfService` are not even case variants of one -- they are
- *     Account Mgr values belonging to no Act! user at all.
- *   - One real user differs only in case between the two vocabularies: the
- *     Act! user's display name is `Kevin du Plessis`, and the Account Mgr
- *     value on 77 contacts is `Kevin Du Plessis`. So even the users who do
- *     appear are not reachable by copying the display name across.
- *
- * So a display name is not a valid Account Mgr value, and no rule turning one
- * into the other can be derived from the data this script reads. Account Mgr
- * is what client visibility is decided on (prisma/schema.prisma,
- * `Contact.actAccountMgr`), so a plausible-looking wrong value there is worse
- * than a null: it would quietly give one manager another's clients.
- *
- * Resolving it needs the picklist contents, which the API does expose --
- * `GET /api/metadata/drop-down/lists/{list}/items`, list id
- * 65898243-e8ef-4c0f-84d6-bbc93144eac0 -- plus a person to say which item
- * belongs to which user for the ones that do not match exactly. That is a task
- * of its own. Until then the column stays null and the report says so.
- */
-export const ACCOUNT_MGR_NOTE = [
-  "ACCOUNT MGR -- nothing is written to User.actAccountMgr, by design",
-  "  Account Mgr is customFields/rep, a Character(50) field limited to the picklist",
-  "  named \"Rep\" (isLimitToList: true). Its valid values are that picklist's items,",
-  "  which are not the Act! users' display names: the contact export holds 26 distinct",
-  "  non-empty Account Mgr values against 20 Act! users, 10 of them matching no user's",
-  "  display name -- Achim Degel, Mr Sistemas and AOS ArtOfService are not users at all,",
-  "  and one real user differs by case alone: the user is \"Kevin du Plessis\", the",
-  "  Account Mgr value on 77 contacts is \"Kevin Du Plessis\".",
-  "  Client visibility is decided on Account Mgr, so a plausible wrong value there",
-  "  would hand one manager another's clients. Resolving it needs the picklist items",
-  "  (GET /api/metadata/drop-down/lists/{list}/items, list 65898243-e8ef-4c0f-84d6-bbc93144eac0)",
-  "  and a person to pair them with users. Separate task; actUserId is what this one does.",
-];
 
 /** What a run would do about the inactive matches, which is the one thing a
  *  flag changes. */
 export type ReportOptions = { includeInactive: boolean };
+
+/** One row `--apply` would set actAccountMgr on. `value` is a picklist item's
+ *  own value, so it is a string the limit-to-list field will accept. */
+export type AccountMgrWrite = { user: PathQuoteUserRow; actUser: ActUserRow; value: string };
+
+/**
+ * The rows `--apply` writes actAccountMgr on, given what the run was asked to
+ * include. The sibling of entriesToWrite, and the same reason for existing: the
+ * count the script offers and the rows it writes are one call.
+ *
+ * Three conditions, all necessary:
+ *
+ *  - The Act! user is confirmed -- a stored mapping that still resolves, a
+ *    match this run makes, or an inactive match when --include-inactive was
+ *    given. Never a row whose Act! user is ambiguous or drifted.
+ *  - Its display name is an exact picklist item. See matchAccountMgr.
+ *  - The column is still null. A value somebody typed is never replaced; it
+ *    shows up in the report's conflicts instead.
+ *
+ * `alreadyMapped` is included deliberately. A row mapped by an earlier run of
+ * this script has actUserId set and actAccountMgr null, because no run before
+ * this change could write the second column; the Act! user behind it is
+ * confirmed by email all the same, so it is one of the rows that still needs
+ * the value. Re-running after that writes nothing, which is what keeps the
+ * script idempotent.
+ */
+export function accountMgrWrites(plan: UserMapPlan, options: ReportOptions): AccountMgrWrite[] {
+  const entries = [
+    ...plan.alreadyMapped,
+    ...plan.matched,
+    ...(options.includeInactive ? plan.inactiveMatched : []),
+  ];
+
+  const writes: AccountMgrWrite[] = [];
+  for (const { user, actUser, accountMgr } of entries) {
+    if (accountMgr.kind !== "exact") continue;
+    if (user.actAccountMgr !== null) continue;
+    writes.push({ user, actUser, value: accountMgr.value });
+  }
+  return writes.sort((a, b) => byEmail(a.user, b.user));
+}
+
+/** Quoted, so a difference in case or whitespace is visible in the report
+ *  rather than something the reader has to notice. */
+const quoted = (value: string | null) => (value === null ? "(null)" : JSON.stringify(value));
+
+/**
+ * The ACCOUNT MGR section of the report.
+ *
+ * Written as its own function because it answers a different question from the
+ * rest: not "which Act! user is this person" but "is there a legal Account Mgr
+ * value for them", on a different key and under a stricter rule. Separated also
+ * so the wording can be asserted on its own in a test -- the claim this section
+ * makes about what is and is not written is exactly the kind that goes stale.
+ */
+export function formatAccountMgrSection(plan: UserMapPlan, options: ReportOptions): string[] {
+  const out: string[] = [];
+  const writes = accountMgrWrites(plan, options);
+
+  out.push("ACCOUNT MGR -- User.actAccountMgr, set only on an exact picklist match");
+  out.push("  Account Mgr is customFields/rep, a Character(50) field limited to the picklist");
+  out.push('  named "Rep" (isLimitToList: true), so the only strings it accepts are that');
+  out.push(`  picklist's items. ${plan.repPicklistItems} item(s) were read from the API for this run.`);
+  out.push("  PathQuote decides client visibility on the same column, so a plausible wrong");
+  out.push("  value here does not fail -- it hands one manager another's clients. That is why");
+  out.push("  only an exact match is written and a near-match is reported instead.");
+
+  out.push("");
+  out.push(`  WOULD SET: ${writes.length}`);
+  if (writes.length === 0) out.push("    none");
+  for (const { user, actUser, value } of writes) {
+    out.push(`    ${user.email.padEnd(34)}  ${actUser.displayName ?? "(no display name)"}`);
+    out.push(`        -> ${quoted(value)}`);
+  }
+
+  // Said explicitly because the alternative is a silent absence. An inactive
+  // match with a perfectly good picklist item appears in neither list above
+  // when the flag is off -- it is not a gap and it is not a write -- and a
+  // reader who knows that person has an item would be left wondering where it
+  // went. `David Cook` is in the picklist and his Act! user is Inactive, so
+  // this line is not hypothetical.
+  if (!options.includeInactive) {
+    const heldBack = accountMgrWrites(plan, { includeInactive: true }).length - writes.length;
+    if (heldBack > 0) {
+      out.push(
+        `    (${heldBack} not listed: an exact item exists but the Act! user is not Active, so the`,
+      );
+      out.push("     value is held back with the actUserId. Add --include-inactive to write these.)");
+    }
+  }
+
+  const nearGaps = plan.accountMgrGaps.filter((gap) => gap.match.kind === "near");
+  out.push("");
+  out.push(`  NEAR MATCH, NOT WRITTEN: ${nearGaps.length}`);
+  if (nearGaps.length === 0) out.push("    none");
+  for (const gap of nearGaps) {
+    if (gap.match.kind !== "near") continue;
+    out.push(`    ${gap.user.email.padEnd(34)}  ${outcomeLabel(gap.outcome)}`);
+    out.push(`        Act! display name  ${quoted(gap.actUser.displayName)}`);
+    for (const item of gap.match.items) {
+      out.push(`        picklist item      ${quoted(item.value)}`);
+    }
+  }
+  if (nearGaps.length > 0) {
+    out.push("");
+    out.push("    !! The two differ only in case or surrounding whitespace, and this script");
+    out.push("    !! will not pick one for you: the field is limited to its list, so one of");
+    out.push("    !! those spellings is a legal value and the other is not. Make the Act! user's");
+    out.push("    !! display name and the picklist item identical -- in Act! Tools -> Manage");
+    out.push("    !! Users, or by editing the Rep list -- and re-run. Nothing was written.");
+  }
+
+  const absentGaps = plan.accountMgrGaps.filter((gap) => gap.match.kind === "none");
+  out.push("");
+  out.push(`  NO PICKLIST ITEM: ${absentGaps.length} -- the list an administrator has to add`);
+  if (absentGaps.length === 0) out.push("    none");
+  for (const gap of absentGaps) {
+    out.push(
+      `    ${gap.user.email.padEnd(34)}  ${quoted(gap.actUser.displayName)}  ${outcomeLabel(gap.outcome)}`,
+    );
+  }
+  if (absentGaps.length > 0) {
+    out.push("");
+    out.push("    !! These people are mapped to an Act! user, but no Rep picklist item carries");
+    out.push("    !! that user's display name, so there is no legal Account Mgr value to write.");
+    out.push("    !! Add the item in Act! (Tools -> Define Fields -> Account Mgr -> edit list),");
+    out.push("    !! spelled exactly as the display name above, and re-run. actUserId is");
+    out.push("    !! unaffected -- these rows still get their Act! user.");
+  }
+
+  out.push("");
+  out.push(`  STORED VALUE DIFFERS: ${plan.accountMgrConflicts.length} -- never overwritten here`);
+  if (plan.accountMgrConflicts.length === 0) out.push("    none");
+  for (const conflict of plan.accountMgrConflicts) {
+    out.push(`    ${conflict.user.email.padEnd(34)}  ${conflict.actUser.displayName ?? "(no display name)"}`);
+    out.push(`        stored      ${quoted(conflict.stored)}`);
+    out.push(`        picklist    ${quoted(conflict.value)}`);
+  }
+  if (plan.accountMgrConflicts.length > 0) {
+    out.push("");
+    out.push("    !! Somebody set that value by hand. Replacing it would move clients between");
+    out.push("    !! managers, so decide which is right, clear the column if it is the stored");
+    out.push("    !! one, and re-run.");
+  }
+
+  out.push("");
+  out.push(
+    `  PICKLIST ITEMS THAT ARE NO ACT! USER: ${plan.unusedRepItems.length} of ${plan.repPicklistItems}`,
+  );
+  if (plan.unusedRepItems.length === 0) out.push("    none");
+  for (const item of plan.unusedRepItems) {
+    const description = item.description?.trim();
+    out.push(`    ${quoted(item.value)}${description ? `  -- ${description}` : ""}`);
+  }
+  if (plan.unusedRepItems.length > 0) {
+    out.push("");
+    out.push("    These are legal Account Mgr values that belong to nobody with an Act! login --");
+    out.push("    distributors, mostly, added to the list by hand. Nothing here is actionable;");
+    out.push("    it is shown so the whole vocabulary is visible, not only the half this script");
+    out.push("    can reach.");
+  }
+
+  return out;
+}
 
 function outcomeLabel(outcome: Outcome): string {
   switch (outcome) {
@@ -596,7 +914,7 @@ export function formatReport(plan: UserMapPlan, options: ReportOptions): string[
   }
 
   out.push("");
-  out.push(...ACCOUNT_MGR_NOTE);
+  out.push(...formatAccountMgrSection(plan, options));
 
   out.push("");
   out.push("SUMMARY");
@@ -614,6 +932,9 @@ export function formatReport(plan: UserMapPlan, options: ReportOptions): string[
   line("ambiguous", plan.ambiguous.length);
   line("unmatched", plan.unmatched.length);
   line("drift", plan.drift.length);
+  line("Rep picklist items", plan.repPicklistItems);
+  line("account mgr would be set", accountMgrWrites(plan, options).length);
+  line("account mgr with no item", plan.accountMgrGaps.length);
 
   return out;
 }
