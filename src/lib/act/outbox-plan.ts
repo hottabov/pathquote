@@ -489,12 +489,15 @@
 //     act: ACT! created a contact whose id PathQuote could not store; the contact stays marked in flight
 //
 //   followed by the outbox row's `id`, the PathQuote `contactId` and the ACT!
-//   id as `actContactId`. Today's drains run in the app (after a finalise, a
-//   signature or an acceptance), so the line is in the app's log:
+//   id as `actContactId`. Which log it is in depends on the drain that made
+//   the contact: the fast path after a finalise, a signature or an
+//   acceptance runs in the app, the 15-minute drain and the nightly sync's
+//   in the `tools` container, each into its unit's log on the VPS:
 //
 //     docker compose logs app 2>&1 | grep -A 8 'whose id PathQuote could not store'
+//     grep -A 8 'whose id PathQuote could not store' /var/log/pq-act-drain.log /var/log/pq-act-sync.log
 //
-//   (Task 8's drains log wherever their unit logs.) With no such line for
+//   (A Sync now press drains in the app too.) With no such line for
 //   the contact -- no answer, a 5xx or a redirect, a success PathQuote could
 //   not read, or a 408; the log has "act: ACT! may have created this
 //   contact" for it -- PathQuote never had an id: look for the person in
@@ -536,10 +539,8 @@
 //   Then nothing else is needed: the next full drain pass re-plans every
 //   blocked row, finds nextStep no longer blocking on this contact, and
 //   unblocks every quote on it by itself (the planner's block, blockedBy
-//   null) -- Task 8's periodic drain, within 15 minutes, or its nightly one.
-//   Until Task 8, the only passes are the fast paths, each over one quote:
-//   each quote on the contact goes on at its own next finalise, signature
-//   or acceptance.
+//   null) -- the periodic drain, within 15 minutes, or the nightly sync's.
+//   (A fast path, over one quote, does the same for that quote alone.)
 //
 //   Task 9 adds an admin action on the quote that does this from the
 //   browser, with two choices: "ACT! has this person — id …" and "ACT! has

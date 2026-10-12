@@ -16,25 +16,20 @@
 // BEST-EFFORT, AND NEVER THE ACTION'S PROBLEM. The event has committed by the
 // time this is called, and it stands whatever happens here: every failure is
 // caught and logged, and the row waits for the next drain that reaches it.
-// Today that is only this quote's next finalise, signature or acceptance --
-// this fast path is the only caller of the drain. Task 8 adds the drains over
-// every row: a periodic one every 15 minutes (a systemd timer in the `tools`
-// container) and the nightly one; once it lands, a row left here is picked
-// up by the first of those after it falls due. That includes
-// scheduling itself -- `after()` throws when called outside a request -- and
-// building the client: actClientFromEnv throws when an ACT_* variable is
-// missing, which is why it is called inside the callback, inside its try,
-// and only once the switch is known to be on.
+// That includes scheduling itself -- `after()` throws when called outside a
+// request -- and building the client: actClientFromEnv throws when an ACT_*
+// variable is missing, which is why it is called inside the callback, inside
+// its try, and only once the switch is known to be on. The drain that reaches
+// it is the periodic one every 15 minutes (scripts/act-drain.ts,
+// pq-act-drain.timer in the `tools` container) or an inbound sync's, both
+// over every row, at the first pass after it falls due.
 
 import { after } from "next/server";
 import { actClientFromEnv } from "@/lib/act/client";
 import { drainActOutbox, readActWriteSwitch } from "@/lib/act/drain";
 
-/**
- * What becomes of a row this fast path did not write: the end of each log
- * line below. True now and once Task 8's periodic and nightly drains exist.
- */
-const ROW_WAITS = "the row waits for the next drain that reaches it (the quote's next event; Task 8's periodic and nightly drains)";
+/** What becomes of a row this fast path did not write: the end of each log line below. */
+const ROW_WAITS = "the row waits for the next drain that reaches it (the 15-minute drain, the nightly sync's, or the quote's next event)";
 
 /** After the response, drain `documentId`'s row; `event` names the caller in the log. */
 export function drainAfterResponse(documentId: string, event: "finalise" | "signature" | "acceptance"): void {

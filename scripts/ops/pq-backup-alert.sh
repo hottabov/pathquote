@@ -4,13 +4,15 @@
 # (OnFailure=pq-backup-alert@%n.service passes the failed unit's name). Sends through the app's own SMTP
 # account (SMTP_* and EMAIL_FROM in /opt/pathquote/.env -- Resend today).
 #
-# Two different jobs now fail into this script, and the mail has to be true for
-# both, so the wording and the log it tails come from that unit name:
+# Several different jobs now fail into this script, and the mail has to be true
+# for each, so the wording and the log it tails come from that unit name:
 #
 #   pq-backup-db.service / pq-backup-files.service
 #       backup wording, /var/log/pq-backup.log
 #   pq-act-sync.service
 #       sync wording, /var/log/pq-act-sync.log
+#   pq-act-drain.service
+#       drain wording, /var/log/pq-act-drain.log
 #   pq-act-weekly-report.service
 #       weekly-report wording, /var/log/pq-act-weekly-report.log
 #
@@ -24,7 +26,8 @@
 # the same breath, and a half-finished rename is a failure that emails nobody.
 #
 # `pq-backup-alert.sh --test` sends a clearly marked test message, of the backup
-# flavour; `pq-backup-alert.sh --test pq-act-sync.service` tests the other one.
+# flavour; `pq-backup-alert.sh --test pq-act-sync.service` tests the sync's, and
+# so on for each unit above.
 #
 set -euo pipefail
 
@@ -50,6 +53,20 @@ case "$UNIT" in
 log below names each manager and whether their email went. Re-send by hand
 on the VPS (it reports the last finished Mon-Sun week whatever day it runs):
   systemctl start pq-act-weekly-report.service"
+    ;;
+  pq-act-drain*)
+    LOG=/var/log/pq-act-drain.log
+    WHAT="ACT! quote drain"
+    WHAT_SUBJECT="ACT! quote drain"
+    WHAT_TEST="ACT! drain"
+    # Says it will repeat, because it will: the unit runs every 15 minutes and
+    # fails only on what does not mend itself (scripts/act-drain.ts, its exit
+    # table), so every tick until somebody fixes it sends another of these.
+    # Better the first one says so than the fifth arrives unexplained.
+    CONSEQUENCE="Queued quotes are not reaching ACT!: quotes finalised, signed or accepted
+in PathQuote since the last good pass are waiting in PathQuote's queue, not in
+ACT!. Nothing is lost -- they go once this is fixed. This runs every 15 minutes,
+so this email repeats until it is. The log below says why."
     ;;
   pq-act-sync*)
     LOG=/var/log/pq-act-sync.log
