@@ -20,6 +20,7 @@ import { headers } from "next/headers";
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
+import { enqueueActWriteForNewestRevision } from "@/lib/act/outbox";
 import { uploadsDir, saveUpload, UploadValidationError, IMAGE_URL_PATTERN, resolveUploadPath } from "@/lib/uploads";
 import { parseSignatureDataUrl } from "@/lib/signing/data-url";
 import { hashSigningToken } from "@/lib/signing/token";
@@ -378,16 +379,20 @@ export async function completeSigning(token: string): Promise<ActionResult> {
   // moment the claim comes back empty.
   try {
     await db.$transaction(async (tx) => {
+      const now = new Date();
       const result = await tx.document.updateMany({
         where: { id: request.documentId, signingStatus: { in: COMPLETABLE_SIGNING_STATUSES } },
         data: {
           signingStatus: "SIGNED",
           signedPdfName: name,
           signedPdfSha256: sha256Hex(pdf),
-          completedAt: new Date(),
+          completedAt: now,
         },
       });
       if (result.count === 0) throw new LostRaceError();
+      // The signature's write into ACT!, committed with the signature itself,
+      // for the newest revision: the one being signed (src/lib/act/outbox.ts).
+      await enqueueActWriteForNewestRevision(tx, { documentId: request.documentId, now });
     });
   } catch (error) {
     if (error instanceof LostRaceError) {
