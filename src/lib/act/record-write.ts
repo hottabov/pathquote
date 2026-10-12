@@ -126,7 +126,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
  *   a GET changes nothing, a PATCH writes the same whole record again, and a
  *   request that never reached ACT!, or that ACT! turned away for now, did
  *   nothing at all -- so the drain tries the step again later. For a POST,
- *   `failed` therefore always means nothing was made.
+ *   `failed` means nothing was made -- with one exception, a 408, below.
  *
  *                 not sent   no answer   2xx unreadable   408, 429   other 1xx, 4xx   3xx         5xx
  *     POST        failed     untracked   untracked        failed     refused          untracked   untracked
@@ -134,17 +134,24 @@ function isObject(value: unknown): value is Record<string, unknown> {
  *
  * 408 AND 429 ARE "NOT NOW", NOT "NO" (tryLaterStatus). 429 Too Many
  * Requests is a server or a proxy in front of it rate-limiting, and 408
- * Request Timeout is a server that gave up waiting for the request to arrive
- * in full: both are answered before the request is acted on -- the 4xx
- * reasoning below -- and both say the same request may well go through
- * later. Read as `refused`, a throttled write would be blocked as though ACT!
- * had objected to it, and tried again on the very next pass with nothing to
- * slow it; as `failed` it backs off, honouring any Retry-After (the drain's
- * nextAttemptAt in src/lib/act/drain-rules.ts), and the drain stops its
- * pass rather than keep sending to a server that has said it is overloaded.
- * For a POST they made nothing, like a refusal, so a create's in-flight
- * marker may be cleared for them (createMadeNothing in
- * src/lib/act/client.ts).
+ * Request Timeout is a server that gave up waiting: both say the same request
+ * may well go through later. Read as `refused`, a throttled write would be
+ * blocked as though ACT! had objected to it, and tried again on the very next
+ * pass with nothing to slow it; as `failed` it backs off, honouring any
+ * Retry-After (the drain's nextAttemptAt in src/lib/act/drain-rules.ts), and
+ * the drain stops its pass rather than keep sending to a server that has said
+ * it is overloaded.
+ *
+ * What they say about a POST differs. A 429 is answered by a rate limiter
+ * before the request runs, so it made nothing, like a refusal, and a create's
+ * in-flight marker may be cleared for it. A 408 is answered before the
+ * request runs only by convention: HTTP.sys and Kestrel send it while the
+ * body is still arriving, but application code can answer 408 for a timeout
+ * of its own after its database insert has committed. So for a POST a 408
+ * keeps the marker, as an untracked create does (createMadeNothing in
+ * src/lib/act/client.ts) -- the one `failed` POST that may have made a
+ * record. It stays `failed` here rather than `untracked` so that the drain
+ * still stops its pass and honours Retry-After.
  *
  * A 3xx is a redirect the client did not follow: ActClient's `send` fetches
  * with `redirect: "manual"`, because fetch following one re-sends a POST
@@ -166,9 +173,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
  * turning the request away before anything is saved. That is how the
  * framework is built, not something tried against this server; the
  * alternative -- treating every refusal as a possible duplicate -- would make
- * every rejected body look like a record that might exist. (408 and 429 are
- * turned away just as early, and are `failed` rather than `refused` only
- * because repeating them later can succeed.) A 5xx is the
+ * every rejected body look like a record that might exist. (A 429 is turned
+ * away just as early, and is `failed` rather than `refused` only because
+ * repeating it later can succeed. A 408 is the exception: see 408 AND 429
+ * ARE "NOT NOW", NOT "NO" above.) A 5xx is the
  * server failing somewhere, possibly after the record was saved, and a lost
  * answer says nothing at all. A 2xx to a POST that does not give the record
  * means the create happened and PathQuote cannot tell which record it made.
@@ -193,8 +201,9 @@ export type WriteFailure = "refused" | "untracked" | "failed";
 
 /**
  * 408 Request Timeout and 429 Too Many Requests: ACT! (or what stands in
- * front of it) turning a request away for now, before acting on it. See
- * 408 AND 429 ARE "NOT NOW", NOT "NO" above classifyWriteFailure.
+ * front of it) saying "not now". Not "nothing was made": for a POST, a 408
+ * may follow a record that was saved. See 408 AND 429 ARE "NOT NOW", NOT "NO"
+ * above classifyWriteFailure.
  */
 export function tryLaterStatus(status: number): boolean {
   return status === 408 || status === 429;

@@ -840,15 +840,19 @@ model Contact {
   actSnapshot       ActSnapshot?
   /// Set when the ActOutbox drain is about to ask ACT! to create this
   /// contact, committed before the POST leaves; cleared in the update that
-  /// stores actContactId, or when the POST made nothing (refused, or never
-  /// sent). Left set when the answer was lost, or the store after it failed:
-  /// ACT! may then hold this person already, and creating them again would
-  /// put them in ACT! twice. While it is set and actContactId is null, the
-  /// outbox planner blocks create-contact for EVERY quote on this contact,
-  /// not only the one whose write sent the POST, until a person has looked
-  /// in ACT!. On the contact, not the outbox row, because the record being
-  /// created is the contact, and every quote that uses it would create it.
-  /// See A CONTACT CREATE IN FLIGHT in src/lib/act/outbox-plan.ts.
+  /// stores actContactId, or when the POST made nothing: never sent, refused
+  /// (a 4xx other than 408 and 429), or answered 429 (createMadeNothing in
+  /// src/lib/act/client.ts). NOT on a 408, which application code can send
+  /// after its insert has committed. Left set then, when the answer was lost,
+  /// or when the store after it failed: ACT! may then hold this person
+  /// already, and creating them again would put them in ACT! twice. While it
+  /// is set and actContactId is null, the outbox planner blocks
+  /// create-contact for EVERY quote on this contact, not only the one whose
+  /// write sent the POST, until a person has looked in ACT! -- nothing in
+  /// PathQuote clears it yet (FOR TASK 10 in src/lib/act/outbox-plan.ts). On
+  /// the contact, not the outbox row, because the record being created is the
+  /// contact, and every quote that uses it would create it. See A CONTACT
+  /// CREATE IN FLIGHT in src/lib/act/outbox-plan.ts.
   actCreateInFlightAt DateTime?
 
   @@index([companyId])
@@ -1751,11 +1755,13 @@ model ActOutbox {
   /// being stored: "opportunity", "product-line" or "history"
   /// (CREATE_IN_FLIGHT in src/lib/act/outbox-plan.ts), or null. Set by the
   /// drain, and committed, before each POST; cleared in the transaction that
-  /// stores the created id, or when the POST made nothing (refused, or never
-  /// sent). Left set when the answer was lost, or the drain died before
-  /// storing it -- so a create that may have happened is never silently made
-  /// again. Each of the three is found again by the lookup the drain makes
-  /// before every create of any of them; a value nothing there knows blocks
+  /// stores the created id, or when the POST made nothing: never sent,
+  /// refused (a 4xx other than 408 and 429), or answered 429. Left set on a
+  /// 408, which can follow a record that was saved, when the answer was lost,
+  /// or when the drain died before storing it -- so a create that may have
+  /// happened is never silently made again. Each of the three is found again
+  /// by the lookup the drain makes before every create of any of them; a
+  /// value nothing there knows blocks
   /// the row for a person to check ACT!. NOT cleared by a take-over: the
   /// record may be in ACT! whichever revision the row now carries. A contact
   /// create's marker is not here but on the Contact
@@ -1783,20 +1789,25 @@ model ActOutbox {
   /// or mapping the region involves no re-finalise, so nothing takes the row
   /// over. The drain therefore re-plans every blocked row on each pass and,
   /// once nextStep no longer returns `blocked`, clears this and makes the row
-  /// due -- unless blockedBy says ACT! refused the write.
+  /// due -- unless blockedBy holds it ("act", "revision").
   blockedReason        String?
   /// Who blocked the row, which decides what the drain's pass over blocked
   /// rows does with it (replanBlocked in src/lib/act/drain-rules.ts):
-  ///   null     the planner (nextStep): re-planned each pass, and unblocked
-  ///            once the cause is fixed in PathQuote.
-  ///   "act"    ACT! refused a write, or denied PathQuote access to a record:
-  ///            the same request would get the same answer, so the pass
-  ///            leaves the row blocked until a take-over (a new finalise,
-  ///            signature or acceptance) or a person clears blockedReason.
-  ///   "drain"  the drain's own check: duplicates a lookup found in ACT!, or
-  ///            a revision it cannot describe. Worked again first thing each
-  ///            pass, reason kept until then: no write is re-sent by it, only
-  ///            the check.
+  ///   null        the planner (nextStep): re-planned each pass, and
+  ///               unblocked once the cause is fixed in PathQuote.
+  ///   "act"       ACT! refused a write, or denied PathQuote access to a
+  ///               record: the same request would get the same answer, so the
+  ///               pass leaves the row blocked until a take-over (a new
+  ///               finalise, signature or acceptance) or a person clears
+  ///               blockedReason.
+  ///   "revision"  the drain cannot describe the row's revision (no number,
+  ///               currency, validity or total it can read): held like
+  ///               "act", since the frozen revision reads the same every
+  ///               time; the fix is PathQuote's data, not ACT!.
+  ///   "drain"     duplicates a lookup found in ACT!. Rechecked by later
+  ///               passes, after their due rows and at most RECHECKS_PER_PASS
+  ///               a pass (src/lib/act/drain-rules.ts), reason kept until
+  ///               then: no write is re-sent by it, only the lookup.
   /// A column rather than a reading of blockedReason: that is a sentence for
   /// a manager, and rewording one must never turn a held refusal into one
   /// sent again every pass. A take-over clears it with blockedReason.

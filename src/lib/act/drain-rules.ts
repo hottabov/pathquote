@@ -10,6 +10,7 @@ import {
   ActNoAnswerError,
   ActNotSentError,
   ActUntrackedCreateError,
+  createMadeNothing,
 } from "@/lib/act/client";
 import { tryLaterStatus } from "@/lib/act/record-write";
 import type { OpportunityNow, QuoteForAct } from "@/lib/act/write-payloads";
@@ -242,7 +243,8 @@ export function refusedReason(kind: ActStepKind, status: number, body: string): 
  * The blocked reason for a 403 on a request about a record: ACT! keeps some
  * records to some of its users, and the service account is not one of them
  * for this one. Not the service account's access as a whole -- a 403 to the
- * login, or to the users lookup, stops the pass instead (drainFailure) --
+ * login, or to the users lookup, or one whose body is not ACT!'s JSON
+ * (actForbidden), stops the pass instead (drainFailure) --
  * so only this row is held (BLOCKED_BY.act), and the rest of the pass goes
  * on. `method` says whether there was a record yet: a create has none.
  */
@@ -256,33 +258,84 @@ export function deniedReason(kind: ActStepKind, method: string, body: string): s
  * The values of ActOutbox.blockedBy, beside null for a row the planner
  * blocked. See the column in prisma/schema.prisma.
  *
- *   act    ACT! refused a write, or denied PathQuote access to a record:
- *          held until a take-over or a person.
- *   drain  the drain's own check -- duplicates a lookup found, a revision it
- *          cannot describe: worked again first thing each pass.
+ *   act       ACT! refused a write, or denied PathQuote access to a record:
+ *             held until a take-over or a person.
+ *   revision  the row's revision cannot be described (revisionForAct's
+ *             `unreadable`): held until a take-over or a person, like `act`.
+ *             What it reads is frozen -- the revision's snapshot and total,
+ *             and the quote's number, which a finalised quote keeps -- so the
+ *             answer cannot change by itself, and checking it every pass
+ *             would only spend a place in the pass on a row that cannot move.
+ *             A value of its own rather than `act`, because `act` says ACT!
+ *             objected, and whoever reads the column -- a person, Task 9's
+ *             quote view, Task 10's runbook -- would look in ACT! for a
+ *             refusal that never happened; the fix here is PathQuote's own
+ *             data, which is why its reasons say "ask your developer".
+ *   drain     duplicates a lookup found in ACT!: rechecked by later passes,
+ *             after the due rows and at most RECHECKS_PER_PASS a pass.
+ *             Somebody removing the extra records in ACT! is what lets it on,
+ *             and PathQuote is not told of that, so it asks again.
  */
 export const BLOCKED_BY = {
   act: "act",
+  revision: "revision",
   drain: "drain",
 } as const;
+
+/**
+ * How many rows the drain's own lookups blocked (BLOCKED_BY.drain) one pass
+ * rechecks: 10, after its due rows. A recheck is one lookup in ACT! for a row
+ * that is usually still blocked, so it comes after the work that is certainly
+ * due, and however many such rows pile up they take no more than this from a
+ * pass. Pass.replanBlocked in src/lib/act/drain.ts hands them over least
+ * recently worked first, so beyond 10 they are rechecked in turn rather than
+ * the same 10 every pass. 10 is a fifth of
+ * the pass's 50 due rows: with Task 8's drain every 15 minutes, 40 such rows
+ * are each asked about once an hour.
+ */
+export const RECHECKS_PER_PASS = 10;
+
+/**
+ * The rows one pass works, in order: every due row it was given (the drain
+ * takes at most BATCH of them), then the first RECHECKS_PER_PASS of
+ * `rechecks` -- rows its own lookups blocked, least recently worked first --
+ * that are not also due. Due rows first, so a pile of rows waiting on
+ * somebody to tidy ACT! never stands between a fresh quote and ACT!.
+ */
+export function passWork(
+  due: readonly string[],
+  rechecks: readonly string[],
+): { id: string; recheck: boolean }[] {
+  const dueIds = new Set(due);
+  return [
+    ...due.map((id) => ({ id, recheck: false })),
+    ...rechecks
+      .filter((id) => !dueIds.has(id))
+      .slice(0, RECHECKS_PER_PASS)
+      .map((id) => ({ id, recheck: true })),
+  ];
+}
 
 /**
  * What the drain's pass over blocked rows does with one, from who blocked it
  * and what nextStep says now. No ACT! call is made deciding it.
  *
- *   keep     leave it blocked as it is: ACT! refused it (or blockedBy holds a
- *            value nothing here knows, which is left for a person), or the
- *            planner blocks it still, for the reason stored.
+ *   keep     leave it blocked as it is: ACT! refused it, its revision cannot
+ *            be described (BLOCKED_BY.revision), or blockedBy holds a value
+ *            nothing here knows, which is left for a person; or the planner
+ *            blocks it still, for the reason stored.
  *   reblock  the planner blocks it, for a reason other than the one stored:
  *            store the planner's, as the planner's.
  *   unblock  the planner blocked it and no longer does -- the cause was
  *            fixed in PathQuote: clear the reason, which is no longer true,
  *            and make the row due.
- *   recheck  the drain's own check blocked it, and the planner does not:
- *            work it again this pass, ahead of the due rows, keeping its
- *            reason until the moment it is worked -- the duplicates it names
- *            may still be in ACT!, and a pass that stops before reaching it
- *            would otherwise leave the manager with no reason at all.
+ *   recheck  a lookup's duplicates blocked it (BLOCKED_BY.drain), and the
+ *            planner does not: a candidate to work again this pass, after
+ *            the due rows and within RECHECKS_PER_PASS (passWork), keeping
+ *            its reason until the moment it is worked -- the duplicates it
+ *            names may still be in ACT!, and a pass that stops or runs out
+ *            of rechecks before reaching it would otherwise leave the manager
+ *            with no reason at all.
  */
 export type Replan =
   | { kind: "keep" }
@@ -309,19 +362,29 @@ export function replanBlocked(
  *   refused    ACT! answered no: an ActApiError `refused` with a 4xx other
  *              than 401 and 403. The row is blocked with refusedReason, and
  *              held there (BLOCKED_BY.act).
- *   denied     a 403 on a request about a record (ActApiError `authorizing`
- *              false): ACT! keeps that record from the service account. The
- *              row is blocked with deniedReason and held, like a refusal;
- *              the pass goes on, since the next row's records may well be
- *              open to it.
+ *   denied     a 403 from ACT! itself on a request about a record
+ *              (ActApiError `authorizing` false, and a JSON body:
+ *              actForbidden): ACT! keeps that record from the service
+ *              account. The row is blocked with deniedReason and
+ *              held, like a refusal; the pass goes on, since the next row's
+ *              records may well be open to it.
  *   stop       not about this row: a 401 (after re-authorising, or to the
  *              login itself), a 403 to the login (`authorizing`: the service
  *              account's licence or permissions -- a `Browse` licence
- *              surfaces here), or a redirect not followed (ACT_BASE or the
- *              box's setup). Every row would get the same answer, so the row
- *              backs off and the pass stops. (A 403 to the users lookup is
- *              the account's too; the drain stops for that where it makes
- *              the lookup.) A redirect to a CREATE stops the pass as well:
+ *              surfaces here), a 403 whose body is not JSON (actForbidden),
+ *              or a redirect not followed (ACT_BASE or the box's setup).
+ *              Every row would get the same answer, so the row backs off and
+ *              the pass stops. A 403 that is not JSON is not ACT!'s Web API
+ *              keeping one record back but what stands in front of it -- IIS,
+ *              whose 403 is an HTML page -- turning PathQuote away: above
+ *              all, the IP allow-list no longer letting the VPS in. A pass
+ *              logs in once and keeps the token (for up to 55 minutes), so an
+ *              allow-list that starts refusing the VPS part way through a
+ *              pass answers a record's request, not the login; read as
+ *              `denied`, it would hold every row left in the pass, one by
+ *              one, each for a person to send again. (A 403 to the users
+ *              lookup is the account's too; the drain stops for that where
+ *              it makes the lookup.) A redirect to a CREATE stops the pass as well:
  *              it is still untracked for its marker -- a 303 is how a
  *              server answers a POST it acted on, so the marker stays, and
  *              a contact is held for a person -- but it almost certainly
@@ -331,7 +394,11 @@ export function replanBlocked(
  *              src/lib/act/record-write.ts), on any request. The row backs
  *              off -- for at least as long as its Retry-After asks
  *              (nextAttemptAt) -- and the pass stops: the rest would be
- *              sent to a server that has just said it is overloaded.
+ *              sent to a server that has just said it is overloaded. (A 408
+ *              to a contact's POST may follow a person ACT! saved, so that
+ *              row is blocked instead, the contact's marker kept --
+ *              createContact in src/lib/act/drain.ts -- and the pass stops
+ *              all the same.)
  *   unreachable
  *              ACT! not answering at all: ActNotSentError (no connection, or
  *              the login before the request failed), ActNoAnswerError (a GET
@@ -361,9 +428,44 @@ export type DrainFailure =
   | "failed"
   | "foreign";
 
+/**
+ * Whether a create's error leaves a record that ACT! may hold and PathQuote
+ * has not stored -- what the drain counts as DrainResult's `untracked`, and
+ * keeps the create's in-flight marker for: an ActUntrackedCreateError with no
+ * `createdId` (one with it names the record, which the drain stores), or the
+ * POST's own ActApiError when createMadeNothing does not clear it, which is
+ * a 408 (see createMadeNothing in src/lib/act/client.ts).
+ */
+export function createUnaccounted(error: unknown): boolean {
+  if (error instanceof ActUntrackedCreateError) return error.createdId === null;
+  return error instanceof ActApiError && error.method === "POST" && !createMadeNothing(error);
+}
+
 /** The failures after which the pass goes no further: see DrainFailure. */
 export function stopsPass(failure: DrainFailure): boolean {
   return failure === "stop" || failure === "try-later" || failure === "unreachable";
+}
+
+/**
+ * Whether a 403's body is ACT!'s own: JSON, the form ASP.NET Web API gives
+ * its errors, `{"Message": ...}` and the like. An HTML page -- what IIS sends
+ * when its IP allow-list turns a request away -- plain text, or nothing at
+ * all is not, and the 403 is then taken to be about PathQuote's access as a
+ * whole rather than one record (`stop` in DrainFailure). ACT!'s own 403 to a
+ * record has not been captured from this server; if it turns out not to be
+ * JSON, such a 403 stops the pass and backs its row off rather than holding
+ * that one row. That is the side to err on: the other way, every row left in
+ * the pass is held for a person.
+ */
+export function actForbidden(body: string): boolean {
+  const text = body.trim();
+  if (text === "") return false;
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function drainFailure(error: unknown): DrainFailure {
@@ -374,7 +476,7 @@ export function drainFailure(error: unknown): DrainFailure {
   if (error instanceof ActApiError) {
     if (tryLaterStatus(error.status)) return "try-later";
     if (error.failure === "failed") return "failed";
-    if (error.status === 403) return error.authorizing ? "stop" : "denied";
+    if (error.status === 403) return error.authorizing || !actForbidden(error.body) ? "stop" : "denied";
     if (error.status === 401 || (error.status >= 300 && error.status < 400)) return "stop";
     return error.failure === "refused" ? "refused" : "failed";
   }
@@ -407,6 +509,8 @@ export function lastErrorText(kind: ActStepKind, error: unknown): string {
   } else if (error instanceof ActApiError && tryLaterStatus(error.status)) {
     const wait = error.retryAfter ? ` (Retry-After: ${error.retryAfter.trim()})` : "";
     text = `PathQuote could not ${stepAction(kind)}: ACT! answered ${error.status}, not now, try later${wait} — ${message}`;
+  } else if (error instanceof ActApiError && error.status === 403 && !error.authorizing && !actForbidden(error.body)) {
+    text = `PathQuote could not ${stepAction(kind)}: it was answered 403 with something other than ACT!'s own answer, most likely ACT!'s IIS no longer letting the VPS's address in — ${message}`;
   } else if (error instanceof ActApiError) {
     text = `PathQuote could not ${stepAction(kind)}: ACT! answered ${error.status} — ${message}`;
   } else {

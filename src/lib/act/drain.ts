@@ -10,15 +10,16 @@
 // (src/lib/act/drain-rules.ts). The requirements on this file are numbered
 // in src/lib/act/outbox.ts; each is marked below where it is met.
 //
-// ONE PASS: take the drain's advisory lock; re-plan the blocked rows; work
-// the rows the drain's own checks blocked, then a batch of due rows, oldest
-// first; for each, plan a step, do it, store its result, and plan again,
-// until the row is done, blocked, or fails. A pass sends nothing while the
-// off switch (src/lib/act/write-switch.ts) is off, and stops the moment it is
-// turned off (requirement 2). It also stops at the first failure every row
-// would meet -- ACT! not answering, answering "not now", refusing the login
-// -- and once its time budget (DRAIN_TIME_BUDGET_MS) is spent, leaving the
-// rows it did not reach due for the next pass.
+// ONE PASS: take the drain's advisory lock; re-plan the blocked rows; work a
+// batch of due rows, oldest first, then a few of the rows the drain's own
+// lookups blocked (passWork in src/lib/act/drain-rules.ts); for each, plan a
+// step, do it, store its result, and plan again, until the row is done,
+// blocked, or fails. A pass sends nothing while the off switch
+// (src/lib/act/write-switch.ts) is off, and stops the moment it is turned off
+// (requirement 2). It also stops at the first failure every row would meet --
+// ACT! not answering, answering "not now", refusing the login, a 403 that is
+// not ACT!'s own answer -- and once its time budget (DRAIN_TIME_BUDGET_MS) is
+// spent, leaving the rows it did not reach due for the next pass.
 //
 // Called after a finalise, a client's signature or an acceptance for that
 // one quote (`onlyDocumentId`, drainAfterResponse in
@@ -38,8 +39,17 @@
 // keeps its in-flight marker, and every quote on it is blocked with
 // UNTRACKED_CONTACT_REASON -- but PathQuote ends up with two contacts for one
 // person, for somebody to merge. Not fixed here: Task 8 takes DRAIN_LOCK_KEY
-// (as well as its own) for the whole of the nightly run, drain and read
-// together, so no fast path can write between them.
+// as well as its own, on its own lock connection, for the whole of the
+// nightly run, drain and read together, so no fast path can write between
+// them -- and drains under it by passing that connection as
+// DrainOptions.lockHeldOn, since a drain that tried to take the key itself
+// would find it held and do nothing (`busy`). It WAITS for DRAIN_LOCK_KEY
+// (pg_advisory_lock) rather than skipping the night when a fast path holds
+// it: a fast path's pass is over within about 10 minutes at worst
+// (DRAIN_TIME_BUDGET_MS and the step in flight when it runs out). The same
+// requirement is written into Task 8 in
+// docs/superpowers/plans/2026-10-12-act-write-back-quotes.md, and beside
+// SYNC_LOCK_KEY in src/lib/act/sync.ts.
 
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { createPrismaClient, db } from "@/lib/db";
@@ -80,12 +90,14 @@ import {
 } from "@/lib/act/write-payloads";
 import {
   BLOCKED_BY,
+  createUnaccounted,
   deniedReason,
   drainFailure,
   lastErrorText,
   nextAttemptAt,
   stopsPass,
   opportunityNow,
+  passWork,
   refusedReason,
   replanBlocked,
   retryAfterMs,
@@ -105,16 +117,22 @@ import type { ActContact, ActPicklistItem } from "@/lib/act/types";
  * takes a different number and writes it down beside it -- it is written down
  * there too). The next number, so the two read as a pair in pg_locks.
  *
- * A key of its own, not the sync's: the two do different work, and Task 8
- * runs the drain inside a sync, which already holds 8_472_001 -- on another
- * connection, so the sync's own key would refuse it. What this lock keeps
- * apart is two drains: the nightly one and a fast path after a finalise, or
- * two fast paths. Two at once could both find a row due, both look a record
- * up, find nothing, and both create it.
+ * A key of its own, not the sync's: the two do different work, and a fast
+ * path holding 8_472_001 would read on the Settings page as a sync running
+ * (isSyncRunning in src/lib/act/sync.ts) and turn the Sync now button away.
+ * What this lock keeps apart is two drains: the nightly one and a fast path
+ * after a finalise, or two fast paths. Two at once could both find a row due,
+ * both look a record up, find nothing, and both create it. The nightly sync
+ * holds both keys and drains under them (A REQUIREMENT ON TASK 8, above, and
+ * DrainOptions.lockHeldOn).
  */
 export const DRAIN_LOCK_KEY = 8_472_002;
 
-/** How many due rows one pass takes on. A backlog drains over several passes. */
+/**
+ * How many due rows one pass takes on. A backlog drains over several passes.
+ * The rows the drain's own lookups blocked come on top, after them, at most
+ * RECHECKS_PER_PASS (src/lib/act/drain-rules.ts).
+ */
 const BATCH = 50;
 
 /**
@@ -161,6 +179,24 @@ export type DrainOptions = {
    * DRAIN_TIME_BUDGET_MS unless given; a script or a check may pass less.
    */
   timeBudgetMs?: number;
+  /**
+   * The connection on which the caller already holds DRAIN_LOCK_KEY. Given,
+   * the pass runs under that lock rather than taking its own, and leaves it
+   * held when it ends; without it, the pass takes the lock on a connection
+   * of its own and finds it `busy` if anybody else holds it -- the caller
+   * included.
+   *
+   * For Task 8's nightly sync, which holds DRAIN_LOCK_KEY for its whole run
+   * so that no fast path can write between its drain and its inbound read
+   * (A REQUIREMENT ON TASK 8, above): it takes the key on its own lock
+   * connection, as it takes SYNC_LOCK_KEY, and passes that connection here.
+   * Nothing else should pass it. The pass checks, on that connection, that
+   * this session holds the key -- pg_locks, the encoding isSyncRunning in
+   * src/lib/act/sync.ts uses -- and throws if it does not: a drain told its
+   * lock is held when it is not would run beside another drain, which is how
+   * one record is created twice.
+   */
+  lockHeldOn?: PrismaClient;
 };
 
 /**
@@ -170,9 +206,10 @@ export type DrainOptions = {
  * `switched-off`, the switch was off at the start or turned off part way, and
  * nothing more was sent; `stopped`, a fault every row would meet (the
  * service account not found or its lookup failing, the login refused, a 403
- * to the login or the users lookup -- not to one record, which blocks that
- * row), ACT! answering "not now" (a 429 or a 408), or ACT! not answering at
- * all, ended the pass; `out-of-time`, the pass used up its time budget
+ * to the login or the users lookup, or a 403 whose body is not ACT!'s JSON --
+ * not ACT!'s 403 to one record, which blocks that row), ACT! answering "not
+ * now" (a 429 or a 408), or ACT! not answering at all, ended the pass;
+ * `out-of-time`, the pass used up its time budget
  * (DRAIN_TIME_BUDGET_MS) and left the rest for the next. `stopReason` says
  * which.
  */
@@ -186,11 +223,17 @@ export type DrainResult = {
   blocked: { documentId: string; reason: string }[];
   /** Rows that failed and will be tried again, with what was stored as lastError. */
   failed: { documentId: string; error: string }[];
-  /** Creates whose answer was lost, so PathQuote may not know a record it made. */
+  /**
+   * Creates that may have made a record PathQuote has not stored: no answer,
+   * a 5xx or a redirect, a success it could not read, or a 408
+   * (createUnaccounted in src/lib/act/drain-rules.ts); or a contact ACT! made
+   * whose id PathQuote then failed to store.
+   */
   untracked: number;
   /**
    * Blocked rows made due again: the planner's, once it no longer blocks
-   * them, and the drain's own checks', reopened to be worked again.
+   * them, and the ones the drain's own lookups blocked, reopened to be
+   * worked again.
    */
   unblocked: number;
   /**
@@ -241,15 +284,16 @@ class StopPass extends Error {
 /**
  * Blocks the row being worked, with a sentence for its manager, and who
  * blocked it (ActOutbox.blockedBy): null when the planner will block it from
- * now on too, BLOCKED_BY.drain for the drain's own checks. Never about ACT!
- * having refused anything: that is handled where the failure is. `failed`,
- * when set, is the ACT! failure behind the block; once the row is blocked,
- * the pass stops if that failure stops a pass (stopsPass).
+ * now on too, BLOCKED_BY.drain for a lookup's duplicates, BLOCKED_BY.revision
+ * for a revision that cannot be described. Never about ACT! having refused
+ * anything: that is handled where the failure is. `failed`, when set, is the
+ * ACT! failure behind the block; once the row is blocked, the pass stops if
+ * that failure stops a pass (stopsPass).
  */
 class BlockRow extends Error {
   constructor(
     readonly reason: string,
-    readonly by: typeof BLOCKED_BY.drain | null,
+    readonly by: typeof BLOCKED_BY.drain | typeof BLOCKED_BY.revision | null,
     readonly failed?: unknown,
   ) {
     super(reason);
@@ -304,29 +348,41 @@ export async function drainActOutbox(client: ActClient, options: DrainOptions = 
     return result;
   }
 
-  const lock = openDrainLock();
+  // The caller's lock (lockHeldOn), or one of the drain's own, released when
+  // the pass ends.
+  const ownLock = options.lockHeldOn ? null : openDrainLock();
   try {
-    // Non-blocking, as the sync's: a fast path that finds another drain at
-    // work leaves its row for the next pass rather than wait.
-    const [{ locked }] = await lock.$queryRaw<{ locked: boolean }[]>`
-      SELECT pg_try_advisory_lock(${DRAIN_LOCK_KEY}) AS locked
-    `;
-    if (!locked) {
-      result.status = "busy";
-      return result;
+    if (ownLock) {
+      // Non-blocking, as the sync's: a fast path that finds another drain at
+      // work leaves its row for the next pass rather than wait.
+      const [{ locked }] = await ownLock.$queryRaw<{ locked: boolean }[]>`
+        SELECT pg_try_advisory_lock(${DRAIN_LOCK_KEY}) AS locked
+      `;
+      if (!locked) {
+        result.status = "busy";
+        return result;
+      }
+    } else if (options.lockHeldOn && !(await holdsDrainLock(options.lockHeldOn))) {
+      throw new Error(
+        `drainActOutbox was given a lock connection that does not hold DRAIN_LOCK_KEY (${DRAIN_LOCK_KEY}); nothing was drained`,
+      );
     }
 
     const pass = new Pass(client, result, clock, Date.now() + (options.timeBudgetMs ?? DRAIN_TIME_BUDGET_MS));
-    // The rows the drain's own checks blocked go first, each reopened only
-    // as it is worked (Pass.recheck); then the due rows, up to BATCH in all.
-    const rechecks = (await pass.replanBlocked(options.onlyDocumentId)).slice(0, BATCH);
+    // The due rows first, up to BATCH; then up to RECHECKS_PER_PASS of the
+    // rows the drain's own lookups blocked, least recently worked first, each
+    // reopened only as it is worked (Pass.recheck). See passWork.
+    const rechecks = await pass.replanBlocked(options.onlyDocumentId);
     const due = await db.actOutbox.findMany({
       where: dueWhere(clock(), options.onlyDocumentId),
       orderBy: [{ nextAttemptAt: "asc" }, { createdAt: "asc" }],
-      take: BATCH - rechecks.length,
+      take: BATCH,
       select: { id: true },
     });
-    const work = [...rechecks.map((id) => ({ id, recheck: true })), ...due.map(({ id }) => ({ id, recheck: false }))];
+    const work = passWork(
+      due.map(({ id }) => id),
+      rechecks,
+    );
     for (let i = 0; i < work.length; i++) {
       try {
         pass.checkTime();
@@ -356,11 +412,33 @@ export async function drainActOutbox(client: ActClient, options: DrainOptions = 
     }
     return result;
   } finally {
-    // The release: see openDrainLock.
-    await lock.$disconnect().catch((error: unknown) => {
+    // The release: see openDrainLock. A caller's lock stays the caller's.
+    await ownLock?.$disconnect().catch((error: unknown) => {
       console.error("act: drain lock not released; held until this connection dies", error);
     });
   }
+}
+
+/**
+ * Whether the session behind `lock` holds DRAIN_LOCK_KEY: pg_locks, read on
+ * that connection (pg_backend_pid() is its own session), with the encoding of
+ * a one-bigint advisory key that isSyncRunning in src/lib/act/sync.ts sets
+ * out and measured.
+ */
+async function holdsDrainLock(lock: PrismaClient): Promise<boolean> {
+  const [{ held }] = await lock.$queryRaw<{ held: boolean }[]>`
+    SELECT EXISTS (
+      SELECT 1
+        FROM pg_locks
+       WHERE locktype = 'advisory'
+         AND pid = pg_backend_pid()
+         AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+         AND ((classid::bigint << 32) | objid::bigint) = ${DRAIN_LOCK_KEY}
+         AND objsubid = 1
+         AND granted
+    ) AS held
+  `;
+  return held;
 }
 
 /** Everything the planner and the bodies need of one row, read together, afresh before every step. */
@@ -534,19 +612,22 @@ class Pass {
    * decides from who blocked it. No ACT! calls. The fixes a planner's reason
    * asks for -- name a contact, map a region -- take no re-finalise, so
    * without this a fixed cause would leave the row stranded: such a row has
-   * its blockedReason cleared and is made due. A row ACT! refused is left
-   * alone: the same request would be refused again, and only a take-over or
-   * a person sends it again. A row the drain's own check blocked (a lookup's
-   * duplicates, a revision it cannot describe) is returned, to be worked
-   * again first this pass, its reason kept until then: still blocked while
-   * the cause stands, on its way once a person has dealt with it. A row
-   * nextStep blocks for a different reason now has that reason stored
-   * instead, as the planner's.
+   * its blockedReason cleared and is made due. A row ACT! refused, or whose
+   * revision cannot be described, is left alone: the same request would be
+   * refused again, the same frozen revision read the same way, and only a
+   * take-over or a person sends it again. A row a lookup's duplicates
+   * blocked is returned, as a candidate to work again this pass -- after the
+   * due rows, and within RECHECKS_PER_PASS (passWork) -- its reason kept
+   * until then: still blocked while the duplicates stand, on its way once a
+   * person has dealt with them. They come back least recently worked first
+   * (updatedAt: every recheck stores on the row), so that beyond
+   * RECHECKS_PER_PASS they are rechecked in turn. A row nextStep blocks for
+   * a different reason now has that reason stored instead, as the planner's.
    */
   async replanBlocked(onlyDocumentId: string | undefined): Promise<string[]> {
     const blocked = await db.actOutbox.findMany({
       where: { completedAt: null, blockedReason: { not: null }, ...(onlyDocumentId ? { documentId: onlyDocumentId } : {}) },
-      orderBy: { createdAt: "asc" },
+      orderBy: [{ updatedAt: "asc" }, { createdAt: "asc" }],
       select: { id: true },
     });
     const rechecks: string[] = [];
@@ -574,7 +655,7 @@ class Pass {
   }
 
   /**
-   * Reopen a row the drain's own check blocked, immediately before it is
+   * Reopen a row a lookup's duplicates blocked, immediately before it is
    * worked again: its reason cleared, guarded like every store. False when
    * the row has changed since the re-plan (taken over, finished), and is not
    * worked as a recheck.
@@ -646,7 +727,9 @@ class Pass {
           if (await this.block(row, reason, BLOCKED_BY.act)) return;
           continue;
         }
-        if (error instanceof ActUntrackedCreateError) this.result.untracked += 1;
+        // A create that may have made a record: its marker is kept, and the
+        // lookup before the next create resolves it (A CREATE IN FLIGHT).
+        if (createUnaccounted(error)) this.result.untracked += 1;
         const stored = await this.backOff(row, step.kind, error);
         if (stopsPass(failure)) throw new StopPass("stopped", lastErrorText(step.kind, error));
         if (stored) return;
@@ -744,7 +827,8 @@ class Pass {
    * hold back every contact: the pass goes on with no items, so no country
    * is sent, and ACT!'s answer to a create without one is what decides. A
    * failure that may pass (a 5xx, no answer, a 429) fails the step, and the
-   * row backs off; a 401 or a redirect stops the pass, as anywhere.
+   * row backs off; a 401, a redirect or a 403 that is not ACT!'s own answer
+   * stops the pass, as anywhere (drainFailure).
    */
   private async countries(): Promise<readonly ActPicklistItem[]> {
     if (this.countryItems) return this.countryItems;
@@ -795,7 +879,11 @@ class Pass {
     }
   }
 
-  /** The row's revision as the bodies take it, from the frozen revision; unreadable blocks the row. */
+  /**
+   * The row's revision as the bodies take it, from the frozen revision.
+   * Unreadable blocks the row, held (BLOCKED_BY.revision): what it reads does
+   * not change, so asking again each pass would get the same answer.
+   */
   private quote(row: Row): QuoteForAct {
     const described = revisionForAct({
       number: row.document.number,
@@ -805,7 +893,7 @@ class Pass {
       snapshot: row.quoteRevision.snapshot,
       createdAt: row.quoteRevision.createdAt,
     });
-    if (described.kind === "unreadable") throw new BlockRow(described.reason, BLOCKED_BY.drain);
+    if (described.kind === "unreadable") throw new BlockRow(described.reason, BLOCKED_BY.revision);
     return described.quote;
   }
 
@@ -845,9 +933,11 @@ class Pass {
    * (A CREATE IN FLIGHT in src/lib/act/outbox-plan.ts): with an id stored --
    * an ActUntrackedCreateError that names the record it made is stored as if
    * ACT! had answered -- or when the error says the create made nothing
-   * (createMadeNothing: not sent, or refused). Any other error leaves the
-   * marker set and goes on to the row's failure handling; for an
-   * opportunity, a line or a History the next attempt's lookup resolves it.
+   * (createMadeNothing: not sent, refused, a 429, or a 408 to the login
+   * before the POST left). Any other error -- a
+   * 408 among them -- leaves the marker set and goes on to the row's failure
+   * handling; for an opportunity, a line or a History the next attempt's
+   * lookup resolves it.
    */
   private async afterCreateError(
     row: Row,
@@ -875,11 +965,17 @@ class Pass {
    *     row was taken over or the contact has an id or a marker already;
    *   - cleared in the update that stores actContactId -- an
    *     ActUntrackedCreateError naming the record it made included -- or
-   *     when the POST made nothing (createMadeNothing);
+   *     when the POST made nothing (createMadeNothing: not sent, refused, a
+   *     429, or a 408 to the login before it left);
    *   - kept on anything else. The planner then blocks create-contact for
-   *     every quote on this contact until a person has looked in ACT!, and
-   *     this row is blocked now, with the same sentence, rather than when its
-   *     backoff runs out.
+   *     every quote on this contact until a person has looked in ACT!. Where
+   *     ACT! may hold the person -- no answer, a 5xx or a redirect, a success
+   *     PathQuote could not read, a 408 (createUnaccounted), or an id
+   *     PathQuote failed to store (storeCreated) --
+   *     this row is blocked now, with the planner's sentence, and counted as
+   *     `untracked`, rather than when its backoff runs out. An error not from
+   *     a request (`foreign`) backs the row off; the planner blocks it from
+   *     its next attempt.
    */
   private async createContact(row: Row): Promise<StepOutcome> {
     const contact = row.document.contact;
@@ -913,16 +1009,23 @@ class Pass {
           id: row.id,
           createdId: error.createdId,
         });
-        return this.storeContactCreated(contact.id, error.createdId, null);
+        return this.storeCreated(row, contact.id, error.createdId, null);
       }
       if (createMadeNothing(error)) {
         await this.clearContactMarker(contact.id, marker);
         throw error;
       }
-      if (error instanceof ActUntrackedCreateError) {
+      if (createUnaccounted(error)) {
+        // No answer, a 5xx or a redirect, a success PathQuote could not read,
+        // or a 408: ACT! may hold the person.
         // The marker stays; a person has to look in ACT! before any quote on
-        // this contact goes on. A POST with no answer at all also stops the
-        // pass, once this row is blocked (BlockRow's `failed`).
+        // this contact goes on. A POST with no answer at all, or a 408, also
+        // stops the pass once this row is blocked (BlockRow's `failed`).
+        console.warn("act: ACT! may have created this contact; the contact stays marked in flight", {
+          id: row.id,
+          contactId: contact.id,
+          error,
+        });
         this.result.untracked += 1;
         throw new BlockRow(UNTRACKED_CONTACT_REASON, null, error);
       }
@@ -931,18 +1034,35 @@ class Pass {
       // backs it off; the planner blocks it from then on.
       throw error;
     }
+    return this.storeCreated(row, contact.id, created.id, created);
+  }
+
+  /**
+   * storeContactCreated, for a contact ACT! has just made -- the id it
+   * answered with, from the record or from an ActUntrackedCreateError that
+   * named it. If the store fails, ACT! holds a person PathQuote has not
+   * recorded: the marker stays (the store's transaction cleared nothing), so
+   * no quote creates them again; the ACT! id is logged, for whoever settles
+   * it (FOR TASK 10 in src/lib/act/outbox-plan.ts quotes this log line); the
+   * create counts as `untracked`; and the row is blocked now with the
+   * planner's sentence.
+   */
+  private async storeCreated(
+    row: Row,
+    contactId: string,
+    actContactId: string,
+    record: ActContact | null,
+  ): Promise<StepOutcome> {
     try {
-      return await this.storeContactCreated(contact.id, created.id, created);
+      return await this.storeContactCreated(contactId, actContactId, record);
     } catch (error) {
-      // ACT! made the person and PathQuote could not record it: the marker
-      // stays, so no quote creates them again. The id is logged for whoever
-      // looks.
       console.error("act: ACT! created a contact whose id PathQuote could not store; the contact stays marked in flight", {
         id: row.id,
-        contactId: contact.id,
-        actContactId: created.id,
+        contactId,
+        actContactId,
         error,
       });
+      this.result.untracked += 1;
       throw new BlockRow(UNTRACKED_CONTACT_REASON, null);
     }
   }

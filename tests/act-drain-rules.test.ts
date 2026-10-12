@@ -16,7 +16,11 @@ import {
   stepAction,
   wonCloseDate,
   BLOCKED_BY,
+  RECHECKS_PER_PASS,
+  actForbidden,
+  createUnaccounted,
   deniedReason,
+  passWork,
   replanBlocked,
   stopsPass,
   type ActStepKind,
@@ -260,7 +264,22 @@ describe("replanBlocked: what the drain's pass over blocked rows does with one",
     expect(replanBlocked(refused, noContact)).toEqual({ kind: "keep" });
   });
 
-  it("works a row the drain's own check blocked again, keeping its reason until then", () => {
+  it("never rechecks a row whose revision could not be described: that revision reads the same every time", () => {
+    const unreadable = revisionForAct({
+      number: "Q-AU-2026-014",
+      regionCode: "AU",
+      revision: 0,
+      total: "100.00",
+      snapshot: { currency: "AUD", terms: {} },
+      createdAt: new Date("2026-10-12T00:00:00.000Z"),
+    });
+    if (unreadable.kind !== "unreadable") throw new Error("expected an unreadable revision");
+    const held = { blockedReason: unreadable.reason, blockedBy: BLOCKED_BY.revision };
+    expect(replanBlocked(held, fixed)).toEqual({ kind: "keep" });
+    expect(replanBlocked(held, noContact)).toEqual({ kind: "keep" });
+  });
+
+  it("works a row a lookup's duplicates blocked again, keeping its reason until then", () => {
     const duplicates = { blockedReason: duplicateOpportunitiesReason("Q-AU-2026-014 AUD", 2), blockedBy: BLOCKED_BY.drain };
     expect(replanBlocked(duplicates, fixed)).toEqual({ kind: "recheck" });
     // Unless the planner blocks it now, which is then the reason, the planner's.
@@ -269,6 +288,58 @@ describe("replanBlocked: what the drain's pass over blocked rows does with one",
 
   it("leaves a row blocked by someone it does not know for a person", () => {
     expect(replanBlocked({ blockedReason: "x", blockedBy: "someone" }, fixed)).toEqual({ kind: "keep" });
+  });
+});
+
+describe("passWork: the rows one pass works, in order", () => {
+  const ids = (prefix: string, n: number) => Array.from({ length: n }, (_, i) => `${prefix}${i}`);
+
+  it("works every due row first, then the rechecks", () => {
+    expect(passWork(["d0", "d1"], ["r0", "r1"])).toEqual([
+      { id: "d0", recheck: false },
+      { id: "d1", recheck: false },
+      { id: "r0", recheck: true },
+      { id: "r1", recheck: true },
+    ]);
+  });
+
+  it("rechecks at most RECHECKS_PER_PASS rows, the first ones given, however many wait", () => {
+    expect(RECHECKS_PER_PASS).toBe(10);
+    const work = passWork(["due"], ids("r", 60));
+    expect(work[0]).toEqual({ id: "due", recheck: false });
+    expect(work.filter((w) => w.recheck).map((w) => w.id)).toEqual(ids("r", 10));
+    expect(work).toHaveLength(11);
+  });
+
+  it("never lets rechecks stand between a full batch of due rows and ACT!", () => {
+    const work = passWork(ids("d", 50), ids("r", 60));
+    expect(work.slice(0, 50).every((w) => !w.recheck)).toBe(true);
+    expect(work).toHaveLength(60);
+  });
+
+  it("does not work a row twice", () => {
+    expect(passWork(["a"], ["a", "b"])).toEqual([
+      { id: "a", recheck: false },
+      { id: "b", recheck: true },
+    ]);
+  });
+});
+
+describe("createUnaccounted: a create that may have made a record PathQuote has not stored", () => {
+  it("is true for an answer lost or unreadable, and for a 408 to the POST", () => {
+    expect(createUnaccounted(new ActUntrackedCreateError("x", "POST /api/contacts", null, "", null, { noAnswer: true }))).toBe(true);
+    expect(createUnaccounted(new ActUntrackedCreateError("x", "POST /api/contacts", 502, "", null))).toBe(true);
+    expect(createUnaccounted(new ActApiError("POST /api/contacts failed (408)", "POST", 408, "", "failed"))).toBe(true);
+  });
+
+  it("is false where the id is known, nothing was made, or it was not a create", () => {
+    expect(createUnaccounted(new ActUntrackedCreateError("x", "POST /api/contacts", null, "", "c1"))).toBe(false);
+    expect(createUnaccounted(new ActApiError("x", "POST", 429, "", "failed"))).toBe(false);
+    expect(createUnaccounted(new ActApiError("x", "POST", 400, "", "refused"))).toBe(false);
+    expect(createUnaccounted(new ActApiError("authorize failed (408)", "GET", 408, "", "failed", { authorizing: true }))).toBe(false);
+    expect(createUnaccounted(new ActApiError("x", "GET", 408, "", "failed"))).toBe(false);
+    expect(createUnaccounted(new ActNotSentError("POST /api/contacts", "ECONNREFUSED"))).toBe(false);
+    expect(createUnaccounted(new Error("the store failed"))).toBe(false);
   });
 });
 
@@ -288,10 +359,34 @@ describe("drainFailure", () => {
     expect(drainFailure(new ActApiError("x", "GET", 301, "", "refused"))).toBe("stop");
   });
 
-  it("calls a 403 on a record denied, which blocks that row and lets the pass go on", () => {
-    expect(drainFailure(new ActApiError("GET /api/contacts/x failed (403)", "GET", 403, "", "refused"))).toBe("denied");
-    expect(drainFailure(new ActApiError("PATCH /api/contacts/x failed (403)", "PATCH", 403, "", "refused"))).toBe("denied");
-    expect(drainFailure(api(403, "refused"))).toBe("denied");
+  it("calls ACT!'s own 403 on a record denied, which blocks that row and lets the pass go on", () => {
+    const json = '{"Message":"Authorization has been denied for this request."}';
+    expect(drainFailure(new ActApiError("GET /api/contacts/x failed (403)", "GET", 403, json, "refused"))).toBe("denied");
+    expect(drainFailure(new ActApiError("PATCH /api/contacts/x failed (403)", "PATCH", 403, json, "refused"))).toBe("denied");
+    expect(drainFailure(new ActApiError("x", "POST", 403, ' "no access" ', "refused"))).toBe("denied");
+  });
+
+  it("stops the pass for a 403 that is not ACT!'s JSON: IIS turning the VPS away, not one record", () => {
+    const iis =
+      '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"><html><head><title>403 - Forbidden: Access is denied.</title></head><body>…</body></html>';
+    const ipBlocked = new ActApiError("GET /api/opportunities/x failed (403)", "GET", 403, iis, "refused");
+    expect(actForbidden(iis)).toBe(false);
+    expect(drainFailure(ipBlocked)).toBe("stop");
+    expect(drainFailure(new ActApiError("x", "POST", 403, "Forbidden", "refused"))).toBe("stop");
+    expect(drainFailure(api(403, "refused"))).toBe("stop");
+    expect(drainFailure(new ActApiError("x", "PATCH", 403, "  \n", "refused"))).toBe("stop");
+    expect(lastErrorText("update-opportunity", ipBlocked)).toMatch(
+      /^PathQuote could not update this quote's opportunity: it was answered 403 with something other than ACT!'s own answer, most likely ACT!'s IIS no longer letting the VPS's address in — GET \/api\/opportunities\/x failed \(403\)$/,
+    );
+  });
+
+  it("reads JSON of any shape as ACT!'s own 403 answer, and nothing else", () => {
+    expect(actForbidden('{"Message":"no"}')).toBe(true);
+    expect(actForbidden('"no"')).toBe(true);
+    expect(actForbidden("[]")).toBe(true);
+    expect(actForbidden("")).toBe(false);
+    expect(actForbidden("<html></html>")).toBe(false);
+    expect(actForbidden("{not json")).toBe(false);
   });
 
   it("backs off for what may go through next time", () => {

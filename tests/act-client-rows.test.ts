@@ -132,11 +132,19 @@ describe("createMadeNothing: the errors on which a createInFlight marker may be 
     expect(createMadeNothing(new ActApiError("authorize failed (401)", "GET", 401, "", "refused"))).toBe(true);
   });
 
-  it("is true for a create ACT! answered 429 or 408: turned away for now, before it was acted on", () => {
+  it("is true for a create ACT! answered 429: rate-limited before it ran", () => {
     expect(createMadeNothing(new ActApiError("POST /api/contacts failed (429)", "POST", 429, "", "failed"))).toBe(true);
-    expect(createMadeNothing(new ActApiError("POST /api/History failed (408)", "POST", 408, "", "failed"))).toBe(true);
     // An authorisation throttled before the POST left.
-    expect(createMadeNothing(new ActApiError("authorize failed (429)", "GET", 429, "", "failed"))).toBe(true);
+    expect(createMadeNothing(new ActApiError("authorize failed (429)", "GET", 429, "", "failed", { authorizing: true }))).toBe(true);
+  });
+
+  it("is false for a create ACT! answered 408: application code can send it after the insert committed", () => {
+    expect(createMadeNothing(new ActApiError("POST /api/contacts failed (408)", "POST", 408, "", "failed"))).toBe(false);
+    expect(createMadeNothing(new ActApiError("POST /api/History failed (408)", "POST", 408, "", "failed", { retryAfter: "5" }))).toBe(false);
+  });
+
+  it("is true for a 408 to the login: the POST it was getting a token for never left", () => {
+    expect(createMadeNothing(new ActApiError("authorize failed (408)", "GET", 408, "", "failed", { authorizing: true }))).toBe(true);
   });
 
   it("is false for an untracked create, with or without the id it made", () => {

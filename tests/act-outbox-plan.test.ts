@@ -972,10 +972,10 @@ describe("nextStep: a create in flight", () => {
     expect(untrackedCreateReason("company")).toBe(reasonOf(step));
   });
 
-  it("says what happened and that ACT! must be checked first, in the manager's sentences", () => {
-    expect(UNTRACKED_CONTACT_REASON).toMatch(/has no record of whether it did/);
-    expect(UNTRACKED_CONTACT_REASON).toMatch(/check .*ACT! .*before this is tried again/);
-    expect(UNTRACKED_CONTACT_REASON).toContain("—");
+  it("says what happened, that nothing will try again on its own, who to ask, and not to delete the contact", () => {
+    expect(UNTRACKED_CONTACT_REASON).toBe(
+      "PathQuote asked ACT! to create this quote's contact and has no record of whether it did, so they may be in ACT! already, and creating them again could put the same person in ACT! twice — PathQuote will not try again on its own: ask your developer, and do not delete or re-add this contact.",
+    );
   });
 
   it("names the duplicates a lookup found, and what a person does about them", () => {

@@ -375,20 +375,32 @@
 //     ACT! named the record it made;
 //   - when the create throws ActNotSentError (src/lib/act/client.ts): the
 //     request never left, so nothing was made;
-//   - when the create throws an ActApiError whose `failure` is `refused`:
-//     ACT! answered and turned it away, which made nothing.
+//   - when the create throws an ActApiError whose `failure` is `refused` --
+//     a 4xx other than 408 and 429, to the POST or to the login before it:
+//     ACT! answered and turned it away, which made nothing;
+//   - when the create throws an ActApiError with a 429: a rate limiter
+//     answered before the request ran, which made nothing. (Also a 408 to
+//     the LOGIN, `authorizing`: the POST it was getting a token for never
+//     left.)
 //
-// NEVER ON ANYTHING ELSE: not on writeFailureOf's `failed` or `foreign`, and
-// above all not on an error the drain's own code throws. That last is the
-// case the marker exists for -- the POST succeeded, and the transaction
-// storing its id threw. The catch around it holds an error that says nothing
-// about ACT!; cleared for it, the marker would let the next attempt create
-// the record again. createMadeNothing (src/lib/act/client.ts) is the rule
-// above as code, for the drain to call rather than restate. So the marker
-// stays set when the answer was lost (ActUntrackedCreateError with no
-// createdId), when the drain failed after ACT! answered, and when the drain
-// itself died between ACT!'s answer and the store -- the case no error
-// reports at all. What happens next depends on the record:
+// NOT ON A 408 TO THE POST. A 408 is answered before the request runs only
+// by convention -- HTTP.sys and Kestrel send it while the body is still
+// arriving -- and application code can answer 408 for its own timeout after
+// its database insert has committed. Cleared for it, a contact ACT! had saved
+// was POSTed again on the next pass: the same person in ACT! twice.
+//
+// NOR ON ANYTHING ELSE: not on `untracked`, not on writeFailureOf's
+// `foreign`, and above all not on an error the drain's own code throws. That
+// last is the case the marker exists for -- the POST succeeded, and the
+// transaction storing its id threw. The catch around it holds an error that
+// says nothing about ACT!; cleared for it, the marker would let the next
+// attempt create the record again. createMadeNothing (src/lib/act/client.ts)
+// is the rule above as code, for the drain to call rather than restate. So
+// the marker stays set when the answer was lost (ActUntrackedCreateError with
+// no createdId), when ACT! answered 408, when the drain failed after ACT!
+// answered, and when the drain itself died between ACT!'s answer and the
+// store -- the case no error reports at all. What happens next depends on
+// the record:
 //
 //   contact            nextStep blocks create-contact, for whichever row asks
 //                      (A CONTACT CREATE IN FLIGHT): a person must look in
@@ -425,10 +437,12 @@
 // the drain's pass over blocked rows clears blockedReason only when nextStep
 // no longer blocks, which for a value nothing here knows needs the marker
 // gone. A row the drain blocked on a lookup's duplicates is not blocked by
-// nextStep, so that pass works it again, ahead of the due rows, and the
-// lookup runs again: blocked while the duplicates stand, on its way once a
-// person has dealt with them. (A row ACT! REFUSED is different: the drain
-// holds it until a take-over or a person, ActOutbox.blockedBy.)
+// nextStep, so that pass works it again -- after the due rows, and no more
+// than RECHECKS_PER_PASS of them a pass (src/lib/act/drain-rules.ts) -- and
+// the lookup runs again: blocked while the duplicates stand, on its way once
+// a person has dealt with them. (A row ACT! REFUSED is different: the drain
+// holds it until a take-over or a person, ActOutbox.blockedBy. So is a row
+// whose revision the drain cannot describe, which reads the same each time.)
 //
 // A CONTACT CREATE IN FLIGHT is marked on the Contact, not the row, because
 // the record being created is the contact, and a contact belongs to every
@@ -446,6 +460,91 @@
 // is still `done`: the marker is a fact about the contact, not about that
 // row. The block lifts when a person has looked: actContactId set to the
 // contact ACT! holds, or the marker cleared because ACT! holds nobody.
+// NOTHING IN PATHQUOTE DOES EITHER YET. A take-over keeps the marker, a
+// re-finalise is a take-over, and no pass clears it, however many hours
+// apart; UNTRACKED_CONTACT_REASON says so, and sends the manager to the
+// developer, who settles it by hand (FOR TASK 10, next). Nor may the manager
+// work round it: deleting the contact -- or its company, which deletes its
+// contacts -- sets its quotes' Document.contactId to null, so nothing holds
+// them any more, and the person added again is a new contact with no ACT! id
+// and no marker, whom the next finalise POSTs: the same person in ACT! twice.
+//
+// FOR TASK 10 -- the runbook's section on a held contact, to be lifted from
+// here as it stands. Every command runs on the VPS from /opt/pathquote.
+//
+//   Which contacts are held. A contact is held while its create's outcome is
+//   unknown: actCreateInFlightAt set and actContactId null. Every quote on
+//   it that still needs the contact in ACT! is blocked with
+//   UNTRACKED_CONTACT_REASON.
+//
+//     docker compose exec -T postgres psql -U pathquote -d pathquote -c \
+//       "select id, \"firstName\", \"lastName\", email, \"actCreateInFlightAt\" from \"Contact\" where \"actCreateInFlightAt\" is not null and \"actContactId\" is null;"
+//
+//   actCreateInFlightAt is when the POST was about to leave, in UTC.
+//
+//   Whether PathQuote learned ACT!'s id. When ACT! answered the create with
+//   an id and PathQuote then failed to store it, the drain logged, with
+//   console.error from Pass.storeCreated in src/lib/act/drain.ts:
+//
+//     act: ACT! created a contact whose id PathQuote could not store; the contact stays marked in flight
+//
+//   followed by the outbox row's `id`, the PathQuote `contactId` and the ACT!
+//   id as `actContactId`. Today's drains run in the app (after a finalise, a
+//   signature or an acceptance), so the line is in the app's log:
+//
+//     docker compose logs app 2>&1 | grep -A 8 'whose id PathQuote could not store'
+//
+//   (Task 8's drains log wherever their unit logs.) With no such line for
+//   the contact -- no answer, a 5xx or a redirect, a success PathQuote could
+//   not read, or a 408; the log has "act: ACT! may have created this
+//   contact" for it -- PathQuote never had an id: look for the person in
+//   ACT! by name and email, created around actCreateInFlightAt.
+//
+//   If ACT! holds the person, give PathQuote that ACT! id:
+//
+//     docker compose exec -T postgres psql -U pathquote -d pathquote -c \
+//       "UPDATE \"Contact\" SET \"actContactId\" = '<act id>', \"actSyncState\" = 'SYNCED', \"actCreateInFlightAt\" = NULL WHERE id = '<contact id>' AND \"actCreateInFlightAt\" IS NOT NULL;"
+//
+//   (actSyncState is set with actContactId, as the drain's own store sets
+//   it.) If the nightly sync has already imported that ACT! person as a
+//   second PathQuote contact, this UPDATE fails on Contact_actContactId_key.
+//   That duplicate is the other Contact row with the same actContactId:
+//
+//     docker compose exec -T postgres psql -U pathquote -d pathquote -c \
+//       "select id, \"firstName\", \"lastName\", email, \"companyId\" from \"Contact\" where \"actContactId\" = '<act id>';"
+//
+//   Merge it into the held contact first -- its quotes and signing requests
+//   moved over, then the duplicate deleted (its ActSnapshot goes with it) --
+//   and set the id, in one transaction. Every statement but the last also
+//   checks that the held contact is still held, so if it is not, nothing at
+//   all changes:
+//
+//     docker compose exec -T postgres psql -U pathquote -d pathquote -v ON_ERROR_STOP=1 -c \
+//       "BEGIN; UPDATE \"Document\" SET \"contactId\" = '<contact id>' WHERE \"contactId\" = '<duplicate id>' AND EXISTS (SELECT 1 FROM \"Contact\" WHERE id = '<contact id>' AND \"actCreateInFlightAt\" IS NOT NULL AND \"actContactId\" IS NULL); UPDATE \"SigningRequest\" SET \"contactId\" = '<contact id>' WHERE \"contactId\" = '<duplicate id>' AND EXISTS (SELECT 1 FROM \"Contact\" WHERE id = '<contact id>' AND \"actCreateInFlightAt\" IS NOT NULL AND \"actContactId\" IS NULL); DELETE FROM \"Contact\" WHERE id = '<duplicate id>' AND \"actContactId\" = '<act id>' AND EXISTS (SELECT 1 FROM \"Contact\" WHERE id = '<contact id>' AND \"actCreateInFlightAt\" IS NOT NULL AND \"actContactId\" IS NULL); UPDATE \"Contact\" SET \"actContactId\" = '<act id>', \"actSyncState\" = 'SYNCED', \"actCreateInFlightAt\" = NULL WHERE id = '<contact id>' AND \"actCreateInFlightAt\" IS NOT NULL; COMMIT;"
+//
+//   psql prints each statement's count: DELETE 1 and the UPDATE after it,
+//   UPDATE 1, is a merge done. DELETE 0 and UPDATE 0 is the held contact
+//   not held any more, or a wrong contact id, and nothing was changed. An
+//   error -- Contact_actContactId_key again, for a wrong duplicate id --
+//   rolls the whole of it back.
+//
+//   If ACT! holds nobody, release the hold, and the next pass creates them:
+//
+//     docker compose exec -T postgres psql -U pathquote -d pathquote -c \
+//       "UPDATE \"Contact\" SET \"actCreateInFlightAt\" = NULL WHERE id = '<contact id>' AND \"actContactId\" IS NULL;"
+//
+//   Then nothing else is needed: the next full drain pass re-plans every
+//   blocked row, finds nextStep no longer blocking on this contact, and
+//   unblocks every quote on it by itself (the planner's block, blockedBy
+//   null) -- Task 8's periodic drain, within 15 minutes, or its nightly one.
+//   Until Task 8, the only passes are the fast paths, each over one quote:
+//   each quote on the contact goes on at its own next finalise, signature
+//   or acceptance.
+//
+//   Task 9 adds an admin action on the quote that does this from the
+//   browser, with two choices: "ACT! has this person — id …" and "ACT! has
+//   nobody". Once it exists, the runbook points to it first and keeps the
+//   SQL above for when the app cannot be used.
 //
 // A REQUIREMENT ON THE DRAIN (src/lib/act/drain.ts): after
 // create-opportunity, the two stores -- Document.actOpportunityId and the
@@ -480,9 +579,10 @@
 // that say what to do, in the voice of src/lib/act/sync-view.ts: a fault the
 // manager can fix names the fix; a fault only PathQuote's configuration can
 // fix says "ask your developer"; a record that may or may not be in ACT!
-// says what happened and that ACT! must be checked before the write is tried
-// again (a way to hand PathQuote what was found there is Task 9's). The
-// blocking checks run before every step,
+// says what happened and what has to happen before the write is tried again
+// -- for a contact, that PathQuote will not try again on its own and the
+// developer settles it (FOR TASK 10 above; an admin action for it is Task
+// 9's). The blocking checks run before every step,
 // not once: for a fresh row that means before anything is created in ACT!, so
 // a row blocked from the start leaves nothing behind. A row can also become
 // blocked partway -- unfinalise it after its contact or opportunity was
@@ -646,14 +746,19 @@ export function unmappedRegionReason(regionCode: string): string {
 }
 
 /**
- * A contact create whose answer never reached the store (A CONTACT CREATE IN
+ * A contact create whose outcome never reached the store (A CONTACT CREATE IN
  * FLIGHT) -- made for this quote or for another quote on the same contact:
- * the answer was lost, or it came back and storing it failed. PathQuote holds
- * no record of whether ACT! made the contact, and creating it again could put
- * the same person in ACT! twice, so a person has to look.
+ * the answer was lost, ACT! answered 408, or it came back and storing it
+ * failed. PathQuote holds no record of whether ACT! made the contact, and
+ * creating it again could put the same person in ACT! twice, so a person has
+ * to look -- and nothing in PathQuote will look for them: no pass, take-over
+ * or re-finalise clears the hold, which is the developer's to settle (FOR
+ * TASK 10, in the header). The sentence says both, and warns off the
+ * workaround a manager might try, deleting and re-adding the contact, which
+ * lifts the hold and creates the person again.
  */
 export const UNTRACKED_CONTACT_REASON =
-  "PathQuote asked ACT! to create this quote's contact and has no record of whether it did, so they may be in ACT! already — check ACT! for them before this is tried again, or ACT! could end up with the same person twice.";
+  "PathQuote asked ACT! to create this quote's contact and has no record of whether it did, so they may be in ACT! already, and creating them again could put the same person in ACT! twice — PathQuote will not try again on its own: ask your developer, and do not delete or re-add this contact.";
 
 /**
  * The sentence for a value in ActOutbox.createInFlight that nothing here

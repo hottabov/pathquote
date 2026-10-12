@@ -36,8 +36,10 @@
 --                                     deal's records that may have made one
 --                                     whose id was never stored; blockedBy,
 --                                     who blocked it -- the planner, ACT!
---                                     refusing a write (held until a
---                                     take-over), or the drain's own check;
+--                                     refusing a write or the drain finding
+--                                     the revision unreadable (both held
+--                                     until a take-over), or a lookup's
+--                                     duplicates (rechecked);
 --                                     and generation, which the planner does
 --                                     not read: the count of take-overs,
 --                                     which the drain's stores on the row
@@ -229,5 +231,7 @@ CREATE UNIQUE INDEX "ActOutbox_documentId_unfinished_key" ON "ActOutbox"("docume
 -- due. The drain must re-plan every blocked row on each pass, outside this
 -- index, and clear blockedReason once the planner no longer blocks it --
 -- every blocked row but one ACT! refused (blockedBy "act"), which waits for a
--- take-over or a person, since the same request would only be refused again.
+-- take-over or a person, since the same request would only be refused again,
+-- and one whose revision the drain cannot describe (blockedBy "revision"),
+-- which waits likewise, since that revision reads the same every time.
 CREATE INDEX "ActOutbox_due_idx" ON "ActOutbox"("nextAttemptAt") WHERE "completedAt" IS NULL AND "blockedReason" IS NULL;

@@ -134,7 +134,9 @@ export const COUNTRIES_PICKLIST_ID = "3e852010-1901-41e3-ac65-2b3ab6c25d2c";
  * `authorizing` is true when the answer was to the login itself
  * (`authorize`), not to a request for a record: a 403 there is the service
  * account's own access, which every request would meet, where a 403 on a
- * record is that record (drainFailure in src/lib/act/drain-rules.ts).
+ * record is that record (drainFailure in src/lib/act/drain-rules.ts); and a
+ * 408 there means the request it was getting a token for never left
+ * (createMadeNothing).
  */
 export class ActApiError extends Error {
   readonly failure: WriteFailure;
@@ -200,7 +202,8 @@ type Outgoing = { method: HttpMethod; body?: unknown };
  * Not retried here (see `send`), and not an ordinary failure for the caller
  * either: running the same create again is what turns this into a duplicate
  * History, opportunity, contact or product line. A plain ActApiError, by
- * contrast, is a create ACT! refused, which made nothing.
+ * contrast, is a create ACT! turned away, which made nothing -- unless it is
+ * a 408, which can follow a record that was saved (createMadeNothing).
  */
 export class ActUntrackedCreateError extends Error {
   /** classifyWriteFailure's kind, on the error as on ActApiError. */
@@ -451,8 +454,8 @@ async function send(
  *                             `decide` callback that threw inside `update`.
  *                             It says nothing about what ACT! did, so it is
  *                             never read as `failed` -- which for a POST
- *                             means nothing was made -- and never clears
- *                             a create's in-flight marker
+ *                             means nothing was made, but for a 408 -- and
+ *                             never clears a create's in-flight marker
  *                             (createMadeNothing).
  */
 export function writeFailureOf(error: unknown): WriteFailure | "foreign" {
@@ -464,28 +467,44 @@ export function writeFailureOf(error: unknown): WriteFailure | "foreign" {
 }
 
 /**
- * Whether an error thrown by a create says the create made nothing in ACT!:
- * ActNotSentError (the request never left), an ActApiError whose `failure`
- * is `refused` (ACT! answered and turned it away), or an ActApiError with a
- * 408 or a 429 (ACT! answered "not now", before acting on it: tryLaterStatus
- * in src/lib/act/record-write.ts). True for these and nothing else -- the
- * only errors on which the drain may clear a create's
- * in-flight marker -- the row's createInFlight, or a contact's
- * actCreateInFlightAt -- without storing an id (src/lib/act/outbox-plan.ts,
- * A CREATE IN FLIGHT). An ActUntrackedCreateError with a `createdId` is not here: it
- * made something, and the drain stores that id, which clears the marker with
- * it.
+ * Whether an error thrown by a create says the create made nothing in ACT!.
+ * True for these and nothing else -- the only errors on which the drain may
+ * clear a create's in-flight marker -- the row's createInFlight, or a
+ * contact's actCreateInFlightAt -- without storing an id
+ * (src/lib/act/outbox-plan.ts, A CREATE IN FLIGHT):
  *
- * Every ActApiError a create can throw that is `refused`, or a 408 or a 429,
- * stands for a POST that made nothing: the POST's own 1xx or 4xx (a 3xx to a
- * POST is `untracked`), a second 401 after re-authorising (`request`), or an
- * authorisation refused or throttled before the POST left (`fetchOnce`). A
+ *   - ActNotSentError: the request never left.
+ *   - an ActApiError whose `failure` is `refused`: ACT! answered with a 4xx
+ *     (other than 408 and 429, which are `failed`) and turned it away. The
+ *     POST's own 1xx or 4xx (a 3xx to a POST is `untracked`), a second 401
+ *     after re-authorising (`request`), or the login refused before the POST
+ *     left (`fetchOnce`).
+ *   - an ActApiError with a 429: rate limiting, answered before the request
+ *     runs -- by ACT!'s server or by whatever stands in front of it.
+ *   - an ActApiError with a 408 to the LOGIN (`authorizing`): `fetchOnce`
+ *     passes it through as itself, and the POST it was getting a token for
+ *     never left.
+ *
+ * NOT a 408 to the POST itself. HTTP.sys and Kestrel send a 408 while the
+ * request body is still arriving, before anything runs -- but application
+ * code can answer 408 for a timeout of its own after its database insert has
+ * committed, and nothing in the answer says which. Tried against a stub that
+ * saves the contact and then answers 408: with the marker cleared, the next
+ * pass POSTed the person again, and ACT! held them twice. So the marker
+ * stays: a contact is held for a person (UNTRACKED_CONTACT_REASON in
+ * src/lib/act/outbox-plan.ts), and an opportunity, a line or a History is
+ * found by the lookup made before its next create.
+ *
+ * An ActUntrackedCreateError with a `createdId` is not here either: it made
+ * something, and the drain stores that id, which clears the marker with it. A
  * read-back by the created id that fails is wrapped in
  * ActUntrackedCreateError, never thrown as itself.
  */
 export function createMadeNothing(error: unknown): boolean {
   if (error instanceof ActNotSentError) return true;
-  return error instanceof ActApiError && (error.failure === "refused" || tryLaterStatus(error.status));
+  if (!(error instanceof ActApiError)) return false;
+  if (error.failure === "refused" || error.status === 429) return true;
+  return error.status === 408 && error.authorizing;
 }
 
 /** What a payload looked like, without any of its values: they are contact
@@ -621,7 +640,8 @@ export class ActClient {
    * kept as they are already say it: an ActNotSentError; an ActApiError
    * `refused` -- a login ACT! turned away, which repeating would only repeat;
    * and an ActApiError with a 408 or a 429, which keeps its Retry-After for
-   * the drain's backoff.
+   * the drain's backoff, and `authorizing`, which tells createMadeNothing a
+   * 408 here was the login's and not the POST's.
    */
   private async fetchOnce(path: string, outgoing: Outgoing): Promise<Reply> {
     const label = `${outgoing.method} ${path}`;

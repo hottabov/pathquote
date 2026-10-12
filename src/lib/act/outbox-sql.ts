@@ -34,7 +34,8 @@ export type EnqueueValues = {
  * opportunityActId and productLineSkippedAt, which say this row's
  * opportunity and line steps are done, and would otherwise mark them done
  * for a revision they were never run for -- along with blockedReason and
- * blockedBy (so a write ACT! refused is sent again for the new event),
+ * blockedBy (so a write ACT! refused is sent again for the new event, and a
+ * revision the drain could not describe is read again),
  * lastError and attempts, and nextAttemptAt is set to `now`, so the row is
  * due at once and tried afresh. generation goes up by 1: that, not the
  * revision, is how a drain already working the row finds out it was taken
