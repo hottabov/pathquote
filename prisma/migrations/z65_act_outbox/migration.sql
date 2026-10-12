@@ -16,14 +16,17 @@
 --   Document.actOpportunityId         the deal's opportunity, one per quote
 --   Document.actProductLineId         its one product line, which carries
 --                                     the amount ACT! will not take directly
---   Document.actProductLineRevision   the revision that line shows
+--   Document.actProductLineRevision   the revision that line shows: only
+--                                     ever one written to it
 --   Document.actContactPromotedForId  the ACT! contact promote-contact was
 --                                     done for: once per contact per deal
 --   Document.actOpportunityWonAt      win-opportunity done, once per deal
 --   QuoteRevision.actHistoryId        the revision's History, one per
 --                                     revision
 --   ActOutbox                         the queue itself, with opportunityActId
---                                     for the row's own opportunity step
+--                                     for the row's own opportunity step and
+--                                     productLineSkippedAt for a line it left
+--                                     alone on a closed deal
 --
 -- Why ACT!'s ids are kept here rather than a PathQuote id stamped into an ACT!
 -- custom field is on the ActOutbox model in schema.prisma: the `PQ ` fields
@@ -91,6 +94,7 @@ CREATE TABLE "ActOutbox" (
     "documentId" TEXT NOT NULL,
     "quoteRevisionId" TEXT NOT NULL,
     "opportunityActId" TEXT,
+    "productLineSkippedAt" TIMESTAMP(3),
     "attempts" INTEGER NOT NULL DEFAULT 0,
     "lastError" TEXT,
     "nextAttemptAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -137,8 +141,8 @@ ALTER TABLE "ActOutbox" ADD CONSTRAINT "ActOutbox_quoteRevisionId_fkey" FOREIGN 
 -- (blockedReason set) is unfinished too, and holds the slot. So an enqueue -- a
 -- re-finalise, or a signature or acceptance -- that finds an unfinished row,
 -- pending or blocked, does not insert: it takes that row over, pointing it at
--- the revision the enqueue is for, clearing blockedReason, opportunityActId and
--- lastError, and resetting attempts. That is how "unfinalize, choose a contact,
+-- the revision the enqueue is for, clearing blockedReason, opportunityActId,
+-- productLineSkippedAt and lastError, and resetting attempts. That is how "unfinalize, choose a contact,
 -- finalize again" un-blocks a quote that had no contact. Leaving blocked rows
 -- out of this predicate instead was considered and rejected: a stale blocked
 -- row would sit beside its replacement forever, and anything that later cleared
@@ -153,8 +157,8 @@ ALTER TABLE "ActOutbox" ADD CONSTRAINT "ActOutbox_quoteRevisionId_fkey" FOREIGN 
 --   VALUES ($1, $2, $3, $4, $4)
 --   ON CONFLICT ("documentId") WHERE "completedAt" IS NULL DO UPDATE SET
 --     "quoteRevisionId" = EXCLUDED."quoteRevisionId", "opportunityActId" = NULL,
---     "blockedReason" = NULL, "attempts" = 0, "lastError" = NULL,
---     "nextAttemptAt" = $4, "updatedAt" = $4
+--     "productLineSkippedAt" = NULL, "blockedReason" = NULL, "attempts" = 0,
+--     "lastError" = NULL, "nextAttemptAt" = $4, "updatedAt" = $4
 -- "id" and "updatedAt" have no database default (Prisma fills both in the
 -- client), so a raw insert must supply them; and Prisma's `upsert` cannot
 -- target a partial index, so Task 6 issues this with $executeRaw.

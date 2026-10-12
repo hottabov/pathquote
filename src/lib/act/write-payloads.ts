@@ -3,9 +3,9 @@
 // stands for the whole deal, and the one product line that carries its amount;
 // and -- once the client signs or the quote is accepted -- the contact's
 // promotion from Prospect to Customer and the opportunity's win. Where a body
-// depends on what ACT! holds now (a later revision's opportunity update, the
-// win, the promotion), the function here takes that state as read back by the
-// drain and decides, including deciding to send nothing.
+// depends on what ACT! holds now (a later revision's opportunity update, its
+// product line, the win, the promotion), the function here takes that state as
+// read back by the drain and decides, including deciding to send nothing.
 //
 // Pure, and deliberately free of Prisma types: every input is a plain value
 // the drain reads off the quote and hands in. That is what lets the suite test
@@ -407,11 +407,39 @@ export function newOpportunityBody(quote: QuoteForAct, parties: ActParties): New
  * and nothing else -- not a different case, not a status never seen before,
  * not a missing one. Everything that writes a revision's figures into an
  * existing deal asks this first: revisedOpportunityBody for the opportunity,
- * and the drain, before summaryProductPatch or summaryProductBody, for its
- * product line. A deal that is not Open is left alone by both.
+ * and productLineWrite for its product line. A deal that is not Open is left
+ * alone by both -- the line of a won deal of an accepted quote apart.
  */
 export function opportunityIsOpen(status: string | null): boolean {
   return status === OPPORTUNITY_STATUS.open;
+}
+
+/**
+ * Whether write-product-line writes the deal's line for the row's revision,
+ * decided on the opportunity as the drain reads it just before.
+ *
+ * - `write`: the deal is Open, so the revision's figure is the deal's; or it
+ *   is Won and the quote is accepted (`accepted`: Document.acceptedAt is
+ *   set), so the accepted quote's figure is what the deal was won at. That
+ *   second case is a quote voided and re-finalised after its win: still
+ *   accepted, at a new figure, and the win never planned again
+ *   (src/lib/act/outbox-plan.ts, THE WIN WRITES THE LINE FIRST).
+ * - `skip`: anything else -- Lost, Inactive, Won without an acceptance in
+ *   PathQuote, a status never seen. The line is part of the record of how the
+ *   deal ended, and is left alone, as revisedOpportunityBody leaves the
+ *   opportunity. `status` is what ACT! said, for the drain to report.
+ *
+ * On `skip` the drain sends nothing and stores ActOutbox.productLineSkippedAt
+ * -- never Document.actProductLineRevision, which says what the line shows.
+ * A skipped line on a deal the quote's acceptance then wins is written by
+ * win-opportunity, before the status.
+ */
+export type ProductLineWrite = { kind: "write" } | { kind: "skip"; status: string | null };
+
+export function productLineWrite(status: string | null, accepted: boolean): ProductLineWrite {
+  if (opportunityIsOpen(status)) return { kind: "write" };
+  if (accepted && status === OPPORTUNITY_STATUS.won) return { kind: "write" };
+  return { kind: "skip", status };
 }
 
 /**
@@ -445,7 +473,7 @@ export type RevisionUpdate =
  *
  * AN OPPORTUNITY THAT IS NOT OPEN IS LEFT ENTIRELY ALONE: no stage, no
  * probability, no name -- and no product line either, which is what keeps its
- * total (see opportunityIsOpen). Won, Lost or Inactive, it is the record of
+ * total (productLineWrite). Won, Lost or Inactive, it is the record of
  * how the deal ended and at what figure, and silently rewriting a closed
  * record in somebody else's CRM is the worse harm. The
  * History is the journal: it still records that a new revision went out and
@@ -540,6 +568,14 @@ export type WonUpdate =
  * `reason` is not sent, so a reason somebody typed for the loss stays on the
  * record beside the Won status. It is that person's note, and PathQuote has
  * no reason of its own to put in its place.
+ *
+ * THE LINE COMES FIRST. A deal closed by hand before the acceptance may have
+ * had its line left alone (productLineWrite), at an earlier revision's figure
+ * or with no line at all; overturned to Won as it stands, ACT! would record
+ * the win at that figure. So win-opportunity writes the line for the accepted
+ * revision before this is asked, whenever it does not show it
+ * (src/lib/act/outbox-plan.ts, THE WIN WRITES THE LINE FIRST) -- and an
+ * `already-won` deal still gets that line.
  */
 export function wonOpportunityBody(
   regionCode: string,
@@ -625,8 +661,9 @@ export type SummaryProductBody = SummaryProductPatch & { discount: 0 };
  * label rather than the bare number because the line, unlike the
  * opportunity, says which revision's figure it is.
  *
- * Only for an Open deal. The drain asks opportunityIsOpen of the opportunity
- * first and, for any other status, leaves the line alone, as
+ * Written when productLineWrite says so -- an Open deal, or a Won one whose
+ * quote is accepted -- and by win-opportunity, before it patches the status,
+ * whatever the status. Otherwise the line is left alone, as
  * revisedOpportunityBody leaves the opportunity.
  */
 export function summaryProductPatch(quote: QuoteForAct): SummaryProductPatch {

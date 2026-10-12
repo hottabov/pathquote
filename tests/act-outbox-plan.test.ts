@@ -6,6 +6,12 @@ import {
   type QuoteState,
   type RevisionProgress,
 } from "../src/lib/act/outbox-plan";
+import {
+  productLineWrite,
+  summaryProductPatch,
+  wonOpportunityBody,
+  type QuoteForAct,
+} from "../src/lib/act/write-payloads";
 
 const ACT_CONTACT = "c0000000-0000-0000-0000-000000000001";
 const ACT_OTHER_CONTACT = "c0000000-0000-0000-0000-000000000002";
@@ -15,7 +21,9 @@ const ACT_OPPORTUNITY = "c0000000-0000-0000-0000-0000000000a0";
 const ACT_HISTORY = "c0000000-0000-0000-0000-0000000000b0";
 const ACT_PRODUCT_LINE = "c0000000-0000-0000-0000-0000000000d0";
 
-const nothingDone: OutboxProgress = { opportunityActId: null };
+const nothingDone: OutboxProgress = { opportunityActId: null, productLineSkippedAt: null };
+/** This row's opportunity step done, and nothing after it. */
+const opportunityStepDone: OutboxProgress = { ...nothingDone, opportunityActId: ACT_OPPORTUNITY };
 /** The first revision, 0, not yet journaled. */
 const noHistory: RevisionProgress = { revision: 0, actHistoryId: null };
 const journaled: RevisionProgress = { revision: 0, actHistoryId: ACT_HISTORY };
@@ -79,7 +87,20 @@ function apply(world: World, step: OutboxStep): World {
       // The ACT! id of the contact it promoted, not a time.
       return { ...world, quote: { ...world.quote, actContactPromotedForId: world.quote.contact!.actContactId } };
     case "win-opportunity":
-      return { ...world, quote: { ...world.quote, actOpportunityWonAt: ACCEPTED_AT } };
+      // The line first, when the step says so, then the win.
+      return {
+        ...world,
+        quote: {
+          ...world.quote,
+          ...(step.line
+            ? {
+                actProductLineId: step.line === "create" ? ACT_PRODUCT_LINE : world.quote.actProductLineId,
+                actProductLineRevision: world.revision.revision,
+              }
+            : {}),
+          actOpportunityWonAt: ACCEPTED_AT,
+        },
+      };
     default:
       throw new Error(`nothing to apply for ${step.kind}`);
   }
@@ -131,7 +152,7 @@ describe("nextStep", () => {
   });
 
   it("creates the deal's product line once the opportunity step is done", () => {
-    const opportunityDone = { opportunityActId: ACT_OPPORTUNITY };
+    const opportunityDone = opportunityStepDone;
     expect(nextStep(opportunityDone, noHistory, quoteState({ actOpportunityId: ACT_OPPORTUNITY }))).toEqual({
       kind: "write-product-line",
       line: "create",
@@ -139,13 +160,13 @@ describe("nextStep", () => {
   });
 
   it("writes this revision's history once the product line shows it", () => {
-    const opportunityDone = { opportunityActId: ACT_OPPORTUNITY };
+    const opportunityDone = opportunityStepDone;
     const quote = quoteState({ actOpportunityId: ACT_OPPORTUNITY, actProductLineId: ACT_PRODUCT_LINE, actProductLineRevision: 0 });
     expect(nextStep(opportunityDone, noHistory, quote)).toEqual({ kind: "write-history" });
   });
 
   it("is done when this revision's history has been written", () => {
-    const opportunityDone = { opportunityActId: ACT_OPPORTUNITY };
+    const opportunityDone = opportunityStepDone;
     expect(nextStep(opportunityDone, journaled, quoteState({ actOpportunityId: ACT_OPPORTUNITY }))).toEqual({
       kind: "done",
     });
@@ -206,13 +227,13 @@ describe("nextStep", () => {
     // The checks run before every step, not only the first: unfinalised after
     // its opportunity was made, then moved to a company with no contacts. The
     // opportunity stays in ACT!; the row waits for a contact.
-    const opportunityDone = { opportunityActId: ACT_OPPORTUNITY };
+    const opportunityDone = opportunityStepDone;
     const step = nextStep(opportunityDone, noHistory, quoteState({ contact: null, actOpportunityId: ACT_OPPORTUNITY }));
     expect(reasonOf(step)).toMatch(/no contact/);
   });
 
   it("leaves a journaled revision finished, whatever has happened to the quote since", () => {
-    const opportunityDone = { opportunityActId: ACT_OPPORTUNITY };
+    const opportunityDone = opportunityStepDone;
     expect(nextStep(opportunityDone, journaled, quoteState({ contact: null, regionCode: "NZ" }))).toEqual({
       kind: "done",
     });
@@ -241,12 +262,13 @@ describe("nextStep", () => {
     // history. The same plan whether that opportunity is open or closed -- the
     // planner is never told its status, so a closed deal cannot lead it to
     // create a second one. For a closed deal the drain sends nothing in either
-    // update step (revisedOpportunityBody, opportunityIsOpen) and still stores
-    // opportunityActId and actProductLineRevision.
+    // update step (revisedOpportunityBody, productLineWrite) and stores
+    // opportunityActId and the row's productLineSkippedAt -- not
+    // actProductLineRevision, since the line was not written.
     const quote = finishedDeal();
     const revision1: RevisionProgress = { revision: 1, actHistoryId: null };
     expect(nextStep(nothingDone, revision1, quote)).toEqual({ kind: "update-opportunity" });
-    const updated = { opportunityActId: ACT_OPPORTUNITY };
+    const updated = opportunityStepDone;
     // The line shows revision 0: patched in place, never a second line.
     expect(nextStep(updated, revision1, quote)).toEqual({ kind: "write-product-line", line: "update" });
     const lineUpdated = { ...quote, actProductLineRevision: 1 };
@@ -269,21 +291,28 @@ describe("nextStep: the deal's one product line", () => {
     // A row taken over before its History, for the same revision (an
     // unchanged re-finalise): the line was written; the History was not.
     const quote = finishedDeal({ actProductLineRevision: 2 });
-    expect(nextStep({ opportunityActId: ACT_OPPORTUNITY }, revision(2), quote)).toEqual({ kind: "write-history" });
+    expect(nextStep(opportunityStepDone, revision(2), quote)).toEqual({ kind: "write-history" });
   });
 
   it("never writes an older revision's figure over a newer one", () => {
     const quote = finishedDeal({ actProductLineRevision: 4 });
-    expect(nextStep({ opportunityActId: ACT_OPPORTUNITY }, revision(3), quote)).toEqual({ kind: "write-history" });
+    expect(nextStep(opportunityStepDone, revision(3), quote)).toEqual({ kind: "write-history" });
   });
 
-  it("moves on when the drain found the deal closed and left the line alone, and creates the line later if it reopens", () => {
-    // Closed: nothing sent, the revision stored, no line id. The planner is
-    // never told the status; it sees only that the step is done.
-    const closedAtRevision1 = quoteState({ actOpportunityId: ACT_OPPORTUNITY, actProductLineRevision: 1 });
-    expect(nextStep({ opportunityActId: ACT_OPPORTUNITY }, revision(1), closedAtRevision1)).toEqual({ kind: "write-history" });
-    // Revision 2, the deal reopened by hand in ACT!: still no line, so create one.
-    expect(nextStep({ opportunityActId: ACT_OPPORTUNITY }, revision(2), closedAtRevision1)).toEqual({
+  it("moves on when this row skipped the line of a closed deal, without recording a revision the line does not show", () => {
+    // Closed: nothing sent, so nothing about the line is stored -- only the
+    // row's skip. The planner is never told the status; it sees the step done.
+    const closed = quoteState({ actOpportunityId: ACT_OPPORTUNITY });
+    const skipped: OutboxProgress = { ...opportunityStepDone, productLineSkippedAt: ACCEPTED_AT };
+    expect(nextStep(skipped, revision(1), closed)).toEqual({ kind: "write-history" });
+    expect(closed.actProductLineRevision).toBeNull();
+  });
+
+  it("asks again on the next row, and creates the line then if the deal was reopened", () => {
+    // The skip is the row's: a row for revision 2 (or this one taken over for
+    // it) starts without it, and the line still shows nothing.
+    const closed = quoteState({ actOpportunityId: ACT_OPPORTUNITY });
+    expect(nextStep(opportunityStepDone, revision(2), closed)).toEqual({
       kind: "write-product-line",
       line: "create",
     });
@@ -293,7 +322,7 @@ describe("nextStep: the deal's one product line", () => {
     // Not reachable when the drain stores both in one UPDATE; if the database
     // says otherwise, a patch is the harmless repeat and a create is a second line.
     const quote = finishedDeal({ actProductLineRevision: null });
-    expect(nextStep({ opportunityActId: ACT_OPPORTUNITY }, revision(0), quote)).toEqual({
+    expect(nextStep(opportunityStepDone, revision(0), quote)).toEqual({
       kind: "write-product-line",
       line: "update",
     });
@@ -320,7 +349,7 @@ describe("nextStep: a won quote promotes its contact and wins its opportunity", 
     // Accepting needs the client's signature first, so the contact is
     // normally promoted already by then.
     const quote = finishedDeal({ signingStatus: "SIGNED", acceptedAt: ACCEPTED_AT, actContactPromotedForId: ACT_CONTACT });
-    expect(nextStep(nothingDone, journaled, quote)).toEqual({ kind: "win-opportunity" });
+    expect(nextStep(nothingDone, journaled, quote)).toEqual({ kind: "win-opportunity", line: null });
   });
 
   it("does both, promotion first, when the quote is accepted before either has run", () => {
@@ -463,5 +492,206 @@ describe("nextStep: a won quote promotes its contact and wins its opportunity", 
     const { taken } = drive({ progress: nothingDone, revision: noHistory, quote });
     expect(taken).not.toContain("win-opportunity");
     expect(taken).toEqual(["update-opportunity", "write-history"]);
+  });
+});
+
+// The drain and ACT! played out together: the planner picks each step, the
+// pure decisions in write-payloads say what it sends, and a plain object
+// stands in for the deal in ACT!. No I/O, no mocks -- the same functions the
+// drain will call, against a record that changes the way ACT!'s would.
+describe("a won deal shows the accepted figure (the drain and ACT! together)", () => {
+  const SALES_CYCLE = "2380e83d-cef4-4b6d-ad15-dc9a558431ab";
+  const SKIPPED_AT = new Date("2026-10-20T00:00:00.000Z");
+
+  /** The deal as ACT! holds it. */
+  type Deal = { status: string; stageNumber: number; line: { revision: number; total: number } | null };
+  type Sim = { world: World; deal: Deal | null; totals: Record<number, number>; journaled: Record<number, string> };
+
+  const quoteFor = (revision: number, totals: Record<number, number>): QuoteForAct => ({
+    number: "Q-AU-2026-014",
+    revision,
+    regionCode: "AU",
+    total: totals[revision],
+    currency: "AUD",
+    validityDays: 30,
+    finalizedAt: new Date("2026-10-12T04:30:00.000Z"),
+  });
+
+  /** A fresh row for `revision`, as an enqueue inserts it; the revision's History as stored. */
+  function enqueue(sim: Sim, revision: number, quote: Partial<QuoteState> = {}): Sim {
+    return {
+      ...sim,
+      world: {
+        progress: nothingDone,
+        revision: { revision, actHistoryId: sim.journaled[revision] ?? null },
+        quote: { ...sim.world.quote, ...quote },
+      },
+    };
+  }
+
+  /** Write the line for the row's revision, and store what was written. */
+  function writeLine(sim: Sim, line: "create" | "update"): Sim {
+    const q = quoteFor(sim.world.revision.revision, sim.totals);
+    return {
+      ...sim,
+      deal: { ...sim.deal!, line: { revision: q.revision, total: summaryProductPatch(q).total } },
+      world: {
+        ...sim.world,
+        quote: {
+          ...sim.world.quote,
+          actProductLineId: line === "create" ? ACT_PRODUCT_LINE : sim.world.quote.actProductLineId,
+          actProductLineRevision: q.revision,
+        },
+      },
+    };
+  }
+
+  /** One step: what the drain would send, applied to the deal, and its result stored. */
+  function step(sim: Sim, planned: OutboxStep): Sim {
+    const { world, deal } = sim;
+    const now = { processId: SALES_CYCLE, number: deal?.stageNumber ?? 0, status: deal?.status ?? "" };
+    switch (planned.kind) {
+      case "create-opportunity":
+        return { ...sim, deal: { status: "Open", stageNumber: 4, line: null }, world: apply(world, planned) };
+      case "write-product-line": {
+        const decision = productLineWrite(deal!.status, world.quote.acceptedAt !== null);
+        if (decision.kind === "write") return writeLine(sim, planned.line);
+        return { ...sim, world: { ...world, progress: { ...world.progress, productLineSkippedAt: SKIPPED_AT } } };
+      }
+      case "write-history":
+        return {
+          ...sim,
+          journaled: { ...sim.journaled, [world.revision.revision]: ACT_HISTORY },
+          world: apply(world, planned),
+        };
+      case "win-opportunity": {
+        const lined = planned.line ? writeLine(sim, planned.line) : sim;
+        const won = wonOpportunityBody("AU", now, ACCEPTED_AT);
+        return {
+          ...lined,
+          deal: won.kind === "patch" ? { ...lined.deal!, status: "Won" } : lined.deal,
+          world: { ...lined.world, quote: { ...lined.world.quote, actOpportunityWonAt: ACCEPTED_AT } },
+        };
+      }
+      default:
+        return { ...sim, world: apply(world, planned) };
+    }
+  }
+
+  function drain(start: Sim): { sim: Sim; taken: OutboxStep[] } {
+    let sim = start;
+    const taken: OutboxStep[] = [];
+    for (let i = 0; i < 12; i++) {
+      const planned = nextStep(sim.world.progress, sim.world.revision, sim.world.quote);
+      if (planned.kind === "done") return { sim, taken };
+      if (planned.kind === "blocked") throw new Error(planned.reason);
+      taken.push(planned);
+      sim = step(sim, planned);
+    }
+    throw new Error("no done");
+  }
+
+  /** Revision 0 at 100,000 finalised and drained: an open deal whose line shows it. */
+  function finalisedAt100k(): Sim {
+    const start: Sim = {
+      world: { progress: nothingDone, revision: noHistory, quote: quoteState() },
+      deal: null,
+      totals: { 0: 100000, 1: 80000 },
+      journaled: {},
+    };
+    const { sim } = drain(start);
+    expect(sim.deal).toEqual({ status: "Open", stageNumber: 4, line: { revision: 0, total: 100000 } });
+    return sim;
+  }
+
+  const byHand = (sim: Sim, status: string): Sim => ({ ...sim, deal: { ...sim.deal!, status } });
+
+  it("a deal closed by hand keeps its line, and the acceptance then wins it at the accepted figure", () => {
+    // R0 at 100k; the deal marked Lost by hand; R1 finalised at 80k.
+    let sim = drain(enqueue(byHand(finalisedAt100k(), "Lost"), 1)).sim;
+    expect(sim.deal).toEqual({ status: "Lost", stageNumber: 4, line: { revision: 0, total: 100000 } });
+    // Nothing was written, so nothing says the line shows R1.
+    expect(sim.world.quote.actProductLineRevision).toBe(0);
+    expect(sim.world.progress.productLineSkippedAt).toEqual(SKIPPED_AT);
+
+    // R1 signed and accepted: a new row for R1, journaled already.
+    const accepted = drain(enqueue(sim, 1, { signingStatus: "SIGNED", acceptedAt: ACCEPTED_AT }));
+    expect(accepted.taken).toEqual([
+      { kind: "promote-contact" },
+      { kind: "win-opportunity", line: "update" },
+    ]);
+    sim = accepted.sim;
+    expect(sim.deal).toEqual({ status: "Won", stageNumber: 4, line: { revision: 1, total: 80000 } });
+    expect(sim.world.quote.actProductLineRevision).toBe(1);
+  });
+
+  it("a deal closed before it ever had a line is won with one, not at nothing", () => {
+    // Revision 0: the opportunity is made, then closed by hand before the line step.
+    const start: Sim = {
+      world: { progress: nothingDone, revision: noHistory, quote: quoteState() },
+      deal: null,
+      totals: { 0: 100000 },
+      journaled: {},
+    };
+    let sim = step(start, nextStep(start.world.progress, start.world.revision, start.world.quote));
+    expect(sim.deal?.status).toBe("Open");
+    sim = drain(byHand(sim, "Lost")).sim;
+    expect(sim.deal?.line).toBeNull();
+    expect(sim.world.quote.actProductLineId).toBeNull();
+    expect(sim.world.quote.actProductLineRevision).toBeNull();
+
+    const accepted = drain(enqueue(sim, 0, { signingStatus: "SIGNED", acceptedAt: ACCEPTED_AT }));
+    expect(accepted.taken).toContainEqual({ kind: "win-opportunity", line: "create" });
+    expect(accepted.sim.deal).toEqual({ status: "Won", stageNumber: 4, line: { revision: 0, total: 100000 } });
+    expect(accepted.sim.world.quote.actProductLineId).toBe(ACT_PRODUCT_LINE);
+  });
+
+  it("a won quote voided and re-finalised at a new figure moves the won deal's line with it", () => {
+    // R0 accepted and won at 100k.
+    let sim = drain(enqueue(finalisedAt100k(), 0, { signingStatus: "SIGNED", acceptedAt: ACCEPTED_AT })).sim;
+    expect(sim.deal).toMatchObject({ status: "Won", line: { revision: 0, total: 100000 } });
+    expect(sim.world.quote.actOpportunityWonAt).toEqual(ACCEPTED_AT);
+
+    // voidSignature: NOT_SENT, acceptedAt kept. R1 re-finalised at 80k. The
+    // win is never planned again, so the line has to follow at the line step.
+    const refinalised = drain(enqueue(sim, 1, { signingStatus: "NOT_SENT" }));
+    expect(refinalised.taken.map((t) => t.kind)).toEqual(["update-opportunity", "write-product-line", "write-history"]);
+    sim = refinalised.sim;
+    expect(sim.deal).toMatchObject({ status: "Won", line: { revision: 1, total: 80000 } });
+
+    // Signed again; acceptQuote returns early for a quote already accepted.
+    const signed = drain(enqueue(sim, 1, { signingStatus: "SIGNED" }));
+    expect(signed.taken).toEqual([]);
+    expect(signed.sim.deal).toMatchObject({ status: "Won", line: { revision: 1, total: 80000 } });
+  });
+
+  it("a deal set to Lost by hand after its win keeps its status and its line through a re-finalise", () => {
+    let sim = drain(enqueue(finalisedAt100k(), 0, { signingStatus: "SIGNED", acceptedAt: ACCEPTED_AT })).sim;
+    sim = drain(enqueue(byHand(sim, "Lost"), 1, { signingStatus: "NOT_SENT" })).sim;
+    expect(sim.deal).toEqual({ status: "Lost", stageNumber: 4, line: { revision: 0, total: 100000 } });
+    expect(sim.world.quote.actProductLineRevision).toBe(0);
+  });
+
+  it("resumes a win that wrote the line and died before the status at the status, without the line again", () => {
+    const sim = drain(enqueue(byHand(finalisedAt100k(), "Lost"), 1)).sim;
+    const accepted = enqueue(sim, 1, { signingStatus: "SIGNED", acceptedAt: ACCEPTED_AT, actContactPromotedForId: ACT_CONTACT });
+    expect(nextStep(accepted.world.progress, accepted.world.revision, accepted.world.quote)).toEqual({
+      kind: "win-opportunity",
+      line: "update",
+    });
+    // The line written and stored; the opportunity's PATCH never made.
+    const lined = writeLine(accepted, "update");
+    expect(lined.deal).toMatchObject({ status: "Lost", line: { revision: 1, total: 80000 } });
+    expect(nextStep(lined.world.progress, lined.world.revision, lined.world.quote)).toEqual({
+      kind: "win-opportunity",
+      line: null,
+    });
+    expect(drain(lined).sim.deal).toEqual({ status: "Won", stageNumber: 4, line: { revision: 1, total: 80000 } });
+  });
+
+  it("wins an open deal whose line is current without touching the line", () => {
+    const { taken, sim } = drain(enqueue(finalisedAt100k(), 0, { signingStatus: "SIGNED", acceptedAt: ACCEPTED_AT }));
+    expect(taken).toContainEqual({ kind: "win-opportunity", line: null });
+    expect(sim.deal).toMatchObject({ status: "Won", line: { revision: 0, total: 100000 } });
   });
 });

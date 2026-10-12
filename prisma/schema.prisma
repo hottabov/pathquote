@@ -1066,16 +1066,20 @@ model Document {
   /// its amount: ACT! computes an opportunity's total from its products and
   /// will not take one directly (THE DEAL AMOUNT IS ONE PRODUCT LINE in
   /// src/lib/act/write-payloads.ts). Created once by the outbox's
-  /// write-product-line step and PATCHed in place by every later revision --
+  /// write-product-line step (or by win-opportunity, for a deal closed before
+  /// it had one) and PATCHed in place by every later revision --
   /// never deleted and re-created, because PathQuote never calls DELETE in
   /// ACT!. Null until created. Unique for the reason actOpportunityId is.
   actProductLineId        String?             @unique
-  /// The QuoteRevision.revision that product line was last written for, or
-  /// found on a closed deal and left alone for; null until the step has run.
-  /// The planner's progress for write-product-line (src/lib/act/outbox-plan.ts,
-  /// THE PRODUCT LINE): due while this is null or older than the outbox row's
-  /// revision. Stored in the same UPDATE as actProductLineId when the line is
-  /// created.
+  /// The QuoteRevision.revision that product line shows in ACT!: the last
+  /// one written to it. Null until a line has been written. Only ever what was
+  /// written: a closed deal's line left alone is recorded on the outbox row
+  /// (ActOutbox.productLineSkippedAt), never here, because the win reads this
+  /// to decide whether the line must be brought up to the accepted revision
+  /// before the deal is Won. The planner's progress for the line
+  /// (src/lib/act/outbox-plan.ts, THE PRODUCT LINE): due while this is null or
+  /// older than the outbox row's revision. Stored in the same UPDATE as
+  /// actProductLineId when the line is created.
   actProductLineRevision  Int?
   /// The ACT! contact (its Contact.actContactId) the outbox's promote-contact
   /// step was last done for on this deal: moved from Prospect to Customer in
@@ -1635,7 +1639,8 @@ model ActSnapshot {
 /// Contact.actContactId, Document.actOpportunityId,
 /// Document.actProductLineId and actProductLineRevision,
 /// Document.actContactPromotedForId, Document.actOpportunityWonAt and
-/// QuoteRevision.actHistoryId, plus this row's own opportunityActId.
+/// QuoteRevision.actHistoryId, plus this row's own opportunityActId and
+/// productLineSkippedAt.
 ///
 /// WHY PATHQUOTE KEEPS ACT!'S IDS, rather than stamping a PathQuote id into an
 /// ACT! custom field and searching for it: the five `PQ ` custom fields do not
@@ -1668,17 +1673,18 @@ model ActSnapshot {
 /// (or a signature or acceptance) while a row is unfinished -- pending or
 /// blocked -- therefore cannot add a second row; the enqueue has to take that
 /// row over: point quoteRevisionId at the revision the enqueue is for (for a
-/// re-finalise, the one just finalised), clear blockedReason and
-/// opportunityActId, reset attempts to 0 and clear lastError, and make it
-/// due. That is the same move whether the row was waiting on ACT! or on the
-/// manager, and it is what lets "unfinalize, choose a contact, finalize
-/// again" (NO_CONTACT_REASON) work. Clearing opportunityActId is what makes
-/// the new revision's figures reach the opportunity; the opportunity itself
-/// is never lost, because Document.actOpportunityId still has it. Resetting
+/// re-finalise, the one just finalised), clear blockedReason,
+/// opportunityActId and productLineSkippedAt, reset attempts to 0 and clear
+/// lastError, and make it due. That is the same move whether the row was
+/// waiting on ACT! or on the manager, and it is what lets "unfinalize, choose
+/// a contact, finalize again" (NO_CONTACT_REASON) work. Clearing
+/// opportunityActId and productLineSkippedAt is what makes the new revision's
+/// figures reach the opportunity and its line; the opportunity itself is never
+/// lost, because Document.actOpportunityId still has it. Resetting
 /// attempts and lastError is what keeps the quote from showing the old
 /// revision's failure beside a row that has not been tried yet.
 model ActOutbox {
-  id               String        @id @default(cuid())
+  id                   String        @id @default(cuid())
   /// Cascade: a quote can be deleted while its row is unfinished (unfinalise,
   /// then deleteDraft; or an admin's deleteDocument on a FINAL quote), and the
   /// write cannot be made without the quote it describes -- the drain reads
@@ -1688,8 +1694,8 @@ model ActOutbox {
   /// ACT! would become undeletable -- surfacing as a raw foreign-key error
   /// from two actions with no handling for one. Whatever ACT! already holds
   /// for the quote stays in ACT!.
-  documentId       String
-  document         Document      @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  documentId           String
+  document             Document      @relation(fields: [documentId], references: [id], onDelete: Cascade)
   /// The revision this row writes, and where its History progress is kept
   /// (QuoteRevision.actHistoryId): the drain follows this to read it. Cascade,
   /// matching documentId: nothing deletes a QuoteRevision except its
@@ -1697,26 +1703,35 @@ model ActOutbox {
   /// anyway, so today the choice changes nothing; it keeps a future revision
   /// delete from being refused over a row that cannot be written without its
   /// revision.
-  quoteRevisionId  String
-  quoteRevision    QuoteRevision @relation(fields: [quoteRevisionId], references: [id], onDelete: Cascade)
+  quoteRevisionId      String
+  quoteRevision        QuoteRevision @relation(fields: [quoteRevisionId], references: [id], onDelete: Cascade)
   /// The opportunity this row's opportunity step created or updated. Null
   /// until that step has gone through. An update mints no new id, so this is
   /// the only record that the update was made; it is what stops a resumed row
   /// updating the opportunity twice.
-  opportunityActId String?
+  opportunityActId     String?
+  /// When this row's write-product-line found the deal closed and left its
+  /// line alone (productLineWrite in src/lib/act/write-payloads.ts). Null
+  /// otherwise. It says this row's line step is done; it does not say what
+  /// the line shows -- Document.actProductLineRevision does, and is not
+  /// stored for a line left alone. On the row because it is this row's answer
+  /// for this row's revision: a take-over clears it with opportunityActId, so
+  /// a newer revision asks ACT! again. See src/lib/act/outbox-plan.ts, A
+  /// CLOSED OPPORTUNITY'S LINE IS LEFT ALONE.
+  productLineSkippedAt DateTime?
   /// Failed attempts at this row, for the drain's backoff to read -- and for a
   /// person reading this table to tell a row that is merely new from one ACT!
   /// has refused all week.
-  attempts         Int           @default(0)
+  attempts             Int           @default(0)
   /// The last failed attempt's error, as ACT! or the network reported it.
   /// Not what says where the row stands -- completedAt and blockedReason do --
   /// so a later success need not clear it. A take-over does (see above).
-  lastError        String?
+  lastError            String?
   /// When the row may next be tried. A new row is due at once.
-  nextAttemptAt    DateTime      @default(now())
+  nextAttemptAt        DateTime      @default(now())
   /// When the planner reported the row done. Null is "unfinished", pending or
   /// blocked alike, and is what the one-unfinished-row index keys on.
-  completedAt      DateTime?
+  completedAt          DateTime?
   /// Why the write cannot proceed: one of the sentences in
   /// src/lib/act/outbox-plan.ts, read by a manager on the quote. A blocked row
   /// is not due (the drain's index leaves it out) and is still unfinished.
@@ -1725,9 +1740,9 @@ model ActOutbox {
   /// nothing takes the row over. The drain must therefore re-plan every
   /// blocked row on each pass and, once nextStep no longer returns `blocked`,
   /// clear this and make the row due.
-  blockedReason    String?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  blockedReason        String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
 
   // The foreign keys, for the cascades above and for "this quote's ACT!
   // writes" -- the partial unique on documentId covers unfinished rows only.

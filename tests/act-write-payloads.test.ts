@@ -10,6 +10,7 @@ import {
   newContactBody,
   newOpportunityBody,
   opportunityIsOpen,
+  productLineWrite,
   revisedOpportunityBody,
   summaryProductBody,
   summaryProductPatch,
@@ -294,6 +295,31 @@ describe("opportunityIsOpen", () => {
       expect(kind === "patch").toBe(opportunityIsOpen(status));
     }
   });
+});
+
+describe("productLineWrite", () => {
+  it("writes the line of an Open deal, accepted or not", () => {
+    expect(productLineWrite("Open", false)).toEqual({ kind: "write" });
+    expect(productLineWrite("Open", true)).toEqual({ kind: "write" });
+  });
+
+  it("writes the line of a Won deal once the quote is accepted: the accepted figure is what it was won at", () => {
+    expect(productLineWrite("Won", true)).toEqual({ kind: "write" });
+  });
+
+  it("leaves the line of a deal Won by hand alone until PathQuote accepts the quote", () => {
+    expect(productLineWrite("Won", false)).toEqual({ kind: "skip", status: "Won" });
+  });
+
+  it.each(["Lost", "Inactive", "open", "won", "", null])(
+    "leaves the line of a %j deal alone, accepted or not, and says what ACT! said",
+    (status) => {
+      // A Lost deal of an accepted quote is overturned by win-opportunity,
+      // which writes the line itself before the status.
+      expect(productLineWrite(status, false)).toEqual({ kind: "skip", status });
+      expect(productLineWrite(status, true)).toEqual({ kind: "skip", status });
+    },
+  );
 });
 
 describe("summaryProductBody and summaryProductPatch", () => {
