@@ -451,7 +451,7 @@ export function describeOutbox(outbox: ActOutboxStanding, now: Date): ActSyncOut
       );
       if (outbox.retrying > 0) {
         notes.push(
-          `${outbox.retrying === outbox.waiting ? (one ? "It has" : outbox.waiting === 2 ? "Both have" : "All of them have") : `${formatCount(outbox.retrying)} of them ${outbox.retrying === 1 ? "has" : "have"}`} failed to get through at least once — PathQuote keeps trying, waiting longer each time.`,
+          `${outbox.retrying === outbox.waiting ? (one ? "It has" : outbox.waiting === 2 ? "Both have" : "All of them have") : `${formatCount(outbox.retrying)} of them ${outbox.retrying === 1 ? "has" : "have"}`} failed to get through at least once — PathQuote keeps trying until it gets through.`,
         );
       }
     }

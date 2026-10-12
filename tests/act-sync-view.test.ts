@@ -586,10 +586,10 @@ describe("describeOutbox — the queue as it stands", () => {
       detail: "It goes on its own — PathQuote sends queued quotes every 15 minutes.",
     });
     expect(describeOutbox(outbox({ waiting: 3, retrying: 1 }), NOW).detail).toBe(
-      "They go on their own — PathQuote sends queued quotes every 15 minutes. 1 of them has failed to get through at least once — PathQuote keeps trying, waiting longer each time.",
+      "They go on their own — PathQuote sends queued quotes every 15 minutes. 1 of them has failed to get through at least once — PathQuote keeps trying until it gets through.",
     );
     expect(describeOutbox(outbox({ waiting: 1, retrying: 1 }), NOW).detail).toBe(
-      "It goes on its own — PathQuote sends queued quotes every 15 minutes. It has failed to get through at least once — PathQuote keeps trying, waiting longer each time.",
+      "It goes on its own — PathQuote sends queued quotes every 15 minutes. It has failed to get through at least once — PathQuote keeps trying until it gets through.",
     );
     expect(describeOutbox(outbox({ waiting: 2, retrying: 2 }), NOW).detail).toContain("Both have failed");
     expect(describeOutbox(outbox({ waiting: 5, retrying: 5 }), NOW).detail).toContain("All of them have failed");
