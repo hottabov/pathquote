@@ -243,7 +243,7 @@
 // acceptedAt, so its new contact is promoted at the re-finalise rather than at
 // the next signature.
 //
-// STEPS RESUME, AND ONE WINDOW REPEATS. Every step stores its result before the
+// STEPS RESUME, AND NO CREATE REPEATS BLIND. Every step stores its result before the
 // next step begins, and this planner looks at nothing but those stored
 // results. So a row that fails halfway -- a timeout, a restart, ACT! down for
 // the night -- is re-planned from what it actually got done, and resumes at
@@ -252,17 +252,62 @@
 // call.
 //
 // The window: a step that succeeded in ACT! but died before its result was
-// stored runs again, and only that step. What a repeat costs depends on the
-// step -- a repeated create-contact is a DUPLICATE CONTACT in ACT!, a repeated
-// create-opportunity is a SECOND OPPORTUNITY FOR THE DEAL, a repeated
-// write-product-line that created the line is a SECOND PRODUCT LINE, which
-// DOUBLES THE DEAL'S AMOUNT in ACT!, a repeated write-history is a second
-// History for the revision; a repeated update-opportunity, or
-// write-product-line that updated the line, sends the same patch again and is
-// harmless, and a repeated promote-contact or win-opportunity reads back the
-// Customer or Won it already wrote and sends nothing (see DEAL EVENTS). Nothing here
-// can close that window; the drain (Task 7) can only keep it short, by storing
-// each result the moment ACT! answers, before doing anything else with it.
+// stored runs again, and only that step. For an update that is harmless: a
+// repeated update-opportunity, or a line PATCHed again, sends the same patch
+// (or nothing -- patchToSend in src/lib/act/record-write.ts drops a patch the
+// record already shows), and a repeated promote-contact or win-opportunity
+// reads back the Customer or Won it already wrote and sends nothing (see DEAL
+// EVENTS). For a create it is not: a repeated create-contact is a DUPLICATE
+// CONTACT in ACT!, a repeated create-opportunity a SECOND OPPORTUNITY FOR THE
+// DEAL, a repeated line create a SECOND PRODUCT LINE, which DOUBLES THE
+// DEAL'S AMOUNT, a repeated write-history a second History for the revision.
+// So no create is repeated blind; see A CREATE IN FLIGHT. The drain (Task 7)
+// still stores each result the moment ACT! answers, before doing anything
+// else with it, which keeps the window as short as it can be.
+//
+// A CREATE IN FLIGHT. ActOutbox.createInFlight names the record a POST of this
+// row may have made: one of CREATE_IN_FLIGHT -- "contact", "opportunity",
+// "product-line" (from write-product-line or win-opportunity) or "history".
+// A REQUIREMENT ON THE DRAIN: it sets the marker in a write of its own,
+// committed before the POST leaves, and clears it in the same transaction
+// that stores the new record's id -- or when the POST was refused (a 4xx) or
+// was not sent at all, either of which made nothing. It stays set when the
+// answer was lost (ActUntrackedCreateError with no createdId) and when the
+// drain itself died between ACT!'s answer and the store -- the case no error
+// reports, and the reason the marker exists. What happens next depends on the
+// record:
+//
+//   contact, history   nextStep blocks, before anything else (`done`
+//                      included): a person must look in ACT! before the row
+//                      goes on (UNTRACKED_CONTACT_REASON,
+//                      UNTRACKED_HISTORY_REASON). The contact is NOT looked
+//                      up by email: among ACT!'s 17.5k contacts an email is
+//                      no identity -- shared inboxes, duplicates already
+//                      there, contacts with none -- and adopting a match could
+//                      take over another manager's Customer. A History has no
+//                      key PathQuote writes to look it up by.
+//   opportunity,       nextStep plans as usual, because the drain looks up
+//   product-line       before EVERY create of these two, marker or not: the
+//                      opportunity by its fixed name among the contact's, the
+//                      line by its item number among the opportunity's
+//                      (opportunityLookup, productLineLookup in
+//                      src/lib/act/write-payloads.ts). One match is adopted,
+//                      as if the create had answered with it; none is
+//                      created; more than one blocks, with
+//                      duplicateOpportunitiesReason or
+//                      duplicateProductLinesReason, for a person to settle --
+//                      PathQuote never deletes in ACT!. The lookup is what
+//                      resolves the marker.
+//
+// Anything else in the column blocks as well (untrackedCreateReason): a
+// record nobody here can name may exist. A take-over does NOT clear the
+// marker -- a record an earlier revision's step may have made is in ACT!
+// whatever revision the row carries now -- and the drain's pass over blocked
+// rows clears blockedReason only when nextStep no longer blocks, which for
+// these needs the marker gone. A row the drain blocked on a lookup's
+// duplicates is not blocked by nextStep, so that pass makes it due again and
+// the lookup runs again: blocked while the duplicates stand, on its way once
+// a person has dealt with them.
 //
 // A REQUIREMENT ON THE DRAIN (Task 7): after create-opportunity, the two
 // stores -- Document.actOpportunityId and the row's opportunityActId -- MUST be
@@ -282,7 +327,10 @@
 // BLOCKED REASONS ARE READ BY A MANAGER on the quote, so they are sentences
 // that say what to do, in the voice of src/lib/act/sync-view.ts: a fault the
 // manager can fix names the fix; a fault only PathQuote's configuration can
-// fix says "ask your developer". The blocking checks run before every step,
+// fix says "ask your developer"; a record that may or may not be in ACT!
+// says what happened and that ACT! must be checked before the write is tried
+// again (a way to hand PathQuote what was found there is Task 9's). The
+// blocking checks run before every step,
 // not once: for a fresh row that means before anything is created in ACT!, so
 // a row blocked from the start leaves nothing behind. A row can also become
 // blocked partway -- unfinalise it after its contact or opportunity was
@@ -294,6 +342,17 @@
 // nextStep, performs the one step it names, stores its result, and asks again.
 
 import { processForRegion } from "@/lib/act/opportunity-stages";
+
+/**
+ * The values of ActOutbox.createInFlight: the record a POST of this row may
+ * have made. See A CREATE IN FLIGHT.
+ */
+export const CREATE_IN_FLIGHT = {
+  contact: "contact",
+  opportunity: "opportunity",
+  productLine: "product-line",
+  history: "history",
+} as const;
 
 /** What this outbox row (ActOutbox) has stored of its own. */
 export type OutboxProgress = {
@@ -310,6 +369,13 @@ export type OutboxProgress = {
    * A CLOSED OPPORTUNITY'S LINE IS LEFT ALONE.
    */
   productLineSkippedAt: Date | null;
+  /**
+   * ActOutbox.createInFlight: the record a POST of this row may have made
+   * without its id being stored -- a CREATE_IN_FLIGHT value -- or null. A
+   * string, not the union, because it is read off a TEXT column, and a value
+   * this module does not know has to block rather than be trusted.
+   */
+  createInFlight: string | null;
 };
 
 /** What the revision this row was queued for (ActOutbox.quoteRevisionId) has stored. */
@@ -412,6 +478,43 @@ export function unmappedRegionReason(regionCode: string): string {
   return `This quote is in the ${regionCode} region, and PathQuote has no ACT! sales process for ${regionCode}, so there is no pipeline to put it in — ask your developer to map ${regionCode} to one.`;
 }
 
+/**
+ * A contact create whose answer never reached the store (A CREATE IN FLIGHT).
+ * Nothing in PathQuote can tell whether ACT! made the contact, and creating
+ * it again could put the same person in ACT! twice, so a person has to look.
+ */
+export const UNTRACKED_CONTACT_REASON =
+  "PathQuote asked ACT! to create this quote's contact but never learned whether it did, so they may be in ACT! already — check ACT! for them before this is tried again, or ACT! could end up with the same person twice.";
+
+/** A History create whose answer never reached the store, likewise. */
+export const UNTRACKED_HISTORY_REASON =
+  "PathQuote asked ACT! to record this quote in the contact's History but never learned whether it did, so the record may be in ACT! already — check the contact's History in ACT! before this is tried again, or the quote could be recorded twice.";
+
+/** The sentence for a createInFlight value: the two above, or one for a value nothing here knows. */
+export function untrackedCreateReason(createInFlight: string): string {
+  if (createInFlight === CREATE_IN_FLIGHT.contact) return UNTRACKED_CONTACT_REASON;
+  if (createInFlight === CREATE_IN_FLIGHT.history) return UNTRACKED_HISTORY_REASON;
+  return `PathQuote asked ACT! to create a record for this quote ("${createInFlight}") but never learned whether it did, and does not know how to look for it — ask your developer to check ACT! before this is tried again.`;
+}
+
+/**
+ * The drain's block when opportunityLookup finds more than one opportunity
+ * with this deal's name on the contact. Not returned by nextStep: the drain
+ * sets it from the lookup, and the lookup runs again on the next pass.
+ */
+export function duplicateOpportunitiesReason(name: string, count: number): string {
+  return `ACT! has ${count} opportunities named "${name}" for this quote's contact, and PathQuote makes one per quote, so it cannot tell which is this deal — in ACT!, rename or remove the ones that are not this quote's, and this will carry on.`;
+}
+
+/**
+ * The drain's block when productLineLookup finds more than one product line
+ * with this quote's number on the deal's opportunity. Every one of them adds
+ * to the deal's total in ACT!, which is why this says so.
+ */
+export function duplicateProductLinesReason(itemNumber: string, count: number): string {
+  return `ACT! has ${count} product lines numbered ${itemNumber} on this quote's opportunity, so the deal's total there counts this quote ${count} times, and PathQuote keeps exactly one line — remove the extra ones in ACT!, and this will carry on.`;
+}
+
 function hasName(contact: { firstName: string; lastName: string | null }): boolean {
   return `${contact.firstName} ${contact.lastName ?? ""}`.trim() !== "";
 }
@@ -449,6 +552,19 @@ export function nextStep(
   revision: RevisionProgress,
   quote: QuoteState,
 ): OutboxStep {
+  // A create that may have made a contact or a History PathQuote cannot name
+  // stops everything, `done` included, until a person has looked (A CREATE
+  // IN FLIGHT). An opportunity or a line resolves itself: the drain looks it
+  // up before creating it.
+  const inFlight = progress.createInFlight;
+  if (
+    inFlight !== null &&
+    inFlight !== CREATE_IN_FLIGHT.opportunity &&
+    inFlight !== CREATE_IN_FLIGHT.productLine
+  ) {
+    return { kind: "blocked", reason: untrackedCreateReason(inFlight) };
+  }
+
   // A revision already journaled is finished, whichever row journaled it.
   // Nothing that has happened to the quote since -- an unfinalize, a contact
   // removed -- reaches back into a write that has already gone through. What

@@ -305,15 +305,52 @@ export function writableOpportunity<T extends ActRecordJson>(record: T): T {
  * The patch a write is to send, or null for none at all.
  *
  * The decisions a read-modify-write hands the client (ActClient's `update`)
- * return null for "nothing to send". A patch whose every field is undefined
- * says the same thing -- mergeForWrite would leave the record exactly as read
- * -- and is null here too. Either way no PATCH goes out: writing a record
- * back unchanged still moves its `edited`, and on a closed deal is a rewrite
- * of a record PathQuote decided to leave alone.
+ * return null for "nothing to send". A patch that changes nothing on
+ * `current`, the record as read, says the same thing and is null here too:
+ * one whose every field is undefined, or whose every field the record
+ * already holds -- a revision of an open deal whose stage stays (its patch is
+ * empty now the name is set on create only), a line already showing the
+ * revision it is patched to (adopted after a create whose answer was lost).
+ * Either way no PATCH goes out: writing a record back unchanged still moves
+ * its `edited`, and on a closed deal is a rewrite of a record PathQuote
+ * decided to leave alone.
+ *
+ * "Already holds" is exact, and decided the way mergeForWrite lays the patch
+ * on: a field equal in value (sameValue) to the record's, `customFields` key
+ * by key. Anything else is a change and the patch goes out whole -- a number
+ * ACT! stored as 47500.0 against a patch's 47500 is the same number; a stage
+ * that is the same id but read back with a description the patch does not
+ * carry is not the same object, and is sent. Sending in doubt costs a
+ * rewrite; skipping in doubt would lose a change.
  */
-export function patchToSend<P extends object>(patch: P | null): P | null {
+export function patchToSend<P extends object>(patch: P | null, current: ActRecordJson): P | null {
   if (patch === null) return null;
-  return Object.values(patch).some((value) => value !== undefined) ? patch : null;
+  const changes = Object.entries(patch).some(([field, value]) => {
+    if (value === undefined || field === "id") return false;
+    if (field === "customFields" && isPlainObject(value) && isPlainObject(current.customFields)) {
+      const held = current.customFields;
+      return Object.entries(value).some(([key, v]) => v !== undefined && !sameValue(held[key], v));
+    }
+    return !sameValue(current[field], value);
+  });
+  return changes ? patch : null;
+}
+
+/**
+ * Whether two JSON values are the same: primitives by ===, arrays element by
+ * element, objects with the same keys and the same value under each. A key
+ * holding undefined counts as absent, as it does when the body is sent.
+ */
+export function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => sameValue(x, b[i]));
+  }
+  if (!isPlainObject(a) || !isPlainObject(b)) return false;
+  const keys = (o: Record<string, unknown>) => Object.keys(o).filter((k) => o[k] !== undefined);
+  const ka = keys(a);
+  const kb = keys(b);
+  return ka.length === kb.length && ka.every((k) => Object.hasOwn(b, k) && sameValue(a[k], b[k]));
 }
 
 function mergeCustomFields(current: unknown, patch: unknown): Record<string, unknown> {

@@ -125,6 +125,7 @@ export type ActOpportunity = {
   probability: number | null;
   productTotal: number | null;
   openDate: string | null;
+  stageStartDate: string | null;
   actualCloseDate: string | null;
   estimatedCloseDate: string | null;
   reason: string | null;
@@ -152,6 +153,8 @@ export type ActProductLine = {
   id: string;
   opportunityID: string | null;
   name: string | null;
+  /** "Item #": the quote number on PathQuote's line, which is how it is found again. */
+  itemNumber: string | null;
   quantity: number | null;
   price: number | null;
   discountPrice: number | null;

@@ -43,12 +43,12 @@
 // quantity, a discount, no currency).
 // PathQuote quotes exist in AUD, USD and GBP, and nothing in the schema
 // converts between them. So the currency travels as text where people read it:
-// in the opportunity's `name` ("Q-AU-2026-014 — AUD 45,000.00"), which every
-// ACT! list and lookup shows, in the product line's `name`, and again in the
-// History `details`. The amount still reaches `productTotal`, through the
-// product line and in the quote's own currency, because it is the
-// opportunity's amount field and an opportunity without one is a deal with no
-// value anywhere ACT! reads it.
+// in the opportunity's `name` ("Q-AU-2026-014 AUD"), which every ACT! list and
+// lookup shows, in the product line's `name` with the amount ("Q-AU-2026-014
+// — AUD 45,000.00"), and again in the History `details`. The amount still
+// reaches `productTotal`, through the product line and in the quote's own
+// currency, because it is the opportunity's amount field and an opportunity
+// without one is a deal with no value anywhere ACT! reads it.
 //
 // WHAT THAT DOES NOT FIX. ACT!'s own pipeline analytics sum `productTotal`
 // across every opportunity they cover, whatever currency each one was quoted
@@ -263,6 +263,8 @@ export type NewOpportunityBody = {
   probability: number;
   status: OpportunityStatus;
   openDate: string;
+  /** See STAGE START DATE on revisedOpportunityBody. */
+  stageStartDate: string;
   recordManagerID: string;
   contacts: ActRef[];
   companies?: ActRef[];
@@ -283,12 +285,13 @@ export type OpportunityNow = StagePosition & {
  * What a write changes on an opportunity, laid over the record as read
  * (mergeForWrite in src/lib/act/record-write.ts) before
  * `PATCH /api/opportunities/{id}`. No amount, for the reason NewOpportunityBody
- * has none.
+ * has none, and no name: the name is set on create only (opportunityName).
  */
 export type OpportunityPatch = {
-  name?: string;
   stage?: StageBody;
   probability?: number;
+  /** Sent with `stage`, and only then: see STAGE START DATE on revisedOpportunityBody. */
+  stageStartDate?: string;
   status?: OpportunityStatus;
   reason?: string;
   actualCloseDate?: string;
@@ -330,14 +333,34 @@ function stageBody(stage: StageDef): StageBody {
 }
 
 /**
- * The opportunity's name: quote number, currency and total.
- *
- * The bare number, not the revision label: the opportunity is the whole deal,
- * and a revision of an open deal renames it with the new total rather than a
- * new suffix (a closed one is not renamed at all; see revisedOpportunityBody).
+ * ACT!'s limit on an opportunity's name: `TBL_OPPORTUNITY` `name`, "Opportunity
+ * Name", Character 32, in RAW/ACT/meta/fields_all.json (a local capture, not
+ * committed).
  */
-function opportunityName(quote: QuoteForAct): string {
-  return `${quote.number} — ${moneyWithCode(quote.total, quote.currency)}`;
+export const OPPORTUNITY_NAME_MAX = 32;
+
+/**
+ * The opportunity's name: the quote number and its currency code,
+ * "Q-AU-2026-1000 AUD".
+ *
+ * NO AMOUNT, because of OPPORTUNITY_NAME_MAX. Quote numbers are
+ * `Q-{region}-{year}-{counter}`, the counter padded to three digits and never
+ * truncated (formatDocNumber in src/lib/numbering.ts), and with an amount in
+ * it -- "Q-AU-2026-1000 — AUD 1,250,000.00" is 33 -- a big quote in a busy
+ * year would not fit. Without one, a five-digit counter in any region of the
+ * seed is 19 characters (tests/act-write-payloads.test.ts holds it under 32).
+ * The amount is the product line's, and its name carries it.
+ *
+ * The bare number, not the revision label: the opportunity is the whole deal.
+ * SET ON CREATE ONLY: nothing in a revision changes the number or the
+ * currency (Document.currency is set by createDraft and never changed), so
+ * there is nothing to rename -- and a name a person edits in ACT! stays as
+ * they left it. That also makes the name fixed for the life of the deal,
+ * which is what lets the drain find an opportunity it created but did not
+ * store by this name (opportunityLookup).
+ */
+export function opportunityName(quote: Pick<QuoteForAct, "number" | "currency">): string {
+  return `${quote.number} ${quote.currency}`;
 }
 
 /**
@@ -387,15 +410,21 @@ export function historyBody(
   };
 }
 
-/** The opportunity a quote's first finalise opens, at its region's sent stage. */
+/**
+ * The opportunity a quote's first finalise opens, at its region's sent stage.
+ * Opened, and in that stage, from the revision's finalise: `openDate` and
+ * `stageStartDate` are both its finalizedAt.
+ */
 export function newOpportunityBody(quote: QuoteForAct, parties: ActParties): NewOpportunityBody {
   const sent = stagesFor(quote.regionCode).sent;
+  const finalised = quote.finalizedAt.toISOString();
   return {
     name: opportunityName(quote),
     stage: stageBody(sent),
     probability: sent.probability,
     status: OPPORTUNITY_STATUS.open,
-    openDate: quote.finalizedAt.toISOString(),
+    openDate: finalised,
+    stageStartDate: finalised,
     recordManagerID: recordManager(parties),
     contacts: [{ id: parties.contactActId }],
     ...companiesOf(parties),
@@ -445,24 +474,23 @@ export function productLineWrite(status: string | null, accepted: boolean): Prod
 /**
  * What a later revision does to the deal's existing opportunity.
  *
- * - `patch`: the opportunity is Open. `patch` always carries the name, which
- *   carries the total, since a revision can change the price, and the stage
- *   (with its probability) only when `stage` -- stageMove's verdict, handed
- *   back so the drain can report a "different-process" opportunity it did not
- *   move -- is `move`. Never backwards, never across processes, never a
- *   status, and never an amount: the amount is the product line's
- *   (summaryProductPatch).
+ * - `patch`: the opportunity is Open. `patch` carries the stage, with its
+ *   probability and stageStartDate, when `stage` -- stageMove's verdict,
+ *   handed back so the drain can report a "different-process" opportunity it
+ *   did not move -- is `move`, and is EMPTY otherwise: the name is set on
+ *   create only (opportunityName), and the amount is the product line's
+ *   (summaryProductPatch). Never backwards, never across processes, never a
+ *   status.
  * - `closed`: the opportunity is not Open. Send nothing at all; the revision
  *   is recorded by its History alone. `status` is what ACT! said, for the
  *   drain to report.
  *
- * A union rather than a patch that might be empty, or null: an Open patch is
- * never empty, so "nothing to send" is a different answer, not a smaller one,
- * and it should say why. A `{}` would not be sent anyway -- the client sends
- * no PATCH for a patch with nothing in it (patchToSend in
- * src/lib/act/record-write.ts), because writing the record back whole would
- * still rewrite the closed record and bump its `edited` -- but it would not
- * say that the deal was closed.
+ * An empty patch sends nothing either: the client sends no PATCH for a patch
+ * with nothing in it, or nothing the record does not already say (patchToSend
+ * in src/lib/act/record-write.ts), because writing a record back unchanged
+ * still bumps its `edited`. The union is kept anyway, because "the deal is
+ * closed" is a different answer from "the deal is open and needs nothing",
+ * and the drain reports the first.
  */
 export type RevisionUpdate =
   | { kind: "patch"; patch: OpportunityPatch; stage: StageMove }
@@ -472,8 +500,8 @@ export type RevisionUpdate =
  * A later revision's effect on the deal's existing opportunity.
  *
  * AN OPPORTUNITY THAT IS NOT OPEN IS LEFT ENTIRELY ALONE: no stage, no
- * probability, no name -- and no product line either, which is what keeps its
- * total (productLineWrite). Won, Lost or Inactive, it is the record of
+ * probability -- and no product line either, which is what keeps its total
+ * (productLineWrite). Won, Lost or Inactive, it is the record of
  * how the deal ended and at what figure, and silently rewriting a closed
  * record in somebody else's CRM is the worse harm. The
  * History is the journal: it still records that a new revision went out and
@@ -491,6 +519,15 @@ export type RevisionUpdate =
  * nullable, on purpose: "never backwards" cannot be honoured without knowing
  * where it is, and a null here would mean "set it as if new", which is
  * exactly a backwards move when somebody has advanced the deal.
+ *
+ * STAGE START DATE. Swagger's Opportunity has `stageStartDate`, "the date the
+ * opportunity stage started", and does not mark it read-only. It is sent when,
+ * and only when, the patch moves the stage, set to the time of the event that
+ * moved it: this revision's finalizedAt here, the acceptance's time in
+ * wonOpportunityBody, the first revision's finalizedAt beside `openDate` on
+ * create. Every one of those is a frozen input, so a repeated step sends the
+ * same body. When the stage stays, or sits in another process, the date is
+ * left as read: the stage it describes has not changed.
  */
 export function revisedOpportunityBody(
   quote: QuoteForAct,
@@ -504,10 +541,14 @@ export function revisedOpportunityBody(
   return {
     kind: "patch",
     stage,
-    patch: {
-      name: opportunityName(quote),
-      ...(stage === "move" ? { stage: stageBody(sent), probability: sent.probability } : {}),
-    },
+    patch:
+      stage === "move"
+        ? {
+            stage: stageBody(sent),
+            probability: sent.probability,
+            stageStartDate: quote.finalizedAt.toISOString(),
+          }
+        : {},
   };
 }
 
@@ -529,8 +570,10 @@ export type WonUpdate =
 /**
  * Closing the opportunity as won, when the quote is accepted.
  *
- * The status and close date always; the won stage only when `stageMove`
- * allows it. `current` is required for the same reason as in
+ * The status and close date always; the won stage, with its probability and
+ * a stageStartDate of `acceptedAt` (STAGE START DATE on
+ * revisedOpportunityBody), only when `stageMove` allows it. `current` is
+ * required for the same reason as in
  * `revisedOpportunityBody`: an opportunity being closed already exists, and
  * what it says now decides what is sent.
  *
@@ -592,7 +635,9 @@ export function wonOpportunityBody(
     patch: {
       status: OPPORTUNITY_STATUS.won,
       actualCloseDate: acceptedAt.toISOString(),
-      ...(stage === "move" ? { stage: stageBody(won), probability: won.probability } : {}),
+      ...(stage === "move"
+        ? { stage: stageBody(won), probability: won.probability, stageStartDate: acceptedAt.toISOString() }
+        : {}),
     },
   };
 }
@@ -618,9 +663,13 @@ export function lostOpportunityBody(reason: string, closedAt: Date): Opportunity
  * the labels in brackets are ACT!'s, from the `TBL_PRODUCTSERVICE` entries of
  * RAW/ACT/meta/fields_all.json, which mark none of these read-only.
  *
- *   name           ("Name") the revision label and the amount with its
- *                  currency code. The product has no currency field, so this
- *                  is where the line says what its number means.
+ *   name           ("Name", Character 256) the revision label and the amount
+ *                  with its currency code. The product has no currency field,
+ *                  so this is where the line says what its number means.
+ *   itemNumber     ("Item #", Character 64) the quote number, which is how the
+ *                  drain finds the deal's line again before every create
+ *                  (productLineLookup). Sent on every write, so a line whose
+ *                  item number was edited by hand gets it back.
  *   quantity       ("Quantity") always 1: one line for the whole deal.
  *   price          ("Price") the revision's total.
  *   discountPrice  ("Adjusted Price") the same: no discount.
@@ -639,6 +688,7 @@ export function lostOpportunityBody(reason: string, closedAt: Date): Opportunity
  */
 export type SummaryProductPatch = {
   name: string;
+  itemNumber: string;
   quantity: 1;
   price: number;
   discountPrice: number;
@@ -670,6 +720,7 @@ export function summaryProductPatch(quote: QuoteForAct): SummaryProductPatch {
   const label = revisionLabel(quote.number, quote.revision) ?? quote.number;
   return {
     name: `${label} — ${moneyWithCode(quote.total, quote.currency)}`,
+    itemNumber: quote.number,
     quantity: 1,
     price: quote.total,
     discountPrice: quote.total,
@@ -680,6 +731,79 @@ export function summaryProductPatch(quote: QuoteForAct): SummaryProductPatch {
 /** The deal's product line as first created: summaryProductPatch, and no discount. */
 export function summaryProductBody(quote: QuoteForAct): SummaryProductBody {
   return { ...summaryProductPatch(quote), discount: 0 };
+}
+
+/**
+ * What the drain does before creating a record PathQuote may already have
+ * made: what its lookup found.
+ *
+ * - `create`: nothing matches, so nothing was made. Create it.
+ * - `adopt`: exactly one record matches. It is the one an earlier attempt
+ *   created and never stored -- the answer lost, or the process gone between
+ *   ACT!'s answer and the database write. Store `id` as if the create had
+ *   answered with it, and carry on from there (for the line, PATCH it to this
+ *   revision; for the opportunity, the row's update-opportunity is a fresh
+ *   decision on it).
+ * - `block`: more than one matches. PathQuote never deletes in ACT!, and has
+ *   no way to tell which is its own, so a person has to; `count` is how many,
+ *   for the blocked reason (src/lib/act/outbox-plan.ts).
+ */
+export type CreateLookup =
+  | { kind: "create" }
+  | { kind: "adopt"; id: string }
+  | { kind: "block"; count: number };
+
+function lookup(matches: readonly { id?: unknown }[]): CreateLookup {
+  if (matches.length === 0) return { kind: "create" };
+  const [only] = matches;
+  if (matches.length === 1 && typeof only.id === "string" && only.id !== "") {
+    return { kind: "adopt", id: only.id };
+  }
+  // One match with no id to adopt it by cannot be created around either.
+  return { kind: "block", count: matches.length };
+}
+
+/**
+ * The deal's line among the opportunity's products, by `itemNumber` -- the
+ * quote number, exactly (summaryProductPatch) -- read with
+ * `GET /api/opportunities/{opportunityId}/products` (ActClient.listProductLines).
+ *
+ * LOOKED UP BEFORE EVERY CREATE, not only after a create that failed without
+ * an answer: a drain that dies between ACT!'s answer and the database write
+ * raises no error at all, and the next attempt would create the line again.
+ * A second line is the worst failure available here -- it silently doubles the
+ * deal's amount, and nothing in ACT! looks wrong. Exact, case for case: the
+ * item number is PathQuote's own key, written by PathQuote. A line somebody
+ * added by hand with another item number, or none, is not ours and is left
+ * alone.
+ */
+export function productLineLookup(
+  lines: readonly { id?: unknown; itemNumber?: unknown }[],
+  quote: Pick<QuoteForAct, "number">,
+): CreateLookup {
+  return lookup(lines.filter((line) => line.itemNumber === quote.number));
+}
+
+/**
+ * The deal's opportunity among the contact's, by `name` -- opportunityName,
+ * exactly -- read with `GET /api/contacts/{contactId}/associated-opportunities`
+ * (ActClient.contactOpportunities). Looked up before every create, for the
+ * line's reason; possible because the name is fixed on create and never
+ * changed by PathQuote.
+ *
+ * What it cannot see: an opportunity created for this quote and then renamed
+ * by hand in ACT!, or one created under a different contact -- the quote's
+ * contact changed (unfinalise, choose another, finalise) between the lost
+ * create and the next attempt. Both need the earlier create to have been lost
+ * as well, and both end as a second opportunity for the deal, not a doubled
+ * amount: the line is created on whichever opportunity the Document stores.
+ */
+export function opportunityLookup(
+  opportunities: readonly { id?: unknown; name?: unknown }[],
+  quote: Pick<QuoteForAct, "number" | "currency">,
+): CreateLookup {
+  const name = opportunityName(quote);
+  return lookup(opportunities.filter((opportunity) => opportunity.name === name));
 }
 
 /** A body for `PATCH /api/contacts/{id}`: the one field promotion changes. */

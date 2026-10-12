@@ -6,10 +6,14 @@ import {
   contactPromotion,
   historyBody,
   lostOpportunityBody,
+  OPPORTUNITY_NAME_MAX,
   moneyWithCode,
   newContactBody,
   newOpportunityBody,
   opportunityIsOpen,
+  opportunityLookup,
+  opportunityName,
+  productLineLookup,
   productLineWrite,
   revisedOpportunityBody,
   summaryProductBody,
@@ -26,6 +30,8 @@ import { sentStage, wonStage } from "../src/lib/act/opportunity-stages";
 import { companyKey } from "../src/lib/act/company-key";
 import { mapContact } from "../src/lib/act/map";
 import { ACTIVE_STATUSES, type ActContact } from "../src/lib/act/types";
+import { formatDocNumber } from "../src/lib/numbering";
+import { REGIONS } from "../prisma/seed-lib";
 
 const SALES_CYCLE = "2380e83d-cef4-4b6d-ad15-dc9a558431ab";
 const US_PROCESS = "26ab3a1e-ff20-406d-a0b4-3b351955da45";
@@ -101,18 +107,23 @@ describe("historyBody", () => {
 });
 
 describe("newOpportunityBody", () => {
-  it("opens an opportunity at the region's sent stage, named with its currency", () => {
+  it("opens an opportunity at the region's sent stage, named with the quote number and its currency", () => {
     const body = newOpportunityBody(quote(), parties());
-    expect(body.name).toContain("Q-AU-2026-014");
-    expect(body.name).toContain("AUD");
-    expect(body.name).toContain("45,000.00");
-    expect(body.name).toBe("Q-AU-2026-014 — AUD 45,000.00");
+    expect(body.name).toBe("Q-AU-2026-014 AUD");
+    // No amount in the name: it is the product line's, and 32 characters is too few.
+    expect(body.name).not.toContain("45,000");
     expect(body.stage).toMatchObject({ id: sentStage("AU")!.id, process: { id: SALES_CYCLE } });
     expect(body.probability).toBe(sentStage("AU")!.probability);
     expect(body.status).toBe(OPPORTUNITY_STATUS.open);
     expect(body.openDate).toBe("2026-10-12T04:30:00.000Z");
     expect(body.contacts).toEqual([{ id: CONTACT }]);
     expect(body.recordManagerID).toBe(AUTHOR);
+  });
+
+  it("starts the stage when the opportunity opens: stageStartDate is the revision's finalizedAt, beside openDate", () => {
+    const body = newOpportunityBody(quote(), parties());
+    expect(body.stageStartDate).toBe("2026-10-12T04:30:00.000Z");
+    expect(body.stageStartDate).toBe(body.openDate);
   });
 
   it("sends no amount: ACT! computes the opportunity's totals from its products", () => {
@@ -127,7 +138,7 @@ describe("newOpportunityBody", () => {
 
   it("puts a US quote on the US process with its own currency", () => {
     const body = newOpportunityBody(quote({ number: "Q-US-2026-003", regionCode: "US", currency: "USD", total: 12345.6 }), parties());
-    expect(body.name).toBe("Q-US-2026-003 — USD 12,345.60");
+    expect(body.name).toBe("Q-US-2026-003 USD");
     expect(body.stage).toMatchObject({ id: sentStage("US")!.id, process: { id: US_PROCESS } });
   });
 
@@ -160,30 +171,43 @@ describe("revisedOpportunityBody", () => {
     return update;
   }
 
-  it("renames and re-totals an open deal, and moves the stage forward when it is behind", () => {
-    const { patch, stage } = patchOf(revisedOpportunityBody(quote({ total: 47500 }), open(3)));
+  it("moves an open deal's stage forward when it is behind, starting the stage at the revision's finalise", () => {
+    const finalised = new Date("2026-10-20T09:15:00.000Z");
+    const { patch, stage } = patchOf(revisedOpportunityBody(quote({ total: 47500, finalizedAt: finalised }), open(3)));
     expect(stage).toBe("move");
-    expect(patch.name).toBe("Q-AU-2026-014 — AUD 47,500.00");
-    // The new total reaches the amount through the product line, not here.
+    expect(patch).toEqual({
+      stage: expect.objectContaining({ id: sentStage("AU")!.id }),
+      probability: 40,
+      stageStartDate: "2026-10-20T09:15:00.000Z",
+    });
+  });
+
+  it("never renames the opportunity, and never sends an amount: the name is set on create, the total is the line's", () => {
+    const { patch } = patchOf(revisedOpportunityBody(quote({ total: 47500 }), open(3)));
+    expect(patch).not.toHaveProperty("name");
     expect(patch).not.toHaveProperty("productTotal");
     expect(patch).not.toHaveProperty("weightedTotal");
     expect(patch).not.toHaveProperty("grossMargin");
-    expect(patch.stage).toMatchObject({ id: sentStage("AU")!.id });
-    expect(patch.probability).toBe(40);
   });
 
-  it("leaves the stage and probability alone when the deal is already further on", () => {
-    const { patch, stage } = patchOf(revisedOpportunityBody(quote(), open(5)));
+  it("sends nothing at all when the deal is already further on: no stage, no probability, no start date", () => {
+    const { patch, stage } = patchOf(revisedOpportunityBody(quote({ total: 47500 }), open(5)));
     expect(stage).toBe("stay");
-    expect(patch).not.toHaveProperty("stage");
-    expect(patch).not.toHaveProperty("probability");
-    expect(patch.name).toBe("Q-AU-2026-014 — AUD 45,000.00");
+    expect(patch).toEqual({});
+  });
+
+  it("sends nothing when the deal is already at the sent stage: a repeat does not restart the stage", () => {
+    expect(patchOf(revisedOpportunityBody(quote(), open(4))).patch).toEqual({});
   });
 
   it("leaves the stage alone when somebody moved the opportunity to another process, and says so", () => {
     const { patch, stage } = patchOf(revisedOpportunityBody(quote(), open(1, US_PROCESS)));
     expect(stage).toBe("different-process");
-    expect(patch).not.toHaveProperty("stage");
+    expect(patch).toEqual({});
+  });
+
+  it("sends the same body every time for the same revision: the start date is the revision's, not the clock's", () => {
+    expect(revisedOpportunityBody(quote(), open(3))).toEqual(revisedOpportunityBody(quote(), open(3)));
   });
 
   it("never sends a status to an open deal", () => {
@@ -224,6 +248,16 @@ describe("wonOpportunityBody", () => {
     expect(patch.stage).toMatchObject({ id: wonStage("AU")!.id });
     expect(patch.probability).toBe(100);
     expect(patch.actualCloseDate).toBe("2026-11-02T01:00:00.000Z");
+    // The won stage started when the quote was accepted.
+    expect(patch.stageStartDate).toBe("2026-11-02T01:00:00.000Z");
+  });
+
+  it("sends no stage start date when the stage does not move", () => {
+    // Already at the won stage, Open: the status changes, the stage does not.
+    const { patch, stage } = patchOf(wonOpportunityBody("AU", open(7), FINALISED));
+    expect(stage).toBe("stay");
+    expect(patch).not.toHaveProperty("stageStartDate");
+    expect(patch).not.toHaveProperty("stage");
   });
 
   it("still closes as won, without a stage, when the opportunity sits in another process, and says so", () => {
@@ -231,6 +265,7 @@ describe("wonOpportunityBody", () => {
     expect(stage).toBe("different-process");
     expect(patch.status).toBe(OPPORTUNITY_STATUS.won);
     expect(patch).not.toHaveProperty("stage");
+    expect(patch).not.toHaveProperty("stageStartDate");
   });
 
   it("has nothing to do when the opportunity is already Won", () => {
@@ -256,6 +291,7 @@ describe("wonOpportunityBody", () => {
       actualCloseDate: "2026-11-02T01:00:00.000Z",
       stage: expect.objectContaining({ id: wonStage("AU")!.id }),
       probability: 100,
+      stageStartDate: "2026-11-02T01:00:00.000Z",
     });
     // A reason typed for the loss is somebody's note; the patch leaves it.
     expect(patch).not.toHaveProperty("reason");
@@ -271,6 +307,7 @@ describe("wonOpportunityBody", () => {
     expect(patch.status).toBe(OPPORTUNITY_STATUS.won);
     expect(patch).not.toHaveProperty("stage");
     expect(patch).not.toHaveProperty("probability");
+    expect(patch).not.toHaveProperty("stageStartDate");
   });
 
   it("treats a status it has never seen as not Won, and closes it as won", () => {
@@ -326,6 +363,7 @@ describe("summaryProductBody and summaryProductPatch", () => {
   it("prices one line, quantity 1, at the revision's total, named with the revision and the currency", () => {
     expect(summaryProductPatch(quote({ revision: 2, total: 47500 }))).toEqual({
       name: "Q-AU-2026-014-R2 — AUD 47,500.00",
+      itemNumber: "Q-AU-2026-014",
       quantity: 1,
       price: 47500,
       discountPrice: 47500,
@@ -347,6 +385,13 @@ describe("summaryProductBody and summaryProductPatch", () => {
     const q = quote({ total: 47500 });
     expect(summaryProductBody(q)).toEqual({ ...summaryProductPatch(q), discount: 0 });
     expect(summaryProductPatch(q)).not.toHaveProperty("discount");
+  });
+
+  it("carries the bare quote number as the item number on every revision, the key the line is found by", () => {
+    for (const revision of [0, 1, 12]) {
+      expect(summaryProductPatch(quote({ revision })).itemNumber).toBe("Q-AU-2026-014");
+      expect(summaryProductBody(quote({ revision })).itemNumber).toBe("Q-AU-2026-014");
+    }
   });
 
   it("is free-form: no catalogue product, no cost, no id of its own", () => {
@@ -571,5 +616,111 @@ describe("moneyWithCode", () => {
     // "$" is both AUD and USD; ACT! sums these with no currency of its own.
     expect(moneyWithCode(1000, "USD")).toBe("USD 1,000.00");
     expect(moneyWithCode(1000, "AUD")).not.toContain("$");
+  });
+});
+
+describe("what fits in ACT!'s fields", () => {
+  // The longest realistic quote number: a five-digit counter (formatDocNumber
+  // pads to three and never truncates), a four-digit year, and every region
+  // in the seed, each with its own currency.
+  const longest = REGIONS.map((region) => ({
+    number: formatDocNumber(region.code, 2099, 99999),
+    currency: region.currency,
+    regionCode: region.code,
+  }));
+
+  it("names every opportunity within its 32 characters, a five-digit counter in any region included", () => {
+    expect(OPPORTUNITY_NAME_MAX).toBe(32);
+    expect(longest.length).toBeGreaterThanOrEqual(3);
+    for (const q of longest) {
+      const name = opportunityName(q);
+      expect(name).toBe(`${q.number} ${q.currency}`);
+      expect(name.length).toBeLessThanOrEqual(OPPORTUNITY_NAME_MAX);
+    }
+    expect(opportunityName({ number: "Q-AU-2099-99999", currency: "AUD" })).toBe("Q-AU-2099-99999 AUD");
+  });
+
+  it("names the product line within its 256 characters at the largest total a quote can hold", () => {
+    // QuoteRevision.total is Decimal(12,2): at most 9,999,999,999.99.
+    for (const q of longest) {
+      const line = summaryProductPatch(quote({ ...q, revision: 99, total: 9_999_999_999.99 }));
+      expect(line.name).toBe(`${q.number}-R99 — ${q.currency} 9,999,999,999.99`);
+      expect(line.name.length).toBeLessThanOrEqual(256);
+      // "Item #" is Character 64.
+      expect(line.itemNumber.length).toBeLessThanOrEqual(64);
+    }
+  });
+});
+
+describe("productLineLookup", () => {
+  const LINE = "c0000000-0000-0000-0000-0000000000d0";
+  const OTHER = "c0000000-0000-0000-0000-0000000000d1";
+
+  it("creates when the opportunity has no line with this quote's number", () => {
+    expect(productLineLookup([], quote())).toEqual({ kind: "create" });
+    // Lines somebody added by hand, with another item number or none, are not ours.
+    expect(
+      productLineLookup([{ id: OTHER, itemNumber: "PF-1000" }, { id: LINE, itemNumber: null }, { id: LINE }], quote()),
+    ).toEqual({ kind: "create" });
+  });
+
+  it("adopts the one line with this quote's number: the create that went through and was never stored", () => {
+    const lines = [
+      { id: OTHER, itemNumber: "PF-1000" },
+      { id: LINE, itemNumber: "Q-AU-2026-014" },
+    ];
+    expect(productLineLookup(lines, quote())).toEqual({ kind: "adopt", id: LINE });
+  });
+
+  it("matches the number exactly: another quote's number, a prefix, another case or stray spaces is not this line", () => {
+    for (const itemNumber of ["Q-AU-2026-0140", "Q-AU-2026-01", "q-au-2026-014", " Q-AU-2026-014", "Q-AU-2026-014-R1"]) {
+      expect(productLineLookup([{ id: LINE, itemNumber }], quote())).toEqual({ kind: "create" });
+    }
+  });
+
+  it("blocks on two lines with this quote's number, rather than pick one or add a third", () => {
+    const lines = [
+      { id: LINE, itemNumber: "Q-AU-2026-014" },
+      { id: OTHER, itemNumber: "Q-AU-2026-014" },
+    ];
+    expect(productLineLookup(lines, quote())).toEqual({ kind: "block", count: 2 });
+  });
+
+  it("blocks on a match it cannot adopt for want of an id", () => {
+    expect(productLineLookup([{ itemNumber: "Q-AU-2026-014" }], quote())).toEqual({ kind: "block", count: 1 });
+  });
+});
+
+describe("opportunityLookup", () => {
+  const OTHER = "c0000000-0000-0000-0000-0000000000a1";
+
+  it("creates when none of the contact's opportunities has this deal's name", () => {
+    expect(opportunityLookup([], quote())).toEqual({ kind: "create" });
+    expect(
+      opportunityLookup([{ id: OTHER, name: "Q-AU-2026-013 AUD" }, { id: OTHER, name: "Cutter upgrade" }], quote()),
+    ).toEqual({ kind: "create" });
+  });
+
+  it("adopts the one opportunity with exactly this deal's name, whatever its status", () => {
+    const opportunities = [
+      { id: OTHER, name: "Q-AU-2026-013 AUD", status: "Open" },
+      { id: OPPORTUNITY, name: "Q-AU-2026-014 AUD", status: "Lost" },
+    ];
+    expect(opportunityLookup(opportunities, quote())).toEqual({ kind: "adopt", id: OPPORTUNITY });
+  });
+
+  it("does not take an opportunity in another currency, or under the old name with an amount, for this one", () => {
+    expect(opportunityLookup([{ id: OTHER, name: "Q-AU-2026-014 USD" }], quote())).toEqual({ kind: "create" });
+    expect(opportunityLookup([{ id: OTHER, name: "Q-AU-2026-014 — AUD 45,000.00" }], quote())).toEqual({
+      kind: "create",
+    });
+  });
+
+  it("blocks on two opportunities with this deal's name", () => {
+    const opportunities = [
+      { id: OPPORTUNITY, name: "Q-AU-2026-014 AUD" },
+      { id: OTHER, name: "Q-AU-2026-014 AUD" },
+    ];
+    expect(opportunityLookup(opportunities, quote())).toEqual({ kind: "block", count: 2 });
   });
 });

@@ -8,10 +8,16 @@ import {
   neverConnected,
   patchToSend,
   sameRecordId,
+  sameValue,
   writableOpportunity,
   writeAnswer,
 } from "../src/lib/act/record-write";
-import { lostOpportunityBody, revisedOpportunityBody, wonOpportunityBody } from "../src/lib/act/write-payloads";
+import {
+  lostOpportunityBody,
+  revisedOpportunityBody,
+  summaryProductPatch,
+  wonOpportunityBody,
+} from "../src/lib/act/write-payloads";
 
 const ID = "0b1e2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
 
@@ -268,7 +274,7 @@ describe("mergeForWrite", () => {
   it("lays the payload builders' real patches over an opportunity without losing the loss reason", () => {
     const lost = {
       id: ID,
-      name: "Q-AU-2026-014 — AUD 45,000.00",
+      name: "Q-AU-2026-014 AUD",
       status: "Lost",
       reason: "Went with a competitor",
       stage: { id: "s3", number: 3, process: { id: "2380e83d-cef4-4b6d-ad15-dc9a558431ab" } },
@@ -293,7 +299,7 @@ describe("mergeForWrite", () => {
 function opportunity(): Record<string, unknown> {
   return {
     id: ID,
-    name: "Q-AU-2026-014 — AUD 45,000.00",
+    name: "Q-AU-2026-014 AUD",
     status: "Open",
     stage: { id: "s3", name: "Quoted", number: 3, probability: 50, process: { id: "p1" } },
     probability: 50,
@@ -368,25 +374,113 @@ describe("writableOpportunity", () => {
 });
 
 describe("patchToSend", () => {
+  const REVISION = {
+    number: "Q-AU-2026-014",
+    revision: 1,
+    regionCode: "AU",
+    total: 47500,
+    currency: "AUD",
+    validityDays: 30,
+    finalizedAt: new Date("2026-10-12T00:00:00Z"),
+  };
+
   it("is null for no decision, and for a patch with nothing in it", () => {
-    expect(patchToSend(null)).toBeNull();
-    expect(patchToSend({})).toBeNull();
-    expect(patchToSend({ name: undefined, stage: undefined })).toBeNull();
+    expect(patchToSend(null, contact())).toBeNull();
+    expect(patchToSend({}, contact())).toBeNull();
+    expect(patchToSend({ name: undefined, stage: undefined }, contact())).toBeNull();
   });
 
-  it("is the patch itself when anything in it is set, a null that clears a field included", () => {
+  it("is the patch itself when anything in it changes the record, a null that clears a field included", () => {
     const patch = { idStatus: "Customer" };
-    expect(patchToSend(patch)).toBe(patch);
+    expect(patchToSend(patch, contact())).toBe(patch);
     const clearing = { reason: null, name: undefined };
-    expect(patchToSend(clearing)).toBe(clearing);
+    expect(patchToSend(clearing, { id: ID, reason: "Price" })).toBe(clearing);
+  });
+
+  it("is null for a patch the record already shows, field for field", () => {
+    expect(patchToSend({ idStatus: "Prospect", firstName: "Ann" }, contact())).toBeNull();
+    // An id in the patch is never a change: the write is always to the record's own id.
+    expect(patchToSend({ id: ID, idStatus: "Prospect" }, contact())).toBeNull();
+  });
+
+  it("sends the whole patch when one field of it differs, even if the rest is as read", () => {
+    const patch = { idStatus: "Prospect", firstName: "Anne" };
+    expect(patchToSend(patch, contact())).toBe(patch);
+  });
+
+  it("reads customFields key by key, as mergeForWrite lays them on", () => {
+    expect(patchToSend({ customFields: { rep: "John Hollo" } }, contact())).toBeNull();
+    expect(patchToSend({ customFields: { rep: "John Hollo", user6: undefined } }, contact())).toBeNull();
+    const changed = { customFields: { rep: "Jane Roe" } };
+    expect(patchToSend(changed, contact())).toBe(changed);
+    const added = { customFields: { owner: "Vadym" } };
+    expect(patchToSend(added, contact())).toBe(added);
+    const onBare = { customFields: { rep: "John Hollo" } };
+    expect(patchToSend(onBare, { ...contact(), customFields: null })).toBe(onBare);
   });
 
   it("sends nothing for a closed deal's revision: the decision the drain hands in is null", () => {
-    const update = revisedOpportunityBody(
-      { number: "Q-AU-2026-014", revision: 1, regionCode: "AU", total: 47500, currency: "AUD", validityDays: 30, finalizedAt: new Date("2026-10-12T00:00:00Z") },
-      { processId: "2380e83d-cef4-4b6d-ad15-dc9a558431ab", number: 3, status: "Lost" },
-    );
-    expect(patchToSend(update.kind === "patch" ? update.patch : null)).toBeNull();
+    const update = revisedOpportunityBody(REVISION, {
+      processId: "2380e83d-cef4-4b6d-ad15-dc9a558431ab",
+      number: 3,
+      status: "Lost",
+    });
+    expect(patchToSend(update.kind === "patch" ? update.patch : null, opportunity())).toBeNull();
+  });
+
+  it("sends nothing for an open deal's revision whose stage stays: the name is no longer renamed", () => {
+    const update = revisedOpportunityBody(REVISION, {
+      processId: "2380e83d-cef4-4b6d-ad15-dc9a558431ab",
+      number: 5,
+      status: "Open",
+    });
+    if (update.kind !== "patch") throw new Error("expected a patch");
+    expect(update.patch).toEqual({});
+    expect(patchToSend(update.patch, opportunity())).toBeNull();
+  });
+
+  it("sends nothing to a line that already shows the revision -- one adopted after a lost create -- and the patch to one that does not", () => {
+    const patch = summaryProductPatch(REVISION);
+    const line = { id: ID, opportunityID: "o1", type: null, cost: 0, discount: 0, edited: "2026-10-12T00:00:00Z", ...patch };
+    expect(patchToSend(patch, line)).toBeNull();
+    // ACT! hands a whole number back without its ".0"; JSON makes them one number.
+    expect(patchToSend(patch, JSON.parse(JSON.stringify({ ...line, price: 47500.0 })))).toBeNull();
+    const older = { ...line, ...summaryProductPatch({ ...REVISION, revision: 0, total: 45000 }) };
+    expect(patchToSend(patch, older)).toBe(patch);
+  });
+
+  it("sends a stage that is the same id but read back with more fields than the patch carries: not provably the same", () => {
+    const stage = { id: "s4", name: "Proposal", probability: 40, number: 4, process: { id: "p1" } };
+    const read = { id: ID, stage: { ...stage, description: "Quote sent", process: { id: "p1", name: "Sales Cycle" } } };
+    expect(patchToSend({ stage }, read)).toEqual({ stage });
+    expect(patchToSend({ stage }, { id: ID, stage })).toBeNull();
+  });
+});
+
+describe("sameValue", () => {
+  it("compares primitives by value, and nested objects and arrays all the way down", () => {
+    expect(sameValue(1, 1)).toBe(true);
+    expect(sameValue("a", "a")).toBe(true);
+    expect(sameValue(null, null)).toBe(true);
+    expect(sameValue({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] })).toBe(true);
+    expect(sameValue({ a: [1, { b: 2 }] }, { a: [1, { b: 3 }] })).toBe(false);
+  });
+
+  it("does not take null, undefined, 0 or an empty string for one another", () => {
+    expect(sameValue(null, undefined)).toBe(false);
+    expect(sameValue(0, "0")).toBe(false);
+    expect(sameValue("", null)).toBe(false);
+    expect(sameValue(0, false)).toBe(false);
+  });
+
+  it("treats a key holding undefined as absent, as the JSON body does", () => {
+    expect(sameValue({ a: 1, b: undefined }, { a: 1 })).toBe(true);
+    expect(sameValue({ a: 1 }, { a: 1, b: null })).toBe(false);
+  });
+
+  it("does not take an array for an object, or arrays of different lengths for one another", () => {
+    expect(sameValue([1], { 0: 1 })).toBe(false);
+    expect(sameValue([1, 2], [1])).toBe(false);
   });
 });
 

@@ -63,6 +63,15 @@ export type ActClientConfig = {
   password: string;
 };
 
+/**
+ * How many records a lookup before a create asks for (listProductLines,
+ * contactOpportunities). One deal's lines and one contact's opportunities are
+ * a handful; a full page means the answer may have been cut off, and is
+ * refused rather than read as complete -- a match on a page not fetched is
+ * exactly the record the lookup exists to find.
+ */
+const LOOKUP_TOP = 1000;
+
 /** Tokens last 65 minutes; renew early rather than racing the boundary. */
 const TOKEN_TTL_MS = 55 * 60 * 1000;
 
@@ -558,11 +567,11 @@ export class ActClient {
    * the PATCH's arrival: an edit made in ACT! inside it is overwritten with
    * what was read. The two scripts below ran with the same window.
    *
-   * NOTHING MEANS NO REQUEST. When the decision is null, or a patch with
-   * nothing in it (patchToSend), no PATCH is sent: writing a record back
-   * unchanged still moves its `edited`, and on a closed deal is a rewrite of
-   * a record PathQuote decided to leave alone. The result then says
-   * `written: false` and carries the record as read.
+   * NOTHING MEANS NO REQUEST. When the decision is null, or a patch that
+   * changes nothing on the record as read (patchToSend), no PATCH is sent:
+   * writing a record back unchanged still moves its `edited`, and on a closed
+   * deal is a rewrite of a record PathQuote decided to leave alone. The
+   * result then says `written: false` and carries the record as read.
    *
    * READ-MODIFY-WRITE, ON PURPOSE. Swagger says PATCH takes a partial record
    * ("Update (partially) an already existing ..."), and a partial PATCH may
@@ -599,7 +608,7 @@ export class ActClient {
     writable: (merged: ActRecordJson & { id: string }) => ActRecordJson = (merged) => merged,
   ): Promise<Updated<T>> {
     const current = await this.getRecord(path, id);
-    const patch = patchToSend(decide(current as unknown as T));
+    const patch = patchToSend(decide(current as unknown as T), current);
     if (!patch) return { written: false, record: current as unknown as T };
     await this.request(path, {
       method: "PATCH",
@@ -620,7 +629,12 @@ export class ActClient {
     )) as unknown as ActHistoryRecord;
   }
 
-  /** Create one opportunity: `POST /api/opportunities` (`Opportunities_PostOpportunity`). */
+  /**
+   * Create one opportunity: `POST /api/opportunities`
+   * (`Opportunities_PostOpportunity`). The drain looks for it first
+   * (contactOpportunities, opportunityLookup in src/lib/act/write-payloads.ts),
+   * every time.
+   */
   async createOpportunity(body: NewOpportunityBody): Promise<ActOpportunity> {
     return (await this.create("/api/opportunities", body, (id) =>
       opportunityPath(id),
@@ -649,8 +663,10 @@ export class ActClient {
   /**
    * Create the deal's product line: `POST /api/opportunities/{opportunityId}/products`
    * (`Opportunities_PostOpportunityProductAndOpportunityId`). Sent once, like
-   * every create; an answer of only the new line's id is read back from
-   * `/api/opportunities/{opportunityId}/products/{productId}`.
+   * every create, and only after the drain has looked for the line and found
+   * none (listProductLines, productLineLookup in
+   * src/lib/act/write-payloads.ts); an answer of only the new line's id is
+   * read back from `/api/opportunities/{opportunityId}/products/{productId}`.
    */
   async createProductLine(opportunityId: string, body: SummaryProductBody): Promise<ActProductLine> {
     return (await this.create(productLinesPath(opportunityId), body, (id) =>
@@ -663,7 +679,10 @@ export class ActClient {
    * `PATCH /api/opportunities/{opportunityId}/products/{productId}`
    * (`Opportunities_PatchOpportunityProductAndOpportunityIdAndProductId`) the
    * whole line back. See `update`. Never a DELETE and a new line: see THE DEAL
-   * AMOUNT IS ONE PRODUCT LINE in src/lib/act/write-payloads.ts.
+   * AMOUNT IS ONE PRODUCT LINE in src/lib/act/write-payloads.ts. A line that
+   * already shows what the patch says -- one adopted after a create whose
+   * answer was lost -- is not written again (`written: false`), and shows the
+   * revision all the same.
    */
   async updateProductLine(
     opportunityId: string,
@@ -671,6 +690,56 @@ export class ActClient {
     decide: (current: ActProductLine) => SummaryProductPatch | null,
   ): Promise<Updated<ActProductLine>> {
     return this.update(productLinePath(opportunityId, productId), productId, decide);
+  }
+
+  /**
+   * Every product line of one opportunity:
+   * `GET /api/opportunities/{opportunityId}/products`
+   * (`Opportunities_GetOpportunityProductsAndOpportunityId`), whose 200 is
+   * swagger's array of act.web.api.models.Opportunities.OpportunityProduct --
+   * `itemNumber` among their fields. For productLineLookup in
+   * src/lib/act/write-payloads.ts, before every line create. See `lookupRows`.
+   */
+  async listProductLines(opportunityId: string): Promise<ActProductLine[]> {
+    return this.lookupRows<ActProductLine>(productLinesPath(opportunityId));
+  }
+
+  /**
+   * Every opportunity associated with one contact:
+   * `GET /api/contacts/{contactId}/associated-opportunities`
+   * (`Opportunities_GetAssociatedOpportunitiesFromContactAndContactId`), whose
+   * 200 is swagger's array of act.web.api.models.Opportunities.Opportunity --
+   * `name` among their fields. For opportunityLookup, before every
+   * opportunity create. See `lookupRows`.
+   */
+  async contactOpportunities(contactId: string): Promise<ActOpportunity[]> {
+    return this.lookupRows<ActOpportunity>(`${contactPath(contactId)}/associated-opportunities`);
+  }
+
+  /**
+   * A lookup's rows, all of them or an error.
+   *
+   * `$top` is sent because a collection answer is a page (`Count` is the
+   * page's size, docs/act-integration-reference.md section 3) whose default
+   * size nobody has measured. Swagger describes both endpoints as "matching
+   * an (optional) OData query", the words it uses for /api/contacts, where
+   * `$top` is verified; on these two it has not been tried, and the first
+   * live create will say. A page of LOOKUP_TOP rows is refused as possibly
+   * cut short: a GET answer that does not give what was asked for, so
+   * `failed`, and the drain tries again later rather than creating beside a
+   * match it never saw. Through unwrapRows, like every list here.
+   */
+  private async lookupRows<T>(path: string): Promise<T[]> {
+    const paged = `${path}?${new URLSearchParams({ $top: String(LOOKUP_TOP) })}`;
+    const rows = unwrapRows<T>(await this.get(paged), paged);
+    if (rows.length >= LOOKUP_TOP) {
+      throw new ActApiError(
+        `GET ${paged} returned ${rows.length} rows, a full page, so there may be more -- refusing to decide a create on part of the answer`,
+        200,
+        "",
+      );
+    }
+    return rows;
   }
 
   /**

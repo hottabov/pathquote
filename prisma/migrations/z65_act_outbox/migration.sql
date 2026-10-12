@@ -24,9 +24,12 @@
 --   QuoteRevision.actHistoryId        the revision's History, one per
 --                                     revision
 --   ActOutbox                         the queue itself, with opportunityActId
---                                     for the row's own opportunity step and
+--                                     for the row's own opportunity step,
 --                                     productLineSkippedAt for a line it left
---                                     alone on a closed deal
+--                                     alone on a closed deal, and
+--                                     createInFlight for a create that may
+--                                     have made a record whose id was never
+--                                     stored
 --
 -- Why ACT!'s ids are kept here rather than a PathQuote id stamped into an ACT!
 -- custom field is on the ActOutbox model in schema.prisma: the `PQ ` fields
@@ -95,6 +98,7 @@ CREATE TABLE "ActOutbox" (
     "quoteRevisionId" TEXT NOT NULL,
     "opportunityActId" TEXT,
     "productLineSkippedAt" TIMESTAMP(3),
+    "createInFlight" TEXT,
     "attempts" INTEGER NOT NULL DEFAULT 0,
     "lastError" TEXT,
     "nextAttemptAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -142,7 +146,10 @@ ALTER TABLE "ActOutbox" ADD CONSTRAINT "ActOutbox_quoteRevisionId_fkey" FOREIGN 
 -- re-finalise, or a signature or acceptance -- that finds an unfinished row,
 -- pending or blocked, does not insert: it takes that row over, pointing it at
 -- the revision the enqueue is for, clearing blockedReason, opportunityActId,
--- productLineSkippedAt and lastError, and resetting attempts. That is how "unfinalize, choose a contact,
+-- productLineSkippedAt and lastError, and resetting attempts. It keeps
+-- createInFlight: a record a create of the old revision's may have made is in
+-- ACT! whatever revision the row carries now, and the planner blocks on it,
+-- or the drain looks it up, from that alone. That is how "unfinalize, choose a contact,
 -- finalize again" un-blocks a quote that had no contact. Leaving blocked rows
 -- out of this predicate instead was considered and rejected: a stale blocked
 -- row would sit beside its replacement forever, and anything that later cleared

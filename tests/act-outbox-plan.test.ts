@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
+  CREATE_IN_FLIGHT,
+  UNTRACKED_CONTACT_REASON,
+  UNTRACKED_HISTORY_REASON,
+  duplicateOpportunitiesReason,
+  duplicateProductLinesReason,
   nextStep,
+  untrackedCreateReason,
   type OutboxProgress,
   type OutboxStep,
   type QuoteState,
@@ -21,7 +27,7 @@ const ACT_OPPORTUNITY = "c0000000-0000-0000-0000-0000000000a0";
 const ACT_HISTORY = "c0000000-0000-0000-0000-0000000000b0";
 const ACT_PRODUCT_LINE = "c0000000-0000-0000-0000-0000000000d0";
 
-const nothingDone: OutboxProgress = { opportunityActId: null, productLineSkippedAt: null };
+const nothingDone: OutboxProgress = { opportunityActId: null, productLineSkippedAt: null, createInFlight: null };
 /** This row's opportunity step done, and nothing after it. */
 const opportunityStepDone: OutboxProgress = { ...nothingDone, opportunityActId: ACT_OPPORTUNITY };
 /** The first revision, 0, not yet journaled. */
@@ -693,5 +699,75 @@ describe("a won deal shows the accepted figure (the drain and ACT! together)", (
     const { taken, sim } = drain(enqueue(finalisedAt100k(), 0, { signingStatus: "SIGNED", acceptedAt: ACCEPTED_AT }));
     expect(taken).toContainEqual({ kind: "win-opportunity", line: null });
     expect(sim.deal).toMatchObject({ status: "Won", line: { revision: 0, total: 100000 } });
+  });
+});
+
+describe("nextStep: a create in flight", () => {
+  const inFlight = (record: string, overrides: Partial<OutboxProgress> = {}): OutboxProgress => ({
+    ...nothingDone,
+    createInFlight: record,
+    ...overrides,
+  });
+
+  it("blocks a contact create that may have happened, rather than create the contact again", () => {
+    // The drain died between ACT!'s answer and the store, or the answer was
+    // lost: Contact.actContactId is still null, and create-contact would be
+    // planned again -- a second person in ACT!.
+    const quote = quoteState({ contact: pathQuoteOnlyContact });
+    expect(nextStep(nothingDone, noHistory, quote)).toEqual({ kind: "create-contact" });
+    expect(nextStep(inFlight(CREATE_IN_FLIGHT.contact), noHistory, quote)).toEqual({
+      kind: "blocked",
+      reason: UNTRACKED_CONTACT_REASON,
+    });
+  });
+
+  it("blocks a History create that may have happened, rather than journal the revision twice", () => {
+    const quote = finishedDeal();
+    const lineDone = { ...opportunityStepDone, createInFlight: CREATE_IN_FLIGHT.history };
+    expect(nextStep(lineDone, noHistory, quote)).toEqual({ kind: "blocked", reason: UNTRACKED_HISTORY_REASON });
+  });
+
+  it("blocks before anything else, done included: the row is not finished while a record may be unaccounted for", () => {
+    expect(nextStep(inFlight(CREATE_IN_FLIGHT.contact), journaled, finishedDeal()).kind).toBe("blocked");
+    expect(nextStep(inFlight(CREATE_IN_FLIGHT.history), journaled, finishedDeal({ contact: null })).kind).toBe(
+      "blocked",
+    );
+  });
+
+  it("plans an opportunity or a line create as usual: the drain's lookup before every create resolves it", () => {
+    expect(nextStep(inFlight(CREATE_IN_FLIGHT.opportunity), noHistory, quoteState())).toEqual({
+      kind: "create-opportunity",
+    });
+    const opportunityMade = quoteState({ actOpportunityId: ACT_OPPORTUNITY });
+    expect(
+      nextStep(inFlight(CREATE_IN_FLIGHT.productLine, { opportunityActId: ACT_OPPORTUNITY }), noHistory, opportunityMade),
+    ).toEqual({ kind: "write-product-line", line: "create" });
+  });
+
+  it("blocks on a value it does not know, naming it", () => {
+    const step = nextStep(inFlight("company"), noHistory, quoteState());
+    expect(reasonOf(step)).toContain('"company"');
+    expect(reasonOf(step)).toMatch(/developer/);
+    expect(untrackedCreateReason("company")).toBe(reasonOf(step));
+  });
+
+  it("says what happened and that ACT! must be checked first, in the manager's sentences", () => {
+    for (const reason of [UNTRACKED_CONTACT_REASON, UNTRACKED_HISTORY_REASON]) {
+      expect(reason).toMatch(/never learned whether/);
+      expect(reason).toMatch(/check .*ACT! .*before this is tried again/);
+      expect(reason).toContain("—");
+    }
+    expect(untrackedCreateReason(CREATE_IN_FLIGHT.contact)).toBe(UNTRACKED_CONTACT_REASON);
+    expect(untrackedCreateReason(CREATE_IN_FLIGHT.history)).toBe(UNTRACKED_HISTORY_REASON);
+  });
+
+  it("names the duplicates a lookup found, and what a person does about them", () => {
+    const opportunities = duplicateOpportunitiesReason("Q-AU-2026-014 AUD", 2);
+    expect(opportunities).toContain('2 opportunities named "Q-AU-2026-014 AUD"');
+    expect(opportunities).toMatch(/rename or remove/);
+    const lines = duplicateProductLinesReason("Q-AU-2026-014", 3);
+    expect(lines).toContain("3 product lines numbered Q-AU-2026-014");
+    expect(lines).toMatch(/counts this quote 3 times/);
+    expect(lines).toMatch(/remove the extra ones in ACT!/);
   });
 });
