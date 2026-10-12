@@ -61,18 +61,18 @@ describe("shouldMoveStage", () => {
     expect(shouldMoveStage({ processId: SALES_CYCLE, number: 4 }, sentStage("AU")!)).toBe(false);
   });
 
-  it("compares by number, never by probability", () => {
-    // The legacy process has thirteen stages all at 0%, so probability ties
-    // and cannot order anything. (Held in a variable so the extra
-    // `probability` the comparison must ignore can ride along without an
-    // excess-property error.)
-    const atTwelveZeroPercent = { processId: SALES_CYCLE, number: 12, probability: 0 };
-    expect(shouldMoveStage(atTwelveZeroPercent, { ...sentStage("AU")!, probability: 0 })).toBe(false);
+  it("refuses a backward move even when the target carries the higher probability", () => {
+    // Already at Negotiation (5), but somebody set its probability to 10%.
+    // Proposal (4) is at 40%, so a comparison by probability would move the
+    // deal back; by number it stays. The test below is the same disagreement
+    // the other way round.
+    const laterButLessLikely = { processId: SALES_CYCLE, number: 5, probability: 10 };
+    expect(shouldMoveStage(laterButLessLikely, sentStage("AU")!)).toBe(false);
   });
 
   it("moves forward even when the earlier stage carries the higher probability", () => {
-    // The case where the two orderings disagree, which the tie above cannot
-    // tell apart: a comparison by probability would refuse this move.
+    // Earlier by number, likelier by probability: a comparison by probability
+    // would refuse this move.
     const earlierButLikelier = { processId: SALES_CYCLE, number: 3, probability: 90 };
     expect(shouldMoveStage(earlierButLikelier, sentStage("AU")!)).toBe(true);
   });

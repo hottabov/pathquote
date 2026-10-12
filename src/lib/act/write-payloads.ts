@@ -59,6 +59,7 @@ import {
   processForRegion,
   stageMove,
   type StageDef,
+  type StageMove,
   type StagePosition,
 } from "@/lib/act/opportunity-stages";
 
@@ -76,7 +77,9 @@ export const HISTORY_TYPE_QUOTE = 62;
  * read back from the live API to see these strings on a real record, and a
  * schema can declare an enum the server serialises differently. Confirm
  * against a live `GET /api/opportunities` before the first write. Every status
- * this module sends comes from here, so that check changes one place.
+ * this module sends comes from here, and so does the one it reads back
+ * (`open`, in revisedOpportunityBody), so that check changes one place.
+ * `Inactive` is absent only because nothing here sends it.
  */
 export const OPPORTUNITY_STATUS = {
   open: "Open",
@@ -209,6 +212,17 @@ export type NewOpportunityBody = {
   companies?: ActRef[];
 };
 
+/**
+ * An existing opportunity as the drain reads it back from ACT! before
+ * patching it: where it sits, for "never backwards", and its status, for
+ * "never rewrite a closed deal". All three come off the drain's
+ * `GET /api/opportunities/{id}`: `stage.process.id`, `stage.number`, `status`.
+ */
+export type OpportunityNow = StagePosition & {
+  /** Opportunity.status exactly as ACT! returned it -- not narrowed, because what it says is not ours to assume. */
+  status: string;
+};
+
 /** A body for `PATCH /api/opportunities/{id}`, which takes a partial opportunity. */
 export type OpportunityPatch = {
   name?: string;
@@ -259,7 +273,8 @@ function stageBody(stage: StageDef): StageBody {
  * The opportunity's name: quote number, currency and total.
  *
  * The bare number, not the revision label: the opportunity is the whole deal,
- * and a revision renames it with the new total rather than a new suffix.
+ * and a revision of an open deal renames it with the new total rather than a
+ * new suffix (a closed one is not renamed at all; see revisedOpportunityBody).
  */
 function opportunityName(quote: QuoteForAct): string {
   return `${quote.number} — ${moneyWithCode(quote.total, quote.currency)}`;
@@ -329,32 +344,73 @@ export function newOpportunityBody(quote: QuoteForAct, parties: ActParties): New
 }
 
 /**
- * What a later revision changes on the deal's existing opportunity.
+ * What a later revision does to the deal's existing opportunity.
  *
- * Always the name and total, since a revision can change the price. The stage
- * (and its probability) only when `stageMove` says move -- never backwards,
- * and never across processes. The status is never touched: if a person in
- * ACT! has closed the deal, a revision finalised in PathQuote does not reopen
- * it behind their back.
+ * - `patch`: the opportunity is Open. `patch` always carries the name and
+ *   total, since a revision can change the price, and the stage (with its
+ *   probability) only when `stage` -- stageMove's verdict, handed back so the
+ *   drain can report a "different-process" opportunity it did not move -- is
+ *   `move`. Never backwards, never across processes, and never a status.
+ * - `closed`: the opportunity is not Open. Send nothing at all; the revision
+ *   is recorded by its History alone. `status` is what ACT! said, for the
+ *   drain to report.
  *
- * `current` is where the opportunity sits now, read back from ACT! before the
- * patch. Not nullable, on purpose: "never backwards" cannot be honoured
- * without knowing where it is, and a null here would mean "set it as if new",
- * which is exactly a backwards move when somebody has advanced the deal.
+ * A union rather than a patch that might be empty, or null: an Open patch is
+ * never empty, so "nothing to send" is a different answer, not a smaller one,
+ * and it should say why. It also keeps the drain from sending a `{}` "to be
+ * safe" -- which, with an update that reads the opportunity and writes it back
+ * whole (the plan's Task 5), would still rewrite the closed record and bump
+ * its `edited`.
+ */
+export type RevisionUpdate =
+  | { kind: "patch"; patch: OpportunityPatch; stage: StageMove }
+  | { kind: "closed"; status: string };
+
+/**
+ * A later revision's effect on the deal's existing opportunity.
+ *
+ * AN OPPORTUNITY THAT IS NOT OPEN IS LEFT ENTIRELY ALONE: no stage, no
+ * probability, no name, no total. Won, Lost or Inactive, it is the record of
+ * how the deal ended and at what figure, and silently rewriting a closed
+ * record in somebody else's CRM is the worse harm. The
+ * History is the journal: it still records that a new revision went out and
+ * what its total was. Reached when an admin's voidSignature is followed by a
+ * re-finalise, or when somebody closed the deal by hand in ACT!. If the deal
+ * genuinely reopens, a person reopens it in ACT!, and the next revision then
+ * updates it as normal.
+ *
+ * "Not Open" is any status other than exactly OPPORTUNITY_STATUS.open,
+ * including one never seen before. If ACT! turned out to spell Open some other
+ * way, the result would be open deals no longer updated -- visible, and
+ * harmless to the CRM -- rather than closed ones rewritten.
+ *
+ * `current` is the opportunity as read back from ACT! before the patch. Not
+ * nullable, on purpose: "never backwards" cannot be honoured without knowing
+ * where it is, and a null here would mean "set it as if new", which is
+ * exactly a backwards move when somebody has advanced the deal.
  */
 export function revisedOpportunityBody(
   quote: QuoteForAct,
-  current: StagePosition,
-): OpportunityPatch {
+  current: OpportunityNow,
+): RevisionUpdate {
+  if (current.status !== OPPORTUNITY_STATUS.open) {
+    return { kind: "closed", status: current.status };
+  }
   const sent = stagesFor(quote.regionCode).sent;
+  const stage = stageMove(current, sent);
   return {
-    name: opportunityName(quote),
-    productTotal: quote.total,
-    ...(stageMove(current, sent) === "move"
-      ? { stage: stageBody(sent), probability: sent.probability }
-      : {}),
+    kind: "patch",
+    stage,
+    patch: {
+      name: opportunityName(quote),
+      productTotal: quote.total,
+      ...(stage === "move" ? { stage: stageBody(sent), probability: sent.probability } : {}),
+    },
   };
 }
+
+/** Closing the opportunity as won: the patch, and stageMove's verdict on the won stage for the drain to report. */
+export type WonUpdate = { patch: OpportunityPatch; stage: StageMove };
 
 /**
  * Closing the opportunity as won, when the quote is accepted.
@@ -362,21 +418,25 @@ export function revisedOpportunityBody(
  * The status and close date always; the won stage only when `stageMove`
  * allows it, which in practice means unless the opportunity has been moved to
  * another process -- the won stage is the last in each process, so nothing in
- * the same process is past it. `current` is required for the same reason as
- * in `revisedOpportunityBody`: an opportunity being closed already exists.
+ * the same process is past it. `stage` says which, so the drain can report a
+ * "different-process" opportunity closed without its stage. `current` is
+ * required for the same reason as in `revisedOpportunityBody`: an opportunity
+ * being closed already exists.
  */
 export function wonOpportunityBody(
   regionCode: string,
   current: StagePosition,
   acceptedAt: Date,
-): OpportunityPatch {
+): WonUpdate {
   const won = stagesFor(regionCode).won;
+  const stage = stageMove(current, won);
   return {
-    status: OPPORTUNITY_STATUS.won,
-    actualCloseDate: acceptedAt.toISOString(),
-    ...(stageMove(current, won) === "move"
-      ? { stage: stageBody(won), probability: won.probability }
-      : {}),
+    stage,
+    patch: {
+      status: OPPORTUNITY_STATUS.won,
+      actualCloseDate: acceptedAt.toISOString(),
+      ...(stage === "move" ? { stage: stageBody(won), probability: won.probability } : {}),
+    },
   };
 }
 

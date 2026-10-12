@@ -57,7 +57,15 @@
 //
 // ONE OPPORTUNITY PER DEAL. Document.actOpportunityId is per quote, not per
 // revision, so a re-finalise after a revision finds it set and updates rather
-// than creating a second opportunity for the same deal.
+// than creating a second opportunity for the same deal. That holds whatever
+// state the opportunity is in. A closed one (Won, Lost, Inactive) is still the
+// deal's: the plan for a new revision is still update-opportunity then
+// write-history, and the planner cannot create a second opportunity because
+// the first is closed -- it never sees the status. What the update sends to a
+// closed opportunity -- nothing at all -- is revisedOpportunityBody's decision
+// (src/lib/act/write-payloads.ts); the drain still stores the row's
+// opportunityActId when it sends nothing, so the row moves on to
+// write-history and the revision is journaled.
 //
 // STEPS RESUME, AND ONE WINDOW REPEATS. Every step stores its result before the
 // next step begins, and this planner looks at nothing but those stored
@@ -199,6 +207,8 @@ export function nextStep(
   }
 
   if (!progress.opportunityActId) {
+    // Set means the deal has an opportunity, open or closed; either way it is
+    // updated, never replaced (see ONE OPPORTUNITY PER DEAL above).
     return quote.actOpportunityId ? { kind: "update-opportunity" } : { kind: "create-opportunity" };
   }
 

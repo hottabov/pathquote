@@ -184,6 +184,10 @@ describe("nextStep", () => {
   it("resumes a re-finalised revision at its history, after updating the opportunity once", () => {
     // Second revision of a deal: the opportunity already exists on the
     // Document. The row updates it, records that it did, then writes history.
+    // The same plan whether that opportunity is open or closed -- the planner
+    // is never told its status, so a closed deal cannot lead it to create a
+    // second one. For a closed deal the drain sends nothing in the update
+    // step (revisedOpportunityBody) and still stores opportunityActId.
     const quote = quoteState({ actOpportunityId: ACT_OPPORTUNITY });
     expect(nextStep(nothingDone, noHistory, quote)).toEqual({ kind: "update-opportunity" });
     const updated = { opportunityActId: ACT_OPPORTUNITY };

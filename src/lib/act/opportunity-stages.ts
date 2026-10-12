@@ -38,7 +38,9 @@
 // neither is ahead of the other. So an opportunity found in a process other
 // than the target's -- moved there by hand in ACT!, or left behind if the
 // processes are ever unified -- is not moved at all, and the answer says so
-// ("different-process") so the caller can report it rather than guess.
+// ("different-process") rather than folding it into "stay". The callers in
+// src/lib/act/write-payloads.ts hand that verdict back to the drain beside
+// each patch, so it can report an opportunity it left in another process.
 //
 // Pure: no I/O, no imports.
 

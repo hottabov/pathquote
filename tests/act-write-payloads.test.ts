@@ -10,6 +10,7 @@ import {
   wonOpportunityBody,
   type QuoteForAct,
   type ActParties,
+  type RevisionUpdate,
 } from "../src/lib/act/write-payloads";
 import { sentStage, wonStage } from "../src/lib/act/opportunity-stages";
 
@@ -129,45 +130,73 @@ describe("newOpportunityBody", () => {
 });
 
 describe("revisedOpportunityBody", () => {
-  it("renames and re-totals, and moves the stage forward when it is behind", () => {
-    const body = revisedOpportunityBody(quote({ total: 47500 }), { processId: SALES_CYCLE, number: 3 });
-    expect(body.name).toBe("Q-AU-2026-014 — AUD 47,500.00");
-    expect(body.productTotal).toBe(47500);
-    expect(body.stage).toMatchObject({ id: sentStage("AU")!.id });
-    expect(body.probability).toBe(40);
+  const open = (number: number, processId = SALES_CYCLE) => ({ processId, number, status: "Open" });
+
+  /** The patch, failing the test if the opportunity was treated as closed. */
+  function patchOf(update: RevisionUpdate) {
+    if (update.kind !== "patch") throw new Error(`expected a patch, got ${update.kind}`);
+    return update;
+  }
+
+  it("renames and re-totals an open deal, and moves the stage forward when it is behind", () => {
+    const { patch, stage } = patchOf(revisedOpportunityBody(quote({ total: 47500 }), open(3)));
+    expect(stage).toBe("move");
+    expect(patch.name).toBe("Q-AU-2026-014 — AUD 47,500.00");
+    expect(patch.productTotal).toBe(47500);
+    expect(patch.stage).toMatchObject({ id: sentStage("AU")!.id });
+    expect(patch.probability).toBe(40);
   });
 
   it("leaves the stage and probability alone when the deal is already further on", () => {
-    const body = revisedOpportunityBody(quote(), { processId: SALES_CYCLE, number: 5 });
-    expect(body).not.toHaveProperty("stage");
-    expect(body).not.toHaveProperty("probability");
-    expect(body.name).toBe("Q-AU-2026-014 — AUD 45,000.00");
+    const { patch, stage } = patchOf(revisedOpportunityBody(quote(), open(5)));
+    expect(stage).toBe("stay");
+    expect(patch).not.toHaveProperty("stage");
+    expect(patch).not.toHaveProperty("probability");
+    expect(patch.name).toBe("Q-AU-2026-014 — AUD 45,000.00");
   });
 
-  it("leaves the stage alone when somebody moved the opportunity to another process", () => {
-    const body = revisedOpportunityBody(quote(), { processId: US_PROCESS, number: 1 });
-    expect(body).not.toHaveProperty("stage");
+  it("leaves the stage alone when somebody moved the opportunity to another process, and says so", () => {
+    const { patch, stage } = patchOf(revisedOpportunityBody(quote(), open(1, US_PROCESS)));
+    expect(stage).toBe("different-process");
+    expect(patch).not.toHaveProperty("stage");
   });
 
-  it("never touches the status, so a revision does not reopen a closed deal", () => {
-    expect(revisedOpportunityBody(quote(), { processId: SALES_CYCLE, number: 3 })).not.toHaveProperty("status");
+  it("never sends a status to an open deal", () => {
+    expect(patchOf(revisedOpportunityBody(quote(), open(3))).patch).not.toHaveProperty("status");
+  });
+
+  it.each(["Won", "Lost", "Inactive"])("leaves a %s opportunity entirely alone", (status) => {
+    // Behind the sent stage on purpose: an open deal here would get a stage
+    // move as well as a new name and total. A closed one gets nothing; the
+    // revision is recorded by its History alone.
+    expect(revisedOpportunityBody(quote({ total: 47500 }), { processId: SALES_CYCLE, number: 3, status })).toEqual({
+      kind: "closed",
+      status,
+    });
+  });
+
+  it("treats a status it has never seen as not open", () => {
+    // A misspelt Open costs updates to open deals; it never rewrites a closed one.
+    expect(revisedOpportunityBody(quote(), { processId: SALES_CYCLE, number: 3, status: "open" }).kind).toBe("closed");
   });
 });
 
 describe("wonOpportunityBody", () => {
   it("closes the opportunity as won at the region's won stage", () => {
     const accepted = new Date("2026-11-02T01:00:00.000Z");
-    const body = wonOpportunityBody("AU", { processId: SALES_CYCLE, number: 4 }, accepted);
-    expect(body.status).toBe(OPPORTUNITY_STATUS.won);
-    expect(body.stage).toMatchObject({ id: wonStage("AU")!.id });
-    expect(body.probability).toBe(100);
-    expect(body.actualCloseDate).toBe("2026-11-02T01:00:00.000Z");
+    const { patch, stage } = wonOpportunityBody("AU", { processId: SALES_CYCLE, number: 4 }, accepted);
+    expect(stage).toBe("move");
+    expect(patch.status).toBe(OPPORTUNITY_STATUS.won);
+    expect(patch.stage).toMatchObject({ id: wonStage("AU")!.id });
+    expect(patch.probability).toBe(100);
+    expect(patch.actualCloseDate).toBe("2026-11-02T01:00:00.000Z");
   });
 
-  it("still closes as won, without a stage, when the opportunity sits in another process", () => {
-    const body = wonOpportunityBody("AU", { processId: US_PROCESS, number: 2 }, FINALISED);
-    expect(body.status).toBe(OPPORTUNITY_STATUS.won);
-    expect(body).not.toHaveProperty("stage");
+  it("still closes as won, without a stage, when the opportunity sits in another process, and says so", () => {
+    const { patch, stage } = wonOpportunityBody("AU", { processId: US_PROCESS, number: 2 }, FINALISED);
+    expect(stage).toBe("different-process");
+    expect(patch.status).toBe(OPPORTUNITY_STATUS.won);
+    expect(patch).not.toHaveProperty("stage");
   });
 });
 
