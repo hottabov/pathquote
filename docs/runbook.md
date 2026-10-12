@@ -182,7 +182,8 @@ Since 2026-09-04 the VPS builds nothing. On a push to `main`:
 2. **`build`** — builds the `run` and `tools` targets on a 4-vCPU runner with
    a persistent BuildKit layer cache and pushes both to GHCR, tagged with the
    commit SHA and `latest`.
-3. **`deploy`** — SSH to the VPS: `git pull` (for `docker-compose.yml` only),
+3. **`deploy`** — SSH to the VPS: `git pull` (for `docker-compose.yml`; the
+   `scripts/ops/` files that §4 to §4e install by hand arrive with it too),
    `docker compose pull`, `up -d postgres`, `prisma migrate deploy` from the
    `tools` image, `up -d app gotenberg`, then a health check that asserts both
    `"ok":true` and `"schemaOk":true` before pruning old layers.
@@ -247,6 +248,7 @@ keeps tagged images) and every build is in GHCR by SHA:
 ```bash
 cd /opt/pathquote
 systemctl disable --now pq-act-sync.timer     # first, always — see below
+systemctl disable --now pq-act-drain.timer    # likewise, once §4d's units are installed
 TAG=<previous commit sha> docker compose up -d app
 curl -fsS http://127.0.0.1:3010/api/health
 git checkout <previous commit sha>            # only if the checkout moves too
@@ -283,6 +285,16 @@ unchanged.
 A rollback does **not** revert migrations. If the bad deploy migrated the
 schema, roll back to a commit whose code still works against the current
 schema, or restore from a dump (§4).
+
+**Rolling back past the ACT! write-back (§4d).** Switch sending off first
+("The switch", §4d), so nothing writes to ACT! while the box moves, then the
+block above — `pq-act-drain.timer` included: it runs the checkout's image too,
+and code from before the write-back has no `act:drain`, so every tick would
+fail. `z65_act_outbox` stays applied, and older code runs against it unchanged:
+its columns are nullable, nothing before it reads them, and the `ActOutbox`
+table is simply not used. Quotes finalised, signed or accepted on the older
+code queue nothing; the rows already queued wait, untouched, for the
+write-back to come back.
 
 ## 3. Nginx + TLS
 
@@ -343,8 +355,10 @@ per run, so an emptied `/opt/backups` cannot wipe Drive. A failed run starts
 `pq-backup-alert@<unit>.service`, which emails marketing@pathfindercut.com
 through the app's SMTP account (`SMTP_*`, `EMAIL_FROM` in `.env`). Logs: the
 backups write `/var/log/pq-backup.log`; the alert unit answers for the ACT!
-sync as well now (§4c), so it writes its own `/var/log/pq-alert.log` rather
-than putting "alert sent: ACT! sync FAILED" in the middle of the backup log.
+sync, the ACT! drain and the Monday report as well now (§4c to §4e), so it
+writes its own `/var/log/pq-alert.log` rather than putting "alert sent: ACT!
+sync FAILED" in the middle of the backup log. Every one of these logs is
+rotated by `/etc/logrotate.d/pathquote` (§4d, "Log rotation").
 
 ```bash
 systemctl list-timers 'pq-backup*'           # next runs
@@ -469,7 +483,9 @@ quotes and resets numbering on a **local** database. It refuses to run unless
 
 PathQuote imports contacts and companies from the company's ACT! Premium CRM.
 Added 2026-10-09; until then it ran only when a developer typed
-`npm run act:sync`. Source in `scripts/ops/`, installed on the VPS the same way
+`npm run act:sync`. Since the write-back (§4d), every run that writes first
+sends ACT! the quotes queued for it, while sending is switched on, and only
+then reads. Source in `scripts/ops/`, installed on the VPS the same way
 the backups are (install lines below). One script, one schedule:
 
 | | ACT! contact sync |
@@ -477,9 +493,10 @@ the backups are (install lines below). One script, one schedule:
 | Unit | `pq-act-sync.timer` → `pq-act-sync.service` → `pq-act-sync.sh` |
 | When | daily 03:00 Australia/Melbourne, exactly on the hour |
 | Runs | `docker compose run --rm -T tools npm run act:sync -- --trigger=schedule` in `/opt/pathquote`, with `TAG` exported from `git rev-parse HEAD` |
-| Reads | what changed in ACT! since the stored position — one night of edits is a page or two of 200 contacts, a few seconds |
+| Sends | first, the quotes queued for ACT! (§4d), if sending is switched on — at 03:00 normally none, because the 15-minute drain has sent them through the day |
+| Reads | then, what changed in ACT! since the stored position — one night of edits is a page or two of 200 contacts, a few seconds |
 | Log | `/var/log/pq-act-sync.log`, one `act:sync start`/`act:sync ok` line per run, both naming the image SHA |
-| Record | every run writes itself into a `Setting` row, shown at `/settings/act-sync` |
+| Record | every run writes itself into a `Setting` row, shown at `/settings/act-sync` — what its drain sent included |
 
 The timer is DST-aware and catches up at next boot after a missed run
 (`Persistent=true`), like the backup timers, and sits an hour before the 04:00
@@ -501,7 +518,11 @@ inside the worker instead, as a Postgres session advisory lock (`SYNC_LOCK_KEY`
 in `src/lib/act/sync.ts`), because the **Sync now** button in Settings starts
 the same work from inside the `app` container — a file lock on this box would
 hold off a second copy of the script and leave the button free to run on top of
-the nightly import.
+the nightly import. A run that writes takes the drain's lock as well
+(`DRAIN_LOCK_KEY`, §4d) and holds both for the whole run, drain and read, so no
+other drain can create a contact in ACT! between them for the read to import a
+second time. The nightly run waits up to 15 minutes for a drain that has it
+(`DRAIN_LOCK_WAIT_MS`); a pass is over in about 10 at worst.
 
 A failed run starts the same alert unit the backups use (§4) —
 `OnFailure=pq-backup-alert@%n.service`, so the instance it is handed is this
@@ -516,9 +537,10 @@ the changes, backups are unaffected. The alert's own output goes to
 
 ### Look at the Settings page before any log
 
-`/settings/act-sync` shows when the last run started, what it did, whether
-anything needs a person, the nightly schedule, and how far through ACT!'s own
-edit history PathQuote has read.
+`/settings/act-sync` shows when the last run started, what it did — the quotes
+its drain sent included — whether anything needs a person, the nightly
+schedule, and how far through ACT!'s own edit history PathQuote has read. Its
+**Quotes for ACT!** card, about the queue rather than any run, is §4d's.
 
 **Who can reach it.** Every ADMIN and DEVELOPER, by role, always. Anybody else
 — a MANAGER or REGIONAL_MANAGER — only if an admin has ticked **Show the ACT!
@@ -593,8 +615,13 @@ What the exit status means, because the alert hangs off it:
 | Exit | Means |
 |---|---|
 | 0 | the run finished — or another sync already held the lock, which is not this run's failure and deliberately raises no alert. The log line says plainly that nothing was read and nothing was written. |
-| 1 | the run threw, or some contacts could not be stored. The cursor stops advancing at the first failure, so the next run reads them again. |
+| 1 | the run threw, or some contacts could not be stored. The cursor stops advancing at the first failure, so the next run reads them again. A 15-minute wait for the drain's lock that runs out is a throw too, before anything is read. |
 | 2 | bad arguments, or `DATABASE_URL` missing or not a Postgres URL with a host and a database name. Nothing was read and nothing was written. |
+
+What the run's drain did does not change its exit status: a drain that fails is
+recorded and the read goes on, and a fault in sending that needs a person fails
+the drain's own unit, which emails about it (§4d). Failing here as well would be
+a second email about the same thing.
 
 ### A wedged advisory lock
 
@@ -753,8 +780,13 @@ is a full write; it detects that and refuses.
 
 ### "Sync now", and what bounds it
 
-The button on `/settings/act-sync` runs the same delta, recorded as a run by
-hand. A night's changes take seconds. Two much larger numbers get quoted for
+The button on `/settings/act-sync` first sends the quotes queued for ACT!, if
+sending is switched on, for at most 20 seconds (`SYNC_NOW_DRAIN_BUDGET_MS` in
+`src/lib/act/sync-drain-lock.ts`; what is left goes with the 15-minute drain),
+then runs the same delta, recorded as a run by hand. It does not wait for the
+drain's lock: when another drain has it, the press starts nothing, records
+nothing, and says in amber "Quotes are being sent to ACT! right now, so the sync
+cannot start yet — try again in a few minutes." A night's changes take seconds. Two much larger numbers get quoted for
 this and they are not the same number, so they are both written out here:
 
 - **Nothing retries — ACT! is merely slow.** 88 pages of 200 contacts, each
@@ -790,10 +822,11 @@ nginx -T 2>&1 | grep -c 'proxy_read_timeout'    # 0: the compiled-in 60s applies
 ```
 
 60 seconds is comfortable for what the button actually does. A night's delta is
-seconds. Both larger figures above need a large backlog to read, and a backlog
-cannot build up now that the timer runs every night — so the 504 below is a
-real case rather than the expected one. It is not unreachable: a long ACT!
-outage followed by a click still gets there, which is why the page handles it.
+seconds, and its drain starts no new work after 20 of them. Both larger figures
+above need a large backlog to read, and a backlog cannot build up now that the
+timer runs every night — so the 504 below is a real case rather than the
+expected one. It is not unreachable: a long ACT! outage followed by a click
+still gets there, which is why the page handles it.
 
 When it trips, nginx answers 504, the page reports that no answer came back —
 and **the sync carries on**. Nothing cancels a server action because the client
@@ -828,7 +861,492 @@ id. The ACT! Web API is IP-allowlisted to this VPS: any other address, a laptop
 included, gets `403` however correct the credentials, so this sync cannot be run
 from anywhere else. Full reference: `docs/act-integration-reference.md`.
 
-## 4d. Monday ACT! activity report
+## 4d. ACT! write-back
+
+A quote finalised in PathQuote reaches ACT! by itself, and its signature and
+acceptance follow it there. Added 2026-10-13, and **off until somebody switches
+it on** ("Before switching it on", below). Why each record is written the way
+it is: `docs/superpowers/specs/2026-10-10-act-write-back.md`; the rules the
+code keeps: the header of `src/lib/act/outbox-plan.ts`.
+
+| When, in PathQuote | What ACT! gets |
+|---|---|
+| A quote is finalised | its contact, created as a **Prospect** when ACT! does not have them yet; **one opportunity for the deal**, named `<quote number> <currency>` (`Q-AU-2026-014 AUD`), at Proposal (AU, UK) or Engage (US); **one product line** on it, Item # the quote number, carrying the revision's total; and **a History** of type Quote for the revision, regarding `Quote Q-AU-2026-014 finalised in PathQuote` (`Q-AU-2026-014-R2` and so on for later revisions) |
+| It is finalised again, changed | the same opportunity and the same line, updated in place, and a History for the new revision. A deal already closed in ACT! — Won, Lost, Inactive — is left as it is, except that a Won deal's line follows the latest figure the client has signed |
+| The client signs | the contact goes from **Prospect to Customer**; any other status is left alone |
+| It is accepted, the client's signature standing | the line brought to the signed figure, then the opportunity **Won**, at Sales Fulfillment (AU, UK) or Execute Fulfilment (US) — from Lost too, by decision ("PathQuote confirms", 2026-10-12) |
+
+Everything is written as the service account `Marketing` (role Manager,
+confirmed live 2026-10-12, `docs/act-integration-reference.md` section 2), with
+the quote's author as record manager when they are mapped to an ACT! user, and
+`Marketing` when they are not. Nothing is ever deleted in ACT!, and nothing
+goes backwards: a void or an unfinalise afterwards undoes nothing there, and a
+deal somebody marks Lost by hand after PathQuote won it stays Lost.
+
+**Queued, then sent.** Each of those events queues one `ActOutbox` row for the
+quote, in the same transaction as the event and whatever the switch says — or
+takes over the quote's unfinished row. Three things send queued rows, and all
+three send nothing while the switch is off:
+
+| | When | Runs in | Log |
+|---|---|---|---|
+| The fast path | straight after the finalise, signature or acceptance, for that one quote | the `app` container | `docker compose logs app` |
+| `pq-act-drain.timer` → `pq-act-drain.service` → `pq-act-drain.sh` | every 15 minutes, on the quarter hour, every row that is due | `docker compose run --rm -T tools npm run act:drain` in `/opt/pathquote`, `TAG` from `git rev-parse HEAD` | `/var/log/pq-act-drain.log` |
+| The nightly sync, and **Sync now** (§4c) | at the start of every run that writes, before it reads ACT! | as §4c | `/var/log/pq-act-sync.log`, and the app's for Sync now |
+
+One drain at a time: a Postgres advisory lock (`DRAIN_LOCK_KEY`, 8472002, in
+`src/lib/act/drain.ts`); a drain that finds it taken sends nothing and says
+`busy`. A step that fails backs its row off — 5 minutes, doubling, at most 6
+hours (`backoffMs` in `src/lib/act/drain-rules.ts`) — and a row is never given
+up on. A write ACT! **refuses** (a 4xx) is not tried again by itself: the quote
+is held until a person acts ("When something is stuck", below).
+
+### Before switching it on
+
+In this order. Every command runs on the VPS, from `/opt/pathquote`, because
+the ACT! API answers no other address (`docs/act-integration-reference.md`
+section 11).
+
+1. **Deploy** (§2b), so the running image has `act:drain` and
+   `act:write-preflight`, and `/opt/pathquote/scripts/ops/` has the units this
+   section installs. `git log -1 --oneline` on the VPS names the commit.
+
+2. **Install the units** ("Installing or updating from the repository",
+   below). The drain then runs every 15 minutes and, the switch being off, logs
+   `switched off -- sending to ACT! is off (Setting act.write.enabled), so nothing was sent`
+   with how many due rows wait, and exits 0. That is expected.
+
+3. **Map the users.** The report first, then the write:
+
+   ```bash
+   cd /opt/pathquote
+   TAG=$(git rev-parse HEAD) docker compose run --rm -T tools npm run act:map-users
+   TAG=$(git rev-parse HEAD) docker compose run --rm -T tools npm run act:map-users -- --apply
+   ```
+
+   Read the report before `--apply`; what it maps, and what it will not, is in
+   `docs/act-integration-reference.md` section 9.
+
+4. **Run the preflight, and resolve every FAIL.**
+
+   ```bash
+   cd /opt/pathquote
+   TAG=$(git rev-parse HEAD) docker compose run --rm -T tools npm run act:write-preflight
+   ```
+
+   It writes nothing, to ACT! or to PathQuote. It asks ACT! with GETs only —
+   it holds an `ActReader` (`src/lib/act/client.ts`), which has no method that
+   sends anything else — and reads PathQuote in a transaction made `READ ONLY`
+   before its first query. It takes no arguments. Each check prints PASS,
+   WARN, FAIL or INFO with a line saying why, and for WARN and FAIL what to do.
+   Exit 0 is nothing FAILed; 1 is a FAIL, or the run threw; 2 is a run that
+   could not start (an argument, no `DATABASE_URL`, an `ACT_*` missing). The
+   rules, with a test for each, are in `src/lib/act/write-preflight.ts`:
+
+   | | Checks | FAIL | WARN |
+   |---|---|---|---|
+   | 1 | The service account: the one ACT! user whose `username` is `ACT_USER`, found as the drain finds it | none, or more than one; not Active; role Browse (read-only) or Standard ("My" permissions only) | role Administrator (more than it needs: reference section 2), or a role it does not know |
+   | 2 | Active PathQuote users have `User.actUserId` | — | anybody unmapped: what is written for their quotes is managed by `Marketing`, and a contact created for them gets an Account Mgr only if their `User.actAccountMgr` is set |
+   | 3 | Every `User.actAccountMgr` is an item of the Rep picklist, exactly | a value off the list: ACT! would refuse every contact created for that user's quotes | an active user with no ACT! user and no Account Mgr: their contacts are created with none |
+   | 4 | The Countries picklist spells every country PathQuote's companies are in, by the drain's own match (`actCountryValue`) | — | a country with no item, or a company whose country PathQuote cannot read: contacts there are created with no country, which ACT! refuses if it enforces the field's `isAllowBlank: false` on an API create (not yet seen either way) |
+   | 5 | `GET /api/opportunities` with the duplicate lookup's `name eq` filter: no rows for a name nobody has, then exactly the rows of one real name | rows for the made-up name (the filter is ignored), another name's rows, or the real opportunity missing | ACT! refuses the filter with a 4xx: the drain falls back to the contact's own opportunities |
+   | 6 | Product lines come back with an `itemNumber` property, read off the first of 50 opportunities that has any | a line without it: the drain could never find its own line again, and could create a second — the deal's amount doubled | no opportunity with products: inconclusive |
+   | 7 | `GET /api/contacts/{id}/history` with the History lookup's `regarding eq` filter: no rows for a made-up regarding, on a contact that has History | — | the filter ignored or refused: the drain reads the contact's whole History instead, and for a contact with 1,000 or more refuses it as a full page, so that quote's History — and the win and promotion after it — wait |
+   | 8 | The switch, and every unfinished row, by quote number | — | switch off with rows queued (step 5), or switch on with a row held |
+   | 9 | The 15-minute drain | — | — (INFO: the `tools` container cannot see systemd; it says what to run on the host) |
+   | 10 | What is copied from ACT! by hand ("Things copied from ACT! by hand", below) | a stage gone, or in another process | a stage renamed or renumbered, the name length or a picklist id changed, or the metadata unreadable |
+
+   A read that fails is a FAIL, "could not be checked": for checks 5 to 7 the
+   request that failed is the very one the drain makes before a create. If the
+   first request (check 1's) fails, nothing more is asked of ACT!. Run it again
+   until nothing FAILs, and read every WARN.
+
+5. **Take the test quotes out of the queue.** Check 8 lists every quote
+   switching on would send, oldest first, each line ending in the quote's
+   address (`/quotes/<id>`). Every quote finalised, signed or accepted since
+   the write-back was deployed is there — test quotes and demos included. Open
+   each one that must not reach ACT! at `https://q.pathfindercut.com/quotes/<id>`
+   and press **Don't send this quote to ACT!** on its ACT! card: that is what
+   the button is for. It needs an ADMIN or a DEVELOPER, and asks before it
+   acts. Run the preflight again; check 8 should list real quotes only.
+
+6. **Switch it on** ("The switch", below).
+
+7. **Finalise one real quote that is safe to send, and check ACT! by hand.**
+   The fast path sends it as the finalise returns, so it is there within a
+   minute, or within 15 if another drain was busy. Its ACT! card in PathQuote
+   says **In ACT!**, with Contact, Opportunity, Amount and History. In ACT!:
+   - the contact: the one ACT! already had, or a new **Prospect** with the
+     name, email, phone (as sent), title, company text, country and — when the
+     author has one — Account Mgr;
+   - **one** opportunity named `<quote number> <currency>`, at Proposal (AU,
+     UK) or Engage (US), its record manager the author (or `Marketing`);
+   - on it **one** product line, Item # the quote number, its amount the
+     quote's total;
+   - **one** History, type Quote, regarding `Quote <quote number> finalised in PathQuote`.
+
+8. **Finalise it again, unchanged** (unfinalise, then finalise). Nothing new
+   may appear in ACT!: still one opportunity, one line, one History.
+
+9. **Watch** Settings → ACT! sync → **Quotes for ACT!** through the first day,
+   and the first nightly run at 03:00, whose record on the same page now says
+   what its drain sent before the read.
+
+**The acceptance checks** — what the plan
+(`docs/superpowers/plans/2026-10-12-act-write-back-quotes.md`, "Verification
+that cannot be done from a laptop") leaves for the live box. Steps 7 and 8 are
+its first two. Then, as real quotes allow:
+
+- [ ] The sync after step 7 — Sync now, or 03:00 — does **not** count the
+      contact it touched as updated. This is echo suppression, and nothing but
+      the live box can prove it.
+- [ ] A quote whose contact existed only in PathQuote: ACT! has them as a
+      Prospect, with the phone as sent, and the quote's card names the contact
+      as in ACT!.
+- [ ] A quote at a company whose country check 4 found missing from the
+      Countries list: ACT! takes the contact with no country. If it refuses,
+      the quote is held with ACT!'s own words: add the country to the list,
+      then **Try again now**.
+- [ ] A FINAL quote with no contact: its card says **Held back from ACT!**, and
+      why, rather than failing in silence.
+- [ ] A quote finalised while sending is switched off: it finalises, its card
+      says it is waiting, and the first 15-minute pass after switching on sends
+      it. (The plan's version — stop ACT!, or point `ACT_BASE` at a closed
+      port — proves the same for an outage, at the cost of restarting
+      production's app; the switch is the safe form.)
+- [ ] A client signs a quote whose contact is a Prospect: the contact becomes a
+      Customer. A contact of any other status is left as it was.
+- [ ] That quote is accepted: the opportunity goes to Won, at the 100% stage. A
+      second accept writes nothing (`acceptQuote` returns early for a quote
+      already accepted).
+- [ ] A quote whose opportunity was marked Lost in ACT! is accepted: it goes to
+      Won. Mark it Lost again by hand: a later revision leaves it Lost.
+
+### The switch
+
+The `Setting` row `act.write.enabled`: off unless it holds JSON `true`. There is
+no screen for it. **On:**
+
+```bash
+cd /opt/pathquote
+docker compose exec -T postgres psql -U pathquote -d pathquote -c "INSERT INTO \"Setting\" (\"key\", \"value\") VALUES ('act.write.enabled', 'true') ON CONFLICT (\"key\") DO UPDATE SET \"value\" = 'true';"
+```
+
+**Off, at once:**
+
+```bash
+cd /opt/pathquote
+docker compose exec -T postgres psql -U pathquote -d pathquote -c "INSERT INTO \"Setting\" (\"key\", \"value\") VALUES ('act.write.enabled', 'false') ON CONFLICT (\"key\") DO UPDATE SET \"value\" = 'false';"
+```
+
+Where it stands:
+
+```bash
+cd /opt/pathquote
+docker compose exec -T postgres psql -U pathquote -d pathquote -c "SELECT value FROM \"Setting\" WHERE key = 'act.write.enabled';"
+```
+
+No restart either way. Every drain reads the switch at the start of a pass and
+again before each call it makes to ACT!, so turning it off stops a pass
+**between calls**: a call already on its way finishes, and its result is
+stored. The queue is left exactly as it is. Finalising, signing and accepting go
+on queueing while it is off, and switching it back on sends what queued — at
+the next 15-minute pass, or a quote's own next event.
+
+### Installing or updating from the repository
+
+The files arrive in `/opt/pathquote` with the deploy's `git pull`, so they are
+installed from there:
+
+```bash
+cd /opt/pathquote
+install -m 700 scripts/ops/pq-act-drain.sh scripts/ops/pq-backup-alert.sh /usr/local/bin/
+install -m 644 scripts/ops/pq-act-drain.service scripts/ops/pq-act-drain.timer scripts/ops/pq-backup-alert@.service /etc/systemd/system/
+install -d /var/lib/pathquote/alert-stamps
+install -m 644 scripts/ops/pathquote.logrotate /etc/logrotate.d/pathquote
+systemctl daemon-reload
+systemctl enable --now pq-act-drain.timer
+```
+
+`pq-backup-alert.sh` and `pq-backup-alert@.service` are in it because both
+changed with the drain: the script learned the drain's wording, its log and the
+once-a-day stamp ("Alerts", below). Install only the drain's own three files
+and a drain failure emails as a unit the script knows nothing about, with no
+log, and every 15 minutes rather than once a day. The stamp
+directory is also made by the script on its first drain alert; made here, it is
+never the question.
+
+```bash
+systemctl list-timers 'pq-act-*'                 # the drain every quarter hour, the sync at 03:00
+systemctl start pq-act-drain.service             # one pass now, as the timer runs it
+journalctl -u pq-act-drain -n 20 --no-pager      # whether the unit itself ran at all
+tail -20 /var/log/pq-act-drain.log               # "act:drain ok: image <sha>"
+```
+
+One quote's rows, now, by the quote's id — the end of its address, not its
+number:
+
+```bash
+cd /opt/pathquote
+TAG=$(git rev-parse HEAD) docker compose run --rm -T tools npm run act:drain -- --document <quote id>
+```
+
+The `--` is not optional: without it npm keeps the flag and the run would
+drain every due row, which the script detects and refuses. What `act:drain`'s
+exit status means, because the alert hangs off it (`scripts/act-drain.ts`):
+
+| Exit | Means |
+|---|---|
+| 0 | every normal outcome: quotes sent, held back or backing off; nothing due; another drain busy; sending switched off; the 5-minute budget spent; or ACT! busy or away |
+| 1 | a fault that needs a person — the service account not found, the login refused, a 403 to the login or the users lookup, IIS turning the VPS away — or the pass threw (the database) |
+| 2 | it could not start: bad arguments, no identifiable `DATABASE_URL`, or an `ACT_*` variable missing |
+
+### Log rotation
+
+Every PathQuote log on this box — `/var/log/pq-backup.log`, `pq-act-sync.log`,
+`pq-act-drain.log`, `pq-act-weekly-report.log` and `pq-alert.log` — is rotated
+by `scripts/ops/pathquote.logrotate`, installed above as
+`/etc/logrotate.d/pathquote`: monthly, or sooner once a log passes 10M
+(logrotate runs daily, from Ubuntu's `logrotate.timer`, and checks the size each
+time), twelve kept, compressed one rotation late. The drain alone writes its log
+96 times a day, which is why this came with it. To see what it would do, and do
+nothing:
+
+```bash
+logrotate -d /etc/logrotate.d/pathquote
+```
+
+"log does not need rotating" for each file is the ordinary answer; a log
+already over 10M is one it says it would rotate.
+
+**No `copytruncate`, and it needs none.** Every unit writes its log through
+`StandardOutput=append:`, which systemd opens by its path — `O_APPEND`, created
+if missing — each time it starts the unit, for that run's processes alone; and
+every unit is `Type=oneshot`, so nothing holds the file between runs. Once
+logrotate has renamed a log, the next run writes a fresh file at the old name.
+A run going at that moment — the drain, every 15 minutes, is the likeliest —
+ends in the renamed file, `pq-act-drain.log.1`, which `delaycompress` leaves
+uncompressed until the rotation after. The one cost is the failure email, which
+tails 40 lines by the log's name: for a run that started before a rotation and
+failed after it, the email carries the new file's few lines, and the run is in
+the `.1` file. Worked out from the units and checked with `logrotate -d` on a
+scratch Ubuntu 22.04, not yet on the VPS; Ubuntu's stock `/etc/logrotate.conf`
+carries `su root adm`, which is what lets logrotate work in a group-writable
+`/var/log` without complaint.
+
+### Reading the queue
+
+**Settings → ACT! sync → Quotes for ACT!** (`/settings/act-sync`) first. It
+shows the queue as it stands — not what the last run did — from the rows
+themselves: whether sending is on, how many quotes are waiting, and every quote
+held back, by number, as a link, with the reason PathQuote gives for holding it
+(the 20 queued longest; the rest are counted). Amber means somebody has to act.
+Who sees it is §4c's rule: every ADMIN and DEVELOPER, and anyone with **Show the
+ACT! sync section to this user** ticked, who is counted only the quotes they can
+open.
+
+**The quote's own page** has an **ACT!** card, for the same readers. It says
+where that quote stands — waiting to go to ACT!, **Held back from ACT!** (and
+why), **In ACT!** (with the contact, the opportunity, the amount and the History
+there), or not sent — and, to an ADMIN or DEVELOPER only, the buttons under
+"When something is stuck". A FINAL quote never queued (finalised before the
+write-back) says **Not queued for ACT!**, to an administrator only.
+
+**SQL, when the pages are not enough.** Every unfinished row, oldest first:
+
+```bash
+cd /opt/pathquote
+docker compose exec -T postgres psql -U pathquote -d pathquote -c "SELECT o.id, d.number, d.id AS \"documentId\", o.\"createdAt\", o.attempts, o.\"nextAttemptAt\", o.\"blockedBy\", o.\"blockedReason\", o.\"lastError\" FROM \"ActOutbox\" o JOIN \"Document\" d ON d.id = o.\"documentId\" WHERE o.\"completedAt\" IS NULL ORDER BY o.\"createdAt\";"
+```
+
+The times are UTC. A row with no `blockedReason` is waiting: due once
+`nextAttemptAt` has passed, and backing off until then after `attempts`
+failures. A row with one is held, and `blockedBy` says by what: empty for
+PathQuote's own planner (a quote with no contact, a region with no ACT!
+process), `contact`, `drain` (duplicates in ACT!), `act` (ACT! refused) or
+`revision` — the next section takes each in turn. Finished rows stay in the
+table, one per write.
+
+### When something is stuck
+
+The quote's ACT! card first: its reason is written for whoever reads it, and
+its buttons — an ADMIN's or a DEVELOPER's — cover the common cases. **Try again
+now** and the two contact buttons take effect at once; with sending on,
+PathQuote then sends that quote straight away, or within 15 minutes if another
+send is under way.
+
+| Held because (`blockedBy`) | Do | What happens next |
+|---|---|---|
+| ACT! refused the write — the reason quotes ACT!'s own words (`act`) | Put right in ACT! what it objected to — a country missing from the list, an Account Mgr off the Rep picklist, a permission — then **Try again now** | The same step goes again. Pressed before ACT! is put right, it is refused and held again |
+| ACT! has more than one opportunity, or product line, for this quote (`drain`) | Remove the extra records in ACT! by hand: PathQuote never deletes in ACT! | The 15-minute passes look again by themselves, up to 10 such quotes a pass, and the quote goes on once one is left; **Try again now** looks now |
+| PathQuote cannot read the finalised copy (`revision`) | The developer fixes it; **Try again now** only after that | The copy is read again |
+| The quote has no contact, its region no ACT! process, and the like (empty) | Fix it in PathQuote, as the reason says | The next pass sees the fix and sends it; there is no button, and none is needed |
+| PathQuote asked ACT! to create the contact and never heard whether it did (`contact`) | Look in ACT! for the person, by name and email, created around when the quote was sent. Found: **ACT! has this person**, with their ACT! contact id. Not there: **ACT! has nobody** | Found: PathQuote reads that id back from ACT! first, links nothing unless ACT! has the contact and their name or email matches, then links them and sends every quote held on them. Not there: the next send creates them |
+| It should not go to ACT! at all — a test quote | **Don't send this quote to ACT!** | Out of the queue; what is already in ACT! stays. The quote's next finalise, signature or acceptance queues it again |
+
+A held contact is never fixed by deleting the contact in PathQuote and adding
+them again: the new contact carries no record that a create may have gone
+through, and the next send creates the same person in ACT! a second time.
+
+**The developer's SQL**, for a held contact when the page cannot be used, or
+when **ACT! has this person** refuses because another PathQuote contact already
+carries that ACT! id. Expect that second case once a sync has run since the
+create: ACT! did make the person — a Prospect, edited after the sync's cursor —
+and the sync imported them as a second PathQuote contact. From
+`/opt/pathquote`, replacing `<contact id>`, `<duplicate id>` and `<act id>`,
+angle brackets and all.
+
+Which contacts are held, their create's outcome unknown:
+
+```bash
+docker compose exec -T postgres psql -U pathquote -d pathquote -c "select id, \"firstName\", \"lastName\", email, \"actCreateInFlightAt\" from \"Contact\" where \"actCreateInFlightAt\" is not null and \"actContactId\" is null;"
+```
+
+`actCreateInFlightAt` is when the create was about to leave, in UTC. Whether
+ACT! answered with an id that PathQuote then failed to store — the drain logs
+it, with the outbox row's `id`, the `contactId`, and the ACT! id as
+`actContactId`:
+
+```bash
+docker compose logs app 2>&1 | grep -A 8 'whose id PathQuote could not store'
+grep -A 8 'whose id PathQuote could not store' /var/log/pq-act-drain.log /var/log/pq-act-sync.log
+```
+
+The fast path and Sync now log in the app; the 15-minute drain and the nightly
+sync in their own logs. No such line for the contact — no answer, a 5xx, a 408;
+the log says `act: ACT! may have created this contact` for those — means
+PathQuote never had an id: look for the person in ACT! by name and email.
+
+If ACT! holds the person, give PathQuote that id:
+
+```bash
+docker compose exec -T postgres psql -U pathquote -d pathquote -c "UPDATE \"Contact\" SET \"actContactId\" = '<act id>', \"actSyncState\" = 'SYNCED', \"actCreateInFlightAt\" = NULL WHERE id = '<contact id>' AND \"actCreateInFlightAt\" IS NOT NULL;"
+```
+
+If that fails on `Contact_actContactId_key`, the sync has imported the person
+as a second contact. Find it:
+
+```bash
+docker compose exec -T postgres psql -U pathquote -d pathquote -c "select id, \"firstName\", \"lastName\", email, \"companyId\" from \"Contact\" where \"actContactId\" = '<act id>';"
+```
+
+and merge it into the held contact — its quotes and signing requests moved
+over, the duplicate deleted (its `ActSnapshot` goes with it), the id set — in
+one transaction, every statement but the last also checking that the held
+contact is still held:
+
+```bash
+docker compose exec -T postgres psql -U pathquote -d pathquote -v ON_ERROR_STOP=1 -c "BEGIN; UPDATE \"Document\" SET \"contactId\" = '<contact id>' WHERE \"contactId\" = '<duplicate id>' AND EXISTS (SELECT 1 FROM \"Contact\" WHERE id = '<contact id>' AND \"actCreateInFlightAt\" IS NOT NULL AND \"actContactId\" IS NULL); UPDATE \"SigningRequest\" SET \"contactId\" = '<contact id>' WHERE \"contactId\" = '<duplicate id>' AND EXISTS (SELECT 1 FROM \"Contact\" WHERE id = '<contact id>' AND \"actCreateInFlightAt\" IS NOT NULL AND \"actContactId\" IS NULL); DELETE FROM \"Contact\" WHERE id = '<duplicate id>' AND \"actContactId\" = '<act id>' AND EXISTS (SELECT 1 FROM \"Contact\" WHERE id = '<contact id>' AND \"actCreateInFlightAt\" IS NOT NULL AND \"actContactId\" IS NULL); UPDATE \"Contact\" SET \"actContactId\" = '<act id>', \"actSyncState\" = 'SYNCED', \"actCreateInFlightAt\" = NULL WHERE id = '<contact id>' AND \"actCreateInFlightAt\" IS NOT NULL; COMMIT;"
+```
+
+psql prints each statement's count. `DELETE 1` and, after it, `UPDATE 1` is the
+merge done. `DELETE 0` and `UPDATE 0` is a contact no longer held, or a wrong
+contact id, and nothing changed. An error — `Contact_actContactId_key` again,
+for a wrong duplicate id — rolls the whole of it back.
+
+If ACT! holds nobody, release the hold, and the next pass creates them:
+
+```bash
+docker compose exec -T postgres psql -U pathquote -d pathquote -c "UPDATE \"Contact\" SET \"actCreateInFlightAt\" = NULL WHERE id = '<contact id>' AND \"actContactId\" IS NULL;"
+```
+
+After any of these, nothing else is needed: the next full pass — the 15-minute
+drain, or the nightly sync's — re-plans every held row, finds the contact
+settled, and sends every quote on it. (The buttons also make those quotes due
+at once; the SQL leaves that to the pass.)
+
+To take a quote out of the queue when its page cannot be used — the same write
+as **Don't send this quote to ACT!** — by the row's `id` from the queue query
+above, replacing `<id>`:
+
+```bash
+docker compose exec -T postgres psql -U pathquote -d pathquote -c "UPDATE \"ActOutbox\" SET \"completedAt\" = now() AT TIME ZONE 'UTC', \"blockedBy\" = 'admin', \"blockedReason\" = NULL, \"generation\" = \"generation\" + 1, \"updatedAt\" = now() AT TIME ZONE 'UTC' WHERE id = '<id>' AND \"completedAt\" IS NULL;"
+```
+
+`blockedBy = 'admin'` is what makes the quote's card say it was not sent rather
+than **In ACT!**, and `now() AT TIME ZONE 'UTC'` rather than `now()` is because
+these columns hold UTC without a zone.
+
+**Every pass says `busy`, and nothing is sent.** The drain's lock is held by a
+session that is gone — §4c's "A wedged advisory lock", for the same reasons,
+with the drain's key. The drain exits 0 on `busy` and does not email; the
+nightly sync waits 15 minutes for the lock, fails, and does. The holder:
+
+```bash
+docker compose exec -T postgres psql -U pathquote -d pathquote -c "
+SELECT a.pid, a.state, a.backend_start, a.query
+FROM pg_stat_activity a JOIN pg_locks l ON l.pid = a.pid
+WHERE l.locktype = 'advisory'
+  AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database())
+  AND ((l.classid::bigint << 32) | l.objid::bigint) = 8472002
+  AND l.objsubid = 1
+  AND l.granted;"
+```
+
+A drain that is working holds it briefly — a fast path for seconds, a 15-minute
+pass for 10 minutes at the very worst — and the nightly sync for its whole run.
+A `backend_start` older than any of those is the dead session: end it with
+§4c's `pg_terminate_backend`, its pid in place of `<pid>`.
+
+### Alerts
+
+A pass that exits 1 fails `pq-act-drain.service`, which starts
+`pq-backup-alert@pq-act-drain.service.service`, as for the backups and the sync
+(§4): an email to marketing@pathfindercut.com, subject
+`[PathQuote] ACT! quote drain FAILED on` the hostname, saying that queued quotes
+are not reaching ACT! — nothing is lost, they go once it is fixed — with the
+last 40 lines of `/var/log/pq-act-drain.log`.
+
+**Once a day at most.** The unit runs every 15 minutes and fails at every tick
+until somebody mends what is wrong, so the alert stamps
+`/var/lib/pathquote/alert-stamps/pq-act-drain.service.last-sent` when it sends,
+and while the stamp is under 24 hours old sends nothing, logging
+`alert for pq-act-drain.service suppressed` to `/var/log/pq-alert.log` instead.
+A pass that gets writes into ACT! again removes the stamp (`pq-act-drain.sh`,
+on the line `act:drain` prints for it), so a fault that comes back after a
+recovery emails at once. Every other unit's alert is as before: one email per
+failure.
+
+```bash
+/usr/local/bin/pq-backup-alert.sh --test pq-act-drain.service   # the drain's email; a test is never held back and never stamps
+ls -l /var/lib/pathquote/alert-stamps/                           # a stamp is a drain alert sent within the last day
+tail /var/log/pq-alert.log
+```
+
+**What the drain does not email about.** ACT! busy or away — no answer, a 5xx,
+"not now" — is exit 0: a weekend with the office's ACT! server off is not
+PathQuote's fault, and the rows back off. That includes the VPS cut off by a
+**firewall or the NAT rule**, which looks the same as ACT! being down: no answer
+at all. What catches that is the **nightly sync's** alert (§4c): its run asks
+ACT! before it reads, gets no answer either, and fails its unit. IIS's own 403
+to an address off its allow-list *is* an answer, and the drain emails about it.
+
+### Things copied from ACT! by hand
+
+Four things the write-back depends on are transcribed into the code; nothing
+reads them from ACT! at runtime, and an ACT! administrator can make any of them
+wrong without anyone here noticing. **Check 10 of the preflight re-reads all
+four** — `GET /api/opportunities/stages` and `GET /api/metadata/fields` — and
+when one differs prints what ACT! has now. Run it after any change to ACT!'s
+sales processes or fields, and after an ACT! upgrade:
+
+```bash
+cd /opt/pathquote
+TAG=$(git rev-parse HEAD) docker compose run --rm -T tools npm run act:write-preflight
+```
+
+| What | Written in | Goes wrong when | Its first sign otherwise |
+|---|---|---|---|
+| The four stage ids — Proposal and Sales Fulfillment (Pathfinder Sales Cycle), Engage and Execute Fulfilment (Pathfinder US Sales Process) — with their numbers | the table in `src/lib/act/opportunity-stages.ts` | an administrator deletes, re-creates, renames or reorders a stage or a process | an opportunity write refused deep in the drain, or stages ordered by the old numbers in silence |
+| The Rep picklist's id, behind Account Mgr | `REP_PICKLIST_ID` in `src/lib/act/client.ts` | the list is re-created | `npm run act:map-users` and check 3 read a list that is gone: a 404 |
+| The Countries picklist's id, behind a contact's country | `COUNTRIES_PICKLIST_ID` in `src/lib/act/client.ts` | the list is re-created | every contact created with no country; the drain logs `act: the Countries picklist has <n> items` on each pass that creates a contact |
+| The opportunity name's limit, 32 characters | `OPPORTUNITY_NAME_MAX` in `src/lib/act/write-payloads.ts` | the field is redefined | none soon: today's names are under 20 characters |
+
+The picklists' items are never copied — the drain and `act:map-users` read them
+every time; only the lists' ids are pinned. Change the file to match ACT!, never
+ACT! to match the file, and deploy before the next send.
+
+## 4e. Monday ACT! activity report
 
 Every Monday each sales manager gets one email with last week's activity from
 ACT!, in the format marketing used to send by hand: Call Completed, E-mail Sent,

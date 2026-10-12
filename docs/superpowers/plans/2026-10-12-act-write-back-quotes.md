@@ -385,6 +385,10 @@ A dry run drains nothing. Neither does a run that lost the lock race.
 
 Decide what a drain failure does to the run: the inbound sync is useful even when ACT! refuses a write, so a failed drain should be counted and reported rather than ending the run. Add the counts to `SyncResult` and to the CLI report, and extend `describeRun` so the Settings page says it — remembering that page is read by the director and now by managers with the `actSyncVisible` tick.
 
+**Requirement (a), from the Task 7 review: the run holds the drain's lock too, for the whole run.** A run that drains holds **both** advisory keys — `8_472_001` (`SYNC_LOCK_KEY`) and `8_472_002` (`DRAIN_LOCK_KEY`) — on its own lock connection from before the drain until after the inbound read, and drains **under the held lock**: `drainActOutbox(client, { lockHeldOn: <that connection> })`. Without the option the drain tries to take `8_472_002` on a connection of its own, finds the sync holding it, and drains nothing (`busy`); with it, the drain checks in `pg_locks` that the connection really holds the key and throws if not. Holding only `8_472_001` leaves a fast-path drain free to POST a contact between the run's drain and its read; the read then imports that ACT! person as a second PathQuote contact before the drain stores the id, the drain's store hits `Contact_actContactId_key`, and the contact is held for a person with two PathQuote rows to merge. **Wait for `8_472_002` (`pg_advisory_lock`), do not skip**, when a fast path holds it at 03:00: a fast path's pass is over within about 10 minutes at worst (`DRAIN_TIME_BUDGET_MS`, 5 minutes, plus the step in flight when it runs out). Take it with `$executeRaw`, not `$queryRaw`: `pg_advisory_lock` returns `void`, which the pg adapter cannot read back (tried: `P2010`, "Failed to deserialize column of type 'void'"). The same requirement is written at `SYNC_LOCK_KEY` in `src/lib/act/sync.ts` and in the header of `src/lib/act/drain.ts`.
+
+**Requirement (b): a periodic drain every 15 minutes**, over every due row — a systemd timer in the `tools` container, beside the nightly sync's units. Until it exists the only passes are the fast paths after a finalise, a signature or an acceptance, each over one quote, so a row that failed is retried only at its own quote's next event, and a contact released by hand (the FOR TASK 10 block in `src/lib/act/outbox-plan.ts`) unblocks each of its quotes only at that quote's next event. The drain's comments already describe this timer as Task 8's: the backoff schedule (`backoffMs` in `src/lib/act/drain-rules.ts`), the 5-minute time budget (a third of the 15), and `RECHECKS_PER_PASS` (10 a pass, so 40 lookup-blocked rows are each asked about once an hour). It takes `DRAIN_LOCK_KEY` itself, non-blocking: a pass that finds the nightly run or a fast path at work skips to the next tick.
+
 - [ ] **Step 2: Verify** — the four commands, plus the new `describeRun` cases tested.
 
 - [ ] **Step 3: Commit**
@@ -421,6 +425,43 @@ Follow §4c's shape exactly. Cover: that writes are queued and drained rather th
 
 ---
 
+## Addendum 2026-10-12 — a won quote makes the contact a Customer
+
+Requested by Vadym during execution: when a quote is won, the ACT! contact moves from **Prospect** to **Customer**.
+
+**The field.** `idStatus`, display name "ID/Status", `Character`, not read-only, picklist "Contact ID/Status" with **`isLimitToList: true`**, single select (`RAW/ACT/meta/fields_contact.json`, a local capture). `Customer` and `Prospect` are both legal values — the inbound sync's `ACTIVE_STATUSES` filters on exactly those two.
+
+**The triggers.**
+
+- **Contact → Customer: on a standing signature** (`signingStatus` `SIGNED`, set by `completeSigning`, `src/lib/actions/signing-client.ts`) — Vadym: "the contact signed the quote". Acceptance is not a trigger of its own: `acceptQuote` requires the signature, so it only ever added the case after `voidSignature`, which leaves `acceptedAt` set — and promoting then would make a customer of a corrected contact who has signed nothing.
+- **Opportunity → Won: when the quote is accepted with a standing signature** (`acceptedAt` set **and** `SIGNED`), per spec §10 D3. A quote voided after acceptance is not won until the client signs again, and then at the signed figure. `wonOpportunityBody` from Task 2 finally gets a caller here.
+- **A Won deal's product line shows the latest signed figure:** a revision re-finalised after a void leaves it alone; the client's signature on that revision writes it.
+- **Later:** the manual WON outcome from `docs/specs/2026-10-12-quote-outcomes-and-reporting-backlog.md` becomes a further trigger for both. Not in this plan.
+
+**Rules.**
+
+- **Forward only.** Customer never goes back to Prospect — not on `voidSignature`, not on unfinalise. Same reasoning as the stage rule: "this became a customer" stays true.
+- **Change only what we own.** Promote only when the contact's **current** ACT! value is `Prospect` — trimmed, then compared case for case, exactly as the inbound sync reads it. Anything else — already `Customer`, a reseller or supplier status, blank — is left alone and the step counts as done. The drain reads the current value with a GET; a pure function decides. Overwriting a status somebody set deliberately is the harm this rule prevents.
+- **Echo suppression applies.** The promotion bumps the contact's `edited`, so the drain stores the returned record as the contact's `ActSnapshot`, exactly as for creates.
+
+**How it fits the outbox.** These are new events on a document whose finalise row may already be complete. `completeSigning` and `acceptQuote` enqueue the same way finalise does — insert, or take over the unfinished row via the z65 partial index. The planner gains two steps, `promote-contact` and `win-opportunity`, which come **after** `write-history` and are checked **before** returning `done`, so a row created by a signing event does not short-circuit to `done` just because its revision's history was already written.
+
+**Progress storage.** The planner is pure and cannot GET, so each step needs a stored fact that it has happened: `Document.actContactPromotedForId` and `Document.actOpportunityWonAt`, both on the document. The win is once per deal. Promotion is once per **contact** per deal — `voidSignature` exists for a wrong signatory, and a corrected contact who signs is due its own promotion — so the fact is the ACT! id of the contact promoted, compared with the quote's contact as it stands (a bare id, no foreign key, so it outlives a deleted or merged PathQuote contact). These belong in z65, which has not been applied anywhere outside scratch databases; amend it rather than adding z66, and re-run the drift verification.
+
+**A Lost opportunity — decided by Vadym, 2026-10-12:** *"Overwrite to Won — PathQuote confirms. If after that someone changes it to Lost by hand in ACT!, it stays that way."* Acceptance patches any opportunity that is not already Won (Lost, Inactive, anything else) to Won, moving the stage forward to the won stage where the forward-only rule allows. The second sentence holds because `actOpportunityWonAt` is never cleared: once set, the planner never plans the win again.
+
+**Creating a contact.** `newContactBody` sends `idStatus: Prospect` — left blank, the contact would be skipped by the inbound sync and never promoted — plus the name, email, business phone, title, free-text company and, only when the author has one, Account Mgr.
+
+## Obligations carried into Tasks 6 and 7 from the Task 4 review
+
+- **Every row write by the drain is conditional:** `WHERE id = $1 AND "quoteRevisionId" = $planned AND "completedAt" IS NULL`. A take-over between planning and writing must not be clobbered — completing, storing `opportunityActId`, setting `blockedReason` or backing off would otherwise land on a row that now means a different revision. If that conditional update matches 0 rows after an opportunity **create**, `Document.actOpportunityId` must still be committed, or the next pass creates a second opportunity.
+- **No row lock held across ACT! calls** — that would make finalise wait on the CRM.
+- **Blocked rows are re-planned on every pass.** The due index excludes them, and the fixes the blocked reasons tell a manager to make (name a contact, map a region) involve no re-finalise. If `nextStep` no longer returns `blocked`, clear `blockedReason` and make the row due. No ACT! calls needed; unfinished rows are few.
+- **Time zones.** `nextAttemptAt` is `timestamp(3)` without zone, filled with UTC by Prisma. Comparing it to SQL `now()` is only right if the session zone is UTC, which the repo does not pin. Pass a JS `Date` as a parameter instead.
+- **Take-over must also reset `attempts` and clear `lastError`**, or Task 9's UI shows a stale error beside a fresh row.
+- **A raw take-over `INSERT` must supply `id` and `updatedAt`** — neither has a database default — and Prisma's `upsert` cannot target a partial index, so Task 6 uses `$executeRaw`.
+- **Superseded revisions.** If revision N's row is taken over before N's History is written, ACT! never records N. Because finalise *is* the send for managers who email the PDF themselves, N may have reached the customer. Accepted for now — the alternative is one row per revision, which reintroduces two live rows per deal — but `actHistoryId` lives on the revision, so a later planner could journal every un-journaled revision of a document with no migration. Record this in the planner's comments.
+
 ## Verification that cannot be done from a laptop
 
 The API is IP-allowlisted to the VPS, so the first real write happens there. Before trusting it:
@@ -431,3 +472,7 @@ The API is IP-allowlisted to the VPS, so the first real write happens there. Bef
 - [ ] Finalise a quote whose contact exists only in PathQuote — confirm the contact is created, and that `actContactId` is stored.
 - [ ] Finalise a quote with no contact — confirm the quote shows the blocked reason rather than failing silently.
 - [ ] Stop the ACT! API (or point `ACT_BASE` at a closed port) and finalise — confirm the quote still finalises, the row queues, and the nightly drain picks it up.
+- [ ] Have a test client sign a quote whose contact is a Prospect — confirm the contact becomes Customer in ACT!, and that a contact with any other status is left untouched.
+- [ ] Accept that quote — confirm the opportunity goes to Won at the 100% stage, and that a second accept writes nothing.
+- [ ] Accept a quote whose opportunity was marked Lost in ACT! — confirm it goes to Won; then mark it Lost again by hand and confirm a later revision or a second accept leaves it Lost.
+- [ ] Finalise a quote whose contact exists only in PathQuote — confirm ACT! stores the new contact as a Prospect with the phone as sent, and accepts a create with no country.

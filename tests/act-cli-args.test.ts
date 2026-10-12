@@ -237,6 +237,13 @@ describe("formatBanner", () => {
     expect(dry).not.toContain("WRITE");
   });
 
+  it("says a write run sends queued quotes to ACT!, and a dry run does not", () => {
+    // ACT! is the production CRM, and a run that writes drains the queue
+    // before it reads (syncContacts in src/lib/act/sync.ts).
+    expect(formatBanner(args(), db)).toContain("sends queued quotes to ACT! if sending is on");
+    expect(formatBanner(args({ dryRun: true }), db)).toContain("sends nothing");
+  });
+
   it("names the limit, or says there is none", () => {
     expect(formatBanner(args({ limit: 200 }), db)).toContain("limit     200 contacts");
     expect(formatBanner(args(), db)).toContain("limit     none");

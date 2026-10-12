@@ -60,6 +60,9 @@ import { VoidSignatureButton } from "@/components/builder/void-signature-button"
 import { UnsentChangesBanner } from "@/components/builder/unsent-changes-banner";
 import { RevisionsSection, EmailHistorySection } from "@/components/builder/quote-history-sections";
 import { getQuoteHistory } from "@/lib/queries/quote-revisions";
+import { getQuoteActState } from "@/lib/queries/act-quote";
+import { ActStateCard } from "@/components/documents/act-state-card";
+import { showsQuoteActCard } from "@/lib/act/quote-act-view";
 import { SignButton } from "@/components/builder/sign-button";
 import { SendToClientButton } from "@/components/builder/send-to-client-button";
 import { RevokeSigningLinkButton } from "@/components/builder/revoke-signing-link-button";
@@ -323,7 +326,17 @@ export default async function DocumentBuilderPage({
   // the tab strip. Scoped to the same user; null only for a foreign/missing
   // id, which cannot happen here since `document` already loaded under the
   // same scope.
-  const history = await getQuoteHistory(session.user, document.id);
+  //
+  // Read beside it: where the quote's write into ACT! stands, for the card
+  // under Signing. Under the same scope as the page (getQuoteActState), and
+  // only for a viewer who gets the card at all -- canSeeActSync, through
+  // showsQuoteActCard: a distributor has no ACT! access, and is not shown
+  // the mechanism, though their quote is queued and sent all the same.
+  const actViewer = { role: session.user.role, actSyncVisible: session.user.actSyncVisible };
+  const [history, actState] = await Promise.all([
+    getQuoteHistory(session.user, document.id),
+    showsQuoteActCard(actViewer) ? getQuoteActState(session.user, document.id) : null,
+  ]);
 
   // Only the two tabs where a count says something. Quote setup has a fixed
   // number of cards, so a badge there would be decoration.
@@ -622,6 +635,16 @@ export default async function DocumentBuilderPage({
           </div>
 
           <SigningPanel document={document} />
+
+          {/* Where the quote's write into ACT! stands, next to the signing
+              that is one of the things that sends it, and -- for an admin --
+              what can be done about it. For viewers with ACT! sync only
+              (actState is null for anyone else); renders nothing for a draft
+              whose write is not still in the queue, or, for anyone but an
+              admin, a quote that is not queued. */}
+          {actState ? (
+            <ActStateCard state={actState} viewer={actViewer} documentId={document.id} now={new Date()} />
+          ) : null}
         </aside>
       </div>
 

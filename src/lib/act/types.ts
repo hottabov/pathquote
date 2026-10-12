@@ -7,6 +7,8 @@
 // section 4 for the full table and resolve anything new through
 // GET /api/metadata/contact/fields rather than guessing.
 
+import type { ContactStatus } from "@/lib/act/write-payloads";
+
 /** An address object as the API nests it under a contact or company. */
 export type ActAddress = {
   line1: string | null;
@@ -18,7 +20,8 @@ export type ActAddress = {
   country: string | null;
 };
 
-/** One contact, trimmed to the fields the sync reads. */
+/** One contact, trimmed to the fields the sync reads. A contact the client
+ *  returns from a read or a write carries every field ACT! sent, beyond these. */
 export type ActContact = {
   id: string;
   /** Empty string, not null, when the contact is linked to no company. */
@@ -60,6 +63,126 @@ export type ActHistory = {
   startTime: string | null;
   created: string | null;
   isPrivate: boolean | null;
+};
+
+/** A record named inside another one: a History's contacts, an opportunity's companies. */
+export type ActEmbeddedRef = {
+  id: string;
+  /** EmbeddedContact's `displayName`; EmbeddedCompany and EmbeddedOpportunity carry `name`. */
+  displayName?: string | null;
+  name?: string | null;
+};
+
+/**
+ * A History record as `POST /api/History` answers with it: the whole
+ * `act.web.api.models.Histories.History`, where ActHistory is the subset the
+ * weekly report reads. Every added field is nullable for the reason ActUser's
+ * are: swagger marks no field of the model required.
+ */
+export type ActHistoryRecord = ActHistory & {
+  regarding: string | null;
+  details: string | null;
+  endTime: string | null;
+  edited: string | null;
+  contacts: ActEmbeddedRef[] | null;
+  companies: ActEmbeddedRef[] | null;
+  opportunities: ActEmbeddedRef[] | null;
+};
+
+/**
+ * An opportunity's stage as ACT! returns it
+ * (`act.web.api.models.Opportunities.Stage`). `process` is the sales process
+ * the stage belongs to; its `id` and the stage's `number` are what the
+ * forward-only rule compares (StagePosition in
+ * src/lib/act/opportunity-stages.ts).
+ */
+export type ActStage = {
+  id: string;
+  name: string | null;
+  description: string | null;
+  probability: number | null;
+  number: number | null;
+  process: { id: string; name: string | null } | null;
+};
+
+/**
+ * One opportunity (`act.web.api.models.Opportunities.Opportunity` in swagger),
+ * trimmed to the fields the write-back reads or sends. The object at runtime
+ * carries every field ACT! sent -- `weightedTotal`, `daysOpen` and the rest --
+ * which is what an update sends back less the fields ACT! computes
+ * (writableOpportunity in
+ * src/lib/act/record-write.ts). `productTotal` is read, never written: ACT!
+ * computes it from the products.
+ *
+ * `status` is not narrowed to OPPORTUNITY_STATUS: what ACT! says is not ours
+ * to assume (OpportunityNow in src/lib/act/write-payloads.ts).
+ */
+export type ActOpportunity = {
+  id: string;
+  name: string | null;
+  status: string | null;
+  stage: ActStage | null;
+  probability: number | null;
+  productTotal: number | null;
+  openDate: string | null;
+  stageStartDate: string | null;
+  actualCloseDate: string | null;
+  estimatedCloseDate: string | null;
+  reason: string | null;
+  isPrivate: boolean | null;
+  recordManagerID: string | null;
+  recordManager: string | null;
+  contacts: ActEmbeddedRef[] | null;
+  companies: ActEmbeddedRef[] | null;
+  customFields: Record<string, string | number | boolean | null> | null;
+  created: string | null;
+  edited: string | null;
+};
+
+/**
+ * One product line of an opportunity
+ * (`act.web.api.models.Opportunities.OpportunityProduct` in swagger), trimmed
+ * to the fields the write-back sends or reads. PathQuote keeps exactly one per
+ * deal, carrying its amount (summaryProductBody in
+ * src/lib/act/write-payloads.ts). `id` is the line's own id -- what
+ * Document.actProductLineId holds and the path of a PATCH names -- not
+ * `productID`, which would be an ACT! catalogue product and is not set.
+ * Nullable for the reason ActUser's fields are.
+ */
+export type ActProductLine = {
+  id: string;
+  opportunityID: string | null;
+  name: string | null;
+  /** "Item #": the quote number on PathQuote's line, which is how it is found again. */
+  itemNumber: string | null;
+  quantity: number | null;
+  price: number | null;
+  discountPrice: number | null;
+  total: number | null;
+  created: string | null;
+  edited: string | null;
+};
+
+/**
+ * The fields of a contact an update may change: `idStatus`, which promotion
+ * changes (contactPromotion in src/lib/act/write-payloads.ts), and
+ * `customFields`, naming only the custom fields to change, which are merged
+ * key by key so that naming one cannot blank the rest. Nothing else: nothing
+ * else is changed today, and the design spec's write
+ * whitelist (docs/superpowers/specs/2026-09-08-act-integration-design.md)
+ * sends only the fields PathQuote displays and edits, naming `recordManager`
+ * among those never sent. (It named `idStatus` too; the plan's addendum of
+ * 2026-10-12 made promotion the one exception.) `companyID` and
+ * `contactType` are not PathQuote's to change on an existing contact
+ * either. Nor is an address: one built from ActAddress would drop the
+ * `latitude` and `longitude` ACT! keeps beside it, and a nested object in a
+ * patch replaces the record's whole (mergeForWrite in
+ * src/lib/act/record-write.ts, which also says how this is laid over the
+ * record). Widening this is a decision, not a type fix.
+ */
+export type ActContactPatch = {
+  idStatus?: ContactStatus;
+  customFields?: Record<string, string | number | boolean | null>;
 };
 
 /**

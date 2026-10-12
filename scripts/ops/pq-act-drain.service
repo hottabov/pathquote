@@ -1,0 +1,11 @@
+[Unit]
+Description=PathQuote ACT! drain: queued quotes sent to the CRM, every 15 minutes
+After=docker.service network-online.target
+Wants=network-online.target
+OnFailure=pq-backup-alert@%n.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/pq-act-drain.sh
+StandardOutput=append:/var/log/pq-act-drain.log
+StandardError=append:/var/log/pq-act-drain.log

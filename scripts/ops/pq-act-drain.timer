@@ -1,0 +1,37 @@
+[Unit]
+Description=PathQuote ACT! drain: queued quotes sent to the CRM, every 15 minutes
+
+[Timer]
+# On the quarter hour, all day. What this buys is the drain's backoff
+# (backoffMs in src/lib/act/drain-rules.ts): a row that failed is tried again
+# at the first tick after it falls due, and the 5-minute pass budget
+# (DRAIN_TIME_BUDGET_MS in src/lib/act/drain.ts) is a third of the interval,
+# so one pass is over before the next begins -- about 10 minutes at the very
+# worst, the budget and the step in flight when it runs out. A tick that starts while
+# the last is somehow still going does not start a second: systemd does not
+# start a oneshot service that is already active.
+#
+# No time zone, unlike the other timers on this box: a quarter hour is the
+# same instant in Melbourne as on the box's own clock, so naming one would
+# change nothing.
+#
+# 03:00 is NOT skipped. The nightly sync (pq-act-sync.timer) holds the drain's
+# lock for its whole run, and the 03:00, 03:15 and later ticks while it runs
+# find the lock held, print `busy` and exit 0 -- the same answer a tick gives
+# when a fast path after a finalise holds it, and as cheap: one container
+# start and a few queries. Skipping a window instead would mean a second calendar
+# written here to match the sync's, kept in step by hand, and still wrong on
+# the nights the sync runs long (runbook §4c puts its bad case at ~43 minutes
+# and its ceiling past two hours) or is started by hand with Sync now. The
+# lock already knows when the sync is running; this file would only be
+# guessing. And at 03:00 itself a tick that gets the lock first makes the
+# sync wait for it, not fail: the sync waits up to 15 minutes for the drain's
+# lock (DRAIN_LOCK_WAIT_MS in src/lib/act/sync.ts), and a pass is over in
+# about 10 at worst.
+OnCalendar=*:0/15
+# No Persistent=true. A tick missed while the box was down needs no catch-up
+# run: the next one is at most 15 minutes away, and it drains everything due
+# whenever it comes.
+
+[Install]
+WantedBy=timers.target

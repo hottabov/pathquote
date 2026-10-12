@@ -3,7 +3,8 @@
 import { requireActSync } from "@/lib/authz";
 import { actClientFromEnv } from "@/lib/act/client";
 import { FAILED_CONTACTS_DETAIL, messageOf } from "@/lib/act/run-record";
-import { SyncAlreadyRunningError, syncContacts } from "@/lib/act/sync";
+import { DrainBusyError, SyncAlreadyRunningError, syncContacts } from "@/lib/act/sync";
+import { SYNC_NOW_DRAIN_BUDGET_MS } from "@/lib/act/sync-drain-lock";
 import { plural } from "@/lib/plural";
 import { revalidateActSync } from "@/lib/revalidate";
 import type { ActionResultWithWarning } from "./_shared";
@@ -18,10 +19,17 @@ export type { ActionResultWithWarning };
  * has ticked `User.actSyncVisible` for them, and the point of that is the
  * manager who can see their own ACT! edit has not arrived and would otherwise
  * have to ask for it. What makes it safe to hand over is that there is nothing
- * here to get wrong -- the sync only reads ACT!, its writes into PathQuote
+ * here to get wrong -- the sync reads ACT!, its writes into PathQuote
  * fill blanks and never overwrite (`fillOnlyEmpty`, src/lib/act/merge.ts), the
  * advisory lock below means a second press cannot start a second run, and no
  * option is taken from the request (see the `trigger` comment inside).
+ *
+ * It also writes INTO ACT!: like every run that writes, it first sends the
+ * quotes queued for ACT! (drainActOutbox, at the top of syncContacts in
+ * src/lib/act/sync.ts), for at most SYNC_NOW_DRAIN_BUDGET_MS. That gives the
+ * presser no reach of their own -- what it sends is the queue as it stands,
+ * under the off switch, and the same rows the 15-minute drain would send
+ * within the quarter hour anyway.
  *
  * Not the bare `requireSession` it was between 2026-10-10 and the per-user
  * grant, either, and this is the gate that makes the grant worth the name. A
@@ -32,10 +40,11 @@ export type { ActionResultWithWarning };
  * which must not reach ACT! and for which this is the app's own answer rather
  * than the proxy's (see requireSession).
  *
- * `warning` rather than `error` for the two outcomes that are not this
+ * `warning` rather than `error` for the three outcomes that are not this
  * caller's failure to report: a run that came back having dropped some
- * contacts, and losing the lock race to a run already going. Everything else
- * about this is the ordinary action shape.
+ * contacts, losing the lock race to a sync already going, and finding quotes
+ * already being sent to ACT!. Everything else about this is the ordinary
+ * action shape.
  *
  * HOW LONG THIS BLOCKS, which is the thing worth knowing before wiring a
  * button to it. A server action holds the request until it returns, and
@@ -74,6 +83,18 @@ export type { ActionResultWithWarning };
  *         finish -- and the 43 minutes is NOT it. Quote one or the other; the
  *         three-attempts-plus-backoff reasoning belongs to the 2h16m.
  *     No timeout anywhere in this app stops either of them.
+ *   - NOT another drain going when it is pressed -- the 15-minute one, or a
+ *     fast path after a finalise. The button does not wait for it (the
+ *     nightly run does: DRAIN_LOCK_WAIT_MS in src/lib/act/sync.ts). It asks
+ *     for the drain's lock once, before the run records anything, and finding
+ *     it held comes back at once with DrainBusyError's sentence as a
+ *     `warning`, last night's record untouched (drainLockApproach in
+ *     src/lib/act/sync-drain-lock.ts says why).
+ *   - The run's own drain, before the read: seconds when little is queued,
+ *     up to SYNC_NOW_DRAIN_BUDGET_MS (20 seconds, in
+ *     src/lib/act/sync-drain-lock.ts) and the step in flight when a backlog
+ *     is. The rest of a backlog is left to the 15-minute drain, and the
+ *     record says so.
  *
  * What bounds it is not in this repository: nginx's `proxy_read_timeout`, and
  * on the VPS that is 60 seconds. Measured 2026-10-10 rather than assumed --
@@ -120,6 +141,12 @@ export async function runActSyncNow(): Promise<ActionResultWithWarning> {
       // watching, which is not a thing to put one click away; `npm run
       // act:sync -- --full` is still there for the person who means it.
       trigger: "manual",
+      // The button's two differences from the nightly run, both because
+      // nginx stops waiting after 60 seconds: it does not wait for a drain
+      // already going, and its own drain stops after 20 seconds. See the
+      // HOW LONG THIS BLOCKS note above.
+      waitForDrainLock: false,
+      drainTimeBudgetMs: SYNC_NOW_DRAIN_BUDGET_MS,
     });
 
     if (result.failed > 0) {
@@ -164,6 +191,14 @@ export async function runActSyncNow(): Promise<ActionResultWithWarning> {
       // names this function as the example.
       return { warning: error.message };
     }
+    if (error instanceof DrainBusyError) {
+      // The same reasoning, one lock along: quotes are going to ACT! right
+      // now, which is the system working, and this click did nothing -- it
+      // threw before the start record, so the section beneath still shows
+      // the last run that happened. Amber, not red, and the sentence is the
+      // error's own (DRAIN_BUSY_MESSAGE in src/lib/act/sync-drain-lock.ts).
+      return { warning: error.message };
+    }
 
     // A real failure -- a 401 from ACT!, the ACT_* variables missing from the
     // container, the database refusing a write -- reaches the reader as its own
@@ -189,10 +224,12 @@ export async function runActSyncNow(): Promise<ActionResultWithWarning> {
     console.error("act: the Sync now button's run failed", error);
     return { error: messageOf(error) };
   } finally {
-    // Every path that reached the sync, including both failures. A thrown run
+    // Every path that reached the sync, including the failures. A thrown run
     // and a lost race both change what the page should say -- the first wrote a
-    // failure record, the second means another run is live -- so the page is
-    // stale after all three outcomes, not just the good one. (requireActSync()
+    // failure record, the second means another run is live -- and a press
+    // that found quotes being sent finds the queue the page counts moving
+    // under it, so the page is stale after every outcome, not just the good
+    // one. (requireActSync()
     // redirects or throws above the try, so neither an unauthenticated caller
     // nor one without the grant gets here; nothing changed for them to see,
     // and there is no page of ours for them to be standing on.)

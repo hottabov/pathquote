@@ -18,8 +18,12 @@ Description=PathQuote ACT! sync: contacts and companies from the CRM, nightly
 # between 08:00 Pacific and 13:00 Eastern depending on which side of each
 # country's daylight saving the date falls -- 03:00 Melbourne is 16:00 UTC
 # while we are on AEDT and 17:00 UTC while we are on AEST. That is working time
-# over there and costs nothing: the sync only reads from ACT!, and the US
-# managers work in ACT! itself, not in PathQuote's imported copy.
+# over there and costs nothing: the sync mostly reads from ACT!, and the US
+# managers work in ACT! itself, not in PathQuote's imported copy. What it
+# writes there first -- the quotes queued for ACT! (syncContacts in
+# src/lib/act/sync.ts) -- is normally nothing at this hour, because
+# pq-act-drain.timer sends them every 15 minutes through the day; and a quote
+# it does send is one the 15-minute drain would have sent at the same hour.
 #
 # The hour is exact on purpose: no RandomizedDelaySec here. Settings -> ACT!
 # sync prints this schedule to the director in words ("Every night at 3:00 am,

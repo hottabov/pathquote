@@ -1,0 +1,492 @@
+// The decisions behind every write the ACT! client makes: which requests may be
+// repeated after a failure, what a failure means, what record an update sends,
+// and what an answer to a write is taken to mean. Pure, so the suite can test
+// them under `isolate: false` (see vitest.config.ts); src/lib/act/client.ts
+// does the I/O, and carries out what these functions decide.
+
+/** The methods the client sends. No PUT: nothing here needs one. */
+export type HttpMethod = "GET" | "POST" | "PATCH";
+
+/**
+ * Whether a request may be sent again after a timeout, a network failure or a
+ * 5xx -- the failures that do not say whether the server acted on it.
+ *
+ * GET reads, so repeating it changes nothing. PATCH is only ever sent with the
+ * whole record (see mergeForWrite), so a second copy writes the same values
+ * the first did.
+ *
+ * POST is never repeated. Every POST this client sends creates a record -- a
+ * History, an opportunity, a contact, an opportunity's product line -- and a
+ * request that timed out or came back 5xx may still have been committed, with
+ * only the answer lost. Sending it again would then put a second History on
+ * the contact, a second opportunity in the pipeline, a duplicate person in
+ * ACT!, or a second product line on the deal, doubling its amount.
+ */
+export function isRetried(method: HttpMethod): boolean {
+  return method !== "POST";
+}
+
+/**
+ * What came back from one request, as far as deciding what a failure means
+ * needs to know: the HTTP status; `not-sent` when no connection to ACT! was
+ * ever made, so the request cannot have reached it (neverConnected);
+ * `no-answer` when the request may have left but no status came back (a
+ * timeout, a connection dropped after it was made); or `unreadable` when a 2xx
+ * came back that does not give the record asked for -- not JSON, no id, the
+ * wrong id, or a created id whose read-back failed.
+ *
+ * A request that failed before `fetch` was even called was not sent either,
+ * but is not an answer and never reaches classifyWriteFailure. ActClient's
+ * `send` does everything that can fail before sending -- the JSON body, the
+ * URL, the headers -- ahead of the first attempt, and its `fetchOnce` gets
+ * the token before that; such a failure is thrown as ActNotSentError
+ * directly.
+ */
+export type ActAnswer = number | "not-sent" | "no-answer" | "unreadable";
+
+/**
+ * The `code`s Node gives a failed `fetch` when no connection to the server was
+ * ever made, so not one byte of the request can have reached it. Each is
+ * raised before the request is written: undici writes a request only once its
+ * socket has connected -- after TLS's secureConnect for https -- and these
+ * all come before that.
+ *
+ *   ECONNREFUSED             the server's host refused the connection: nothing
+ *                            listening (ACT!'s IIS stopped, say)
+ *   ENOTFOUND, EAI_AGAIN     the host name did not resolve: no such name, or
+ *                            the resolver failing for now. ENOTFOUND is Node's
+ *                            own name for getaddrinfo's EAI_NONAME and
+ *                            EAI_NODATA (DNSException in Node's
+ *                            lib/internal/errors.js)
+ *   EHOSTUNREACH, ENETUNREACH
+ *                            connect(2) found no route to the host, or to its
+ *                            network
+ *   UND_ERR_CONNECT_TIMEOUT  undici's ConnectTimeoutError: no connection within
+ *                            its connect timeout (10 s by default)
+ *   ERR_SOCKET_CONNECTION_TIMEOUT
+ *                            Node's own, when it tried each address a name
+ *                            resolved to and every attempt timed out
+ *                            (internalConnectMultiple in Node's lib/net.js)
+ *
+ * Checked against Node 22.23's bundled undici 6.28 (process.versions.undici;
+ * the project has no undici of its own in node_modules): ConnectTimeoutError
+ * sets that code, and its timer is cleared on `connect`, or `secureConnect`
+ * for https, before the request is handed the socket. Seen live in this
+ * sandbox: a POST to a closed port fails with cause.code ECONNREFUSED, to an
+ * unresolvable name with ENOTFOUND, to an address that never answers with
+ * UND_ERR_CONNECT_TIMEOUT after 10 s.
+ *
+ * NOT here, because each can come after the request was written, which is
+ * exactly when ACT! may have acted on it: ECONNRESET (the connection reset,
+ * possibly mid-answer), undici's UND_ERR_SOCKET ("other side closed"),
+ * UND_ERR_HEADERS_TIMEOUT and UND_ERR_BODY_TIMEOUT, ETIMEDOUT (a socket that
+ * went quiet, not necessarily while connecting), and the client's own
+ * request timeout (AbortSignal.timeout, a TimeoutError with no code at all).
+ */
+export const NEVER_CONNECTED_CODES: readonly string[] = [
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "ERR_SOCKET_CONNECTION_TIMEOUT",
+];
+
+/**
+ * The code, when an error thrown by `fetch` says no connection was ever made
+ * (NEVER_CONNECTED_CODES); null for any other error.
+ *
+ * Node's fetch rejects with `TypeError("fetch failed", { cause })`, and the
+ * code is the cause's -- a plain system error, undici's ConnectTimeoutError,
+ * or, when Node tried several addresses for one name, the AggregateError it
+ * gives the first failure's code. Only the cause is read: an error of some
+ * other shape is not what fetch throws for these, and is not taken to mean
+ * "nothing was sent".
+ */
+export function neverConnected(error: unknown): string | null {
+  const cause = isObject(error) ? error.cause : undefined;
+  const code = isObject(cause) ? cause.code : undefined;
+  return typeof code === "string" && NEVER_CONNECTED_CODES.includes(code) ? code : null;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/**
+ * What kind of failure an answer is, or null when it is not one (a 2xx).
+ *
+ * - `refused`: ACT! answered, and said no. Nothing was written -- a create
+ *   refused made nothing -- and repeating the request repeats the refusal.
+ * - `untracked`: a create that may have left a record in ACT! which
+ *   PathQuote cannot account for. Running it again is how a create becomes a
+ *   duplicate (ActUntrackedCreateError in src/lib/act/client.ts).
+ * - `failed`: anything else that went wrong. Repeating the request is safe --
+ *   a GET changes nothing, a PATCH writes the same whole record again, and a
+ *   request that never reached ACT!, or that ACT! turned away for now, did
+ *   nothing at all -- so the drain tries the step again later. For a POST,
+ *   `failed` means nothing was made -- with one exception, a 408, below.
+ *
+ *                 not sent   no answer   2xx unreadable   408, 429   other 1xx, 4xx   3xx         5xx
+ *     POST        failed     untracked   untracked        failed     refused          untracked   untracked
+ *     GET, PATCH  failed     failed      failed           failed     refused          refused     failed
+ *
+ * 408 AND 429 ARE "NOT NOW", NOT "NO" (tryLaterStatus). 429 Too Many
+ * Requests is a server or a proxy in front of it rate-limiting, and 408
+ * Request Timeout is a server that gave up waiting: both say the same request
+ * may well go through later. Read as `refused`, a throttled write would be
+ * blocked as though ACT! had objected to it, and tried again on the very next
+ * pass with nothing to slow it; as `failed` it backs off, honouring any
+ * Retry-After (the drain's nextAttemptAt in src/lib/act/drain-rules.ts), and
+ * the drain stops its pass rather than keep sending to a server that has said
+ * it is overloaded.
+ *
+ * What they say about a POST differs. A 429 is answered by a rate limiter
+ * before the request runs, so it made nothing, like a refusal, and a create's
+ * in-flight marker may be cleared for it. A 408 is answered before the
+ * request runs only by convention: HTTP.sys and Kestrel send it while the
+ * body is still arriving, but application code can answer 408 for a timeout
+ * of its own after its database insert has committed. So for a POST a 408
+ * keeps the marker, as an untracked create does (createMadeNothing in
+ * src/lib/act/client.ts) -- the one `failed` POST that may have made a
+ * record. It stays `failed` here rather than `untracked` so that the drain
+ * still stops its pass and honours Retry-After.
+ *
+ * A 3xx is a redirect the client did not follow: ActClient's `send` fetches
+ * with `redirect: "manual"`, because fetch following one re-sends a POST
+ * answered 301, 302 or 303 as a GET -- tried: a POST answered 301 came back
+ * as the 200 of a GET to the new location, which reads as a create that
+ * succeeded with an unreadable answer, though nothing was created. Unfollowed,
+ * a 3xx to a POST is untracked: a 303 is how a server answers a POST it has
+ * acted on, pointing at what it made, and nothing in a 3xx says the request
+ * was turned away before the action ran. To a GET or a PATCH it is refused:
+ * the request is safe to repeat, but repeating it gets the same redirect --
+ * an http-to-https or trailing-slash rule on IIS in front of the API, which
+ * is a setup error in ACT_BASE or on the box, for a person to fix. (A 1xx
+ * never reaches the caller of fetch; it is refused with the 4xx so that a
+ * status nobody expects is never taken for success.)
+ *
+ * WHY 5xx IS UNTRACKED FOR A POST BUT 4xx IS REFUSED. ACT!'s Web API is
+ * ASP.NET: authentication, routing and model binding all run before the
+ * controller action, and a 4xx is one of them, or the action's own checks,
+ * turning the request away before anything is saved. That is how the
+ * framework is built, not something tried against this server; the
+ * alternative -- treating every refusal as a possible duplicate -- would make
+ * every rejected body look like a record that might exist. (A 429 is turned
+ * away just as early, and is `failed` rather than `refused` only because
+ * repeating it later can succeed. A 408 is the exception: see 408 AND 429
+ * ARE "NOT NOW", NOT "NO" above.) A 5xx is the
+ * server failing somewhere, possibly after the record was saved, and a lost
+ * answer says nothing at all. A 2xx to a POST that does not give the record
+ * means the create happened and PathQuote cannot tell which record it made.
+ * (A PATCH's answer is never read -- ActClient's `update` reads the record
+ * again -- so `unreadable` reaches PATCH only in principle.)
+ *
+ * The client turns each kind into its error -- untracked into
+ * ActUntrackedCreateError; refused and failed into ActApiError when there is
+ * a status; `not sent` into ActNotSentError; and a GET's or PATCH's `no
+ * answer`, once its attempts are spent, into ActNoAnswerError -- and each
+ * error carries its kind as `failure`, so the drain never has to work it out
+ * again. writeFailureOf in src/lib/act/client.ts reads it off those errors,
+ * and calls any other error `foreign`: it did not come from a request.
+ * isRetried agrees with the table: the methods it repeats are the
+ * ones whose lost answer is `failed`, not `untracked`. (`not sent` is `failed`
+ * for a POST too, but `send` does not repeat it on the spot: the outbox's
+ * backoff does, long after whatever refused the connection has had time to
+ * come back. Nor does it repeat a 408 or a 429, for any method: those wait
+ * for the backoff too, which is what Retry-After asks for.)
+ */
+export type WriteFailure = "refused" | "untracked" | "failed";
+
+/**
+ * 408 Request Timeout and 429 Too Many Requests: ACT! (or what stands in
+ * front of it) saying "not now". Not "nothing was made": for a POST, a 408
+ * may follow a record that was saved. See 408 AND 429 ARE "NOT NOW", NOT "NO"
+ * above classifyWriteFailure.
+ */
+export function tryLaterStatus(status: number): boolean {
+  return status === 408 || status === 429;
+}
+
+export function classifyWriteFailure(method: HttpMethod, answer: ActAnswer): WriteFailure | null {
+  if (answer === "not-sent") return "failed";
+  if (typeof answer === "number") {
+    if (answer >= 200 && answer < 300) return null;
+    if (answer >= 300 && answer < 400) return method === "POST" ? "untracked" : "refused";
+    if (tryLaterStatus(answer)) return "failed";
+    if (answer < 500) return "refused";
+  }
+  return method === "POST" ? "untracked" : "failed";
+}
+
+/**
+ * classifyWriteFailure for an answer that is certainly a failure -- anything
+ * but a 2xx -- which is what every error the client throws stands for. Throws
+ * when handed a 2xx: an error built on one would say "no failure", which is
+ * how an error escapes being classified at all.
+ */
+export function failureOf(method: HttpMethod, answer: ActAnswer): WriteFailure {
+  const failure = classifyWriteFailure(method, answer);
+  if (failure === null) {
+    throw new Error(`${method} answered ${answer}, which is not a failure; an error for it would say nothing`);
+  }
+  return failure;
+}
+
+/**
+ * A string as an OData literal, for a `$filter`: in single quotes, with every
+ * single quote inside it doubled -- OData's own escape, so "O'Brien" is
+ * 'O''Brien'. Percent-encoding is URLSearchParams's job, after this.
+ */
+export function odataString(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+/**
+ * Whether two ACT! ids name the same record. They are uuids, and nothing says
+ * ACT! keeps their case from one answer to the next, so case is ignored.
+ */
+export function sameRecordId(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
+}
+
+/** A record as the API sends it: an object, with every field ACT! chose to include. */
+export type ActRecordJson = Record<string, unknown>;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The whole record to PATCH back: `current` as ACT! returned it, with `patch`
+ * laid over it.
+ *
+ * WHY THE WHOLE RECORD. The scripts that have written production ACT!
+ * (scripts/act-fix-country-usa.py, scripts/act-fix-country-spellings.py) read
+ * each record in full, changed one field and sent every field back, because a
+ * partial write to a nested object blanks its siblings. That is the path that
+ * is known to work; see ActClient's `update` for what is not.
+ *
+ * THE RULES:
+ *
+ *   - A top-level field in `patch` replaces the record's.
+ *   - `undefined` in `patch` is no change: the record's value is kept. The
+ *     payload builders (src/lib/act/write-payloads.ts) leave optional fields
+ *     out, and a key present with no value must not read as "blank it".
+ *   - `null` in `patch` clears the field. Nothing sends one today; when
+ *     something does, clearing is the only thing a null can sensibly mean, and
+ *     a builder that wants to keep a value -- wonOpportunityBody keeping a
+ *     loss `reason` -- does so by leaving the field out, not by sending null.
+ *   - `customFields` is merged KEY BY KEY onto the record's. It is a bag of
+ *     unrelated fields (Account Mgr, Industry, the equipment profile...), and
+ *     replacing it with a patch that names one of them would blank every other
+ *     one on the record: the sibling-blanking trap, one level down. A key set
+ *     to null clears that one field; a key left out is kept. A patch whose
+ *     `customFields` is itself null or not an object is refused rather than
+ *     read as "blank them all".
+ *   - Any other object in `patch` replaces the record's WHOLE. Today that is
+ *     only an opportunity's `stage`, and a stage is a reference to another
+ *     stage: merging the new one over the old would send the new stage's id
+ *     beside the old stage's description. A future patch to a nested value
+ *     that is NOT a reference -- an address -- must therefore carry the whole
+ *     object, built from the record as read, which is exactly what the two
+ *     scripts above do (`dict(record[field], country=...)`).
+ *   - `id` is always the id the record is being written to, in the body as
+ *     well as the path: ACT! answers a PATCH without it with a 400 and an
+ *     empty body (docs/superpowers/specs/2026-09-08-act-integration-design.md,
+ *     "What the API actually does, verified"). An `id` in `patch` cannot move
+ *     the write to another record. A `current` carrying a different id throws
+ *     -- that is a read that answered with the wrong record, and writing it
+ *     back would overwrite one record with another's fields.
+ */
+export function mergeForWrite(
+  id: string,
+  current: ActRecordJson,
+  patch: Record<string, unknown>,
+): ActRecordJson & { id: string } {
+  const currentId = current.id;
+  if (typeof currentId === "string" && !sameRecordId(currentId, id)) {
+    throw new Error(
+      `refusing to write record ${id}: the record read back for it carries id ${currentId}`,
+    );
+  }
+
+  const merged: ActRecordJson = { ...current };
+  for (const [field, value] of Object.entries(patch)) {
+    if (value === undefined || field === "id") continue;
+    if (field === "customFields") {
+      merged.customFields = mergeCustomFields(current.customFields, value);
+      continue;
+    }
+    merged[field] = value;
+  }
+  return { ...merged, id };
+}
+
+/**
+ * The fields of an opportunity ACT! works out or sets for itself, which a
+ * PATCH therefore never sends back (writableOpportunity). Three sources:
+ *
+ *   - `productTotal`, `weightedTotal`, `grossMargin`: `isReadOnly: true,
+ *     isProtected: true` in RAW/ACT/meta/fields_all.json, the field metadata
+ *     captured off the production box (`TBL_OPPORTUNITY`; a local capture, not
+ *     committed). ACT! computes them from the products and the stage.
+ *   - `daysOpen`, `daysInStage`, `contactNames`, `totalPerContact`,
+ *     `totalPerCompany`, `totalPerGroup`, `creator`, `manager`: derived on
+ *     read from other fields, by their own descriptions in swagger's
+ *     act.web.api.models.Opportunities.Opportunity ("the number of days this
+ *     opportunity has been opened", "the names of the contacts associated",
+ *     "the average total per associated contact", "the name of the creator",
+ *     "the name of the record manager"...). fields_all.json has no entry for
+ *     any of them -- though it has none for `status` or `stage` either, so
+ *     that absence alone proves nothing.
+ *   - `importDate`: swagger's own description calls it read-only -- "This
+ *     readonly property displays the date that the opportunity was imported
+ *     into the system" -- in words, not in a `readOnly` flag.
+ *
+ * Swagger flags none of these read-only. Sent back as read, the computed
+ * ones are stale the moment the write changes what they are computed from: a
+ * deal moved to Won could carry its old 50% weighted total back, and if ACT!
+ * enforces the protection instead, the refusal may come back as a 5xx --
+ * which a PATCH retries, three times. `importDate` is not computed but is
+ * ACT!'s to set, and is left out for the second of those reasons.
+ */
+export const OPPORTUNITY_COMPUTED_FIELDS = [
+  "importDate",
+  "productTotal",
+  "weightedTotal",
+  "grossMargin",
+  "daysOpen",
+  "daysInStage",
+  "contactNames",
+  "totalPerContact",
+  "totalPerCompany",
+  "totalPerGroup",
+  "creator",
+  "manager",
+] as const;
+
+/**
+ * An opportunity as a PATCH sends it: the merged record (mergeForWrite)
+ * without OPPORTUNITY_COMPUTED_FIELDS. Everything else goes back as read --
+ * `edited`, `created` and `editedBy` included, as on a contact.
+ *
+ * Opportunities only. A contact is sent back whole, those three fields
+ * included, because that exact body is what the two scripts that wrote
+ * production contacts sent (scripts/act-fix-country-usa.py,
+ * scripts/act-fix-country-spellings.py); nothing has been learned since that
+ * says otherwise. A product line is sent back whole too, and that is the
+ * weaker ground. fields_all.json lists nine product fields (`TBL_PRODUCTSERVICE`:
+ * name, itemNumber, type, quantity, price, discountPrice, discount, cost,
+ * total) and marks none of them read-only, and the patch sets `total` itself
+ * (summaryProductPatch in src/lib/act/write-payloads.ts). But the line read
+ * back carries some twenty -- `id`, `opportunityID`, `productID`,
+ * `createDate`, `editDate`, `isQuickbooksProduct`, `customFields`, `created`,
+ * `edited`, `editedBy`, `recordOwner`, `recordManager` besides those nine, by
+ * swagger's OpportunityProduct -- and of those fields_all.json says nothing,
+ * which, as for the opportunity's, proves nothing either way. None is known
+ * to be refused; the first live PATCH of a line is where that is learned.
+ */
+export function writableOpportunity<T extends ActRecordJson>(record: T): T {
+  const writable: ActRecordJson = { ...record };
+  for (const field of OPPORTUNITY_COMPUTED_FIELDS) delete writable[field];
+  return writable as T;
+}
+
+/**
+ * The patch a write is to send, or null for none at all.
+ *
+ * The decisions a read-modify-write hands the client (ActClient's `update`)
+ * return null for "nothing to send". A patch that changes nothing on
+ * `current`, the record as read, says the same thing and is null here too:
+ * one whose every field is undefined, or whose every field the record
+ * already holds -- a revision of an open deal whose stage stays (its patch is
+ * empty now the name is set on create only), a line already showing the
+ * revision it is patched to (adopted after a create whose answer was lost).
+ * Either way no PATCH goes out: writing a record back unchanged still moves
+ * its `edited`, and on a closed deal is a rewrite of a record PathQuote
+ * decided to leave alone.
+ *
+ * "Already holds" is exact, and decided the way mergeForWrite lays the patch
+ * on: a field equal in value (sameValue) to the record's, `customFields` key
+ * by key. Anything else is a change and the patch goes out whole -- a number
+ * ACT! stored as 47500.0 against a patch's 47500 is the same number; a stage
+ * that is the same id but read back with a description the patch does not
+ * carry is not the same object, and is sent. Sending in doubt costs a
+ * rewrite; skipping in doubt would lose a change.
+ */
+export function patchToSend<P extends object>(patch: P | null, current: ActRecordJson): P | null {
+  if (patch === null) return null;
+  const changes = Object.entries(patch).some(([field, value]) => {
+    if (value === undefined || field === "id") return false;
+    if (field === "customFields" && isPlainObject(value) && isPlainObject(current.customFields)) {
+      const held = current.customFields;
+      return Object.entries(value).some(([key, v]) => v !== undefined && !sameValue(held[key], v));
+    }
+    return !sameValue(current[field], value);
+  });
+  return changes ? patch : null;
+}
+
+/**
+ * Whether two JSON values are the same: primitives by ===, arrays element by
+ * element, objects with the same keys and the same value under each. A key
+ * holding undefined counts as absent, as it does when the body is sent.
+ */
+export function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => sameValue(x, b[i]));
+  }
+  if (!isPlainObject(a) || !isPlainObject(b)) return false;
+  const keys = (o: Record<string, unknown>) => Object.keys(o).filter((k) => o[k] !== undefined);
+  const ka = keys(a);
+  const kb = keys(b);
+  return ka.length === kb.length && ka.every((k) => Object.hasOwn(b, k) && sameValue(a[k], b[k]));
+}
+
+function mergeCustomFields(current: unknown, patch: unknown): Record<string, unknown> {
+  if (!isPlainObject(patch)) {
+    throw new Error(
+      "a patch's customFields must be an object naming the fields to change; null or a non-object would blank every custom field on the record",
+    );
+  }
+  const merged: Record<string, unknown> = isPlainObject(current) ? { ...current } : {};
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) continue;
+    merged[key] = value;
+  }
+  return merged;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * What the body of a successful create's answer, or a GET's, is. (A PATCH's
+ * answer is not read at all: ActClient's `update` reads the record again.)
+ *
+ * - `record`: an object with a string `id` -- the record as ACT! now holds it.
+ *   Swagger declares this for every POST the client sends (201 with the
+ *   record) and every GET of one record, and the design doc records it for
+ *   `POST /api/contacts` on the live system.
+ * - `id`: a bare uuid string. Not what swagger declares; recognised so that a
+ *   create answered this way is read back by id, rather than becoming an error
+ *   after the record already exists -- which is how a create that succeeded
+ *   turns into a duplicate on the next attempt.
+ * - `nothing`: anything else, an empty body included.
+ */
+export type WriteAnswer =
+  | { kind: "record"; record: ActRecordJson & { id: string } }
+  | { kind: "id"; id: string }
+  | { kind: "nothing" };
+
+export function writeAnswer(payload: unknown): WriteAnswer {
+  if (isPlainObject(payload) && typeof payload.id === "string" && payload.id !== "") {
+    return { kind: "record", record: payload as ActRecordJson & { id: string } };
+  }
+  if (typeof payload === "string" && UUID.test(payload.trim())) {
+    return { kind: "id", id: payload.trim() };
+  }
+  return { kind: "nothing" };
+}

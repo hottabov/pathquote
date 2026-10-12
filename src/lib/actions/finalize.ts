@@ -21,6 +21,8 @@ import {
 } from "@/lib/documents/revision-snapshot";
 import { planRevision, revisionLabel } from "@/lib/documents/revision-plan";
 import { generateRevisionPdf } from "@/lib/documents/revision";
+import { enqueueActWrite, enqueueActWriteForNewestRevision } from "@/lib/act/outbox";
+import { drainAfterResponse } from "@/lib/act/drain-after";
 import { NOT_FOUND_ERROR } from "./_shared";
 
 /** Thrown inside `finalizeDocument`'s `$transaction` to roll it back when
@@ -364,7 +366,7 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
       const lastRevision = await tx.quoteRevision.findFirst({
         where: { documentId: document.id },
         orderBy: { revision: "desc" },
-        select: { revision: true, snapshotHash: true },
+        select: { id: true, revision: true, snapshotHash: true },
       });
       const plan = planRevision({
         lastRevision: lastRevision?.revision ?? null,
@@ -428,6 +430,15 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
       });
       if (res.count !== 1) throw new Error("ALREADY_FINALIZED");
 
+      // Queue the write into ACT! in this same transaction, so the quote is
+      // never FINAL without it (src/lib/act/outbox.ts). It is for the revision
+      // current after this finalise: the one just created, or the last one,
+      // kept because nothing changed -- planRevision keeps a revision only
+      // when there is one to keep.
+      const currentRevisionId = createdRevisionId ?? lastRevision?.id;
+      if (!currentRevisionId) throw new Error("finalize kept a revision that does not exist");
+      await enqueueActWrite(tx, { documentId: document.id, quoteRevisionId: currentRevisionId, now: issuedAt });
+
       return { number: resolvedNumber, revisionId: createdRevisionId };
     });
   } catch (err) {
@@ -437,6 +448,10 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
     }
     throw err;
   }
+
+  // The row just queued, written into ACT! once the response has gone --
+  // best-effort, and never this finalise's concern (src/lib/act/drain-after.ts).
+  drainAfterResponse(document.id, "finalise");
 
   // Best-effort: render and store this revision's PDF outside the transaction
   // so a Gotenberg failure can never roll back an issued quote (spec §5.4). A
@@ -703,7 +718,7 @@ export async function acceptQuote(documentId: string): Promise<AcceptResult> {
   if (!verdict.ok) return { error: verdict.reason };
 
   const now = new Date();
-  await db.$transaction(async (tx) => {
+  const accepted = await db.$transaction(async (tx) => {
     // Guard the transition with a status/acceptance-scoped updateMany so two
     // concurrent accepts don't both write an event.
     const res = await tx.document.updateMany({
@@ -714,10 +729,20 @@ export async function acceptQuote(documentId: string): Promise<AcceptResult> {
     await tx.quoteEvent.create({
       data: { documentId: document.id, type: "ACCEPTED", actorId: session.user.id },
     });
+    // The acceptance's write into ACT!, in the same transaction, for the
+    // newest revision: the one the client signed (src/lib/act/outbox.ts). Not
+    // reached for a quote already accepted, which returns above.
+    await enqueueActWriteForNewestRevision(tx, { documentId: document.id, now });
+    return true;
   }).catch((err) => {
-    if (err instanceof Error && err.message === "ALREADY_ACCEPTED") return;
+    if (err instanceof Error && err.message === "ALREADY_ACCEPTED") return false;
     throw err;
   });
+
+  // This acceptance's row, written into ACT! once the response has gone --
+  // best-effort (src/lib/act/drain-after.ts). Not for an accept that lost the
+  // race: the one that won queued the row and drains it.
+  if (accepted) drainAfterResponse(document.id, "acceptance");
 
   revalidateDocumentList();
   revalidateDocument(document.id);

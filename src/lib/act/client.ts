@@ -1,8 +1,46 @@
-import type { ActContact, ActHistory, ActPicklistItem, ActUser } from "@/lib/act/types";
+import {
+  classifyWriteFailure,
+  failureOf,
+  isRetried,
+  mergeForWrite,
+  neverConnected,
+  odataString,
+  patchToSend,
+  sameRecordId,
+  tryLaterStatus,
+  writableOpportunity,
+  writeAnswer,
+  type ActAnswer,
+  type ActRecordJson,
+  type HttpMethod,
+  type WriteFailure,
+} from "@/lib/act/record-write";
+import type {
+  ActContact,
+  ActContactPatch,
+  ActHistory,
+  ActHistoryRecord,
+  ActOpportunity,
+  ActPicklistItem,
+  ActProductLine,
+  ActUser,
+} from "@/lib/act/types";
+import type {
+  HistoryBody,
+  NewContactBody,
+  NewOpportunityBody,
+  OpportunityPatch,
+  SummaryProductBody,
+  SummaryProductPatch,
+} from "@/lib/act/write-payloads";
 
-// HTTP against the Act! Web API. Every judgement this integration makes lives
-// in the pure modules beside this one; what is left here is transport, and it
-// is deliberately dull.
+// HTTP against the Act! Web API. Every judgement this integration makes --
+// what a write sends, whether a failed request may be repeated, what a
+// failure or an answer means -- lives in the pure modules beside this one
+// (src/lib/act/record-write.ts, write-payloads.ts and the rest); what is left
+// here is transport: sending, re-authorising, reading a record back, and
+// turning each verdict into the request or the error it names. It is
+// deliberately dull.
 //
 // Three details of this API that cost time to discover, all verified against
 // the live system (docs/act-integration-reference.md):
@@ -29,6 +67,33 @@ export type ActClientConfig = {
   password: string;
 };
 
+/**
+ * How many records a lookup before a create asks for (listProductLines,
+ * opportunitiesNamed, contactHistories). One deal's lines, the opportunities
+ * with one deal's name and one revision's Histories are a handful -- and a
+ * contact's opportunities or Histories when a filter falls back are usually
+ * well under this; a full page means the answer may have been cut off, and is
+ * refused rather than read as complete -- a match on a page not fetched is
+ * exactly the record the lookup exists to find.
+ *
+ * Exported, with lookupQuery, for `npm run act:write-preflight`, which sends
+ * ACT! the very request a lookup sends (scripts/act-write-preflight.ts) and
+ * judges what comes back against this number (src/lib/act/write-preflight.ts).
+ */
+export const LOOKUP_TOP = 1000;
+
+/**
+ * The query string of a lookup before a create: `$top` of LOOKUP_TOP and,
+ * when given, `$filter`. What `lookupRows` sends -- and, from the same
+ * function, what the write preflight sends to see whether ACT! applies the
+ * filter -- so the two cannot drift apart.
+ */
+export function lookupQuery(filter?: string): URLSearchParams {
+  const query = new URLSearchParams({ $top: String(LOOKUP_TOP) });
+  if (filter !== undefined) query.set("$filter", filter);
+  return query;
+}
+
 /** Tokens last 65 minutes; renew early rather than racing the boundary. */
 const TOKEN_TTL_MS = 55 * 60 * 1000;
 
@@ -53,14 +118,60 @@ const HISTORY_PAGE_SIZE = 1000;
  */
 export const REP_PICKLIST_ID = "65898243-e8ef-4c0f-84d6-bbc93144eac0";
 
+/**
+ * The "Countries" picklist ("Master list of Countries") behind a contact's
+ * `businessAddress/country`, which is limited to it (`isLimitToList: true`)
+ * and marked `isAllowBlank: false`. Pinned for REP_PICKLIST_ID's reason: the
+ * id came off the production box in the same capture,
+ * RAW/ACT/meta/fields_contact.json, where `businessAddress/country` carries
+ * `picklist: { id: "3e852010-...", name: "Countries", isLimitToList: true }`
+ * (`homeAddress/country` names the same list, not limited to it). The items
+ * are read with ActClient.picklistItems and matched by actCountryValue in
+ * src/lib/act/country-picklist.ts; none has been read from this repo yet.
+ */
+export const COUNTRIES_PICKLIST_ID = "3e852010-1901-41e3-ac65-2b3ab6c25d2c";
+
+/**
+ * ACT! answered, and the answer was not what was asked for: a status that is
+ * a failure, or a 2xx that does not give the record or the list (`status`
+ * then 200, and `failure` that of an `unreadable` answer).
+ *
+ * `failure` is classifyWriteFailure's verdict for `method` and that answer
+ * (src/lib/act/record-write.ts), set where the error is thrown, so what the
+ * error means is on the error: `refused` -- nothing written, and repeating it
+ * repeats the refusal -- or `failed`, safe to try again. (Never `untracked`:
+ * that is ActUntrackedCreateError.) Read it with writeFailureOf.
+ *
+ * `retryAfter` is the answer's Retry-After header as sent, or null: what a
+ * 429 or a 408 (tryLaterStatus in src/lib/act/record-write.ts) says about
+ * when to come back, which the drain takes as the least it waits
+ * (retryAfterMs in src/lib/act/drain-rules.ts).
+ *
+ * `authorizing` is true when the answer was to the login itself
+ * (`authorize`), not to a request for a record: a 403 there is the service
+ * account's own access, which every request would meet, where a 403 on a
+ * record is that record (drainFailure in src/lib/act/drain-rules.ts); and a
+ * 408 there means the request it was getting a token for never left
+ * (createMadeNothing).
+ */
 export class ActApiError extends Error {
+  readonly failure: WriteFailure;
+  readonly retryAfter: string | null;
+  readonly authorizing: boolean;
+
   constructor(
     message: string,
+    readonly method: HttpMethod,
     readonly status: number,
     readonly body: string,
+    failure: WriteFailure,
+    details: { retryAfter?: string | null; authorizing?: boolean } = {},
   ) {
     super(message);
     this.name = "ActApiError";
+    this.failure = failure;
+    this.retryAfter = details.retryAfter ?? null;
+    this.authorizing = details.authorizing ?? false;
   }
 }
 
@@ -72,47 +183,395 @@ const MAX_ATTEMPTS = 3;
 /** Wait before attempt n+1 is n times this: 1s, then 2s. */
 const RETRY_DELAY_MS = 1_000;
 
-type Reply = { status: number; ok: boolean; body: string };
+/**
+ * How long one attempt at a request waits for its whole answer (`timeoutMs`),
+ * and how many attempts a GET or a PATCH gets before the client gives up
+ * (`attempts`; a POST is sent once whatever this says -- see `send`). A
+ * client keeps the limits it was built with for every request it makes, its
+ * logins included.
+ *
+ * Every client is built with DEFAULT_REQUEST_LIMITS -- 30 seconds, three
+ * attempts -- but one: the check behind "ACT! has this person"
+ * (ACT_CONTACT_CHECK_LIMITS in src/lib/act/outbox-admin.ts), which has a
+ * person waiting on it behind nginx.
+ */
+export type ActRequestLimits = { timeoutMs: number; attempts: number };
+
+/** REQUEST_TIMEOUT_MS and MAX_ATTEMPTS: what every client but one is built with. */
+export const DEFAULT_REQUEST_LIMITS: ActRequestLimits = { timeoutMs: REQUEST_TIMEOUT_MS, attempts: MAX_ATTEMPTS };
 
 /**
- * One HTTP exchange, retried when the network fails, the request times out or
- * the server answers 5xx -- up to MAX_ATTEMPTS attempts in all.
+ * How many times `send` makes a request with `method`: `limits.attempts`
+ * (at least one) for a GET or a PATCH, once for a POST (isRetried in
+ * src/lib/act/record-write.ts).
+ */
+export function attemptsFor(method: HttpMethod, limits: ActRequestLimits): number {
+  return isRetried(method) ? Math.max(1, Math.floor(limits.attempts)) : 1;
+}
+
+/**
+ * The longest one GET can take under `limits` before `send` gives up: every
+ * attempt timing out, and the waits between them (RETRY_DELAY_MS times the
+ * attempt that failed). 93 seconds under DEFAULT_REQUEST_LIMITS: 30 + 1 + 30
+ * + 2 + 30.
+ */
+export function requestBudgetMs(limits: ActRequestLimits): number {
+  const attempts = attemptsFor("GET", limits);
+  let waits = 0;
+  for (let attempt = 1; attempt < attempts; attempt++) waits += RETRY_DELAY_MS * attempt;
+  return attempts * limits.timeoutMs + waits;
+}
+
+/**
+ * The longest one call of a client just built can take that reads a single
+ * record (getContact, say): four requests at most -- the login (a new client
+ * has no token), the GET, and on a 401 a second login and the GET again
+ * (`request`) -- each within requestBudgetMs.
+ */
+export function singleReadBudgetMs(limits: ActRequestLimits): number {
+  return 4 * requestBudgetMs(limits);
+}
+
+/**
+ * `location` is the Location header, for a redirect's message, and
+ * `retryAfter` the Retry-After header, for a 429 or a 408; each null when
+ * there is none.
+ */
+type Reply = { status: number; ok: boolean; body: string; location: string | null; retryAfter: string | null };
+
+/**
+ * What a read-modify-write did. `written` is false when the decision was to
+ * send nothing, and `record` is then the record as read; when true, `record`
+ * is the record read again after the PATCH. Either way it is ACT!'s, `edited`
+ * included -- for a contact, what the drain stores as its ActSnapshot.
+ */
+export type Updated<T> = { written: boolean; record: T };
+
+/** What goes out besides the URL and headers. A body is sent as JSON. */
+type Outgoing = { method: HttpMethod; body?: unknown };
+
+/**
+ * A create that may have left a record in ACT! which PathQuote has not got:
+ * classifyWriteFailure's `untracked` (src/lib/act/record-write.ts).
  *
- * 4xx is never retried: it is a real answer, and repeating a rejected request
- * only repeats the rejection. The single 401 re-authorisation in `get` is a
- * different mechanism and sits above this; a 401 comes straight back out of
- * here as an ordinary reply.
+ * Thrown for a POST that timed out, lost its connection, or was answered 5xx
+ * or with a redirect -- the server may have committed it before the failure
+ * -- and for a POST
+ * that succeeded but whose record could not be had from the answer: not
+ * JSON, no id in it, or an id whose read-back failed. In that last case the
+ * id IS known, and `createdId` carries it: ACT! said it made that record, so
+ * the drain stores it as the step's result and moves on, exactly as if the
+ * record had come back. Only when `createdId` is null is there a record PathQuote
+ * may have and cannot name.
+ *
+ * Not retried here (see `send`), and not an ordinary failure for the caller
+ * either: running the same create again is what turns this into a duplicate
+ * History, opportunity, contact or product line. A plain ActApiError, by
+ * contrast, is a create ACT! turned away, which made nothing -- unless it is
+ * a 408, which can follow a record that was saved (createMadeNothing).
+ */
+export class ActUntrackedCreateError extends Error {
+  /** classifyWriteFailure's kind, on the error as on ActApiError. */
+  readonly failure = "untracked" as const;
+  /**
+   * True when no answer came back at all -- the POST timed out, or its
+   * connection dropped after it was made (`send`): ACT! not answering, which
+   * the drain reads as ACT! unreachable rather than as this record's trouble.
+   */
+  readonly noAnswer: boolean;
+
+  constructor(
+    message: string,
+    /** Method and path, e.g. "POST /api/History". */
+    readonly request: string,
+    /**
+     * The HTTP status when it is the reason: a 5xx, a redirect that was not
+     * followed, or a success whose body was not JSON. Null when no answer
+     * arrived, or when the failure came after a readable success -- no id in
+     * it, or the read-back by id failing.
+     */
+    readonly status: number | null,
+    readonly body: string,
+    /**
+     * The id ACT! answered the create with, when it answered with one and
+     * only the read-back by it failed. Null when no id came back at all.
+     */
+    readonly createdId: string | null,
+    options?: { cause?: unknown; noAnswer?: boolean },
+  ) {
+    super(message, { cause: options?.cause });
+    this.name = "ActUntrackedCreateError";
+    this.noAnswer = options?.noAnswer ?? false;
+  }
+}
+
+/**
+ * A request that never left: classifyWriteFailure's `not-sent`
+ * (src/lib/act/record-write.ts), which is `failed` -- safe to try again,
+ * because nothing reached ACT!.
+ *
+ * Thrown when something failed before the request could be sent -- its body,
+ * its URL, its headers, or the authorisation it needed first (see
+ * `fetchOnce`) -- and when no connection to ACT! was ever made
+ * (neverConnected). For a create, it is one of the two errors that say
+ * nothing was made (createMadeNothing), so the drain may clear the create's
+ * in-flight marker for it. That is why it has a class of its own: a plain
+ * Error says nothing about where it came from, and an error from the drain's
+ * own code -- the transaction storing a created record's id, say -- must
+ * never be read as "not sent" (src/lib/act/outbox-plan.ts, A CREATE IN
+ * FLIGHT).
+ */
+export class ActNotSentError extends Error {
+  readonly failure = "failed" as const;
+
+  constructor(
+    /** Method and path, e.g. "POST /api/History". */
+    readonly request: string,
+    reason: string,
+    options?: { cause?: unknown },
+  ) {
+    super(`${request} was not sent, so nothing reached ACT!: ${reason}`, options);
+    this.name = "ActNotSentError";
+  }
+}
+
+/**
+ * A GET or a PATCH that got no answer -- a timeout, a dropped connection --
+ * on every one of its attempts: classifyWriteFailure's `no-answer` for those
+ * methods, which is `failed`, safe to try again. (A POST with no answer is
+ * ActUntrackedCreateError instead.) A class of its own so that it reads as a
+ * request failure, not as an error from outside the client (writeFailureOf).
+ */
+export class ActNoAnswerError extends Error {
+  readonly failure = "failed" as const;
+
+  constructor(
+    /** Method and path, e.g. "GET /api/opportunities/{id}". */
+    readonly request: string,
+    readonly attempts: number,
+    reason: string,
+    options?: { cause?: unknown },
+  ) {
+    super(`${request} failed after ${attempts === 1 ? "1 attempt" : `${attempts} attempts`}: ${reason}`, options);
+    this.name = "ActNoAnswerError";
+  }
+}
+
+/**
+ * One HTTP exchange. Whether a failure is repeated depends on the method --
+ * isRetried in src/lib/act/record-write.ts, which this follows exactly:
+ *
+ *   GET, PATCH  sent again when the network fails, the request times out or
+ *               the server answers 5xx, up to the client's attempts in all
+ *               (ActRequestLimits: MAX_ATTEMPTS, for every client but one).
+ *               A GET changes nothing, and every PATCH this client sends
+ *               carries the whole record, so a second copy writes what the
+ *               first did.
+ *   POST        sent ONCE here -- though a 401 re-authorises and resends it
+ *               once; see `request`. Not repeated on a timeout, a network
+ *               failure or a 5xx: every POST here creates a record, and none
+ *               of those failures says the record was not created -- the
+ *               server may have committed it and only the answer been lost.
+ *               Sending it again would create a second History, a second
+ *               opportunity for the deal, a duplicate contact, or a second
+ *               product line -- which doubles the deal's amount. A timeout
+ *               or network failure throws ActUntrackedCreateError; a 5xx
+ *               comes back as a reply, which `parse` turns into the same
+ *               error. The one network failure that is not "may have
+ *               created it" is a connection never made (neverConnected in
+ *               src/lib/act/record-write.ts: refused, unresolvable, no route,
+ *               connect timeout): nothing reached ACT!, and it throws
+ *               ActNotSentError, for the outbox to back off and retry. A
+ *               night of ACT! being down is then a night of rows waiting,
+ *               not a morning of rows blocked for a person to check.
+ *
+ * Why a failed PATCH or GET is retried only these few times, a second or two
+ * apart, and a failed POST not at all: the outbox's `nextAttemptAt` is the
+ * better place to try a write again -- the row waits there without holding
+ * the drain, survives a restart, and is tried again from a fresh plan and a
+ * fresh read of ACT!, long after whatever made the request fail (ACT!
+ * restarting, the NAT rule down for the night) has had time to clear.
+ *
+ * 4xx is never repeated, whatever the method: it is a real answer, and
+ * repeating a rejected request only repeats the rejection. The single 401
+ * re-authorisation in `request` is a different mechanism and sits above this;
+ * a 401 comes straight back out of here as an ordinary reply.
+ *
+ * NOTHING IS SENT UNTIL IT CAN BE. Everything that can fail before a request
+ * leaves -- serialising the body, parsing the URL, checking the headers -- is
+ * done ahead of the first attempt, and its failure is ActNotSentError: the
+ * request was NOT sent. Inside `fetch` the same faults would surface as the
+ * same TypeError a dropped connection does, and a POST that never left would
+ * be reported as "ACT! may have created the record". What fails inside the attempt is then
+ * a connection that could not be made -- told apart by its code
+ * (neverConnected) and thrown as ActNotSentError -- or something that can fail
+ * once the request may be on its way, and classifyWriteFailure
+ * (src/lib/act/record-write.ts) says what each means.
+ *
+ * REDIRECTS ARE NOT FOLLOWED (`redirect: "manual"`). fetch follows them by
+ * default, and following a 301, 302 or 303 re-sends a POST as a GET: tried,
+ * a POST answered 301 came back as the 200 of a GET to the new location --
+ * which `create` would read as a create that succeeded with an unreadable
+ * answer, and report as a record ACT! may have made, though nothing was. An
+ * http-to-https or trailing-slash rule on IIS in front of the API is enough
+ * to cause it. Unfollowed, the 3xx itself comes back as the reply, and
+ * classifyWriteFailure says what it means (untracked for a POST, refused for
+ * a GET or a PATCH). Node's fetch hands the 3xx back with its status and
+ * headers under "manual" -- tried, a 301 with its Location -- rather than the
+ * browser's opaque status 0.
+ *
+ * Content-Type is set only when there is a body to describe.
  *
  * The timeout covers reading the body as well as receiving the headers, which
  * is why the body is read here and not by the caller.
  */
-async function send(label: string, url: string, headers: Record<string, string>): Promise<Reply> {
+async function send(
+  label: string,
+  url: string,
+  headers: Record<string, string>,
+  outgoing: Outgoing,
+  limits: ActRequestLimits,
+): Promise<Reply> {
+  const attempts = attemptsFor(outgoing.method, limits);
+
+  let target: URL;
+  let sentHeaders: Headers;
+  let body: string | undefined;
+  try {
+    body = outgoing.body === undefined ? undefined : JSON.stringify(outgoing.body);
+    target = new URL(url);
+    if (target.protocol !== "https:" && target.protocol !== "http:") {
+      throw new Error(`${target.protocol} is not http or https`);
+    }
+    sentHeaders = new Headers(
+      body === undefined ? headers : { ...headers, "Content-Type": "application/json" },
+    );
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new ActNotSentError(label, reason, { cause: error });
+  }
+
   for (let attempt = 1; ; attempt++) {
     let failure: string;
     try {
-      const response = await fetch(url, {
-        headers,
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      const response = await fetch(target, {
+        method: outgoing.method,
+        headers: sentHeaders,
+        ...(body === undefined ? {} : { body }),
+        // Never followed: see REDIRECTS above.
+        redirect: "manual",
+        signal: AbortSignal.timeout(limits.timeoutMs),
       });
-      const body = await response.text();
-      if (response.status < 500 || attempt === MAX_ATTEMPTS) {
-        return { status: response.status, ok: response.ok, body };
+      const text = await response.text();
+      if (response.status < 500 || attempt === attempts) {
+        return {
+          status: response.status,
+          ok: response.ok,
+          body: text,
+          location: response.headers.get("location"),
+          retryAfter: response.headers.get("retry-after"),
+        };
       }
       failure = `HTTP ${response.status}`;
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      if (attempt === MAX_ATTEMPTS) {
-        throw new Error(`${label} failed after ${MAX_ATTEMPTS} attempts: ${reason}`, {
+      const neverConnectedCode = neverConnected(error);
+      const answer: ActAnswer = neverConnectedCode ? "not-sent" : "no-answer";
+      if (classifyWriteFailure(outgoing.method, answer) === "untracked") {
+        throw new ActUntrackedCreateError(
+          `${label} failed and was not retried: ${reason}. ACT! may have created the record anyway -- check before creating it again.`,
+          label,
+          null,
+          "",
+          null,
+          { cause: error, noAnswer: true },
+        );
+      }
+      if (neverConnectedCode && attempt === attempts) {
+        throw new ActNotSentError(label, `no connection could be made (${neverConnectedCode})`, {
           cause: error,
         });
+      }
+      if (attempt === attempts) {
+        throw new ActNoAnswerError(label, attempts, reason, { cause: error });
       }
       failure = reason;
     }
     console.warn(
-      `act: ${label}: ${failure}; retrying (attempt ${attempt + 1} of ${MAX_ATTEMPTS})`,
+      `act: ${label}: ${failure}; retrying (attempt ${attempt + 1} of ${attempts})`,
     );
     await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS * attempt));
   }
+}
+
+/**
+ * What a failed request means, read off the error alone -- classifyWriteFailure's
+ * kind (src/lib/act/record-write.ts), as each error carries it:
+ *
+ *   ActUntrackedCreateError   `untracked`: a create that may have made a
+ *                             record PathQuote cannot name (unless its
+ *                             `createdId` names it).
+ *   ActApiError               its `failure`: `refused` or `failed`.
+ *   ActNotSentError           `failed`: nothing reached ACT!.
+ *   ActNoAnswerError          `failed`: a GET or PATCH that kept getting no
+ *                             answer.
+ *   anything else             `foreign`: not a request failure the client
+ *                             classified. An error from the drain's own code,
+ *                             a plain Error or a TypeError from anywhere, a
+ *                             `decide` callback that threw inside `update`.
+ *                             It says nothing about what ACT! did, so it is
+ *                             never read as `failed` -- which for a POST
+ *                             means nothing was made, but for a 408 -- and
+ *                             never clears a create's in-flight marker
+ *                             (createMadeNothing).
+ */
+export function writeFailureOf(error: unknown): WriteFailure | "foreign" {
+  if (error instanceof ActUntrackedCreateError) return error.failure;
+  if (error instanceof ActApiError) return error.failure;
+  if (error instanceof ActNotSentError) return error.failure;
+  if (error instanceof ActNoAnswerError) return error.failure;
+  return "foreign";
+}
+
+/**
+ * Whether an error thrown by a create says the create made nothing in ACT!.
+ * True for these and nothing else -- the only errors on which the drain may
+ * clear a create's in-flight marker -- the row's createInFlight, or a
+ * contact's actCreateInFlightAt -- without storing an id
+ * (src/lib/act/outbox-plan.ts, A CREATE IN FLIGHT):
+ *
+ *   - ActNotSentError: the request never left.
+ *   - an ActApiError whose `failure` is `refused`: ACT! answered with a 4xx
+ *     (other than 408 and 429, which are `failed`) and turned it away. The
+ *     POST's own 1xx or 4xx (a 3xx to a POST is `untracked`), a second 401
+ *     after re-authorising (`request`), or the login refused before the POST
+ *     left (`fetchOnce`).
+ *   - an ActApiError with a 429: rate limiting, answered before the request
+ *     runs -- by ACT!'s server or by whatever stands in front of it.
+ *   - an ActApiError with a 408 to the LOGIN (`authorizing`): `fetchOnce`
+ *     passes it through as itself, and the POST it was getting a token for
+ *     never left.
+ *
+ * NOT a 408 to the POST itself. HTTP.sys and Kestrel send a 408 while the
+ * request body is still arriving, before anything runs -- but application
+ * code can answer 408 for a timeout of its own after its database insert has
+ * committed, and nothing in the answer says which. Tried against a stub that
+ * saves the contact and then answers 408: with the marker cleared, the next
+ * pass POSTed the person again, and ACT! held them twice. So the marker
+ * stays: a contact is held for a person (UNTRACKED_CONTACT_REASON in
+ * src/lib/act/outbox-plan.ts), and an opportunity, a line or a History is
+ * found by the lookup made before its next create.
+ *
+ * An ActUntrackedCreateError with a `createdId` is not here either: it made
+ * something, and the drain stores that id, which clears the marker with it. A
+ * read-back by the created id that fails is wrapped in
+ * ActUntrackedCreateError, never thrown as itself.
+ */
+export function createMadeNothing(error: unknown): boolean {
+  if (error instanceof ActNotSentError) return true;
+  if (!(error instanceof ActApiError)) return false;
+  if (error.failure === "refused" || error.status === 429) return true;
+  return error.status === 408 && error.authorizing;
 }
 
 /** What a payload looked like, without any of its values: they are contact
@@ -145,31 +604,111 @@ export function unwrapRows<T>(payload: unknown, path: string): T[] {
   }
   throw new ActApiError(
     `GET ${path} returned a payload that is neither an array nor an object with an array \`value\`: it was ${describeShape(payload)}`,
+    "GET",
     200,
     "",
+    failureOf("GET", "unreadable"),
   );
+}
+
+/**
+ * The `$filter` opportunitiesNamed sends: `name eq '<name>'`, the name as an
+ * OData literal. A function of its own so that the write preflight
+ * (scripts/act-write-preflight.ts) asks ACT! exactly what the lookup asks.
+ */
+export function opportunityNameFilter(name: string): string {
+  return `name eq ${odataString(name)}`;
+}
+
+/** The `$filter` contactHistories sends: `regarding eq '<regarding>'`. As opportunityNameFilter. */
+export function historyRegardingFilter(regarding: string): string {
+  return `regarding eq ${odataString(regarding)}`;
+}
+
+/**
+ * Whether a filtered lookup's error is ACT! refusing the filter, so the
+ * lookup falls back to its unfiltered form (ActClient's opportunitiesNamed,
+ * contactHistories): an ActApiError `refused` with a 4xx other than 401 --
+ * the answer of a server that does not take that OData query on that
+ * endpoint. A 401 is about the token, not the filter; a 3xx is a setup error
+ * (refused, with its own message); a 408 or a 429 is "not now", and a 5xx,
+ * no answer or an unreadable 200 is `failed` like any GET -- each is tried
+ * again later rather than answered without the filter.
+ * One 4xx here is not about the filter: an authorisation refused while the
+ * lookup was getting a token (`fetchOnce` throws it as it is). That falls
+ * back too, and the fallback meets the same refusal and throws it.
+ */
+export function filterRefused(error: unknown): error is ActApiError {
+  return (
+    error instanceof ActApiError &&
+    error.failure === "refused" &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    error.status !== 401
+  );
+}
+
+function opportunityPath(id: string): string {
+  return `/api/opportunities/${encodeURIComponent(id)}`;
+}
+
+function contactPath(id: string): string {
+  return `/api/contacts/${encodeURIComponent(id)}`;
+}
+
+function productLinesPath(opportunityId: string): string {
+  return `${opportunityPath(opportunityId)}/products`;
+}
+
+function productLinePath(opportunityId: string, productId: string): string {
+  return `${productLinesPath(opportunityId)}/${encodeURIComponent(productId)}`;
 }
 
 export class ActClient {
   private token: string | null = null;
   private tokenExpiresAt = 0;
 
-  constructor(private readonly config: ActClientConfig) {}
+  /**
+   * `limits` is how long each request waits and how often a GET or PATCH is
+   * tried, for every request this client makes (ActRequestLimits).
+   */
+  constructor(
+    private readonly config: ActClientConfig,
+    private readonly limits: ActRequestLimits = DEFAULT_REQUEST_LIMITS,
+  ) {}
+
+  /**
+   * The login this client authorises as -- ACT_USER, for a client from
+   * actClientFromEnv. A login name, not a user uuid: the drain looks the
+   * uuid up in `users()` (serviceAccountUserId in src/lib/act/drain-rules.ts).
+   */
+  get loginName(): string {
+    return this.config.username;
+  }
 
   private async authorize(): Promise<string> {
     const credentials = Buffer.from(
       `${this.config.username}:${this.config.password}`,
     ).toString("base64");
 
-    const { ok, status, body } = await send("authorize", `${this.config.baseUrl}/authorize`, {
-      Authorization: `Basic ${credentials}`,
-      "Act-Database-Name": this.config.database,
-    });
+    const { ok, status, body, retryAfter } = await send(
+      "authorize",
+      `${this.config.baseUrl}/authorize`,
+      {
+        Authorization: `Basic ${credentials}`,
+        "Act-Database-Name": this.config.database,
+      },
+      { method: "GET" },
+      this.limits,
+    );
     if (!ok) {
       throw new ActApiError(
         `authorize failed (${status}). Check the username is the Act! display name, the database name, and that the account has the "Web API Access" permission -- a missing permission is 4032.`,
+        "GET",
         status,
         body,
+        failureOf("GET", status),
+        { retryAfter, authorizing: true },
       );
     }
 
@@ -183,24 +722,106 @@ export class ActClient {
     return this.authorize();
   }
 
-  /** One GET, with whatever token is current, result uninterpreted. */
-  private async fetchOnce(path: string): Promise<Reply> {
-    const token = await this.getToken();
-    return send(`GET ${path}`, `${this.config.baseUrl}${path}`, {
-      Authorization: `Bearer ${token}`,
-      "Act-Database-Name": this.config.database,
-    });
-  }
-
-  private parse(path: string, reply: Reply): unknown {
-    if (!reply.ok) {
-      throw new ActApiError(`GET ${path} failed (${reply.status})`, reply.status, reply.body);
+  /**
+   * One request, with whatever token is current, result uninterpreted.
+   *
+   * The token comes first, and when getting one fails the request has not
+   * been sent. Authorisation's own errors are about the GET to /authorize,
+   * not this request, so all but three are thrown as ActNotSentError for it
+   * -- without that, an /authorize that answered 5xx three times would reach
+   * a create's caller as a `failed` ActApiError, which is not one of the
+   * errors that say the create made nothing (createMadeNothing). The three
+   * kept as they are already say it: an ActNotSentError; an ActApiError
+   * `refused` -- a login ACT! turned away, which repeating would only repeat;
+   * and an ActApiError with a 408 or a 429, which keeps its Retry-After for
+   * the drain's backoff, and `authorizing`, which tells createMadeNothing a
+   * 408 here was the login's and not the POST's.
+   */
+  private async fetchOnce(path: string, outgoing: Outgoing): Promise<Reply> {
+    const label = `${outgoing.method} ${path}`;
+    let token: string;
+    try {
+      token = await this.getToken();
+    } catch (error) {
+      if (error instanceof ActNotSentError) throw error;
+      if (error instanceof ActApiError && (error.failure === "refused" || tryLaterStatus(error.status))) throw error;
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new ActNotSentError(label, `authorising failed first: ${reason}`, { cause: error });
     }
-    return reply.body ? JSON.parse(reply.body) : null;
+    return send(
+      label,
+      `${this.config.baseUrl}${path}`,
+      {
+        Authorization: `Bearer ${token}`,
+        "Act-Database-Name": this.config.database,
+      },
+      outgoing,
+      this.limits,
+    );
   }
 
   /**
-   * GET a path, re-authorising once if the token was rejected.
+   * A reply's body as JSON, or the error classifyWriteFailure says its status
+   * is: `untracked` as ActUntrackedCreateError, `refused` and `failed` as
+   * ActApiError with the status. A 2xx whose body is not JSON is the table's
+   * `unreadable`. A PATCH's body is not read at all (see `update`). A 3xx is a
+   * redirect `send` did not follow, and its message names where it pointed.
+   */
+  private parse(path: string, method: HttpMethod, reply: Reply): unknown {
+    const request = `${method} ${path}`;
+    const failure = classifyWriteFailure(method, reply.status);
+    const redirect =
+      reply.status >= 300 && reply.status < 400
+        ? `, a redirect${reply.location ? ` to ${reply.location}` : ""} that was not followed -- check ACT_BASE (http or https, a trailing slash) against what the server expects`
+        : "";
+    if (failure === "untracked") {
+      throw new ActUntrackedCreateError(
+        `${request} failed (${reply.status}${redirect}) and was not retried. ACT! may have created the record before failing -- check before creating it again.`,
+        request,
+        reply.status,
+        reply.body,
+        null,
+      );
+    }
+    if (failure) {
+      throw new ActApiError(`${request} failed (${reply.status}${redirect})`, method, reply.status, reply.body, failure, {
+        retryAfter: reply.retryAfter,
+      });
+    }
+    if (method === "PATCH") return null;
+    if (!reply.body) return null;
+    try {
+      return JSON.parse(reply.body);
+    } catch (error) {
+      if (classifyWriteFailure(method, "unreadable") === "untracked") {
+        throw new ActUntrackedCreateError(
+          `${request} succeeded (${reply.status}) but its answer is not JSON, so the record it created cannot be identified.`,
+          request,
+          reply.status,
+          reply.body,
+          null,
+          { cause: error },
+        );
+      }
+      throw new ActApiError(
+        `${request} answered ${reply.status} with a body that is not JSON`,
+        method,
+        reply.status,
+        reply.body,
+        failureOf(method, "unreadable"),
+      );
+    }
+  }
+
+  /**
+   * Send a request, re-authorising once if the token was rejected.
+   *
+   * The re-send after a 401 is safe for a POST too, and is the one time a
+   * POST is sent twice. ACT!'s Web API is ASP.NET: the bearer token is
+   * validated once, in the pipeline, before the controller action runs, so a
+   * 401 means the action never ran -- nothing was created for the second
+   * copy to duplicate. That is the framework's order of work, not something
+   * tried against this server.
    *
    * Two explicit attempts rather than a loop. A `for` loop here needs a throw
    * after it to satisfy the compiler, that throw is unreachable, and its
@@ -208,22 +829,410 @@ export class ActClient {
    * bare "failed (401)" while the useful sentence sat in dead code. This shape
    * has no unreachable branch and the diagnostic actually fires.
    */
-  private async get(path: string): Promise<unknown> {
-    const first = await this.fetchOnce(path);
-    if (first.status !== 401) return this.parse(path, first);
+  private async request(path: string, outgoing: Outgoing): Promise<unknown> {
+    const first = await this.fetchOnce(path, outgoing);
+    if (first.status !== 401) return this.parse(path, outgoing.method, first);
 
     // Expired or revoked mid-run. Drop the cached token so the retry fetches a
     // fresh one.
     this.token = null;
-    const second = await this.fetchOnce(path);
+    const second = await this.fetchOnce(path, outgoing);
     if (second.status === 401) {
       throw new ActApiError(
-        `GET ${path} failed: still 401 after re-authorising. The account may have lost its "Web API Access" permission, or the password was rotated.`,
+        `${outgoing.method} ${path} failed: still 401 after re-authorising. The account may have lost its "Web API Access" permission, or the password was rotated.`,
+        outgoing.method,
         401,
         second.body,
+        failureOf(outgoing.method, 401),
       );
     }
-    return this.parse(path, second);
+    return this.parse(path, outgoing.method, second);
+  }
+
+  private get(path: string): Promise<unknown> {
+    return this.request(path, { method: "GET" });
+  }
+
+  /**
+   * GET one record by its path, refusing an answer that is not a record, or
+   * is a record with an id other than `id`: an answer about another record
+   * stored as this one's snapshot, or laid under a PATCH to this one, would
+   * put one record's fields on another.
+   */
+  private async getRecord(path: string, id: string): Promise<ActRecordJson & { id: string }> {
+    const payload = await this.get(path);
+    const answer = writeAnswer(payload);
+    if (answer.kind !== "record") {
+      throw new ActApiError(
+        `GET ${path} returned something other than a record with an id: it was ${describeShape(payload)}`,
+        "GET",
+        200,
+        "",
+        failureOf("GET", "unreadable"),
+      );
+    }
+    if (!sameRecordId(answer.record.id, id)) {
+      throw new ActApiError(
+        `GET ${path} answered with record ${answer.record.id}, not ${id}`,
+        "GET",
+        200,
+        "",
+        failureOf("GET", "unreadable"),
+      );
+    }
+    return answer.record;
+  }
+
+  /**
+   * POST a new record and return it as ACT! holds it.
+   *
+   * Swagger declares a 201 with the created record for all four creates, and
+   * the design doc records the whole contact coming back from the live
+   * `POST /api/contacts`. Should an answer be only the new id, the record is
+   * read back by it (`readPath`), because throwing at that point would leave a
+   * created record PathQuote has no id for. An answer with neither is
+   * ActUntrackedCreateError, for the same reason.
+   */
+  private async create(
+    path: string,
+    body: unknown,
+    readPath: (id: string) => string,
+  ): Promise<ActRecordJson & { id: string }> {
+    const payload = await this.request(path, { method: "POST", body });
+    const answer = writeAnswer(payload);
+    if (answer.kind === "record") return answer.record;
+    // Either way below, the answer is classifyWriteFailure's POST
+    // `unreadable`: untracked.
+    if (answer.kind === "id") {
+      try {
+        return await this.getRecord(readPath(answer.id), answer.id);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new ActUntrackedCreateError(
+          `POST ${path} created ${answer.id}, but reading it back failed: ${reason}. The id is known: store it rather than creating the record again.`,
+          `POST ${path}`,
+          null,
+          "",
+          answer.id,
+          { cause: error },
+        );
+      }
+    }
+    throw new ActUntrackedCreateError(
+      `POST ${path} succeeded but answered with ${describeShape(payload)}, not the record or its id, so the record it created cannot be identified.`,
+      `POST ${path}`,
+      null,
+      "",
+      null,
+    );
+  }
+
+  /**
+   * Read a record, decide on that read, and PATCH the whole record back -- or
+   * send nothing at all.
+   *
+   * ONE READ, AND THE DECISION IS MADE ON IT. `decide` is handed the record
+   * exactly as this GET returned it and answers with what to change, or null
+   * for nothing; its answer is laid over that same record and written. The
+   * decisions are pure and live elsewhere -- revisedOpportunityBody,
+   * wonOpportunityBody, contactPromotion, summaryProductPatch in
+   * src/lib/act/write-payloads.ts -- and the drain hands them in. Were the
+   * drain to read the record to decide and this method to read it again to
+   * write, an edit made in ACT! between the two reads would be overwritten by
+   * a patch decided without it: a stage somebody advanced in between would be
+   * moved back. Deciding on the read that is about to be overwritten is the
+   * design spec's optimistic-concurrency guardrail in the one form that
+   * matters here. What is left is the window between this GET's answer and
+   * the PATCH's arrival: an edit made in ACT! inside it is overwritten with
+   * what was read. The two scripts below ran with the same window.
+   *
+   * ONE EXCEPTION, ACCEPTED: THE PRODUCT LINE. Whether the line is written at
+   * all is decided on the OPPORTUNITY's status (productLineWrite in
+   * src/lib/act/write-payloads.ts), which the drain reads before this method
+   * reads the line -- the line carries no status of its own to decide on. So
+   * a deal closed by hand between those two reads still gets its line
+   * rewritten to the revision's figure. Accepted: the window is as long as
+   * one request between the two reads, the figure written is the quote's
+   * current one, and it changes no status -- the deal stays as it was closed.
+   *
+   * NOTHING MEANS NO REQUEST. When the decision is null, or a patch that
+   * changes nothing on the record as read (patchToSend), no PATCH is sent:
+   * writing a record back unchanged still moves its `edited`, and on a closed
+   * deal is a rewrite of a record PathQuote decided to leave alone. The
+   * result then says `written: false` and carries the record as read.
+   *
+   * READ-MODIFY-WRITE, ON PURPOSE. Swagger says PATCH takes a partial record
+   * ("Update (partially) an already existing ..."), and a partial PATCH may
+   * well work. Nothing in this repo records one being tried against this
+   * server. What has been is the whole record:
+   * scripts/act-fix-country-usa.py and scripts/act-fix-country-spellings.py
+   * wrote production contacts and companies that way, because a partial write
+   * to a nested object blanks its siblings. So this is the proven path. Once a
+   * partial PATCH has been tried live -- a partial `customFields` included --
+   * switching to it is a small change: send `{ ...patch, id }` instead of the
+   * merged record, keeping the read, which the decision needs anyway.
+   * What is merged how, `customFields` key by key above all, is mergeForWrite
+   * in src/lib/act/record-write.ts; `writable` then drops what must not go
+   * back (writableOpportunity, for an opportunity).
+   *
+   * WHAT COMES BACK is the record as ACT! holds it after the write, because
+   * for a contact the drain stores it as the ActSnapshot and its `edited` as
+   * actSourceEditedAt -- a baseline of what ACT! holds, which has to carry
+   * ACT!'s `edited` after the write, not one from before it. (The inbound
+   * sync reads contacts only, so an opportunity's or a line's record is not
+   * stored.) So it is ALWAYS READ AGAIN after the PATCH, and the PATCH's own
+   * answer is not read at all. Swagger declares a 200 with the record, but an
+   * answer that merely echoed the body sent would carry the `edited` from
+   * before the write, and nothing in a single answer tells the two apart. At
+   * a few writes a day the second GET costs nothing, and it is certain. Should that
+   * GET fail, the PATCH has still landed and the error says only that the
+   * record could not be read; the drain runs the step again, which decides
+   * again on a fresh read -- sending nothing for a promotion or win already
+   * made, or the same whole record again for a revision.
+   */
+  private async update<T, P extends object>(
+    path: string,
+    id: string,
+    decide: (current: T) => P | null,
+    writable: (merged: ActRecordJson & { id: string }) => ActRecordJson = (merged) => merged,
+  ): Promise<Updated<T>> {
+    const current = await this.getRecord(path, id);
+    const patch = patchToSend(decide(current as unknown as T), current);
+    if (!patch) return { written: false, record: current as unknown as T };
+    await this.request(path, {
+      method: "PATCH",
+      body: writable(mergeForWrite(id, current, patch as Record<string, unknown>)),
+    });
+    return { written: true, record: (await this.getRecord(path, id)) as unknown as T };
+  }
+
+  /**
+   * Create one History record: `POST /api/History` (`History_PostOrFormat` in
+   * swagger.json), capital H as in the endpoint table of
+   * docs/act-integration-reference.md section 3 and as historiesBetween reads
+   * it. The drain looks for it first (contactHistories, historyLookup in
+   * src/lib/act/write-payloads.ts), every time.
+   */
+  async createHistory(body: HistoryBody): Promise<ActHistoryRecord> {
+    return (await this.create("/api/History", body, (id) =>
+      `/api/History/${encodeURIComponent(id)}`,
+    )) as unknown as ActHistoryRecord;
+  }
+
+  /**
+   * Create one opportunity: `POST /api/opportunities`
+   * (`Opportunities_PostOpportunity`). The drain looks for it first
+   * (opportunitiesNamed, opportunityLookup in src/lib/act/write-payloads.ts),
+   * every time.
+   */
+  async createOpportunity(body: NewOpportunityBody): Promise<ActOpportunity> {
+    return (await this.create("/api/opportunities", body, (id) =>
+      opportunityPath(id),
+    )) as unknown as ActOpportunity;
+  }
+
+  /** One opportunity: `GET /api/opportunities/{opportunityId}`. */
+  async getOpportunity(id: string): Promise<ActOpportunity> {
+    return (await this.getRecord(opportunityPath(id), id)) as unknown as ActOpportunity;
+  }
+
+  /**
+   * Change an opportunity: read it, ask `decide` what to change on that very
+   * read -- null for nothing -- and `PATCH /api/opportunities/{opportunityId}`
+   * the whole record back without the fields ACT! computes
+   * (writableOpportunity). See `update` for why one read, why the whole
+   * record and what is returned.
+   */
+  async updateOpportunity(
+    id: string,
+    decide: (current: ActOpportunity) => OpportunityPatch | null,
+  ): Promise<Updated<ActOpportunity>> {
+    return this.update(opportunityPath(id), id, decide, writableOpportunity);
+  }
+
+  /**
+   * Create the deal's product line: `POST /api/opportunities/{opportunityId}/products`
+   * (`Opportunities_PostOpportunityProductAndOpportunityId`). Sent once, like
+   * every create, and only after the drain has looked for the line and found
+   * none (listProductLines, productLineLookup in
+   * src/lib/act/write-payloads.ts); an answer of only the new line's id is
+   * read back from `/api/opportunities/{opportunityId}/products/{productId}`.
+   */
+  async createProductLine(opportunityId: string, body: SummaryProductBody): Promise<ActProductLine> {
+    return (await this.create(productLinesPath(opportunityId), body, (id) =>
+      productLinePath(opportunityId, id),
+    )) as unknown as ActProductLine;
+  }
+
+  /**
+   * Change the deal's product line: read it, ask `decide` on that read, and
+   * `PATCH /api/opportunities/{opportunityId}/products/{productId}`
+   * (`Opportunities_PatchOpportunityProductAndOpportunityIdAndProductId`) the
+   * whole line back. See `update`. Never a DELETE and a new line: see THE DEAL
+   * AMOUNT IS ONE PRODUCT LINE in src/lib/act/write-payloads.ts. A line that
+   * already shows what the patch says -- one adopted after a create whose
+   * answer was lost -- is not written again (`written: false`), and shows the
+   * revision all the same.
+   */
+  async updateProductLine(
+    opportunityId: string,
+    productId: string,
+    decide: (current: ActProductLine) => SummaryProductPatch | null,
+  ): Promise<Updated<ActProductLine>> {
+    return this.update(productLinePath(opportunityId, productId), productId, decide);
+  }
+
+  /**
+   * Every product line of one opportunity:
+   * `GET /api/opportunities/{opportunityId}/products`
+   * (`Opportunities_GetOpportunityProductsAndOpportunityId`), whose 200 is
+   * swagger's array of act.web.api.models.Opportunities.OpportunityProduct --
+   * `itemNumber` among their fields. For productLineLookup in
+   * src/lib/act/write-payloads.ts, before every line create. See `lookupRows`.
+   */
+  async listProductLines(opportunityId: string): Promise<ActProductLine[]> {
+    return this.lookupRows<ActProductLine>(productLinesPath(opportunityId));
+  }
+
+  /**
+   * Every opportunity in ACT! named `name`, for opportunityLookup in
+   * src/lib/act/write-payloads.ts before every opportunity create:
+   * `GET /api/opportunities?$filter=name eq '<name>'`
+   * (`Opportunities_GetOpportunities`), whose 200 is swagger's array of
+   * act.web.api.models.Opportunities.Opportunity. Across every opportunity,
+   * not the contact's, so an opportunity created for this quote under an
+   * earlier contact is still found (see opportunityLookup).
+   *
+   * THE FILTER IS UNTRIED ON THIS ENDPOINT. Swagger declares no parameters
+   * for it at all -- `"parameters": []` -- and says only, in its summary, "Get
+   * all opportunity matching an (optional) OData query". That is word for
+   * word how it describes `GET /api/contacts`, which also declares none, and
+   * where `$filter` is verified: contactsEditedSince sends one on every
+   * inbound sync. So the filter is sent, and should ACT! answer it with a 4xx
+   * other than 401 -- an OData query it does not take here -- the lookup
+   * falls back to the contact's opportunities (contactOpportunities), the
+   * lookup this one replaced, with its blind spot: an opportunity made under
+   * another contact. A 401 is not about the filter, and a 5xx or no answer is
+   * `failed` like any GET, tried again later. Should ACT! ignore the filter
+   * and answer with opportunities of every name, opportunityLookup still
+   * keeps only this name, and a full page is refused (`lookupRows`).
+   */
+  async opportunitiesNamed(name: string, contactId: string): Promise<ActOpportunity[]> {
+    return this.filteredLookup<ActOpportunity>(
+      "/api/opportunities",
+      opportunityNameFilter(name),
+      () => this.contactOpportunities(contactId),
+    );
+  }
+
+  /**
+   * Every opportunity associated with one contact:
+   * `GET /api/contacts/{contactId}/associated-opportunities`
+   * (`Opportunities_GetAssociatedOpportunitiesFromContactAndContactId`), whose
+   * 200 is swagger's array of act.web.api.models.Opportunities.Opportunity --
+   * `name` among their fields. opportunitiesNamed's fallback. See
+   * `lookupRows`.
+   */
+  async contactOpportunities(contactId: string): Promise<ActOpportunity[]> {
+    return this.lookupRows<ActOpportunity>(`${contactPath(contactId)}/associated-opportunities`);
+  }
+
+  /**
+   * The contact's History records whose `regarding` is `regarding`, for
+   * historyLookup in src/lib/act/write-payloads.ts before every History
+   * create: `GET /api/contacts/{contactId}/history?$filter=regarding eq '...'`
+   * (`History_GetByContactByIdOrFormat`), whose 200 is swagger's array of
+   * act.web.api.models.Histories.History -- `id`, `historyTypeID`,
+   * `regarding` and `created` among its fields. (Its one declared query
+   * parameter, `format`, changes how `details` is rendered, which the lookup
+   * does not read, and is not sent.)
+   *
+   * Filtered because a contact's History is everything ever logged against
+   * them, and a long-standing customer's can run past LOOKUP_TOP -- a full
+   * page, which `lookupRows` refuses, would hold the row's write-history, and
+   * with it the promotion and the win after it, until a person looked.
+   * Swagger describes the endpoint as "matching an (optional) OData query", as
+   * it does /api/contacts; the filter on it is as untried as
+   * opportunitiesNamed's, and falls back the same way: on a 4xx other than
+   * 401, to the contact's History unfiltered. historyLookup matches exactly
+   * whatever the server returned.
+   */
+  async contactHistories(contactId: string, regarding: string): Promise<ActHistoryRecord[]> {
+    const path = `${contactPath(contactId)}/history`;
+    return this.filteredLookup<ActHistoryRecord>(path, historyRegardingFilter(regarding), () =>
+      this.lookupRows<ActHistoryRecord>(path),
+    );
+  }
+
+  /**
+   * `lookupRows` with an OData `$filter`, or `fallback` when ACT! refuses the
+   * filter (filterRefused). Anything else is thrown as it is.
+   */
+  private async filteredLookup<T>(path: string, filter: string, fallback: () => Promise<T[]>): Promise<T[]> {
+    try {
+      return await this.lookupRows<T>(path, filter);
+    } catch (error) {
+      if (!filterRefused(error)) throw error;
+      console.warn(`act: GET ${path} answered ${error.status} to $filter=${filter}; looking up without it`);
+      return fallback();
+    }
+  }
+
+  /**
+   * A lookup's rows, all of them or an error.
+   *
+   * `$top` is sent because a collection answer is a page (`Count` is the
+   * page's size, docs/act-integration-reference.md section 3) whose default
+   * size nobody has measured. Swagger describes every endpoint this is used
+   * on as "matching an (optional) OData query", the words it uses for
+   * /api/contacts, where `$top` is verified; on these it has not been tried,
+   * and the first live create will say. `filter`, when given, is sent as
+   * `$filter` (filteredLookup). A page of LOOKUP_TOP rows is refused as
+   * possibly cut short: a GET answer that does not give what was asked for,
+   * so `failed`, and the drain tries again later rather than creating beside
+   * a match it never saw. Through unwrapRows, like every list here.
+   */
+  private async lookupRows<T>(path: string, filter?: string): Promise<T[]> {
+    const paged = `${path}?${lookupQuery(filter)}`;
+    const rows = unwrapRows<T>(await this.get(paged), paged);
+    if (rows.length >= LOOKUP_TOP) {
+      throw new ActApiError(
+        `GET ${paged} returned ${rows.length} rows, a full page, so there may be more -- refusing to decide a create on part of the answer`,
+        "GET",
+        200,
+        "",
+        failureOf("GET", "unreadable"),
+      );
+    }
+    return rows;
+  }
+
+  /**
+   * Create one contact: `POST /api/contacts` (`Contacts_PostContact`). The
+   * answer is the whole contact (design doc, verified 2026-10-07), every
+   * field ACT! filled in included -- the drain's first ActSnapshot of it.
+   */
+  async createContact(body: NewContactBody): Promise<ActContact> {
+    return (await this.create("/api/contacts", body, (id) =>
+      contactPath(id),
+    )) as unknown as ActContact;
+  }
+
+  /** One contact: `GET /api/contacts/{contactId}`. */
+  async getContact(id: string): Promise<ActContact> {
+    return (await this.getRecord(contactPath(id), id)) as unknown as ActContact;
+  }
+
+  /**
+   * Change a contact: read it, ask `decide` on that read -- contactPromotion,
+   * today -- and `PATCH /api/contacts/{contactId}` the whole record back,
+   * exactly as read apart from the patch. See `update`.
+   */
+  async updateContact(
+    id: string,
+    decide: (current: ActContact) => ActContactPatch | null,
+  ): Promise<Updated<ActContact>> {
+    return this.update(contactPath(id), id, decide);
   }
 
   /** The API version, and the Act! version behind it. Logged on every run so a
@@ -244,9 +1253,10 @@ export class ActClient {
    *
    * `GET /api/users` -- the path is in the reference's endpoint table
    * (docs/act-integration-reference.md section 3) and in swagger.json as
-   * `Users_Get`, returning `act.web.api.models.Users.UserInfo`. Still a GET:
-   * this client remains read-only, and the users endpoint's POST is not
-   * reachable from here.
+   * `Users_Get`, returning `act.web.api.models.Users.UserInfo`. A GET: the
+   * client writes only Histories, opportunities, their product lines and
+   * contacts, and the users
+   * endpoint's POST is not reachable from here.
    *
    * Not paged, because the endpoint takes no parameters at all -- swagger lists
    * `"parameters": []` for it, so there is no $top or $skip to send -- and the
@@ -387,20 +1397,80 @@ export class ActClient {
       skip += PAGE_SIZE;
     }
   }
+
+  /**
+   * This client as an ActReader: GETs and nothing else. See ActReader.
+   *
+   * Every function on the object returned calls `users`, `picklistItems` or
+   * the private `get`, and each of those sends GET and only GET -- the login
+   * included, which is a GET to /authorize. The object holds no reference to
+   * this client that a caller could reach, and is frozen, so a holder of it
+   * has no path to `create`, `update` or any other method that writes.
+   */
+  reader(): ActReader {
+    return Object.freeze({
+      loginName: this.loginName,
+      users: () => this.users(),
+      picklistItems: (listId: string) => this.picklistItems(listId),
+      rows: async (path: string, query?: URLSearchParams) => {
+        // A path of ACT!'s API, never a URL: the base is this client's.
+        if (!/^\/api\/[^?#]*$/.test(path)) {
+          throw new Error(`ActReader.rows takes a path under /api/ with no query of its own, got ${JSON.stringify(path)}`);
+        }
+        const full = query && [...query.keys()].length > 0 ? `${path}?${query}` : path;
+        return unwrapRows<Record<string, unknown>>(await this.get(full), full);
+      },
+    });
+  }
 }
 
+/**
+ * A view of ACT! that can only read: for `npm run act:write-preflight`
+ * (scripts/act-write-preflight.ts), which must never write to the production
+ * CRM it is checking. Made by ActClient's `reader`, or actReaderFromEnv. It
+ * has no method that sends anything but a GET, so read-only is a property of
+ * the type and of the object, not a promise made by its caller.
+ */
+export type ActReader = {
+  /** ACT_USER, as ActClient's loginName. */
+  readonly loginName: string;
+  /** ActClient's `users`: `GET /api/users`. */
+  users(): Promise<ActUser[]>;
+  /** ActClient's `picklistItems`: a GET on one of two paths. */
+  picklistItems(listId: string): Promise<ActPicklistItem[]>;
+  /**
+   * `GET {path}?{query}`, the rows through unwrapRows as every list here:
+   * a bare array or `{ value: [...] }`, anything else thrown. Not cut at
+   * LOOKUP_TOP, unlike a lookup: the caller judges a full page itself.
+   */
+  rows(path: string, query?: URLSearchParams): Promise<Record<string, unknown>[]>;
+};
+
 /** Build a client from the environment. Throws with the missing names rather
- * than failing later with an unhelpful 401. */
-export function actClientFromEnv(): ActClient {
+ * than failing later with an unhelpful 401. `limits` is DEFAULT_REQUEST_LIMITS
+ * unless a caller has a reason of its own (ActRequestLimits). */
+export function actClientFromEnv(limits: ActRequestLimits = DEFAULT_REQUEST_LIMITS): ActClient {
   const required = ["ACT_BASE", "ACT_DB", "ACT_USER", "ACT_PASS"] as const;
   const missing = required.filter((name) => !process.env[name]);
   if (missing.length > 0) {
     throw new Error(`missing environment: ${missing.join(", ")}`);
   }
-  return new ActClient({
-    baseUrl: process.env.ACT_BASE!.replace(/\/$/, ""),
-    database: process.env.ACT_DB!,
-    username: process.env.ACT_USER!,
-    password: process.env.ACT_PASS!,
-  });
+  return new ActClient(
+    {
+      baseUrl: process.env.ACT_BASE!.replace(/\/$/, ""),
+      database: process.env.ACT_DB!,
+      username: process.env.ACT_USER!,
+      password: process.env.ACT_PASS!,
+    },
+    limits,
+  );
+}
+
+/**
+ * A read-only view of ACT! from the environment: actClientFromEnv's client,
+ * as an ActReader, with the client itself kept out of the caller's reach.
+ * Throws as actClientFromEnv does.
+ */
+export function actReaderFromEnv(limits: ActRequestLimits = DEFAULT_REQUEST_LIMITS): ActReader {
+  return actClientFromEnv(limits).reader();
 }

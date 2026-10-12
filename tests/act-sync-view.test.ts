@@ -1,10 +1,15 @@
 import { describe, it, expect } from "vitest";
 import {
+  HELD_QUOTES_LISTED,
   NIGHTLY_SCHEDULE,
   describeActSyncStatus,
+  describeOutbox,
   describeSyncAttempt,
 } from "../src/lib/act/sync-view";
 import { finishedRun, startedRun, failedRun, type ActSyncRun } from "../src/lib/act/run-record";
+import { UNTRACKED_CONTACT_REASON, NO_CONTACT_REASON } from "../src/lib/act/outbox-plan";
+import { DRAIN_BUSY_MESSAGE } from "../src/lib/act/sync-drain-lock";
+import type { ActOutboxStanding } from "../src/lib/queries/act-sync";
 
 // A fixed "now" so every relative phrase below is a function of its arguments
 // and nothing in this file reads the clock. The suite has no fake timers (see
@@ -31,6 +36,21 @@ function run(overrides: Partial<ActSyncRun> = {}): ActSyncRun {
   };
 }
 
+/** The queue on an ordinary morning: sending on, nothing waiting, nothing held, an admin reading. */
+function outbox(overrides: Partial<ActOutboxStanding> = {}): ActOutboxStanding {
+  return {
+    scope: "all",
+    sendingOn: true,
+    held: 0,
+    heldForContact: 0,
+    oldestHeldQueuedAt: null,
+    heldQuotes: [],
+    waiting: 0,
+    retrying: 0,
+    ...overrides,
+  };
+}
+
 /** The status the query returns on an ordinary morning, before overrides. */
 function status(overrides: Partial<Parameters<typeof describeActSyncStatus>[0]> = {}) {
   return {
@@ -38,6 +58,7 @@ function status(overrides: Partial<Parameters<typeof describeActSyncStatus>[0]> 
     lastRunUnreadable: false,
     running: false,
     cursor: new Date("2026-10-09T15:58:00.000Z"),
+    outbox: outbox(),
     ...overrides,
   };
 }
@@ -451,5 +472,220 @@ describe("describeSyncAttempt", () => {
     // the second of which can arrive with no sync ever having been started.
     expect(attempt.message).toContain("does not stop a sync that had already started");
     expect(attempt.message).toContain("Reload this page");
+  });
+
+  it("shows quotes being sent to ACT! as a note, not a failure", () => {
+    // runActSyncNow returns DrainBusyError's message as `warning`: the press
+    // did nothing and nothing is wrong, so amber, never red.
+    expect(describeSyncAttempt({ answered: true, result: { warning: DRAIN_BUSY_MESSAGE } })).toEqual({
+      outcome: "note",
+      message: "Quotes are being sent to ACT! right now, so the sync cannot start yet — try again in a few minutes.",
+    });
+  });
+});
+
+describe("describeActSyncStatus — the quotes sent to ACT!", () => {
+  // describeRun owns the words (tests/act-run-record.test.ts); this pins that
+  // the section hands them through, tone and all, rather than dropping them.
+  const drain = {
+    status: "ran" as const,
+    stopReason: null,
+    stopCause: null,
+    rowsDone: 2,
+    stepsWritten: 6,
+    blocked: 1,
+    firstBlockedReason: null,
+    heldForContact: 0,
+    backingOff: 0,
+    untracked: 0,
+    waiting: 0,
+  };
+
+  it("puts the quotes sent in the headline, and leaves held quotes to the queue card", () => {
+    const view = describeActSyncStatus(status({ lastRun: run({ drain }) }), NOW);
+    expect(view.summary).toMatchObject({
+      tone: "ok",
+      headline: "3 contacts added, 11 updated, 2 companies added, 2 quotes sent to ACT!",
+      detail: null,
+    });
+  });
+
+  it("turns the summary amber when sending stopped on something that needs a person", () => {
+    const view = describeActSyncStatus(
+      status({ lastRun: run({ drain: { ...drain, status: "stopped", stopCause: "setup", stopReason: "the login was refused" } }) }),
+      NOW,
+    );
+    expect(view.summary.tone).toBe("warn");
+  });
+
+  it("says a quote stands held even when last night's run held nothing", () => {
+    // R3: a row a 15-minute pass blocked, then a nightly run whose own pass
+    // blocked nothing. The run's card is green; the queue card is not.
+    const view = describeActSyncStatus(
+      status({
+        lastRun: run({ drain: { ...drain, rowsDone: 0, blocked: 0 } }),
+        outbox: outbox({
+          held: 1,
+          oldestHeldQueuedAt: new Date("2026-10-07T18:00:00.000Z"),
+          heldQuotes: [{ documentId: "doc1", number: "Q-AU-2026-014", reason: NO_CONTACT_REASON }],
+        }),
+      }),
+      NOW,
+    );
+    expect(view.summary.tone).toBe("ok");
+    expect(view.outbox.tone).toBe("warn");
+    expect(view.outbox.headline).toBe("1 quote is held back from ACT!");
+  });
+});
+
+describe("describeOutbox — the queue as it stands", () => {
+  const OLDEST = new Date("2026-10-06T18:00:00.000Z"); // three days before NOW
+  const quote = (n: number, reason = NO_CONTACT_REASON) => ({
+    documentId: `doc${n}`,
+    number: `Q-AU-2026-${String(n).padStart(3, "0")}`,
+    reason,
+  });
+
+  it("says nothing is waiting, and stays quiet, on an ordinary day", () => {
+    expect(describeOutbox(outbox(), NOW)).toEqual({
+      tone: "ok",
+      headline: "Nothing waiting to go to ACT!",
+      detail: null,
+      held: [],
+      more: null,
+      scope: null,
+    });
+  });
+
+  it("says what happens to a quote finalised while sending is switched off", () => {
+    // The state the write-back ships in. Green: off is somebody's decision.
+    expect(describeOutbox(outbox({ sendingOn: false }), NOW)).toMatchObject({
+      tone: "ok",
+      headline: "Nothing waiting to go to ACT!",
+      detail:
+        "Sending to ACT! is switched off. Quotes finalised, signed or accepted while it is off wait here, and go once it is switched on.",
+    });
+  });
+
+  it("counts quotes waiting behind the switch, from the rows, and stays green", () => {
+    expect(describeOutbox(outbox({ sendingOn: false, waiting: 4 }), NOW)).toMatchObject({
+      tone: "ok",
+      headline: "4 quotes are waiting to go to ACT!",
+      detail: "Sending to ACT! is switched off — they go as soon as it is switched on.",
+    });
+    expect(describeOutbox(outbox({ sendingOn: false, waiting: 1 }), NOW)).toMatchObject({
+      headline: "1 quote is waiting to go to ACT!",
+      detail: "Sending to ACT! is switched off — it goes as soon as it is switched on.",
+    });
+  });
+
+  it("says quotes waiting with sending on go by themselves, and which have failed before", () => {
+    expect(describeOutbox(outbox({ waiting: 1 }), NOW)).toMatchObject({
+      tone: "ok",
+      headline: "1 quote is waiting to go to ACT!",
+      detail: "It goes on its own — PathQuote sends queued quotes every 15 minutes.",
+    });
+    expect(describeOutbox(outbox({ waiting: 3, retrying: 1 }), NOW).detail).toBe(
+      "They go on their own — PathQuote sends queued quotes every 15 minutes. 1 of them has failed to get through at least once — PathQuote keeps trying until it gets through.",
+    );
+    expect(describeOutbox(outbox({ waiting: 1, retrying: 1 }), NOW).detail).toBe(
+      "It goes on its own — PathQuote sends queued quotes every 15 minutes. It has failed to get through at least once — PathQuote keeps trying until it gets through.",
+    );
+    expect(describeOutbox(outbox({ waiting: 2, retrying: 2 }), NOW).detail).toContain("Both have failed");
+    expect(describeOutbox(outbox({ waiting: 5, retrying: 5 }), NOW).detail).toContain("All of them have failed");
+    expect(describeOutbox(outbox({ waiting: 5, retrying: 2 }), NOW).detail).toContain("2 of them have failed");
+  });
+
+  it("turns amber for one held quote, lists it as a link with its reason, and says how long", () => {
+    const view = describeOutbox(
+      outbox({ held: 1, oldestHeldQueuedAt: OLDEST, heldQuotes: [quote(14)] }),
+      NOW,
+    );
+    expect(view).toEqual({
+      tone: "warn",
+      headline: "1 quote is held back from ACT!",
+      detail:
+        "It is listed below with the reason PathQuote gives for holding it. Its own page says the same, and an administrator can act on it there. It was queued for ACT! 3 days ago.",
+      held: [{ label: "Q-AU-2026-014", href: "/quotes/doc14", reason: NO_CONTACT_REASON }],
+      more: null,
+      scope: null,
+    });
+  });
+
+  it("sends the reader to the quote's own page, in words true for a manager, who gets no buttons there", () => {
+    // The quote's ACT! card shows the same reason, and an administrator's
+    // actions under it. A manager reads this too, so it says what an
+    // administrator can do there, never what "you" can.
+    const view = describeOutbox(outbox({ held: 2, oldestHeldQueuedAt: OLDEST, heldQuotes: [quote(1), quote(2)] }), NOW);
+    expect(view.detail).toBe(
+      "Each is listed below with the reason PathQuote gives for holding it. Each quote's own page says the same, and an administrator can act on it there. The oldest was queued for ACT! 3 days ago.",
+    );
+    expect(view.detail).not.toMatch(/\byou\b/i);
+  });
+
+  it("says plainly that a quote held for its contact needs somebody to look in ACT!, and which contact not to touch", () => {
+    const one = describeOutbox(
+      outbox({ held: 1, heldForContact: 1, oldestHeldQueuedAt: OLDEST, heldQuotes: [quote(7, UNTRACKED_CONTACT_REASON)] }),
+      NOW,
+    );
+    expect(one.tone).toBe("warn");
+    expect(one.detail).toBe(
+      "It is held because PathQuote asked ACT! to create the contact on that quote and never heard whether it did — an administrator has to look in ACT! before it can go on, and settle it on the quote's page. Nobody should delete or re-add that contact in PathQuote. It is listed below with the reason PathQuote gives for holding it. Its own page says the same, and an administrator can act on it there. It was queued for ACT! 3 days ago.",
+    );
+    const mixed = describeOutbox(
+      outbox({ held: 3, heldForContact: 1, oldestHeldQueuedAt: OLDEST, heldQuotes: [quote(1), quote(2), quote(3)] }),
+      NOW,
+    ).detail!;
+    expect(mixed).toMatch(/^1 of them is held because PathQuote asked ACT! to create the contact on that quote/);
+    const many = describeOutbox(
+      outbox({ held: 3, heldForContact: 2, oldestHeldQueuedAt: OLDEST, heldQuotes: [quote(1), quote(2), quote(3)] }),
+      NOW,
+    ).detail!;
+    expect(many).toMatch(
+      /^2 of them are held because PathQuote asked ACT! to create the contact on each and never heard whether it did — an administrator has to look in ACT! before they can go on, and settle each on the quote's page\. Nobody should delete or re-add those contacts in PathQuote\./,
+    );
+    expect(
+      describeOutbox(outbox({ held: 2, heldForContact: 2, oldestHeldQueuedAt: OLDEST, heldQuotes: [quote(1), quote(2)] }), NOW).detail,
+    ).toMatch(/^Both are held because/);
+    expect(
+      describeOutbox(outbox({ held: 3, heldForContact: 3, oldestHeldQueuedAt: OLDEST, heldQuotes: [quote(1), quote(2), quote(3)] }), NOW)
+        .detail,
+    ).toMatch(/^All of them are held because/);
+  });
+
+  it(`lists at most ${HELD_QUOTES_LISTED}, the ones queued longest, and counts the rest`, () => {
+    const listed = Array.from({ length: HELD_QUOTES_LISTED }, (_, i) => quote(i + 1));
+    const view = describeOutbox(outbox({ held: 23, oldestHeldQueuedAt: OLDEST, heldQuotes: listed }), NOW);
+    expect(view.held).toHaveLength(HELD_QUOTES_LISTED);
+    expect(view.more).toBe("and 3 more quotes");
+    expect(view.detail).toContain("The 20 queued longest are listed below, each with the reason PathQuote gives for holding it.");
+    expect(describeOutbox(outbox({ held: 21, oldestHeldQueuedAt: OLDEST, heldQuotes: listed }), NOW).more).toBe(
+      "and 1 more quote",
+    );
+  });
+
+  it("says what is waiting beside what is held", () => {
+    const held = { held: 1, oldestHeldQueuedAt: OLDEST, heldQuotes: [quote(1)] };
+    expect(describeOutbox(outbox({ ...held, waiting: 2 }), NOW).detail).toBe(
+      "It is listed below with the reason PathQuote gives for holding it. Its own page says the same, and an administrator can act on it there. It was queued for ACT! 3 days ago. 2 other quotes are waiting to go to ACT!, and go on their own — PathQuote sends queued quotes every 15 minutes.",
+    );
+    expect(describeOutbox(outbox({ ...held, waiting: 1, sendingOn: false }), NOW).detail).toContain(
+      "1 other quote is waiting to go to ACT!, but sending to ACT! is switched off — it goes as soon as it is switched on.",
+    );
+  });
+
+  it("names a quote with no number rather than leaving a blank link", () => {
+    const view = describeOutbox(
+      outbox({ held: 1, oldestHeldQueuedAt: OLDEST, heldQuotes: [{ documentId: "doc9", number: null, reason: NO_CONTACT_REASON }] }),
+      NOW,
+    );
+    expect(view.held[0]).toEqual({ label: "A quote with no number", href: "/quotes/doc9", reason: NO_CONTACT_REASON });
+  });
+
+  it("tells a manager the counts are of the quotes they can open, and says nothing of it to an admin", () => {
+    expect(describeOutbox(outbox({ scope: "yours" }), NOW).scope).toBe(
+      "Only the quotes you can open are counted here; an administrator sees every quote.",
+    );
+    expect(describeOutbox(outbox({ scope: "all" }), NOW).scope).toBeNull();
   });
 });
