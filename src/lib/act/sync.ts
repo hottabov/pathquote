@@ -62,6 +62,19 @@ const CURSOR_KEY = "act.sync.cursor";
 //
 // Taken so far: 8_472_001, this one; 8_472_002, the ActOutbox drain's
 // (DRAIN_LOCK_KEY in src/lib/act/drain.ts).
+//
+// A REQUIREMENT ON TASK 8 (the write-back plan,
+// docs/superpowers/plans/2026-10-12-act-write-back-quotes.md): once a run
+// drains the ActOutbox before its read, it holds BOTH keys, 8_472_001 and
+// 8_472_002, on its lock connection for the whole run, and drains under them
+// -- drainActOutbox with `lockHeldOn` set to that connection, since a drain
+// taking 8_472_002 itself would find it held and do nothing. Holding only
+// this key leaves a fast-path drain free to create a contact in ACT! between
+// the run's drain and its read, which the read then imports as a second
+// PathQuote contact for the same person (A REQUIREMENT ON TASK 8 in
+// src/lib/act/drain.ts). The nightly run waits for 8_472_002 rather than
+// skipping when a fast path holds it: a fast path is done within about 10
+// minutes at worst.
 const SYNC_LOCK_KEY = 8_472_001;
 
 /** Thrown when another sync holds the lock. Not a failure of this run: the
