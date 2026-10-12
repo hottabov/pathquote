@@ -436,12 +436,16 @@ Requested by Vadym during execution: when a quote is won, the ACT! contact moves
 **Rules.**
 
 - **Forward only.** Customer never goes back to Prospect — not on `voidSignature`, not on unfinalise. Same reasoning as the stage rule: "this became a customer" stays true.
-- **Change only what we own.** Promote only when the contact's **current** ACT! value is exactly `Prospect`. Anything else — already `Customer`, a reseller or supplier status, blank — is left alone and the step counts as done. The drain reads the current value with a GET; a pure function decides. Overwriting a status somebody set deliberately is the harm this rule prevents.
+- **Change only what we own.** Promote only when the contact's **current** ACT! value is `Prospect` — trimmed, then compared case for case, exactly as the inbound sync reads it. Anything else — already `Customer`, a reseller or supplier status, blank — is left alone and the step counts as done. The drain reads the current value with a GET; a pure function decides. Overwriting a status somebody set deliberately is the harm this rule prevents.
 - **Echo suppression applies.** The promotion bumps the contact's `edited`, so the drain stores the returned record as the contact's `ActSnapshot`, exactly as for creates.
 
 **How it fits the outbox.** These are new events on a document whose finalise row may already be complete. `completeSigning` and `acceptQuote` enqueue the same way finalise does — insert, or take over the unfinished row via the z65 partial index. The planner gains two steps, `promote-contact` and `win-opportunity`, which come **after** `write-history` and are checked **before** returning `done`, so a row created by a signing event does not short-circuit to `done` just because its revision's history was already written.
 
-**Progress storage.** The planner is pure and cannot GET, so each step needs a stored fact that it has happened: `Document.actContactPromotedAt` and `Document.actOpportunityWonAt` — per document, because both are once per deal. These belong in z65, which has not been applied anywhere outside scratch databases; amend it rather than adding z66, and re-run the drift verification.
+**Progress storage.** The planner is pure and cannot GET, so each step needs a stored fact that it has happened: `Document.actContactPromotedForId` and `Document.actOpportunityWonAt`, both on the document. The win is once per deal. Promotion is once per **contact** per deal — `voidSignature` exists for a wrong signatory, and a corrected contact who signs is due its own promotion — so the fact is the ACT! id of the contact promoted, compared with the quote's contact as it stands (a bare id, no foreign key, so it outlives a deleted or merged PathQuote contact). These belong in z65, which has not been applied anywhere outside scratch databases; amend it rather than adding z66, and re-run the drift verification.
+
+**A Lost opportunity — decided by Vadym, 2026-10-12:** *"Overwrite to Won — PathQuote confirms. If after that someone changes it to Lost by hand in ACT!, it stays that way."* Acceptance patches any opportunity that is not already Won (Lost, Inactive, anything else) to Won, moving the stage forward to the won stage where the forward-only rule allows. The second sentence holds because `actOpportunityWonAt` is never cleared: once set, the planner never plans the win again.
+
+**Creating a contact.** `newContactBody` sends `idStatus: Prospect` — left blank, the contact would be skipped by the inbound sync and never promoted — plus the name, email, business phone, title, free-text company and, only when the author has one, Account Mgr.
 
 ## Obligations carried into Tasks 6 and 7 from the Task 4 review
 
@@ -465,3 +469,5 @@ The API is IP-allowlisted to the VPS, so the first real write happens there. Bef
 - [ ] Stop the ACT! API (or point `ACT_BASE` at a closed port) and finalise — confirm the quote still finalises, the row queues, and the nightly drain picks it up.
 - [ ] Have a test client sign a quote whose contact is a Prospect — confirm the contact becomes Customer in ACT!, and that a contact with any other status is left untouched.
 - [ ] Accept that quote — confirm the opportunity goes to Won at the 100% stage, and that a second accept writes nothing.
+- [ ] Accept a quote whose opportunity was marked Lost in ACT! — confirm it goes to Won; then mark it Lost again by hand and confirm a later revision or a second accept leaves it Lost.
+- [ ] Finalise a quote whose contact exists only in PathQuote — confirm ACT! stores the new contact as a Prospect with the phone as sent, and accepts a create with no country.
