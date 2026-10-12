@@ -36,7 +36,13 @@ import "dotenv/config";
 import { actClientFromEnv, type ActClient } from "../src/lib/act/client";
 import { describeDatabase } from "../src/lib/act/cli-args";
 import { drainActOutbox, type DrainResult } from "../src/lib/act/drain";
-import { drainExitStatus, formatDrainBanner, parseActDrainArgs } from "../src/lib/act/drain-args";
+import {
+  ALERT_REARM_LINE,
+  drainExitStatus,
+  drainRearmsAlert,
+  formatDrainBanner,
+  parseActDrainArgs,
+} from "../src/lib/act/drain-args";
 
 function row(label: string, value: string | number): void {
   console.log(`${label.padEnd(24)}${value}`);
@@ -136,6 +142,9 @@ async function main(): Promise<void> {
 
   const result = await drainActOutbox(client, { onlyDocumentId: args.documentId });
   report(result);
+  // For pq-act-drain.sh, which re-arms the failure alert on this line and on
+  // nothing else (drainRearmsAlert says why exit 0 alone is not enough).
+  if (drainRearmsAlert(result)) console.log(ALERT_REARM_LINE);
   process.exitCode = drainExitStatus(result);
 }
 

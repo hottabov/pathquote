@@ -90,24 +90,58 @@ export function formatDrainBanner(args: DrainArgs, database: DatabaseTarget): st
  * The exit status of a pass that came back, for pq-act-drain.service: 1
  * fails the unit and starts pq-backup-alert@, which emails; 0 does not.
  *
- * A timer that runs every 15 minutes emails every 15 minutes about whatever
- * it fails on, so it fails only on what needs a person and will not mend
- * itself: a pass stopped by a `setup` fault (stopCause in
+ * A unit that runs every 15 minutes fails every 15 minutes about whatever it
+ * fails on -- the alert sends one email a day of it (pq-backup-alert.sh), but
+ * a failure that was never a fault still costs that email, and teaches
+ * people to ignore it -- so it fails only on what needs a person and will
+ * not mend itself: a pass stopped by a `setup` fault (stopCause in
  * src/lib/act/drain-rules.ts) -- the service account not found, the login
  * refused, a 403 to the login or the users lookup, IIS turning the VPS
  * away, a redirect. Everything else is 0:
  *
- *   - `ran`, whatever it found: a row held back says so on its quote and on
- *     Settings, and a row backing off is tried again by the next tick;
+ *   - `ran`, whatever it found: a row held back is listed, with its reason,
+ *     on Settings (the queue card, describeOutbox in src/lib/act/sync-view.ts)
+ *     -- not yet on its quote, which shows it from Task 9 -- and a row backing
+ *     off is tried again by the next tick;
  *   - `busy`: another drain is doing the work -- at 03:00, the nightly sync's;
  *   - `switched-off`: somebody's decision, not a fault;
  *   - `out-of-time`: the rest go at the next tick;
  *   - `stopped` with `unavailable`: ACT! busy or away. A weekend with the
- *     office's ACT! server off would otherwise send ninety-six emails a day.
+ *     office's ACT! server off is not a fault of PathQuote's, and would
+ *     otherwise email about it every day it lasts.
  *
  * A pass that throws -- the database failing -- never reaches here; the
- * script exits 1 for it, as it does for a missing ACT_* variable.
+ * script exits 1 for it. A missing ACT_* variable never reaches a pass: the
+ * script exits 2 for it, as for any run that cannot start.
  */
 export function drainExitStatus(result: Pick<DrainResult, "status" | "stopCause">): 0 | 1 {
   return result.status === "stopped" && result.stopCause !== "unavailable" ? 1 : 0;
+}
+
+/**
+ * The line act:drain prints after a pass that shows ACT! is taking
+ * PathQuote's writes again, and the whole of the contract with
+ * pq-act-drain.sh, which looks for exactly this line (grep -x) and, finding
+ * it, removes the failure alert's stamp -- so the next fault emails at once
+ * instead of waiting out the day the stamp holds it back for
+ * (pq-backup-alert.sh, REPEAT_HOURS). Change it in both places or neither.
+ */
+export const ALERT_REARM_LINE = "act:drain: ACT! took writes on this pass -- pq-act-drain.sh re-arms the failure alert";
+
+/**
+ * Whether a pass shows the fault behind an alert is gone: it did not fail its
+ * unit, and it wrote to ACT!.
+ *
+ * Exit 0 alone is not enough, and would make the alert's "once a day" untrue.
+ * A pass that fails on a `setup` fault backs off the row it was working, and
+ * the backoff doubles (backoffMs in src/lib/act/drain-rules.ts), so while the
+ * fault stands, more and more ticks find nothing due and exit 0 without
+ * asking ACT! anything -- as does the tick at 03:00 that finds the nightly
+ * sync holding the lock (`busy`), and every tick while sending is switched
+ * off. Each of those re-arming the alert would send another email at the
+ * next failure. A write that ACT! took is what proves the login, the
+ * licence and the allow-list are working again.
+ */
+export function drainRearmsAlert(result: Pick<DrainResult, "status" | "stopCause" | "stepsWritten">): boolean {
+  return drainExitStatus(result) === 0 && result.stepsWritten > 0;
 }

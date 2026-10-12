@@ -1,6 +1,10 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, it, expect } from "vitest";
 import {
+  ALERT_REARM_LINE,
   drainExitStatus,
+  drainRearmsAlert,
   formatDrainBanner,
   parseActDrainArgs,
 } from "../src/lib/act/drain-args";
@@ -60,8 +64,9 @@ describe("formatDrainBanner", () => {
 });
 
 describe("drainExitStatus", () => {
-  // The unit runs every 15 minutes and emails whenever it fails, so it fails
-  // only for what needs a person.
+  // The unit runs every 15 minutes and every failure starts the alert (which
+  // emails once a day of a failure that goes on), so it fails only for what
+  // needs a person.
   it("is 0 for every outcome that clears itself or is nobody's fault", () => {
     expect(drainExitStatus({ status: "ran", stopCause: null })).toBe(0);
     expect(drainExitStatus({ status: "busy", stopCause: null })).toBe(0);
@@ -74,5 +79,40 @@ describe("drainExitStatus", () => {
     expect(drainExitStatus({ status: "stopped", stopCause: "setup" })).toBe(1);
     // A stop with no cause should not happen; failing is the side to err on.
     expect(drainExitStatus({ status: "stopped", stopCause: null })).toBe(1);
+  });
+});
+
+describe("drainRearmsAlert, and the line pq-act-drain.sh looks for", () => {
+  const pass = (overrides: Partial<Parameters<typeof drainRearmsAlert>[0]> = {}) => ({
+    status: "ran" as const,
+    stopCause: null,
+    stepsWritten: 0,
+    ...overrides,
+  });
+
+  it("re-arms the alert only after a pass that ACT! took writes from", () => {
+    expect(drainRearmsAlert(pass({ stepsWritten: 3 }))).toBe(true);
+    expect(drainRearmsAlert(pass({ status: "out-of-time", stepsWritten: 40 }))).toBe(true);
+  });
+
+  it("does not re-arm on an exit 0 that asked ACT! nothing", () => {
+    // While a fault stands its row backs off further each time, so ticks in
+    // between find nothing due; at 03:00 a tick finds the nightly sync busy.
+    // Re-armed by those, the alert would email at each failure after them.
+    expect(drainRearmsAlert(pass())).toBe(false);
+    expect(drainRearmsAlert(pass({ status: "busy" }))).toBe(false);
+    expect(drainRearmsAlert(pass({ status: "switched-off" }))).toBe(false);
+    expect(drainRearmsAlert(pass({ status: "stopped", stopCause: "unavailable" }))).toBe(false);
+  });
+
+  it("never re-arms on a pass that fails its unit, whatever it wrote first", () => {
+    expect(drainRearmsAlert(pass({ status: "stopped", stopCause: "setup", stepsWritten: 5 }))).toBe(false);
+  });
+
+  it("is the very line pq-act-drain.sh greps for", () => {
+    // The two are a contract across a language boundary; this is the only
+    // thing that fails if one changes without the other.
+    const script = readFileSync(path.join(__dirname, "../scripts/ops/pq-act-drain.sh"), "utf8");
+    expect(script).toContain(`grep -qxF "${ALERT_REARM_LINE}" "$OUT"`);
   });
 });

@@ -29,6 +29,16 @@
 # flavour; `pq-backup-alert.sh --test pq-act-sync.service` tests the sync's, and
 # so on for each unit above.
 #
+# ONE A DAY, FOR THE DRAIN ONLY. pq-act-drain.service runs every 15 minutes, so
+# a fault that needs a person fails it about 96 times a day, and an email each
+# time is how people learn to ignore this address. Its flavour sets
+# REPEAT_HOURS and a stamp file: an alert is not sent while the stamp is
+# younger than that, and the stamp is touched only once curl has sent one. The
+# drain's own script removes the stamp after a pass that got writes into ACT!
+# (pq-act-drain.sh), so a fault that comes back after a recovery emails at
+# once. Every other flavour has no REPEAT_HOURS and emails every failure, as
+# before; a --test is never held back and never stamps.
+#
 set -euo pipefail
 
 TO="${PQ_ALERT_TO:-marketing@pathfindercut.com}"
@@ -61,12 +71,17 @@ on the VPS (it reports the last finished Mon-Sun week whatever day it runs):
     WHAT_TEST="ACT! drain"
     # Says it will repeat, because it will: the unit runs every 15 minutes and
     # fails only on what does not mend itself (scripts/act-drain.ts, its exit
-    # table), so every tick until somebody fixes it sends another of these.
-    # Better the first one says so than the fifth arrives unexplained.
+    # table), so it fails every tick until somebody fixes it -- and this
+    # email goes once a day of that (REPEAT_HOURS, below). Better the first
+    # one says so than the second arrives unexplained.
     CONSEQUENCE="Queued quotes are not reaching ACT!: quotes finalised, signed or accepted
 in PathQuote since the last good pass are waiting in PathQuote's queue, not in
 ACT!. Nothing is lost -- they go once this is fixed. This runs every 15 minutes,
-so this email repeats until it is. The log below says why."
+and you get this once a day while it stays broken. The log below says why."
+    # The stamp is named after the unit, as OnFailure= hands it over
+    # (pq-act-drain.service); pq-act-drain.sh removes the same path.
+    REPEAT_HOURS=24
+    STAMP=/var/lib/pathquote/alert-stamps/$UNIT.last-sent
     ;;
   pq-act-sync*)
     LOG=/var/log/pq-act-sync.log
@@ -104,6 +119,14 @@ itself; the log below is what happened."
 stopped working or what it costs. Its own output is below."
     ;;
 esac
+
+# Held back while the last alert for this unit is younger than REPEAT_HOURS.
+# Only for a flavour that sets STAMP and REPEAT_HOURS; a --test always goes.
+if [ "$TEST" = no ] && [ -n "${STAMP:-}" ] && [ -e "$STAMP" ] &&
+  [ -n "$(find "$STAMP" -mmin -$((REPEAT_HOURS * 60)))" ]; then
+  echo "$(date -Is) alert for $UNIT suppressed: one was sent $(date -Is -r "$STAMP"), less than $REPEAT_HOURS hours ago"
+  exit 0
+fi
 
 if [ -n "$LOG" ]; then
   CHECK="systemctl status $UNIT ; tail -100 $LOG"
@@ -149,3 +172,12 @@ trap 'rm -f "$MSG"' EXIT
 curl -sS --ssl-reqd --url "smtp://$HOST:${PORT:-587}" \
   --user "$USER:$PASS" --mail-from "$FROM_ADDR" --mail-rcpt "$TO" --upload-file "$MSG"
 echo "$(date -Is) alert sent to $TO: $SUBJECT"
+
+# After curl, and only after: under `set -e` a curl that failed has already
+# ended the script, so an alert that never left starts no quiet day. The
+# directory is made here too, in case the install has not made it -- a stamp
+# that cannot be written costs a repeat email, not a missing one.
+if [ "$TEST" = no ] && [ -n "${STAMP:-}" ]; then
+  mkdir -p "$(dirname "$STAMP")"
+  touch "$STAMP"
+fi
