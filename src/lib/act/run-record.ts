@@ -9,11 +9,12 @@
 // counts it reads come straight from SyncResult. DrainResult is imported as a
 // type only, so nothing from src/lib/act/drain.ts (and therefore nothing from
 // Prisma) is pulled in at runtime and the no-database test suite can import
-// this file. UNTRACKED_CONTACT_REASON is a real import, from
-// src/lib/act/outbox-plan.ts, which is pure as well.
+// this file. BLOCKED_BY is a real import, from src/lib/act/drain-rules.ts,
+// which pulls in no Prisma either (outbox-admin.ts, tested the same way,
+// imports it too).
 
 import type { DrainResult } from "@/lib/act/drain";
-import { UNTRACKED_CONTACT_REASON } from "@/lib/act/outbox-plan";
+import { BLOCKED_BY } from "@/lib/act/drain-rules";
 import { formatCount, plural } from "@/lib/plural";
 
 /** The Setting key the record lives under. */
@@ -88,8 +89,8 @@ export type RunDrain = {
   firstBlockedReason: string | null;
   /**
    * Of `blocked`, the rows held because PathQuote asked ACT! to create the
-   * quote's contact and never learned whether it did
-   * (UNTRACKED_CONTACT_REASON in src/lib/act/outbox-plan.ts). Counted apart
+   * quote's contact and never learned whether it did (blockedBy
+   * BLOCKED_BY.contact, in src/lib/act/drain-rules.ts). Counted apart
    * because they need somebody to look in ACT! for the person before any
    * quote on that contact goes on. This pass's, like `blocked`.
    */
@@ -273,9 +274,10 @@ export function failedRun(started: ActSyncRun, totals: RunTotals, error: unknown
 }
 
 /**
- * A drain pass as the record keeps it. `heldForContact` is read off the
- * blocked rows' reasons -- the planner and the drain block an untracked
- * contact's quotes with UNTRACKED_CONTACT_REASON and nothing else does.
+ * A drain pass as the record keeps it. `heldForContact` is read off who
+ * blocked each row -- the planner and the drain block an untracked contact's
+ * quotes as BLOCKED_BY.contact and nothing else does -- not off its reason,
+ * which is a sentence for a manager.
  */
 export function drainSummary(result: DrainResult): RunDrain {
   return {
@@ -286,7 +288,7 @@ export function drainSummary(result: DrainResult): RunDrain {
     stepsWritten: result.stepsWritten,
     blocked: result.blocked.length,
     firstBlockedReason: result.blocked[0]?.reason ?? null,
-    heldForContact: result.blocked.filter((row) => row.reason === UNTRACKED_CONTACT_REASON).length,
+    heldForContact: result.blocked.filter((row) => row.blockedBy === BLOCKED_BY.contact).length,
     backingOff: result.failed.length,
     untracked: result.untracked,
     waiting: result.skippedSwitchOff,

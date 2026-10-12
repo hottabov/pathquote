@@ -9,7 +9,7 @@ import {
   type QuoteActViewer,
 } from "../src/lib/act/quote-act-view";
 import { BLOCKED_BY, refusedReason } from "../src/lib/act/drain-rules";
-import { EARLIER_UNTRACKED_CONTACT_REASONS, NO_CONTACT_REASON, UNTRACKED_CONTACT_REASON } from "../src/lib/act/outbox-plan";
+import { NO_CONTACT_REASON, UNTRACKED_CONTACT_REASON } from "../src/lib/act/outbox-plan";
 
 // A fixed clock, so every relative phrase is a function of the arguments: the
 // suite has no fake timers (vitest.config.ts, `isolate: false`).
@@ -183,7 +183,7 @@ describe("describeQuoteAct: held", () => {
     const view = asAdmin(
       facts({
         contact: { name: "Nora Quinn", actContactId: null, actCreateInFlightAt: new Date("2026-10-12T23:05:00.000Z") },
-        row: row({ blockedReason: UNTRACKED_CONTACT_REASON }),
+        row: row({ blockedReason: UNTRACKED_CONTACT_REASON, blockedBy: BLOCKED_BY.contact }),
       }),
       NOW,
     );
@@ -193,15 +193,14 @@ describe("describeQuoteAct: held", () => {
     );
   });
 
-  it("gives the note for a row still carrying an earlier wording of the hold, as the actions are offered for it", () => {
-    const view = asAdmin(
-      facts({
-        contact: { name: "Nora Quinn", actContactId: null, actCreateInFlightAt: new Date("2026-10-12T23:05:00.000Z") },
-        row: row({ blockedReason: EARLIER_UNTRACKED_CONTACT_REASONS[0] }),
-      }),
-      NOW,
-    );
+  it("gives the note by the row's blocker, whatever its sentence says, as the actions are offered by it", () => {
+    const contact = { name: "Nora Quinn", actContactId: null, actCreateInFlightAt: new Date("2026-10-12T23:05:00.000Z") };
+    const reworded = "PathQuote lost track of whether ACT! made this contact — an administrator settles it on this quote's page.";
+    const view = asAdmin(facts({ contact, row: row({ blockedReason: reworded, blockedBy: BLOCKED_BY.contact }) }), NOW);
+    expect(view?.detail).toBe(reworded);
     expect(view?.adminNote).toMatch(/^Look in ACT! for Nora Quinn\./);
+    // The sentence word for word, but not blocked as the contact's: no note.
+    expect(asAdmin(facts({ contact, row: row({ blockedReason: UNTRACKED_CONTACT_REASON }) }), NOW)?.adminNote).toBeNull();
   });
 
   it("gives no such note when the quote is held for something else, though its contact is held", () => {
@@ -455,7 +454,9 @@ describe("who reads \"Not queued\" (decision: administrators only)", () => {
 
   it("the same manager reads every other state", () => {
     expect(describeQuoteAct(facts({ row: row() }), NOW, MANAGER)?.state).toBe("waiting");
-    expect(describeQuoteAct(facts({ row: row({ blockedReason: UNTRACKED_CONTACT_REASON }) }), NOW, MANAGER)?.state).toBe("held");
+    expect(
+      describeQuoteAct(facts({ row: row({ blockedReason: UNTRACKED_CONTACT_REASON, blockedBy: BLOCKED_BY.contact }) }), NOW, MANAGER)?.state,
+    ).toBe("held");
     expect(describeQuoteAct(facts({ row: row({ completedAt: NOW }) }), NOW, MANAGER)?.state).toBe("in-act");
     expect(describeQuoteAct(facts({ row: row({ completedAt: NOW, blockedBy: BLOCKED_BY.admin }) }), NOW, MANAGER)?.state).toBe(
       "not-sent",

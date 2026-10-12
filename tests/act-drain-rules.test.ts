@@ -21,6 +21,7 @@ import {
   createUnaccounted,
   deniedReason,
   passWork,
+  plannerBlockedBy,
   replanBlocked,
   stopCause,
   stopsPass,
@@ -29,8 +30,14 @@ import {
 import {
   NAMELESS_CONTACT_REASON,
   NO_CONTACT_REASON,
+  UNTRACKED_CONTACT_REASON,
   duplicateOpportunitiesReason,
+  nextStep,
+  unmappedRegionReason,
+  type OutboxProgress,
   type OutboxStep,
+  type QuoteState,
+  type RevisionProgress,
 } from "../src/lib/act/outbox-plan";
 import {
   ActApiError,
@@ -255,6 +262,7 @@ describe("replanBlocked: what the drain's pass over blocked rows does with one",
     expect(replanBlocked({ blockedReason: NO_CONTACT_REASON, blockedBy: null }, nameless)).toEqual({
       kind: "reblock",
       reason: NAMELESS_CONTACT_REASON,
+      by: null,
     });
   });
 
@@ -284,11 +292,120 @@ describe("replanBlocked: what the drain's pass over blocked rows does with one",
     const duplicates = { blockedReason: duplicateOpportunitiesReason("Q-AU-2026-014 AUD", 2), blockedBy: BLOCKED_BY.drain };
     expect(replanBlocked(duplicates, fixed)).toEqual({ kind: "recheck" });
     // Unless the planner blocks it now, which is then the reason, the planner's.
-    expect(replanBlocked(duplicates, noContact)).toEqual({ kind: "reblock", reason: NO_CONTACT_REASON });
+    expect(replanBlocked(duplicates, noContact)).toEqual({ kind: "reblock", reason: NO_CONTACT_REASON, by: null });
   });
 
   it("leaves a row blocked by someone it does not know for a person", () => {
     expect(replanBlocked({ blockedReason: "x", blockedBy: "someone" }, fixed)).toEqual({ kind: "keep" });
+  });
+
+  it("leaves a row an administrator finished unsent alone, should it ever meet one", () => {
+    expect(replanBlocked({ blockedReason: "x", blockedBy: BLOCKED_BY.admin }, fixed)).toEqual({ kind: "keep" });
+  });
+});
+
+describe("a quote held for its contact (BLOCKED_BY.contact), re-planned", () => {
+  const MARKED_AT = new Date("2026-10-12T03:00:00.000Z");
+  const ACT_CONTACT = "c0000000-0000-0000-0000-000000000001";
+  const nothingDone: OutboxProgress = { opportunityActId: null, productLineSkippedAt: null, createInFlight: null };
+  const fresh: RevisionProgress = { revision: 0, actHistoryId: null };
+  const journaled: RevisionProgress = { revision: 0, actHistoryId: "c0000000-0000-0000-0000-0000000000b0" };
+  const held = { actContactId: null, actCreateInFlightAt: MARKED_AT, firstName: "Hana", lastName: "Held" };
+  const quote = (overrides: Partial<QuoteState> = {}): QuoteState => ({
+    regionCode: "AU",
+    contact: held,
+    actOpportunityId: null,
+    actProductLineId: null,
+    actProductLineRevision: null,
+    signingStatus: "NOT_SENT",
+    acceptedAt: null,
+    actContactPromotedForId: null,
+    actOpportunityWonAt: null,
+    ...overrides,
+  });
+  const row = { blockedReason: UNTRACKED_CONTACT_REASON, blockedBy: BLOCKED_BY.contact };
+
+  it("stores the planner's contact hold as BLOCKED_BY.contact, and every other block of its as the planner's", () => {
+    const step = nextStep(nothingDone, fresh, quote());
+    if (step.kind !== "blocked") throw new Error("expected blocked");
+    expect(plannerBlockedBy(step)).toBe(BLOCKED_BY.contact);
+    expect(plannerBlockedBy({ kind: "blocked", reason: NO_CONTACT_REASON })).toBeNull();
+    // Even the contact's sentence is not what decides it.
+    expect(plannerBlockedBy({ kind: "blocked", reason: UNTRACKED_CONTACT_REASON })).toBeNull();
+  });
+
+  it("keeps it blocked while the contact's marker stands, and plans nothing that calls ACT! for it", () => {
+    // Every way the row can stand while its contact is held: fresh, part way,
+    // journaled with a promotion or a win due, or nothing left at all.
+    const states: [OutboxProgress, RevisionProgress, QuoteState][] = [
+      [nothingDone, fresh, quote()],
+      [{ ...nothingDone, opportunityActId: "o1" }, fresh, quote({ actOpportunityId: "o1" })],
+      [nothingDone, journaled, quote({ actOpportunityId: "o1", actProductLineId: "l1", actProductLineRevision: 0, signingStatus: "SIGNED" })],
+      [nothingDone, journaled, quote({ actOpportunityId: "o1", signingStatus: "SIGNED", acceptedAt: MARKED_AT })],
+      [nothingDone, journaled, quote({ actOpportunityId: "o1", actProductLineId: "l1", actProductLineRevision: 0 })],
+    ];
+    for (const [progress, revision, state] of states) {
+      const step = nextStep(progress, revision, state);
+      expect(["blocked", "done"]).toContain(step.kind);
+      const decision = replanBlocked(row, step);
+      if (step.kind === "blocked") {
+        expect(step).toEqual({ kind: "blocked", reason: UNTRACKED_CONTACT_REASON, by: "contact" });
+        expect(decision).toEqual({ kind: "keep" });
+      } else {
+        // Nothing left that needs the contact: made due, and the next pass finishes it.
+        expect(decision).toEqual({ kind: "unblock" });
+      }
+    }
+  });
+
+  it("keeps it held for its contact when its sentence has been reworded since, and stores the current one", () => {
+    const reworded = { blockedReason: "An older wording of the contact's hold.", blockedBy: BLOCKED_BY.contact };
+    expect(replanBlocked(reworded, nextStep(nothingDone, fresh, quote()))).toEqual({
+      kind: "reblock",
+      reason: UNTRACKED_CONTACT_REASON,
+      by: BLOCKED_BY.contact,
+    });
+  });
+
+  it("stores the contact's blocker on a row stored with the same sentence as the planner's", () => {
+    expect(replanBlocked({ blockedReason: UNTRACKED_CONTACT_REASON, blockedBy: null }, nextStep(nothingDone, fresh, quote()))).toEqual({
+      kind: "reblock",
+      reason: UNTRACKED_CONTACT_REASON,
+      by: BLOCKED_BY.contact,
+    });
+  });
+
+  it("unblocks it once an administrator has settled the contact, either way", () => {
+    // "ACT! has this person": the id stored, the marker cleared.
+    const found = quote({ contact: { ...held, actContactId: ACT_CONTACT, actCreateInFlightAt: null } });
+    expect(nextStep(nothingDone, fresh, found)).toEqual({ kind: "create-opportunity" });
+    expect(replanBlocked(row, nextStep(nothingDone, fresh, found))).toEqual({ kind: "unblock" });
+    // "ACT! has nobody": the marker cleared, so the next pass creates them.
+    const nobody = quote({ contact: { ...held, actCreateInFlightAt: null } });
+    expect(nextStep(nothingDone, fresh, nobody)).toEqual({ kind: "create-contact" });
+    expect(replanBlocked(row, nextStep(nothingDone, fresh, nobody))).toEqual({ kind: "unblock" });
+  });
+
+  it("stores a block the planner checks first as the planner's, no longer the contact's", () => {
+    expect(replanBlocked(row, nextStep(nothingDone, fresh, quote({ regionCode: "ZZ" })))).toEqual({
+      kind: "reblock",
+      reason: unmappedRegionReason("ZZ"),
+      by: null,
+    });
+    expect(replanBlocked(row, nextStep(nothingDone, fresh, quote({ contact: null })))).toEqual({
+      kind: "reblock",
+      reason: NO_CONTACT_REASON,
+      by: null,
+    });
+  });
+
+  it("is reached from a lookup's duplicates too, should the planner hold the row for its contact first", () => {
+    const duplicates = { blockedReason: duplicateOpportunitiesReason("Q AUD", 2), blockedBy: BLOCKED_BY.drain };
+    expect(replanBlocked(duplicates, nextStep(nothingDone, fresh, quote()))).toEqual({
+      kind: "reblock",
+      reason: UNTRACKED_CONTACT_REASON,
+      by: BLOCKED_BY.contact,
+    });
   });
 });
 

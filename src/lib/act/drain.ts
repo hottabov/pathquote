@@ -38,8 +38,8 @@
 // than the sync's cursor) and imports it as a new PathQuote Contact before
 // the drain has stored the id, and the drain's store then hits
 // Contact.actContactId's unique key. Nothing would be created twice -- the
-// contact keeps its in-flight marker, and every quote on it is blocked with
-// UNTRACKED_CONTACT_REASON -- but PathQuote would end up with two contacts
+// contact keeps its in-flight marker, and every quote on it is held for it
+// (blockedBy "contact") -- but PathQuote would end up with two contacts
 // for one person, for somebody to merge. So syncContacts takes
 // DRAIN_LOCK_KEY as well as its own, on its own lock connection, for the
 // whole run, drain and read together, so no other drain can write between
@@ -103,6 +103,7 @@ import {
   stopsPass,
   opportunityNow,
   passWork,
+  plannerBlockedBy,
   refusedReason,
   replanBlocked,
   retryAfterMs,
@@ -236,8 +237,11 @@ export type DrainResult = {
   rowsDone: number;
   /** Steps that called ACT! and stored their result. */
   stepsWritten: number;
-  /** Rows blocked this pass, with the sentence a manager reads. */
-  blocked: { documentId: string; reason: string }[];
+  /**
+   * Rows blocked this pass, with the sentence a manager reads and who blocked
+   * each (ActOutbox.blockedBy, as stored).
+   */
+  blocked: { documentId: string; reason: string; blockedBy: string | null }[];
   /** Rows that failed and will be tried again, with what was stored as lastError. */
   failed: { documentId: string; error: string }[];
   /**
@@ -306,9 +310,10 @@ class StopPass extends Error {
 
 /**
  * Blocks the row being worked, with a sentence for its manager, and who
- * blocked it (ActOutbox.blockedBy): null when the planner will block it from
- * now on too, BLOCKED_BY.drain for a lookup's duplicates, BLOCKED_BY.revision
- * for a revision that cannot be described. Never about ACT! having refused
+ * blocked it (ActOutbox.blockedBy): BLOCKED_BY.contact for a contact create
+ * gone unaccounted for, which the planner holds the row for from now on too;
+ * BLOCKED_BY.drain for a lookup's duplicates; BLOCKED_BY.revision for a
+ * revision that cannot be described. Never about ACT! having refused
  * anything: that is handled where the failure is. `failed`, when set, is the
  * ACT! failure behind the block; once the row is blocked, the pass stops if
  * that failure stops a pass (stopsPass).
@@ -316,7 +321,7 @@ class StopPass extends Error {
 class BlockRow extends Error {
   constructor(
     readonly reason: string,
-    readonly by: typeof BLOCKED_BY.drain | typeof BLOCKED_BY.revision | null,
+    readonly by: typeof BLOCKED_BY.contact | typeof BLOCKED_BY.drain | typeof BLOCKED_BY.revision,
     readonly failed?: unknown,
   ) {
     super(reason);
@@ -649,7 +654,10 @@ class Pass {
    * person has dealt with them. They come back least recently worked first
    * (updatedAt: every recheck stores on the row), so that beyond
    * RECHECKS_PER_PASS they are rechecked in turn. A row nextStep blocks for
-   * a different reason now has that reason stored instead, as the planner's.
+   * a different reason now has that reason stored instead, with the blocker
+   * nextStep gives it (plannerBlockedBy). A row held for its contact
+   * (BLOCKED_BY.contact) is re-planned like the planner's own, and lifted
+   * once its contact is settled.
    */
   async replanBlocked(onlyDocumentId: string | undefined): Promise<string[]> {
     const blocked = await db.actOutbox.findMany({
@@ -666,7 +674,7 @@ class Pass {
         case "keep":
           break;
         case "reblock":
-          await this.storeRow(row, { blockedReason: decision.reason, blockedBy: null });
+          await this.storeRow(row, { blockedReason: decision.reason, blockedBy: decision.by });
           break;
         case "unblock":
           if (await this.storeRow(row, { blockedReason: null, blockedBy: null, nextAttemptAt: this.clock() })) {
@@ -714,7 +722,7 @@ class Pass {
         continue;
       }
       if (step.kind === "blocked") {
-        if (await this.block(row, step.reason, null)) return;
+        if (await this.block(row, step.reason, plannerBlockedBy(step))) return;
         continue;
       }
 
@@ -770,10 +778,13 @@ class Pass {
     }
   }
 
-  /** Block the row: its reason, and who blocked it (ActOutbox.blockedBy; null for the planner). */
+  /**
+   * Block the row: its reason, and who blocked it (ActOutbox.blockedBy; null
+   * for the planner, but BLOCKED_BY.contact for its contact hold).
+   */
   private async block(row: Row, reason: string, by: string | null): Promise<boolean> {
     if (!(await this.storeRow(row, { blockedReason: reason, blockedBy: by }))) return false;
-    this.result.blocked.push({ documentId: row.documentId, reason });
+    this.result.blocked.push({ documentId: row.documentId, reason, blockedBy: by });
     console.warn("act: outbox row blocked", { id: row.id, documentId: row.documentId, reason });
     return true;
   }
@@ -1001,7 +1012,8 @@ class Pass {
    *     ACT! may hold the person -- no answer, a 5xx or a redirect, a success
    *     PathQuote could not read, a 408 (createUnaccounted), or an id
    *     PathQuote failed to store (storeCreated) --
-   *     this row is blocked now, with the planner's sentence, and counted as
+   *     this row is blocked now, as the planner would block it
+   *     (UNTRACKED_CONTACT_REASON, BLOCKED_BY.contact), and counted as
    *     `untracked`, rather than when its backoff runs out. An error not from
    *     a request (`foreign`) backs the row off; the planner blocks it from
    *     its next attempt.
@@ -1056,7 +1068,7 @@ class Pass {
           error,
         });
         this.result.untracked += 1;
-        throw new BlockRow(UNTRACKED_CONTACT_REASON, null, error);
+        throw new BlockRow(UNTRACKED_CONTACT_REASON, BLOCKED_BY.contact, error);
       }
       // Not from a request (writeFailureOf's `foreign`): it says nothing about
       // what ACT! did, so the marker stays, and the row's failure handling
@@ -1073,8 +1085,8 @@ class Pass {
    * recorded: the marker stays (the store's transaction cleared nothing), so
    * no quote creates them again; the ACT! id is logged, for whoever settles
    * it (FOR TASK 10 in src/lib/act/outbox-plan.ts quotes this log line); the
-   * create counts as `untracked`; and the row is blocked now with the
-   * planner's sentence.
+   * create counts as `untracked`; and the row is blocked now, as the planner
+   * would block it (UNTRACKED_CONTACT_REASON, BLOCKED_BY.contact).
    */
   private async storeCreated(
     row: Row,
@@ -1092,7 +1104,7 @@ class Pass {
         error,
       });
       this.result.untracked += 1;
-      throw new BlockRow(UNTRACKED_CONTACT_REASON, null);
+      throw new BlockRow(UNTRACKED_CONTACT_REASON, BLOCKED_BY.contact);
     }
   }
 

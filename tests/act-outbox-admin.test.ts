@@ -22,7 +22,6 @@ import {
 } from "../src/lib/act/outbox-admin";
 import { BLOCKED_BY, refusedReason } from "../src/lib/act/drain-rules";
 import {
-  EARLIER_UNTRACKED_CONTACT_REASONS,
   NO_CONTACT_REASON,
   UNTRACKED_CONTACT_REASON,
   unmappedRegionReason,
@@ -42,7 +41,9 @@ function heldContact(overrides: Partial<AdminContact> = {}): AdminContact {
 }
 
 const refused = refusedReason("create-opportunity", 400, '{"Message":"Bad stage"}');
-const heldRow = row({ blockedReason: UNTRACKED_CONTACT_REASON });
+const heldRow = row({ blockedReason: UNTRACKED_CONTACT_REASON, blockedBy: BLOCKED_BY.contact });
+/** The contact's hold, its sentence reworded since: the blocker is what says what it is. */
+const REWORDED = "PathQuote lost track of whether ACT! made this contact — an administrator settles it on this quote's page.";
 
 describe("adminActionsFor: what the page offers", () => {
   it("nothing for a quote with no row, or a finished one", () => {
@@ -61,11 +62,14 @@ describe("adminActionsFor: what the page offers", () => {
     });
   });
 
-  it("Try again now for a row held by ACT!, its revision or a lookup's duplicates -- not by the planner", () => {
+  it("Try again now for a row held by ACT!, its revision or a lookup's duplicates -- not by the planner or its contact", () => {
     for (const blockedBy of [BLOCKED_BY.act, BLOCKED_BY.revision, BLOCKED_BY.drain]) {
       expect(adminActionsFor(row({ blockedReason: refused, blockedBy }), null).tryAgain).toBe(true);
     }
     expect(adminActionsFor(row({ blockedReason: NO_CONTACT_REASON, blockedBy: null }), null).tryAgain).toBe(false);
+    // Held for its contact: the contact actions settle it, and the drain lets it go.
+    expect(adminActionsFor(heldRow, heldContact()).tryAgain).toBe(false);
+    expect(tryAgainDecision(heldRow, NOW)).toEqual({ ok: false, error: ROW_CHANGED_ERROR });
     // A value nothing here knows is left for a person who does.
     expect(adminActionsFor(row({ blockedReason: refused, blockedBy: "mystery" }), null).tryAgain).toBe(false);
   });
@@ -90,19 +94,18 @@ describe("adminActionsFor: what the page offers", () => {
   it("only for a quote held for exactly that: not one the planner holds for its region first", () => {
     expect(heldForContact(heldRow, heldContact())).toBe(true);
     expect(heldForContact(row({ blockedReason: unmappedRegionReason("ZZ") }), heldContact())).toBe(false);
-    // Any sentence that is not one of its wordings is not that hold.
-    expect(heldForContact(row({ blockedReason: "an older wording" }), heldContact())).toBe(false);
   });
 
-  it("offers them for a row still carrying an earlier wording -- no pass rewrites it while sending is off", () => {
-    expect(EARLIER_UNTRACKED_CONTACT_REASONS.length).toBeGreaterThan(0);
-    for (const earlier of EARLIER_UNTRACKED_CONTACT_REASONS) {
-      expect(earlier).not.toBe(UNTRACKED_CONTACT_REASON);
-      expect(adminActionsFor(row({ blockedReason: earlier }), heldContact())).toMatchObject({
-        contactFound: true,
-        contactAbsent: true,
-      });
-    }
+  it("knows the hold by its blocker, never by its sentence", () => {
+    // Reworded: still held for its contact, and offered both actions.
+    const reworded = row({ blockedReason: REWORDED, blockedBy: BLOCKED_BY.contact });
+    expect(heldForContact(reworded, heldContact())).toBe(true);
+    expect(adminActionsFor(reworded, heldContact())).toMatchObject({ contactFound: true, contactAbsent: true });
+    expect(contactAbsentDecision(reworded, heldContact()).ok).toBe(true);
+    expect(contactFoundDecision({ row: reworded, contact: heldContact(), actContactId: ACT_ID, duplicate: null }).ok).toBe(true);
+    // The sentence word for word, but not blocked as the contact's: not that hold.
+    expect(heldForContact(row({ blockedReason: UNTRACKED_CONTACT_REASON, blockedBy: null }), heldContact())).toBe(false);
+    expect(heldForContact(row({ blockedReason: UNTRACKED_CONTACT_REASON, blockedBy: BLOCKED_BY.drain }), heldContact())).toBe(false);
   });
 });
 
@@ -235,10 +238,10 @@ describe("contactAbsentDecision", () => {
 });
 
 describe("heldForContactRelease", () => {
-  it("makes due every row held for the contact by the planner, each guarded with its own generation", () => {
+  it("makes due every row held for the contact, each guarded with its own generation", () => {
     const rows = [
-      row({ id: "a", generation: 0, blockedReason: UNTRACKED_CONTACT_REASON }),
-      row({ id: "b", generation: 7, blockedReason: UNTRACKED_CONTACT_REASON }),
+      row({ id: "a", generation: 0, blockedReason: UNTRACKED_CONTACT_REASON, blockedBy: BLOCKED_BY.contact }),
+      row({ id: "b", generation: 7, blockedReason: UNTRACKED_CONTACT_REASON, blockedBy: BLOCKED_BY.contact }),
     ];
     expect(heldForContactRelease(rows, NOW)).toEqual([
       {
@@ -252,17 +255,19 @@ describe("heldForContactRelease", () => {
     ]);
   });
 
-  it("releases a row still carrying an earlier wording too, rather than leave it held for a hold now settled", () => {
-    const rows = EARLIER_UNTRACKED_CONTACT_REASONS.map((reason, i) => row({ id: `old${i}`, generation: i, blockedReason: reason }));
-    expect(heldForContactRelease(rows, NOW).map((write) => write.where.id)).toEqual(rows.map((r) => r.id));
+  it("releases a row whose sentence has been reworded too: the blocker says it is held for the contact", () => {
+    const rows = [row({ id: "reworded", generation: 2, blockedReason: REWORDED, blockedBy: BLOCKED_BY.contact })];
+    expect(heldForContactRelease(rows, NOW).map((write) => write.where.id)).toEqual(["reworded"]);
   });
 
   it("leaves rows held for anything else, rows ACT! refused, waiting rows and finished ones", () => {
     const rows = [
       row({ id: "region", blockedReason: unmappedRegionReason("ZZ") }),
       row({ id: "act", blockedReason: UNTRACKED_CONTACT_REASON, blockedBy: BLOCKED_BY.act }),
+      // The sentence alone, stored as the planner's: not held for the contact.
+      row({ id: "sentence", blockedReason: UNTRACKED_CONTACT_REASON, blockedBy: null }),
       row({ id: "waiting" }),
-      row({ id: "done", completedAt: NOW, blockedReason: UNTRACKED_CONTACT_REASON }),
+      row({ id: "done", completedAt: NOW, blockedReason: UNTRACKED_CONTACT_REASON, blockedBy: BLOCKED_BY.contact }),
     ];
     expect(heldForContactRelease(rows, NOW)).toEqual([]);
   });

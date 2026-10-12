@@ -404,7 +404,8 @@
 //
 //   contact            nextStep blocks create-contact, for whichever row asks
 //                      (A CONTACT CREATE IN FLIGHT): a person must look in
-//                      ACT! first (UNTRACKED_CONTACT_REASON). The contact is
+//                      ACT! first (UNTRACKED_CONTACT_REASON, and blockedBy
+//                      "contact"; see THE BLOCKER, below). The contact is
 //                      NOT looked up by email: among ACT!'s 17.5k contacts an
 //                      email is no identity -- shared inboxes, duplicates
 //                      already there, contacts with none -- and adopting a
@@ -441,8 +442,31 @@
 // than RECHECKS_PER_PASS of them a pass (src/lib/act/drain-rules.ts) -- and
 // the lookup runs again: blocked while the duplicates stand, on its way once
 // a person has dealt with them. (A row ACT! REFUSED is different: the drain
-// holds it until a take-over or a person, ActOutbox.blockedBy. So is a row
-// whose revision the drain cannot describe, which reads the same each time.)
+// holds it until a take-over or a person. So is a row whose revision the
+// drain cannot describe, which reads the same each time. See THE BLOCKER.)
+//
+// THE BLOCKER. ActOutbox.blockedBy says who blocked a row, and decides what
+// the drain's pass over blocked rows does with it (replanBlocked in
+// src/lib/act/drain-rules.ts, whose BLOCKED_BY lists the values):
+//
+//   null        a block of this planner's: re-planned every pass, and lifted
+//               once nextStep no longer returns it.
+//   "contact"   the quote held over its contact's create (A CONTACT CREATE
+//               IN FLIGHT, next): nextStep's block carries `by: "contact"`,
+//               and the drain stores the same when it sees the create go
+//               unaccounted for. Re-planned like null: held while the marker
+//               stands and the row needs the contact, lifted once an
+//               administrator has settled the contact.
+//   "drain"     a lookup's duplicates: rechecked, as above.
+//   "act"       a write ACT! refused, or a record it denied PathQuote: held
+//               until a take-over or a person.
+//   "revision"  a revision the drain cannot describe: held likewise.
+//   "admin"     on a finished row only: an administrator chose not to send
+//               the quote.
+//
+// Everything that asks why a row is held reads this column, never
+// blockedReason, which is a sentence for a manager and can be reworded
+// (BLOCKED REASONS ARE READ BY A MANAGER).
 //
 // A CONTACT CREATE IN FLIGHT is marked on the Contact, not the row, because
 // the record being created is the contact, and a contact belongs to every
@@ -455,7 +479,8 @@
 // row sends nothing -- and clears it in the update that stores actContactId,
 // or when the POST made nothing (createMadeNothing). While it is set and
 // actContactId is null, nextStep blocks wherever it would plan create-contact,
-// whichever row is asking, with UNTRACKED_CONTACT_REASON. A row with nothing
+// whichever row is asking, with UNTRACKED_CONTACT_REASON and `by: "contact"`
+// (blockedBy "contact", THE BLOCKER above). A row with nothing
 // left that needs the contact -- its revision journaled, no deal event due --
 // is still `done`: the marker is a fact about the contact, not about that
 // row. The block lifts when a person has looked: actContactId set to the
@@ -477,8 +502,8 @@
 //
 //   Which contacts are held. A contact is held while its create's outcome is
 //   unknown: actCreateInFlightAt set and actContactId null. Every quote on
-//   it that still needs the contact in ACT! is blocked with
-//   UNTRACKED_CONTACT_REASON.
+//   it that still needs the contact in ACT! is blocked, once the drain has
+//   reached it, with blockedBy "contact" and UNTRACKED_CONTACT_REASON.
 //
 //     docker compose exec -T postgres psql -U pathquote -d pathquote -c \
 //       "select id, \"firstName\", \"lastName\", email, \"actCreateInFlightAt\" from \"Contact\" where \"actCreateInFlightAt\" is not null and \"actContactId\" is null;"
@@ -541,8 +566,9 @@
 //
 //   Then nothing else is needed: the next full drain pass re-plans every
 //   blocked row, finds nextStep no longer blocking on this contact, and
-//   unblocks every quote on it by itself (the planner's block, blockedBy
-//   null) -- the periodic drain, within 15 minutes, or the nightly sync's.
+//   unblocks every quote on it by itself (blockedBy "contact", which the pass
+//   re-plans as the planner's own) -- the periodic drain, within 15 minutes,
+//   or the nightly sync's.
 //   (A fast path, over one quote, does the same for that quote alone.)
 //
 //   On the held quote's own page, an administrator has the two common cases
@@ -555,9 +581,9 @@
 //   outside any transaction, and links nothing when ACT! has no such
 //   contact, cannot be asked, or holds somebody whose name and email both
 //   differ from the PathQuote contact's (actContactCheck). Each also makes
-//   due, at once, every quote on the contact still blocked with
-//   UNTRACKED_CONTACT_REASON (in any of its wordings), rather than leaving
-//   that to the next full pass. The runbook points to them first, and keeps
+//   due, at once, every quote on the contact still held for it (blockedBy
+//   "contact", whatever its blockedReason says), rather than leaving that to
+//   the next full pass. The runbook points to them first, and keeps
 //   the SQL for when the app cannot be used.
 //
 //   THE MERGE STAYS SQL. "ACT! has this person" refuses when another
@@ -751,7 +777,16 @@ export type OutboxStep =
   /** The opportunity patched to Won. Planned only once the line shows the row's revision. */
   | { kind: "win-opportunity" }
   | { kind: "done" }
-  | { kind: "blocked"; reason: string };
+  /**
+   * `reason` is the sentence a manager reads (BLOCKED REASONS ARE READ BY A
+   * MANAGER). `by` is "contact" -- BLOCKED_BY.contact in
+   * src/lib/act/drain-rules.ts -- on the one block that holds the quote for
+   * its contact's create (UNTRACKED_CONTACT_REASON), and absent on every
+   * other: what the drain stores as ActOutbox.blockedBy (plannerBlockedBy),
+   * and what everything that asks "is this quote held for its contact?"
+   * reads, rather than the sentence.
+   */
+  | { kind: "blocked"; reason: string; by?: "contact" };
 
 /**
  * Finalize does not require a contact (validateFinalizable never looks at
@@ -800,40 +835,17 @@ export function unmappedRegionReason(regionCode: string): string {
  * administrator's buttons under it, so it sends them to an administrator
  * rather than naming the buttons.
  *
- * REWORDING IT: move the old text into EARLIER_UNTRACKED_CONTACT_REASONS,
- * below. A row already blocked keeps the wording it was blocked with until
- * the next full drain pass rewrites it (`reblock`, replanBlocked in
- * src/lib/act/drain-rules.ts) -- and no pass runs while sending is switched
- * off (drainActOutbox returns before it re-plans anything). Everything that
- * asks "is this row held for its contact?" asks isUntrackedContactReason,
- * which knows every wording: the Settings count (readOutboxStanding in
- * src/lib/queries/act-sync.ts), the administrator's two contact actions and
- * the release of the contact's other quotes (heldForContact and
- * heldForContactRelease in src/lib/act/outbox-admin.ts). Matched on the
- * current text alone, a row with an old one would be offered no contact
- * action, and left held by a release, for as long as sending stays off.
+ * A SENTENCE, NOT A KEY. Every block with it is stored with ActOutbox.blockedBy
+ * "contact" (BLOCKED_BY.contact in src/lib/act/drain-rules.ts): nextStep's
+ * carries `by: "contact"`, and the drain's own blocks with it pass that
+ * blocker. Whatever asks "is this quote held for its contact?" reads that
+ * column, never this text, so rewording it changes only what a person reads.
+ * A row blocked before a rewording shows the old text until a drain pass
+ * re-plans it (`reblock`, replanBlocked in src/lib/act/drain-rules.ts), and
+ * is held for its contact all the same.
  */
 export const UNTRACKED_CONTACT_REASON =
   "PathQuote asked ACT! to create this quote's contact and has no record of whether it did, so they may be in ACT! already, and creating them again could put the same person in ACT! twice — PathQuote will not try again on its own: an administrator has to look in ACT! and settle it on this quote's page, and nobody should delete or re-add this contact.";
-
-/**
- * Every earlier wording of UNTRACKED_CONTACT_REASON, newest first, which a
- * row blocked before the rewording may still carry. Each meant the same: the
- * drain saw a contact create go unaccounted for. Only ever added to.
- */
-export const EARLIER_UNTRACKED_CONTACT_REASONS: readonly string[] = [
-  "PathQuote asked ACT! to create this quote's contact and has no record of whether it did, so they may be in ACT! already, and creating them again could put the same person in ACT! twice — PathQuote will not try again on its own: ask your developer, and do not delete or re-add this contact.",
-  "PathQuote asked ACT! to create this quote's contact and has no record of whether it did, so they may be in ACT! already — check ACT! for them before this is tried again, or ACT! could end up with the same person twice.",
-  "PathQuote asked ACT! to create this quote's contact but never learned whether it did, so they may be in ACT! already — check ACT! for them before this is tried again, or ACT! could end up with the same person twice.",
-];
-
-/** UNTRACKED_CONTACT_REASON and every earlier wording of it, for a query's `in`. */
-export const UNTRACKED_CONTACT_REASONS: readonly string[] = [UNTRACKED_CONTACT_REASON, ...EARLIER_UNTRACKED_CONTACT_REASONS];
-
-/** Whether `reason` is UNTRACKED_CONTACT_REASON, in its current wording or an earlier one. */
-export function isUntrackedContactReason(reason: string | null): boolean {
-  return reason !== null && UNTRACKED_CONTACT_REASONS.includes(reason);
-}
 
 /**
  * The sentence for a value in ActOutbox.createInFlight that nothing here
@@ -973,7 +985,7 @@ export function nextStep(
     // A create of this contact may already have made them in ACT! -- for
     // this quote or another on the same contact (A CONTACT CREATE IN
     // FLIGHT). First, because it is the one a second POST makes worse.
-    if (quote.contact.actCreateInFlightAt) return { kind: "blocked", reason: UNTRACKED_CONTACT_REASON };
+    if (quote.contact.actCreateInFlightAt) return { kind: "blocked", reason: UNTRACKED_CONTACT_REASON, by: "contact" };
     // The name only matters when ACT! is about to be asked to create one.
     if (!hasName(quote.contact)) return { kind: "blocked", reason: NAMELESS_CONTACT_REASON };
     return { kind: "create-contact" };

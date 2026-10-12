@@ -879,7 +879,7 @@ describe("nextStep: a create in flight", () => {
     const quote = quoteState({ contact: pathQuoteOnlyContact });
     expect(nextStep(nothingDone, noHistory, quote)).toEqual({ kind: "create-contact" });
     const marked = quoteState({ contact: { ...pathQuoteOnlyContact, actCreateInFlightAt: ACCEPTED_AT } });
-    expect(nextStep(nothingDone, noHistory, marked)).toEqual({ kind: "blocked", reason: UNTRACKED_CONTACT_REASON });
+    expect(nextStep(nothingDone, noHistory, marked)).toEqual({ kind: "blocked", reason: UNTRACKED_CONTACT_REASON, by: "contact" });
   });
 
   it("blocks every quote on a contact whose create is in flight, not only the one that sent it", () => {
@@ -891,16 +891,18 @@ describe("nextStep: a create in flight", () => {
     expect(nextStep(secondQuotesRow, noHistory, quoteState({ contact }))).toEqual({
       kind: "blocked",
       reason: UNTRACKED_CONTACT_REASON,
+      by: "contact",
     });
     // Ahead of a missing name: the person may be in ACT! whatever they are called.
     const nameless = { ...contact, firstName: "", lastName: null };
     expect(nextStep(secondQuotesRow, noHistory, quoteState({ contact: nameless }))).toEqual({
       kind: "blocked",
       reason: UNTRACKED_CONTACT_REASON,
+      by: "contact",
     });
     // Wherever the contact would be created: a signature's promotion too.
     const signed = finishedDeal({ contact, signingStatus: "SIGNED" });
-    expect(nextStep(nothingDone, journaled, signed)).toEqual({ kind: "blocked", reason: UNTRACKED_CONTACT_REASON });
+    expect(nextStep(nothingDone, journaled, signed)).toEqual({ kind: "blocked", reason: UNTRACKED_CONTACT_REASON, by: "contact" });
   });
 
   it("lifts the block once a person has looked: the contact's ACT! id stored, or the marker cleared", () => {
@@ -909,6 +911,23 @@ describe("nextStep: a create in flight", () => {
     expect(nextStep(nothingDone, noHistory, quoteState({ contact: pathQuoteOnlyContact }))).toEqual({
       kind: "create-contact",
     });
+  });
+
+  it("holds for the contact on that block alone: every other block is the planner's own", () => {
+    // `by` is what the drain stores as ActOutbox.blockedBy; the sentence is not a key.
+    const others: OutboxStep[] = [
+      nextStep(nothingDone, noHistory, quoteState({ contact: null })),
+      nextStep(nothingDone, noHistory, quoteState({ regionCode: "ZZ" })),
+      nextStep(nothingDone, noHistory, quoteState({ contact: { ...pathQuoteOnlyContact, firstName: "", lastName: null } })),
+      nextStep(inFlight("company"), noHistory, quoteState()),
+    ];
+    for (const step of others) {
+      expect(step.kind).toBe("blocked");
+      expect(step).not.toHaveProperty("by");
+    }
+    // A region it checks first wins over the contact's marker, and is the planner's.
+    const marked = { ...pathQuoteOnlyContact, actCreateInFlightAt: ACCEPTED_AT };
+    expect(nextStep(nothingDone, noHistory, quoteState({ regionCode: "ZZ", contact: marked }))).not.toHaveProperty("by");
   });
 
   it("finishes a row with nothing left that needs the contact: the marker is the contact's, not the row's", () => {

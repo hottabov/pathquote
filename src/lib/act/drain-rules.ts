@@ -259,8 +259,29 @@ export function deniedReason(kind: ActStepKind, method: string, body: string): s
 
 /**
  * The values of ActOutbox.blockedBy, beside null for a row the planner
- * blocked. See the column in prisma/schema.prisma.
+ * blocked for anything but its contact. See the column in
+ * prisma/schema.prisma.
  *
+ *   contact   held over the contact's create: PathQuote asked ACT! to create
+ *             the quote's contact and has no record of whether it did
+ *             (A CONTACT CREATE IN FLIGHT in src/lib/act/outbox-plan.ts).
+ *             Set by the planner -- nextStep's block for a contact whose
+ *             marker stands, which carries `by: "contact"` (plannerBlockedBy)
+ *             -- and by the drain where a contact create goes unaccounted
+ *             for (createContact and storeCreated in src/lib/act/drain.ts).
+ *             Re-planned each pass like the planner's own blocks: it stays
+ *             blocked while the contact's marker stands and the row still
+ *             needs the contact, and is unblocked once an administrator has
+ *             settled the contact. This, and not
+ *             the blockedReason sentence, is what every reader asks to know
+ *             a quote is held for its contact -- the quote's ACT! card and
+ *             the two contact actions (heldForContact in
+ *             src/lib/act/outbox-admin.ts), the release of the contact's
+ *             other quotes (heldForContactRelease, same file), the Settings
+ *             count (readOutboxStanding in src/lib/queries/act-sync.ts) and
+ *             a pass's own (drainSummary in src/lib/act/run-record.ts) -- so
+ *             rewording UNTRACKED_CONTACT_REASON changes what a person reads
+ *             and nothing else.
  *   act       ACT! refused a write, or denied PathQuote access to a record:
  *             held until a take-over or a person.
  *   revision  the row's revision cannot be described (revisionForAct's
@@ -293,11 +314,21 @@ export function deniedReason(kind: ActStepKind, method: string, body: string): s
  * src/lib/act/outbox-admin.ts).
  */
 export const BLOCKED_BY = {
+  contact: "contact",
   act: "act",
   revision: "revision",
   drain: "drain",
   admin: "admin",
 } as const;
+
+/**
+ * ActOutbox.blockedBy for a block nextStep returned: BLOCKED_BY.contact for
+ * the contact held over its create (the step's `by`), null -- the planner's
+ * -- for every other.
+ */
+export function plannerBlockedBy(step: Extract<OutboxStep, { kind: "blocked" }>): typeof BLOCKED_BY.contact | null {
+  return step.by === BLOCKED_BY.contact ? BLOCKED_BY.contact : null;
+}
 
 /**
  * How many rows the drain's own lookups blocked (BLOCKED_BY.drain) one pass
@@ -340,9 +371,12 @@ export function passWork(
  *   keep     leave it blocked as it is: ACT! refused it, its revision cannot
  *            be described (BLOCKED_BY.revision), or blockedBy holds a value
  *            nothing here knows, which is left for a person; or the planner
- *            blocks it still, for the reason stored.
- *   reblock  the planner blocks it, for a reason other than the one stored:
- *            store the planner's, as the planner's.
+ *            blocks it still, for the reason stored and as the blocker
+ *            stored.
+ *   reblock  the planner blocks it, for a reason or as a blocker other than
+ *            the one stored: store the planner's reason, and `by` --
+ *            plannerBlockedBy, BLOCKED_BY.contact for a contact held over
+ *            its create, null for the rest.
  *   unblock  the planner blocked it and no longer does -- the cause was
  *            fixed in PathQuote: clear the reason, which is no longer true,
  *            and make the row due.
@@ -353,22 +387,43 @@ export function passWork(
  *            names may still be in ACT!, and a pass that stops or runs out
  *            of rechecks before reaching it would otherwise leave the manager
  *            with no reason at all.
+ *
+ * A row held for its contact (BLOCKED_BY.contact) is re-planned as the
+ * planner's own blocks are, whoever set it -- the planner, or the drain where
+ * the contact's create went unaccounted for. Either way the contact's marker
+ * (Contact.actCreateInFlightAt) was set and left set. While the quote's
+ * contact has that marker and no actContactId, nextStep returns one of three
+ * things for the row: this same block, wherever the row would need the
+ * contact -- `keep` (or `reblock` with the same `by`, should the sentence
+ * have been reworded since); a block it checks first, an unmapped region say
+ * -- `reblock`, as the planner's; or `done`, for a row that needs the
+ * contact no more -- `unblock`, and the next pass finishes it. Never a step
+ * that calls ACT!: nextStep plans create-contact only once the marker is
+ * gone, and every later step only once actContactId is set. So the row moves
+ * on when an administrator has settled the contact ("ACT! has this person"
+ * sets actContactId, "ACT! has nobody" clears the marker): `unblock`, and the
+ * next pass sends what the plan then says. Nothing is sent deciding any of
+ * this.
  */
 export type Replan =
   | { kind: "keep" }
-  | { kind: "reblock"; reason: string }
+  | { kind: "reblock"; reason: string; by: typeof BLOCKED_BY.contact | null }
   | { kind: "unblock" }
   | { kind: "recheck" };
+
+/** The blockers the pass over blocked rows re-plans: the planner's (null), the contact's and the drain's lookups'. */
+const REPLANNED: ReadonlySet<string | null> = new Set([null, BLOCKED_BY.contact, BLOCKED_BY.drain]);
 
 export function replanBlocked(
   row: { blockedReason: string; blockedBy: string | null },
   step: OutboxStep,
 ): Replan {
-  if (row.blockedBy !== null && row.blockedBy !== BLOCKED_BY.drain) return { kind: "keep" };
+  if (!REPLANNED.has(row.blockedBy)) return { kind: "keep" };
   if (step.kind === "blocked") {
-    return step.reason === row.blockedReason && row.blockedBy === null
+    const by = plannerBlockedBy(step);
+    return step.reason === row.blockedReason && row.blockedBy === by
       ? { kind: "keep" }
-      : { kind: "reblock", reason: step.reason };
+      : { kind: "reblock", reason: step.reason, by };
   }
   return row.blockedBy === BLOCKED_BY.drain ? { kind: "recheck" } : { kind: "unblock" };
 }

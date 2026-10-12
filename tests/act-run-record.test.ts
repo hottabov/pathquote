@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { DrainResult } from "../src/lib/act/drain";
 import { UNTRACKED_CONTACT_REASON, NO_CONTACT_REASON } from "../src/lib/act/outbox-plan";
+import { BLOCKED_BY } from "../src/lib/act/drain-rules";
 import {
   describeRun,
   drainSummary,
@@ -472,9 +473,11 @@ describe("drainSummary and drainThrew", () => {
         rowsDone: 3,
         stepsWritten: 9,
         blocked: [
-          { documentId: "d1", reason: NO_CONTACT_REASON },
-          { documentId: "d2", reason: UNTRACKED_CONTACT_REASON },
-          { documentId: "d3", reason: UNTRACKED_CONTACT_REASON },
+          { documentId: "d1", reason: NO_CONTACT_REASON, blockedBy: null },
+          { documentId: "d2", reason: UNTRACKED_CONTACT_REASON, blockedBy: BLOCKED_BY.contact },
+          // Counted by who blocked it, not by what it says.
+          { documentId: "d3", reason: "a reworded hold", blockedBy: BLOCKED_BY.contact },
+          { documentId: "d5", reason: UNTRACKED_CONTACT_REASON, blockedBy: null },
         ],
         failed: [{ documentId: "d4", error: "x" }],
         untracked: 1,
@@ -488,7 +491,7 @@ describe("drainSummary and drainThrew", () => {
       stopCause: "unavailable",
       rowsDone: 3,
       stepsWritten: 9,
-      blocked: 3,
+      blocked: 4,
       firstBlockedReason: NO_CONTACT_REASON,
       heldForContact: 2,
       backingOff: 1,

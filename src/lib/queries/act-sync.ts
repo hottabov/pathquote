@@ -8,7 +8,7 @@
 
 import { db } from "@/lib/db";
 import { readActWriteSwitch } from "@/lib/act/drain";
-import { UNTRACKED_CONTACT_REASONS } from "@/lib/act/outbox-plan";
+import { BLOCKED_BY } from "@/lib/act/drain-rules";
 import { LAST_RUN_KEY, parseStoredRun, type ActSyncRun } from "@/lib/act/run-record";
 import { isSyncRunning, readCursor } from "@/lib/act/sync";
 import { HELD_QUOTES_LISTED } from "@/lib/act/sync-view";
@@ -36,17 +36,15 @@ export type ActOutboxStanding = {
   /** Unfinished rows with a blockedReason: held back until somebody acts. */
   held: number;
   /**
-   * Of `held`, the rows blocked with UNTRACKED_CONTACT_REASON: PathQuote
-   * asked ACT! to create the quote's contact and never learned whether it
-   * did. The reason rather than Contact.actCreateInFlightAt, because the
-   * marker is also set for the second or so of every contact create that
-   * goes well, and stands on the contact of a quote that is not blocked yet
-   * -- one due, not yet worked. The planner and the drain block such a row
-   * with exactly this sentence, so the reason is what says "held for this".
-   * Counted in any of its wordings (UNTRACKED_CONTACT_REASONS): the drain's
-   * re-plan of blocked rows rewrites an older one (`reblock`, replanBlocked
-   * in src/lib/act/drain-rules.ts), but only when a pass runs, and none runs
-   * while sending is switched off.
+   * Of `held`, the rows held for their contact (blockedBy
+   * BLOCKED_BY.contact): PathQuote asked ACT! to create the quote's contact
+   * and never learned whether it did. The row's blocker rather than
+   * Contact.actCreateInFlightAt, because the marker is also set for the
+   * second or so of every contact create that goes well, and stands on the
+   * contact of a quote that is not blocked yet -- one due, not yet worked.
+   * And the blocker rather than blockedReason, which is a sentence for a
+   * manager and may be reworded: the planner and the drain store
+   * BLOCKED_BY.contact on every such row, whatever it says.
    */
   heldForContact: number;
   /**
@@ -123,7 +121,7 @@ async function readOutboxStanding(user: ScopeUser): Promise<ActOutboxStanding> {
   const [heldCount, heldForContact, heldQuotes, waitingCount, retrying] = await db.$transaction(
     [
       db.actOutbox.count({ where: held }),
-      db.actOutbox.count({ where: { ...unfinished, blockedReason: { in: [...UNTRACKED_CONTACT_REASONS] } } }),
+      db.actOutbox.count({ where: { ...held, blockedBy: BLOCKED_BY.contact } }),
       db.actOutbox.findMany({
         where: held,
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],

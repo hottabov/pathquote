@@ -57,7 +57,6 @@
 // error classes are imported to tell its failures apart, never to call it.
 
 import type { Prisma } from "@prisma/client";
-import { isUntrackedContactReason } from "@/lib/act/outbox-plan";
 import { BLOCKED_BY } from "@/lib/act/drain-rules";
 import { ActApiError, ActNoAnswerError, ActNotSentError } from "@/lib/act/client";
 import { tryLaterStatus } from "@/lib/act/record-write";
@@ -119,33 +118,31 @@ export const NO_ROW_ERROR = "This quote is not queued for ACT!, so there is noth
 
 /**
  * Whether the quote is held over its contact's create: its row unfinished and
- * blocked with UNTRACKED_CONTACT_REASON by the planner or the drain's create
- * (blockedBy null), and its contact still held -- a create in flight and no
- * ACT! id.
+ * held for its contact (blockedBy BLOCKED_BY.contact, set by the planner or
+ * the drain's create), and its contact still held -- a create in flight and
+ * no ACT! id.
  *
  * Blocked for exactly that, not merely unfinished: the marker is also set for
  * the second or so that every contact create takes, and "ACT! has nobody"
  * pressed in that second would clear the mark of a POST still in flight. A
- * row carries this reason only once the drain has seen a create go
+ * row is held for its contact only once the drain has seen a create go
  * unaccounted for, or the planner has found the mark it left. A row the
  * planner holds for something it checks first -- an unmapped region -- is not
  * offered them, though its contact may be held: the reason it shows is not
  * about the contact.
  *
- * The sentence in any of its wordings (isUntrackedContactReason): a row
- * blocked before the last rewording keeps the old text until a full drain
- * pass rewrites it, and no pass runs while sending is switched off -- which
- * is when an administrator is most likely to be settling holds.
+ * Read off blockedBy, never off blockedReason: that is a sentence for a
+ * manager, and a reworded one must not take the contact actions away from a
+ * quote still held for its contact.
  */
 export function heldForContact(
-  row: Pick<AdminRow, "completedAt" | "blockedReason" | "blockedBy"> | null,
+  row: Pick<AdminRow, "completedAt" | "blockedBy"> | null,
   contact: Pick<AdminContact, "actContactId" | "actCreateInFlightAt"> | null,
 ): boolean {
   return (
     row !== null &&
     row.completedAt === null &&
-    isUntrackedContactReason(row.blockedReason) &&
-    row.blockedBy === null &&
+    row.blockedBy === BLOCKED_BY.contact &&
     contact !== null &&
     contact.actContactId === null &&
     contact.actCreateInFlightAt !== null
@@ -186,9 +183,11 @@ export function adminActionsFor(row: AdminRow | null, contact: AdminContact | nu
  * productLineSkippedAt), and so does a create in flight (createInFlight),
  * which a take-over keeps too. So the next pass sends the same step again.
  *
- * Not for a row the planner blocked (blockedBy null): the drain re-plans those
- * every pass and releases them itself once the cause is fixed, and releasing
- * one by hand before then only has the next pass block it again.
+ * Not for a row the planner blocked (blockedBy null), nor one held for its
+ * contact (BLOCKED_BY.contact): the drain re-plans those every pass and
+ * releases them itself once the cause is fixed -- for a contact, once it is
+ * settled by the two contact actions -- and releasing one by hand before then
+ * only has the next pass block it again.
  */
 export function tryAgainDecision(row: AdminRow | null, now: Date): Decision<RowWrite> {
   if (!row) return { ok: false, error: NO_ROW_ERROR };
@@ -432,8 +431,8 @@ export function contactAbsentDecision(row: AdminRow | null, contact: AdminContac
 
 /**
  * After either contact action: every quote on the contact that the hold kept
- * back is made due now -- its reason and who held it cleared (null: the
- * planner's block), due now, guarded like any row write.
+ * back is made due now -- its reason and who held it cleared, due now,
+ * guarded like any row write.
  *
  * NOT NEEDED FOR CORRECTNESS. The drain re-plans every blocked row at the
  * start of each pass, finds nextStep no longer blocking on the contact, and
@@ -443,21 +442,16 @@ export function contactAbsentDecision(row: AdminRow | null, contact: AdminContac
  * the moment an administrator has settled it, rather than for up to a quarter
  * of an hour after.
  *
- * Only rows still held for exactly that: unfinished, blocked by the planner,
- * with UNTRACKED_CONTACT_REASON in any of its wordings
- * (isUntrackedContactReason) -- matched on the current one alone, a row
- * blocked before a rewording would stay held, telling its reader to wait for
- * a hold already settled, until the next full pass, and no pass runs while
- * sending is switched off. A row on the same contact the planner holds
- * for something else -- an unmapped region, which nextStep checks first -- is
- * left to the drain, which would only block it again. attempts and lastError
+ * Only rows still held for exactly that: unfinished, and held for their
+ * contact (blockedBy BLOCKED_BY.contact), whatever their blockedReason says.
+ * A row on the same contact the planner holds for something else -- an
+ * unmapped region, which nextStep checks first -- is left to the drain, which
+ * would only block it again. attempts and lastError
  * are left as they are: the row was not refused, and its history of failures
  * before the hold, if any, still stands.
  */
 export function heldForContactRelease(rows: readonly AdminRow[], now: Date): RowWrite[] {
   return rows
-    .filter(
-      (row) => row.completedAt === null && row.blockedBy === null && isUntrackedContactReason(row.blockedReason),
-    )
+    .filter((row) => row.completedAt === null && row.blockedBy === BLOCKED_BY.contact)
     .map((row) => guarded(row, { blockedReason: null, blockedBy: null, nextAttemptAt: now }));
 }

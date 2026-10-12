@@ -35,11 +35,17 @@
 --                                     createInFlight for a create of the
 --                                     deal's records that may have made one
 --                                     whose id was never stored; blockedBy,
---                                     who blocked it -- the planner, ACT!
---                                     refusing a write or the drain finding
---                                     the revision unreadable (both held
---                                     until a take-over), or a lookup's
---                                     duplicates (rechecked);
+--                                     who blocked it -- the planner, a
+--                                     contact create whose outcome was never
+--                                     learned ("contact", re-planned like the
+--                                     planner's until the contact is
+--                                     settled), ACT! refusing a write or the
+--                                     drain finding the revision unreadable
+--                                     (both held until a take-over or a
+--                                     person), or a lookup's duplicates
+--                                     (rechecked) -- or, on a finished row,
+--                                     an administrator choosing not to send
+--                                     it;
 --                                     and generation, which the planner does
 --                                     not read: the count of take-overs,
 --                                     which the drain's stores on the row

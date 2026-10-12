@@ -1792,12 +1792,24 @@ model ActOutbox {
   /// or mapping the region involves no re-finalise, so nothing takes the row
   /// over. The drain therefore re-plans every blocked row on each pass and,
   /// once nextStep no longer returns `blocked`, clears this and makes the row
-  /// due -- unless blockedBy holds it ("act", "revision").
+  /// due -- unless blockedBy holds it ("act", "revision"). Whether it is set
+  /// is what makes a row blocked; which sentence it is decides nothing --
+  /// blockedBy says why the row is held -- beyond the drain's pass storing
+  /// the planner's current sentence when the stored one differs.
   blockedReason        String?
   /// Who blocked the row, which decides what the drain's pass over blocked
   /// rows does with it (replanBlocked in src/lib/act/drain-rules.ts):
   ///   null        the planner (nextStep): re-planned each pass, and
   ///               unblocked once the cause is fixed in PathQuote.
+  ///   "contact"   held over the quote's contact's create, whose outcome
+  ///               PathQuote never learned (Contact.actCreateInFlightAt
+  ///               set): by the planner, or by the drain where the create
+  ///               went unaccounted for. Re-planned each pass like null:
+  ///               kept blocked while the contact's marker stands, unblocked
+  ///               once an administrator has settled the contact. What the
+  ///               quote's page, the contact actions, the release of the
+  ///               contact's other quotes and the Settings count read to
+  ///               know a quote is held for its contact.
   ///   "act"       ACT! refused a write, or denied PathQuote access to a
   ///               record: the same request would get the same answer, so the
   ///               pass leaves the row blocked until a take-over (a new
@@ -1817,10 +1829,13 @@ model ActOutbox {
   ///               quote's page reads this to say "not sent" rather than
   ///               "in ACT!".
   /// An administrator's "Try again now" on the quote's page also clears
-  /// blockedReason and this, for a row held by "act", "revision" or "drain".
+  /// blockedReason and this, for a row held by "act", "revision" or "drain";
+  /// its two contact actions ("ACT! has this person", "ACT! has nobody")
+  /// clear both on every row held "contact" for the contact they settle.
   /// A column rather than a reading of blockedReason: that is a sentence for
   /// a manager, and rewording one must never turn a held refusal into one
-  /// sent again every pass. A take-over clears it with blockedReason.
+  /// sent again every pass, nor stop a quote held for its contact being
+  /// known as one. A take-over clears it with blockedReason.
   blockedBy            String?
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
