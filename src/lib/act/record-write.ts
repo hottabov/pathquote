@@ -26,6 +26,73 @@ export function isRetried(method: HttpMethod): boolean {
   return method !== "POST";
 }
 
+/**
+ * What came back from one request, as far as deciding what a failure means
+ * needs to know: the HTTP status; `no-answer` when the request may have left
+ * but no status came back (a timeout, a dropped connection); or `unreadable`
+ * when a 2xx came back that does not give the record asked for -- not JSON,
+ * no id, the wrong id, or a created id whose read-back failed.
+ *
+ * A request that never left is none of these. ActClient's `send` does
+ * everything that can fail before sending -- the JSON body, the URL, the
+ * headers -- ahead of the first attempt, and such a failure is an ordinary
+ * error that says nothing was sent; it never reaches classifyWriteFailure.
+ */
+export type ActAnswer = number | "no-answer" | "unreadable";
+
+/**
+ * What kind of failure an answer is, or null when it is not one (a 2xx).
+ *
+ * - `refused`: ACT! answered, and said no. Nothing was written -- a create
+ *   refused made nothing -- and repeating the request repeats the refusal.
+ * - `untracked`: a create that may have left a record in ACT! which
+ *   PathQuote cannot account for. Running it again is how a create becomes a
+ *   duplicate (ActUntrackedCreateError in src/lib/act/client.ts).
+ * - `failed`: anything else that went wrong. Repeating the request is safe --
+ *   a GET changes nothing, a PATCH writes the same whole record again -- so
+ *   the drain tries the step again later.
+ *
+ *                 no answer   2xx unreadable   1xx, 3xx, 4xx   5xx
+ *     POST        untracked   untracked        refused         untracked
+ *     GET, PATCH  failed      failed           refused         failed
+ *
+ * WHY 5xx IS UNTRACKED FOR A POST BUT 4xx IS REFUSED. ACT!'s Web API is
+ * ASP.NET: authentication, routing and model binding all run before the
+ * controller action, and a 4xx is one of them, or the action's own checks,
+ * turning the request away before anything is saved. That is how the
+ * framework is built, not something tried against this server; the
+ * alternative -- treating every refusal as a possible duplicate -- would make
+ * every rejected body look like a record that might exist. A 5xx is the
+ * server failing somewhere, possibly after the record was saved, and a lost
+ * answer says nothing at all. A 2xx to a POST that does not give the record
+ * means the create happened and PathQuote cannot tell which record it made.
+ * (A PATCH's answer is never read -- ActClient's `update` reads the record
+ * again -- so `unreadable` reaches PATCH only in principle.)
+ *
+ * The client turns each kind into its error -- untracked into
+ * ActUntrackedCreateError, the rest into ActApiError when there is a status
+ * and a plain Error when there is none -- and the drain can ask this
+ * function of an ActApiError's method and status to tell `refused` from
+ * `failed`. isRetried agrees with the table: the methods it repeats are the
+ * ones whose lost answer is `failed`, not `untracked`.
+ */
+export type WriteFailure = "refused" | "untracked" | "failed";
+
+export function classifyWriteFailure(method: HttpMethod, answer: ActAnswer): WriteFailure | null {
+  if (typeof answer === "number" && answer >= 200 && answer < 300) return null;
+  const refused = typeof answer === "number" && answer < 500;
+  if (refused) return "refused";
+  return method === "POST" ? "untracked" : "failed";
+}
+
+/**
+ * Whether two ACT! ids name the same record. They are uuids, and nothing says
+ * ACT! keeps their case from one answer to the next, so case is ignored.
+ */
+export function sameRecordId(a: string, b: string): boolean {
+  return a.toLowerCase() === b.toLowerCase();
+}
+
 /** A record as the API sends it: an object, with every field ACT! chose to include. */
 export type ActRecordJson = Record<string, unknown>;
 
@@ -81,7 +148,7 @@ export function mergeForWrite(
   patch: Record<string, unknown>,
 ): ActRecordJson & { id: string } {
   const currentId = current.id;
-  if (typeof currentId === "string" && currentId.toLowerCase() !== id.toLowerCase()) {
+  if (typeof currentId === "string" && !sameRecordId(currentId, id)) {
     throw new Error(
       `refusing to write record ${id}: the record read back for it carries id ${currentId}`,
     );

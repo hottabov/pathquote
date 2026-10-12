@@ -1,7 +1,9 @@
 import {
+  classifyWriteFailure,
   isRetried,
   mergeForWrite,
   patchToSend,
+  sameRecordId,
   writableOpportunity,
   writeAnswer,
   type ActRecordJson,
@@ -112,17 +114,22 @@ export type Updated<T> = { written: boolean; record: T };
 type Outgoing = { method: HttpMethod; body?: unknown };
 
 /**
- * A create that may have left a record in ACT! whose id PathQuote does not
- * have.
+ * A create that may have left a record in ACT! which PathQuote has not got:
+ * classifyWriteFailure's `untracked` (src/lib/act/record-write.ts).
  *
  * Thrown for a POST that timed out, lost its connection or was answered 5xx
  * -- the server may have committed it before the failure -- and for a POST
  * that succeeded but whose record could not be had from the answer: not
- * JSON, no id in it, or an id whose read-back failed.
+ * JSON, no id in it, or an id whose read-back failed. In that last case the
+ * id IS known, and `createdId` carries it: ACT! said it made that record, so
+ * the drain stores it as the step's result and moves on, exactly as if the
+ * record had come back. Only when `createdId` is null is there a record PathQuote
+ * may have and cannot name.
+ *
  * Not retried here (see `send`), and not an ordinary failure for the caller
  * either: running the same create again is what turns this into a duplicate
- * History, opportunity, contact or product line. A plain ActApiError, by contrast, is a
- * create ACT! refused, which made nothing.
+ * History, opportunity, contact or product line. A plain ActApiError, by
+ * contrast, is a create ACT! refused, which made nothing.
  */
 export class ActUntrackedCreateError extends Error {
   constructor(
@@ -136,6 +143,11 @@ export class ActUntrackedCreateError extends Error {
      */
     readonly status: number | null,
     readonly body: string,
+    /**
+     * The id ACT! answered the create with, when it answered with one and
+     * only the read-back by it failed. Null when no id came back at all.
+     */
+    readonly createdId: string | null,
     options?: { cause?: unknown },
   ) {
     super(message, options);
@@ -152,8 +164,8 @@ export class ActUntrackedCreateError extends Error {
  *               A GET changes nothing, and every PATCH this client sends
  *               carries the whole record, so a second copy writes what the
  *               first did.
- *   POST        sent ONCE. Not repeated on a timeout, a network failure or a
- *               5xx: every POST here creates a record, and none of those
+ *   POST        sent ONCE. Not repeated on a timeout, a network failure
+ *               or a 5xx: every POST here creates a record, and none of those
  *               failures says the record was not created -- the server may
  *               have committed it and only the answer been lost. Sending it
  *               again would create a second History, a second opportunity for
@@ -167,6 +179,15 @@ export class ActUntrackedCreateError extends Error {
  * re-authorisation in `request` is a different mechanism and sits above this;
  * a 401 comes straight back out of here as an ordinary reply.
  *
+ * NOTHING IS SENT UNTIL IT CAN BE. Everything that can fail before a request
+ * leaves -- serialising the body, parsing the URL, checking the headers -- is
+ * done ahead of the first attempt, and its failure says the request was NOT
+ * sent. Inside `fetch` the same faults would surface as the same TypeError a
+ * dropped connection does, and a POST that never left would be reported as
+ * "ACT! may have created the record". What fails inside the attempt is then
+ * only what can fail once the request may be on its way, and
+ * classifyWriteFailure (src/lib/act/record-write.ts) says what that means.
+ *
  * Content-Type is set only when there is a body to describe.
  *
  * The timeout covers reading the body as well as receiving the headers, which
@@ -179,29 +200,47 @@ async function send(
   outgoing: Outgoing = { method: "GET" },
 ): Promise<Reply> {
   const attempts = isRetried(outgoing.method) ? MAX_ATTEMPTS : 1;
-  const hasBody = outgoing.body !== undefined;
+
+  let target: URL;
+  let sentHeaders: Headers;
+  let body: string | undefined;
+  try {
+    body = outgoing.body === undefined ? undefined : JSON.stringify(outgoing.body);
+    target = new URL(url);
+    if (target.protocol !== "https:" && target.protocol !== "http:") {
+      throw new Error(`${target.protocol} is not http or https`);
+    }
+    sentHeaders = new Headers(
+      body === undefined ? headers : { ...headers, "Content-Type": "application/json" },
+    );
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`${label} was not sent, so nothing reached ACT!: ${reason}`, { cause: error });
+  }
+
   for (let attempt = 1; ; attempt++) {
     let failure: string;
     try {
-      const response = await fetch(url, {
+      const response = await fetch(target, {
         method: outgoing.method,
-        headers: hasBody ? { ...headers, "Content-Type": "application/json" } : headers,
-        ...(hasBody ? { body: JSON.stringify(outgoing.body) } : {}),
+        headers: sentHeaders,
+        ...(body === undefined ? {} : { body }),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
-      const body = await response.text();
+      const text = await response.text();
       if (response.status < 500 || attempt === attempts) {
-        return { status: response.status, ok: response.ok, body };
+        return { status: response.status, ok: response.ok, body: text };
       }
       failure = `HTTP ${response.status}`;
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      if (outgoing.method === "POST") {
+      if (classifyWriteFailure(outgoing.method, "no-answer") === "untracked") {
         throw new ActUntrackedCreateError(
           `${label} failed and was not retried: ${reason}. ACT! may have created the record anyway -- check before creating it again.`,
           label,
           null,
           "",
+          null,
           { cause: error },
         );
       }
@@ -317,33 +356,46 @@ export class ActClient {
     );
   }
 
+  /**
+   * A reply's body as JSON, or the error classifyWriteFailure says its status
+   * is: `untracked` as ActUntrackedCreateError, `refused` and `failed` as
+   * ActApiError with the status. A 2xx whose body is not JSON is the table's
+   * `unreadable`. A PATCH's body is not read at all (see `update`).
+   */
   private parse(path: string, method: HttpMethod, reply: Reply): unknown {
     const request = `${method} ${path}`;
-    if (method === "POST" && reply.status >= 500) {
+    const failure = classifyWriteFailure(method, reply.status);
+    if (failure === "untracked") {
       throw new ActUntrackedCreateError(
         `${request} failed (${reply.status}) and was not retried. ACT! may have created the record before failing -- check before creating it again.`,
         request,
         reply.status,
         reply.body,
+        null,
       );
     }
-    if (!reply.ok) {
+    if (failure) {
       throw new ActApiError(`${request} failed (${reply.status})`, reply.status, reply.body);
     }
-    // A PATCH's answer is not read, whatever it is: `update` reads the record
-    // again, so a 2xx is all that is needed of it.
     if (method === "PATCH") return null;
     if (!reply.body) return null;
     try {
       return JSON.parse(reply.body);
     } catch (error) {
-      if (method !== "POST") throw error;
-      throw new ActUntrackedCreateError(
-        `${request} succeeded (${reply.status}) but its answer is not JSON, so the record it created cannot be identified.`,
-        request,
+      if (classifyWriteFailure(method, "unreadable") === "untracked") {
+        throw new ActUntrackedCreateError(
+          `${request} succeeded (${reply.status}) but its answer is not JSON, so the record it created cannot be identified.`,
+          request,
+          reply.status,
+          reply.body,
+          null,
+          { cause: error },
+        );
+      }
+      throw new ActApiError(
+        `${request} answered ${reply.status} with a body that is not JSON`,
         reply.status,
         reply.body,
-        { cause: error },
       );
     }
   }
@@ -382,13 +434,25 @@ export class ActClient {
     return this.request(path, { method: "GET" });
   }
 
-  /** GET one record by its path, refusing an answer that is not a record. */
-  private async getRecord(path: string): Promise<ActRecordJson & { id: string }> {
+  /**
+   * GET one record by its path, refusing an answer that is not a record, or
+   * is a record with an id other than `id`: an answer about another record
+   * stored as this one's snapshot, or laid under a PATCH to this one, would
+   * put one record's fields on another.
+   */
+  private async getRecord(path: string, id: string): Promise<ActRecordJson & { id: string }> {
     const payload = await this.get(path);
     const answer = writeAnswer(payload);
     if (answer.kind !== "record") {
       throw new ActApiError(
         `GET ${path} returned something other than a record with an id: it was ${describeShape(payload)}`,
+        200,
+        "",
+      );
+    }
+    if (!sameRecordId(answer.record.id, id)) {
+      throw new ActApiError(
+        `GET ${path} answered with record ${answer.record.id}, not ${id}`,
         200,
         "",
       );
@@ -414,16 +478,19 @@ export class ActClient {
     const payload = await this.request(path, { method: "POST", body });
     const answer = writeAnswer(payload);
     if (answer.kind === "record") return answer.record;
+    // Either way below, the answer is classifyWriteFailure's POST
+    // `unreadable`: untracked.
     if (answer.kind === "id") {
       try {
-        return await this.getRecord(readPath(answer.id));
+        return await this.getRecord(readPath(answer.id), answer.id);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
         throw new ActUntrackedCreateError(
-          `POST ${path} created ${answer.id}, but reading it back failed: ${reason}`,
+          `POST ${path} created ${answer.id}, but reading it back failed: ${reason}. The id is known: store it rather than creating the record again.`,
           `POST ${path}`,
           null,
           "",
+          answer.id,
           { cause: error },
         );
       }
@@ -433,6 +500,7 @@ export class ActClient {
       `POST ${path}`,
       null,
       "",
+      null,
     );
   }
 
@@ -483,7 +551,11 @@ export class ActClient {
    * echoed the body sent would carry the `edited` from before the write, and
    * nothing in a single answer tells the two apart; the next inbound sync
    * would then take PathQuote's own write for a change made in ACT!. At a few
-   * writes a day the second GET costs nothing, and it is certain.
+   * writes a day the second GET costs nothing, and it is certain. Should that
+   * GET fail, the PATCH has still landed and the error says only that the
+   * record could not be read; the drain runs the step again, which decides
+   * again on a fresh read -- sending nothing for a promotion or win already
+   * made, or the same whole record again for a revision.
    */
   private async update<T, P extends object>(
     path: string,
@@ -491,14 +563,14 @@ export class ActClient {
     decide: (current: T) => P | null,
     writable: (merged: ActRecordJson & { id: string }) => ActRecordJson = (merged) => merged,
   ): Promise<Updated<T>> {
-    const current = await this.getRecord(path);
+    const current = await this.getRecord(path, id);
     const patch = patchToSend(decide(current as unknown as T));
     if (!patch) return { written: false, record: current as unknown as T };
     await this.request(path, {
       method: "PATCH",
       body: writable(mergeForWrite(id, current, patch as Record<string, unknown>)),
     });
-    return { written: true, record: (await this.getRecord(path)) as unknown as T };
+    return { written: true, record: (await this.getRecord(path, id)) as unknown as T };
   }
 
   /**
@@ -522,7 +594,7 @@ export class ActClient {
 
   /** One opportunity: `GET /api/opportunities/{opportunityId}`. */
   async getOpportunity(id: string): Promise<ActOpportunity> {
-    return (await this.getRecord(opportunityPath(id))) as unknown as ActOpportunity;
+    return (await this.getRecord(opportunityPath(id), id)) as unknown as ActOpportunity;
   }
 
   /**
@@ -579,7 +651,7 @@ export class ActClient {
 
   /** One contact: `GET /api/contacts/{contactId}`. */
   async getContact(id: string): Promise<ActContact> {
-    return (await this.getRecord(contactPath(id))) as unknown as ActContact;
+    return (await this.getRecord(contactPath(id), id)) as unknown as ActContact;
   }
 
   /**

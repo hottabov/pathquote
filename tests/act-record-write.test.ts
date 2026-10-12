@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   OPPORTUNITY_COMPUTED_FIELDS,
+  classifyWriteFailure,
   isRetried,
   mergeForWrite,
   patchToSend,
+  sameRecordId,
   writableOpportunity,
   writeAnswer,
 } from "../src/lib/act/record-write";
@@ -40,6 +42,56 @@ describe("isRetried", () => {
   it("repeats a GET, and a PATCH, which always carries the whole record", () => {
     expect(isRetried("GET")).toBe(true);
     expect(isRetried("PATCH")).toBe(true);
+  });
+});
+
+describe("classifyWriteFailure", () => {
+  it("is no failure for any 2xx, whatever the method", () => {
+    for (const method of ["GET", "POST", "PATCH"] as const) {
+      for (const status of [200, 201, 204, 299]) expect(classifyWriteFailure(method, status)).toBeNull();
+    }
+  });
+
+  it("calls a create untracked when no answer came, when it was answered 5xx, and when a 2xx did not give the record", () => {
+    // Each may mean ACT! made the record; creating it again would make a second.
+    expect(classifyWriteFailure("POST", "no-answer")).toBe("untracked");
+    expect(classifyWriteFailure("POST", 500)).toBe("untracked");
+    expect(classifyWriteFailure("POST", 503)).toBe("untracked");
+    expect(classifyWriteFailure("POST", "unreadable")).toBe("untracked");
+  });
+
+  it("calls a create answered 4xx refused: ACT! turned it away and made nothing", () => {
+    for (const status of [400, 401, 403, 404, 409, 422]) expect(classifyWriteFailure("POST", status)).toBe("refused");
+  });
+
+  it("calls a read or a whole-record PATCH that got no answer, a 5xx or an unreadable one failed: safe to repeat", () => {
+    for (const method of ["GET", "PATCH"] as const) {
+      expect(classifyWriteFailure(method, "no-answer")).toBe("failed");
+      expect(classifyWriteFailure(method, 500)).toBe("failed");
+      expect(classifyWriteFailure(method, 502)).toBe("failed");
+      expect(classifyWriteFailure(method, "unreadable")).toBe("failed");
+    }
+  });
+
+  it("calls any 4xx refused for a read or a PATCH too, and an unfollowed 1xx or 3xx with it", () => {
+    for (const method of ["GET", "PATCH", "POST"] as const) {
+      for (const status of [100, 304, 400, 404, 499]) expect(classifyWriteFailure(method, status)).toBe("refused");
+    }
+  });
+
+  it("agrees with isRetried: the methods repeated after a lost answer are the ones whose lost answer is not untracked", () => {
+    for (const method of ["GET", "POST", "PATCH"] as const) {
+      expect(isRetried(method)).toBe(classifyWriteFailure(method, "no-answer") !== "untracked");
+      expect(isRetried(method)).toBe(classifyWriteFailure(method, 503) !== "untracked");
+    }
+  });
+});
+
+describe("sameRecordId", () => {
+  it("compares uuids ignoring case, and nothing else", () => {
+    expect(sameRecordId(ID, ID.toUpperCase())).toBe(true);
+    expect(sameRecordId(ID, "11111111-2222-4333-8444-555555555555")).toBe(false);
+    expect(sameRecordId(ID, ` ${ID}`)).toBe(false);
   });
 });
 
