@@ -212,7 +212,7 @@ export default async function ActSyncPage() {
       <SectionCard
         title="Sync now"
         icon={<Play className="size-5" />}
-        description="Fetches the changes made in ACT! since the last sync, without waiting for tonight."
+        description="Sends ACT! the quotes waiting for it, if sending is switched on, then fetches the changes made in ACT! since the last sync — without waiting for tonight."
       >
         {view.runNow.kind === "offer" ? (
           <ActSyncPanel hint={view.runNow.hint} action={runActSyncNow} />
