@@ -26,11 +26,14 @@
 //   write-product-line  again, after the journal, when the client's signature
 //                       stands and the line is still behind this revision
 //                       (see A WON DEAL SHOWS THE LATEST SIGNED FIGURE)
-//   write-accepted-line once the quote is accepted, when the line does not
-//                       show this revision: the line is written whatever the
-//                       deal's status (see THE LINE IS WRITTEN BEFORE THE WIN)
-//   win-opportunity     once the quote is accepted and the line shows this
-//                       revision: the opportunity is Won
+//   write-accepted-line once the quote is accepted and the client's signature
+//                       stands, when the line does not show this revision:
+//                       the line is written whatever the deal's status (see
+//                       THE LINE IS WRITTEN BEFORE THE WIN)
+//   win-opportunity     once the quote is accepted, the client's signature
+//                       stands and the line shows this revision: the
+//                       opportunity is Won (see THE WIN NEEDS A STANDING
+//                       SIGNATURE)
 //
 // THE STORED FIELDS THIS PLANNER READS, and the model each lives on. The
 // schema (Task 4) is built from this list: a result stored anywhere else is a
@@ -184,15 +187,15 @@
 // is reopened in ACT! therefore gets the next revision's figure as usual,
 // creating the line then if it never had one.
 //
-// THE LINE IS WRITTEN BEFORE THE WIN. A Won deal must show the accepted
-// figure, and the win overturns any closed status but Won
+// THE LINE IS WRITTEN BEFORE THE WIN. A Won deal must show the accepted,
+// signed figure, and the win overturns any closed status but Won
 // (wonOpportunityBody). So while the win is due and the line does not show
 // the row's revision, this planner returns write-accepted-line -- `create` or
 // `update`, as for write-product-line -- and returns win-opportunity only once
 // the line shows it. write-accepted-line writes the line for the row's
 // revision whatever the deal's status, without asking productLineWrite: the
 // acceptance is what overturns the status, and the deal it wins has to carry
-// the accepted figure. The drain stores the line's id and
+// the accepted, signed figure. The drain stores the line's id and
 // actProductLineRevision exactly as write-product-line does, and the next
 // plan is the win. Two steps, so the order is the plan's rather than a
 // promise about the drain: a failure between them, or a line write ACT!
@@ -204,17 +207,32 @@
 // requirement on the enqueue (Task 6): acceptQuote's row, like finalise's and
 // any take-over, points at the quote's newest revision -- the one the client
 // signed and the manager accepted. There is no re-acceptance to wait for:
-// acceptQuote returns early for a quote already accepted. And voidSignature
-// leaves acceptedAt set, so a quote re-finalised after a void still reads as
-// accepted: a stale flag, not a new acceptance. For a deal already won, see
-// the next section. One case is left to the flag: a quote accepted, then
-// voided and re-finalised at a new figure before the drain has run the win.
-// The win is still due, so the deal is won at the new, unsigned revision's
-// figure -- written by write-product-line on an Open deal, or by
-// write-accepted-line on a closed one. It needs the void, the edit
-// and the re-finalise to land before the drain gets to the acceptance, and
-// what an acceptance whose signature was voided should win is not decided
-// here.
+// acceptQuote returns early for a quote already accepted.
+//
+// THE WIN NEEDS A STANDING SIGNATURE. voidSignature leaves acceptedAt set, so
+// a quote re-finalised after a void still reads as accepted: a stale flag,
+// not a new acceptance. Vadym's rule is "PathQuote confirms", and the
+// confirmation is the client's signature -- the rule the won deal's line
+// follows (next section) -- so the win is due only while the quote is
+// accepted AND signingStatus is SIGNED, until actOpportunityWonAt is set.
+// Without that, a quote accepted, then voided and re-finalised at a new
+// figure before the drain ran the win would be won at a figure nobody has
+// signed. Instead:
+//
+//   - The re-finalised revision's row -- the acceptance's, taken over, since
+//     it had not finished -- runs its steps as any revision's does: the
+//     opportunity, the line as productLineWrite decides (an Open deal's takes
+//     the new figure, as it would for any revision; a closed deal's is left
+//     alone), the History, and the promotion if one is due (PROMOTION IS ONCE
+//     PER CONTACT). Then it is done: no win, and no write-accepted-line,
+//     which belongs to the win.
+//   - When the client signs that revision, completeSigning's row finds
+//     acceptedAt still set, the signature standing and actOpportunityWonAt
+//     null: the win is due. write-accepted-line brings the line to that
+//     revision first if it does not show it, and the deal is won at the
+//     figure the client signed.
+//   - A void after the win changes nothing: actOpportunityWonAt is set, so the
+//     win is never planned again (THE WIN IS ONCE PER DEAL).
 //
 // A WON DEAL SHOWS THE LATEST SIGNED FIGURE. Once actOpportunityWonAt is set
 // the win is never planned again (THE WIN IS ONCE PER DEAL), but the quote can
@@ -259,11 +277,13 @@
 // Both are read off the quote as it stands now. Promotion is due while the
 // client's signature stands (signingStatus SIGNED) or the quote is accepted,
 // until Document.actContactPromotedForId names the quote's contact as it is
-// now; the win while the quote is accepted, until Document.actOpportunityWonAt
-// is set. FORWARD ONLY: no step undoes either, so a voidSignature or an
+// now; the win while the quote is accepted and the client's signature stands,
+// until Document.actOpportunityWonAt is set (THE WIN NEEDS A STANDING
+// SIGNATURE). FORWARD ONLY: no step undoes either, so a voidSignature or an
 // unfinalise after the step ran changes nothing in ACT!. A signature voided
-// BEFORE the step ran leaves the promotion no longer due -- unless the quote
-// was accepted, since voidSignature does not clear acceptedAt.
+// BEFORE the step ran leaves the win no longer due, until the client signs
+// again. It leaves the promotion no longer due too -- unless the quote was
+// accepted, since voidSignature does not clear acceptedAt.
 //
 // Each fact records that the step is DONE, not that ACT! was changed. The
 // drain reads the contact's idStatus, or the opportunity's status, just
@@ -491,8 +511,9 @@ export type QuoteState = {
    * Document.signingStatus, as its enum name. "SIGNED" is the client's
    * signature standing; voidSignature puts it back to NOT_SENT. A string
    * rather than Prisma's enum type, to keep this module free of Prisma. Read
-   * for promotion, and for the line step after the journal (A WON DEAL SHOWS
-   * THE LATEST SIGNED FIGURE).
+   * for promotion, for the win (THE WIN NEEDS A STANDING SIGNATURE), and for
+   * the line step after the journal (A WON DEAL SHOWS THE LATEST SIGNED
+   * FIGURE).
    */
   signingStatus: string;
   /** Document.acceptedAt: set once the quote is accepted (acceptQuote). */
@@ -625,8 +646,13 @@ function lineWrite(quote: QuoteState): "create" | "update" {
   return quote.actProductLineId ? "update" : "create";
 }
 
+/**
+ * The quote is accepted, the client's signature stands, and the win is not
+ * recorded. acceptedAt alone is not enough: voidSignature leaves it set. See
+ * THE WIN NEEDS A STANDING SIGNATURE.
+ */
 function winDue(quote: QuoteState): boolean {
-  return quote.acceptedAt !== null && quote.actOpportunityWonAt === null;
+  return quote.acceptedAt !== null && quote.signingStatus === "SIGNED" && quote.actOpportunityWonAt === null;
 }
 
 /**
@@ -698,8 +724,8 @@ export function nextStep(
       return quote.actOpportunityId ? { kind: "update-opportunity" } : { kind: "create-opportunity" };
     }
     // Behind and not skipped by this row. A line productLineWrite left alone
-    // is brought up to date by write-accepted-line if the quote is accepted,
-    // and asked about again by a later signature's row.
+    // is brought up to date by write-accepted-line when the win is due, and
+    // asked about again by a later signature's row.
     if (lineBehind(revision, quote) && progress.productLineSkippedAt === null) {
       return { kind: "write-product-line", line: lineWrite(quote) };
     }
@@ -716,7 +742,8 @@ export function nextStep(
   if (!quote.actOpportunityId) return { kind: "create-opportunity" };
   if (win) {
     // Whatever this row skipped: the win overturns a closed status, and a won
-    // deal shows the accepted figure -- written first, as a step of its own.
+    // deal shows the accepted, signed figure -- written first, as a step of
+    // its own.
     return lineBehind(revision, quote)
       ? { kind: "write-accepted-line", line: lineWrite(quote) }
       : { kind: "win-opportunity" };

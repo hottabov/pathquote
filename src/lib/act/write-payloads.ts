@@ -1,11 +1,12 @@
 // The request bodies a finalised quote sends to ACT!: the contact, when ACT!
 // does not have it yet; one History record per revision; the Opportunity that
 // stands for the whole deal, and the one product line that carries its amount;
-// and -- once the client signs or the quote is accepted -- the contact's
-// promotion from Prospect to Customer and the opportunity's win. Where a body
-// depends on what ACT! holds now (a later revision's opportunity update, its
-// product line, the win, the promotion), the function here takes that state as
-// read back by the drain and decides, including deciding to send nothing.
+// the contact's promotion from Prospect to Customer, once the client signs or
+// the quote is accepted; and the opportunity's win, once the quote is accepted
+// with the client's signature standing. Where a body depends on what ACT!
+// holds now (a later revision's opportunity update, its product line, the
+// win, the promotion), the function here takes that state as read back by the
+// drain and decides, including deciding to send nothing.
 //
 // Pure, and deliberately free of Prisma types: every input is a plain value
 // the drain reads off the quote and hands in. That is what lets the suite test
