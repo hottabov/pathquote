@@ -124,12 +124,27 @@ function isObject(value: unknown): value is Record<string, unknown> {
  *   duplicate (ActUntrackedCreateError in src/lib/act/client.ts).
  * - `failed`: anything else that went wrong. Repeating the request is safe --
  *   a GET changes nothing, a PATCH writes the same whole record again, and a
- *   request that never reached ACT! did nothing at all -- so the drain tries
- *   the step again later.
+ *   request that never reached ACT!, or that ACT! turned away for now, did
+ *   nothing at all -- so the drain tries the step again later. For a POST,
+ *   `failed` therefore always means nothing was made.
  *
- *                 not sent   no answer   2xx unreadable   1xx, 4xx   3xx         5xx
- *     POST        failed     untracked   untracked        refused    untracked   untracked
- *     GET, PATCH  failed     failed      failed           refused    refused     failed
+ *                 not sent   no answer   2xx unreadable   408, 429   other 1xx, 4xx   3xx         5xx
+ *     POST        failed     untracked   untracked        failed     refused          untracked   untracked
+ *     GET, PATCH  failed     failed      failed           failed     refused          refused     failed
+ *
+ * 408 AND 429 ARE "NOT NOW", NOT "NO" (tryLaterStatus). 429 Too Many
+ * Requests is a server or a proxy in front of it rate-limiting, and 408
+ * Request Timeout is a server that gave up waiting for the request to arrive
+ * in full: both are answered before the request is acted on -- the 4xx
+ * reasoning below -- and both say the same request may well go through
+ * later. Read as `refused`, a throttled write would be blocked as though ACT!
+ * had objected to it, and tried again on the very next pass with nothing to
+ * slow it; as `failed` it backs off, honouring any Retry-After (the drain's
+ * nextAttemptAt in src/lib/act/drain-rules.ts), and the drain stops its
+ * pass rather than keep sending to a server that has said it is overloaded.
+ * For a POST they made nothing, like a refusal, so a create's in-flight
+ * marker may be cleared for them (createMadeNothing in
+ * src/lib/act/client.ts).
  *
  * A 3xx is a redirect the client did not follow: ActClient's `send` fetches
  * with `redirect: "manual"`, because fetch following one re-sends a POST
@@ -151,7 +166,9 @@ function isObject(value: unknown): value is Record<string, unknown> {
  * turning the request away before anything is saved. That is how the
  * framework is built, not something tried against this server; the
  * alternative -- treating every refusal as a possible duplicate -- would make
- * every rejected body look like a record that might exist. A 5xx is the
+ * every rejected body look like a record that might exist. (408 and 429 are
+ * turned away just as early, and are `failed` rather than `refused` only
+ * because repeating them later can succeed.) A 5xx is the
  * server failing somewhere, possibly after the record was saved, and a lost
  * answer says nothing at all. A 2xx to a POST that does not give the record
  * means the create happened and PathQuote cannot tell which record it made.
@@ -169,15 +186,26 @@ function isObject(value: unknown): value is Record<string, unknown> {
  * ones whose lost answer is `failed`, not `untracked`. (`not sent` is `failed`
  * for a POST too, but `send` does not repeat it on the spot: the outbox's
  * backoff does, long after whatever refused the connection has had time to
- * come back.)
+ * come back. Nor does it repeat a 408 or a 429, for any method: those wait
+ * for the backoff too, which is what Retry-After asks for.)
  */
 export type WriteFailure = "refused" | "untracked" | "failed";
+
+/**
+ * 408 Request Timeout and 429 Too Many Requests: ACT! (or what stands in
+ * front of it) turning a request away for now, before acting on it. See
+ * 408 AND 429 ARE "NOT NOW", NOT "NO" above classifyWriteFailure.
+ */
+export function tryLaterStatus(status: number): boolean {
+  return status === 408 || status === 429;
+}
 
 export function classifyWriteFailure(method: HttpMethod, answer: ActAnswer): WriteFailure | null {
   if (answer === "not-sent") return "failed";
   if (typeof answer === "number") {
     if (answer >= 200 && answer < 300) return null;
     if (answer >= 300 && answer < 400) return method === "POST" ? "untracked" : "refused";
+    if (tryLaterStatus(answer)) return "failed";
     if (answer < 500) return "refused";
   }
   return method === "POST" ? "untracked" : "failed";

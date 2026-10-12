@@ -7,6 +7,7 @@ import {
   odataString,
   patchToSend,
   sameRecordId,
+  tryLaterStatus,
   writableOpportunity,
   writeAnswer,
   type ActAnswer,
@@ -124,9 +125,15 @@ export const COUNTRIES_PICKLIST_ID = "3e852010-1901-41e3-ac65-2b3ab6c25d2c";
  * error means is on the error: `refused` -- nothing written, and repeating it
  * repeats the refusal -- or `failed`, safe to try again. (Never `untracked`:
  * that is ActUntrackedCreateError.) Read it with writeFailureOf.
+ *
+ * `retryAfter` is the answer's Retry-After header as sent, or null: what a
+ * 429 or a 408 (tryLaterStatus in src/lib/act/record-write.ts) says about
+ * when to come back, which the drain takes as the least it waits
+ * (retryAfterMs in src/lib/act/drain-rules.ts).
  */
 export class ActApiError extends Error {
   readonly failure: WriteFailure;
+  readonly retryAfter: string | null;
 
   constructor(
     message: string,
@@ -134,10 +141,12 @@ export class ActApiError extends Error {
     readonly status: number,
     readonly body: string,
     failure: WriteFailure,
+    details: { retryAfter?: string | null } = {},
   ) {
     super(message);
     this.name = "ActApiError";
     this.failure = failure;
+    this.retryAfter = details.retryAfter ?? null;
   }
 }
 
@@ -149,8 +158,12 @@ const MAX_ATTEMPTS = 3;
 /** Wait before attempt n+1 is n times this: 1s, then 2s. */
 const RETRY_DELAY_MS = 1_000;
 
-/** `location` is the Location header, for a redirect's message; null when there is none. */
-type Reply = { status: number; ok: boolean; body: string; location: string | null };
+/**
+ * `location` is the Location header, for a redirect's message, and
+ * `retryAfter` the Retry-After header, for a 429 or a 408; each null when
+ * there is none.
+ */
+type Reply = { status: number; ok: boolean; body: string; location: string | null; retryAfter: string | null };
 
 /**
  * What a read-modify-write did. `written` is false when the decision was to
@@ -372,6 +385,7 @@ async function send(
           ok: response.ok,
           body: text,
           location: response.headers.get("location"),
+          retryAfter: response.headers.get("retry-after"),
         };
       }
       failure = `HTTP ${response.status}`;
@@ -423,8 +437,9 @@ async function send(
  *                             `decide` callback that threw inside `update`.
  *                             It says nothing about what ACT! did, so it is
  *                             never read as `failed` -- which for a POST
- *                             means "not sent" -- and never clears a
- *                             createInFlight marker (createMadeNothing).
+ *                             means nothing was made -- and never clears
+ *                             a create's in-flight marker
+ *                             (createMadeNothing).
  */
 export function writeFailureOf(error: unknown): WriteFailure | "foreign" {
   if (error instanceof ActUntrackedCreateError) return error.failure;
@@ -436,25 +451,27 @@ export function writeFailureOf(error: unknown): WriteFailure | "foreign" {
 
 /**
  * Whether an error thrown by a create says the create made nothing in ACT!:
- * ActNotSentError (the request never left) or an ActApiError whose `failure`
- * is `refused` (ACT! answered and turned it away). True for these two and
- * nothing else -- the only errors on which the drain may clear a create's
+ * ActNotSentError (the request never left), an ActApiError whose `failure`
+ * is `refused` (ACT! answered and turned it away), or an ActApiError with a
+ * 408 or a 429 (ACT! answered "not now", before acting on it: tryLaterStatus
+ * in src/lib/act/record-write.ts). True for these and nothing else -- the
+ * only errors on which the drain may clear a create's
  * in-flight marker -- the row's createInFlight, or a contact's
  * actCreateInFlightAt -- without storing an id (src/lib/act/outbox-plan.ts,
  * A CREATE IN FLIGHT). An ActUntrackedCreateError with a `createdId` is not here: it
  * made something, and the drain stores that id, which clears the marker with
  * it.
  *
- * Every ActApiError a create can throw that is `refused` stands for a POST
- * that made nothing: the POST's own 1xx or 4xx (a 3xx to a POST is
- * `untracked`), a second 401 after re-authorising (`request`), or an
- * authorisation refused before the POST left (`fetchOnce`). A read-back by
- * the created id that fails is wrapped in ActUntrackedCreateError, never
- * thrown as itself.
+ * Every ActApiError a create can throw that is `refused`, or a 408 or a 429,
+ * stands for a POST that made nothing: the POST's own 1xx or 4xx (a 3xx to a
+ * POST is `untracked`), a second 401 after re-authorising (`request`), or an
+ * authorisation refused or throttled before the POST left (`fetchOnce`). A
+ * read-back by the created id that fails is wrapped in
+ * ActUntrackedCreateError, never thrown as itself.
  */
 export function createMadeNothing(error: unknown): boolean {
   if (error instanceof ActNotSentError) return true;
-  return error instanceof ActApiError && error.failure === "refused";
+  return error instanceof ActApiError && (error.failure === "refused" || tryLaterStatus(error.status));
 }
 
 /** What a payload looked like, without any of its values: they are contact
@@ -497,17 +514,24 @@ export function unwrapRows<T>(payload: unknown, path: string): T[] {
 /**
  * Whether a filtered lookup's error is ACT! refusing the filter, so the
  * lookup falls back to its unfiltered form (ActClient's opportunitiesNamed,
- * contactHistories): an ActApiError with a 4xx other than 401 -- the answer
- * of a server that does not take that OData query on that endpoint. A 401 is
- * about the token, not the filter; a 3xx is a setup error (refused, with its
- * own message); a 5xx, no answer or an unreadable 200 is `failed` like any
- * GET, and is tried again later rather than answered without the filter.
+ * contactHistories): an ActApiError `refused` with a 4xx other than 401 --
+ * the answer of a server that does not take that OData query on that
+ * endpoint. A 401 is about the token, not the filter; a 3xx is a setup error
+ * (refused, with its own message); a 408 or a 429 is "not now", and a 5xx,
+ * no answer or an unreadable 200 is `failed` like any GET -- each is tried
+ * again later rather than answered without the filter.
  * One 4xx here is not about the filter: an authorisation refused while the
  * lookup was getting a token (`fetchOnce` throws it as it is). That falls
  * back too, and the fallback meets the same refusal and throws it.
  */
 export function filterRefused(error: unknown): error is ActApiError {
-  return error instanceof ActApiError && error.status >= 400 && error.status < 500 && error.status !== 401;
+  return (
+    error instanceof ActApiError &&
+    error.failure === "refused" &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    error.status !== 401
+  );
 }
 
 function opportunityPath(id: string): string {
@@ -546,7 +570,7 @@ export class ActClient {
       `${this.config.username}:${this.config.password}`,
     ).toString("base64");
 
-    const { ok, status, body } = await send("authorize", `${this.config.baseUrl}/authorize`, {
+    const { ok, status, body, retryAfter } = await send("authorize", `${this.config.baseUrl}/authorize`, {
       Authorization: `Basic ${credentials}`,
       "Act-Database-Name": this.config.database,
     });
@@ -557,6 +581,7 @@ export class ActClient {
         status,
         body,
         failureOf("GET", status),
+        { retryAfter },
       );
     }
 
@@ -575,12 +600,14 @@ export class ActClient {
    *
    * The token comes first, and when getting one fails the request has not
    * been sent. Authorisation's own errors are about the GET to /authorize,
-   * not this request, so all but two are thrown as ActNotSentError for it --
-   * without that, an /authorize that answered 5xx three times would reach a
-   * create's caller as a `failed` ActApiError, which is not one of the errors
-   * that say the create made nothing (createMadeNothing). The two kept as
-   * they are already say it: an ActNotSentError, and an ActApiError
-   * `refused` -- a login ACT! turned away, which repeating would only repeat.
+   * not this request, so all but three are thrown as ActNotSentError for it
+   * -- without that, an /authorize that answered 5xx three times would reach
+   * a create's caller as a `failed` ActApiError, which is not one of the
+   * errors that say the create made nothing (createMadeNothing). The three
+   * kept as they are already say it: an ActNotSentError; an ActApiError
+   * `refused` -- a login ACT! turned away, which repeating would only repeat;
+   * and an ActApiError with a 408 or a 429, which keeps its Retry-After for
+   * the drain's backoff.
    */
   private async fetchOnce(path: string, outgoing: Outgoing): Promise<Reply> {
     const label = `${outgoing.method} ${path}`;
@@ -589,7 +616,7 @@ export class ActClient {
       token = await this.getToken();
     } catch (error) {
       if (error instanceof ActNotSentError) throw error;
-      if (error instanceof ActApiError && error.failure === "refused") throw error;
+      if (error instanceof ActApiError && (error.failure === "refused" || tryLaterStatus(error.status))) throw error;
       const reason = error instanceof Error ? error.message : String(error);
       throw new ActNotSentError(label, `authorising failed first: ${reason}`, { cause: error });
     }
@@ -628,7 +655,9 @@ export class ActClient {
       );
     }
     if (failure) {
-      throw new ActApiError(`${request} failed (${reply.status}${redirect})`, method, reply.status, reply.body, failure);
+      throw new ActApiError(`${request} failed (${reply.status}${redirect})`, method, reply.status, reply.body, failure, {
+        retryAfter: reply.retryAfter,
+      });
     }
     if (method === "PATCH") return null;
     if (!reply.body) return null;

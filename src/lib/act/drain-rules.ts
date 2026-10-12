@@ -11,6 +11,7 @@ import {
   ActNotSentError,
   ActUntrackedCreateError,
 } from "@/lib/act/client";
+import { tryLaterStatus } from "@/lib/act/record-write";
 import type { OpportunityNow, QuoteForAct } from "@/lib/act/write-payloads";
 import type { OutboxStep } from "@/lib/act/outbox-plan";
 
@@ -44,9 +45,35 @@ export function backoffMs(attempts: number): number {
   return Math.min(BACKOFF_FIRST_MS * 2 ** Math.min(exponent, 16), BACKOFF_CAP_MS);
 }
 
-/** When a row that has now failed `attempts` times is next due. */
-export function nextAttemptAt(now: Date, attempts: number): Date {
-  return new Date(now.getTime() + backoffMs(attempts));
+/** The longest wait a Retry-After can impose on a row: a day. */
+export const RETRY_AFTER_CAP_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * When a row that has now failed `attempts` times is next due: the backoff,
+ * or `retryAfterMs` -- what ACT! asked for with a 429 or a 408 -- when that
+ * is longer. Retry-After is a floor, never a ceiling: the backoff still grows
+ * when ACT! keeps asking for a short wait. The floor is capped at
+ * RETRY_AFTER_CAP_MS, so a malformed or extravagant header cannot park a row
+ * for good; a take-over still makes it due at once.
+ */
+export function nextAttemptAt(now: Date, attempts: number, retryAfterMs: number | null = null): Date {
+  const floor = retryAfterMs === null ? 0 : Math.min(Math.max(0, retryAfterMs), RETRY_AFTER_CAP_MS);
+  return new Date(now.getTime() + Math.max(backoffMs(attempts), floor));
+}
+
+/**
+ * A Retry-After header as milliseconds from `now`, or null when there is
+ * none or it says nothing readable. RFC 9110 allows two forms: a number of
+ * seconds, or an HTTP-date, which is read relative to `now` (a date already
+ * past is 0).
+ */
+export function retryAfterMs(header: string | null, now: Date): number | null {
+  if (header === null) return null;
+  const text = header.trim();
+  if (/^\d+$/.test(text)) return Number(text) * 1000;
+  if (!/[a-z]/i.test(text)) return null;
+  const at = Date.parse(text);
+  return Number.isNaN(at) ? null : Math.max(0, at - now.getTime());
 }
 
 /**
@@ -199,6 +226,11 @@ export function refusedReason(kind: ActStepKind, status: number, body: string): 
  *              licence surfaces here), or a redirect not followed (ACT_BASE
  *              or the box's setup). Every row would get the same answer, so
  *              the row backs off and the pass stops.
+ *   try-later  ACT! said "not now": a 429 or a 408 (tryLaterStatus in
+ *              src/lib/act/record-write.ts), on any request. The row backs
+ *              off -- for at least as long as its Retry-After asks
+ *              (nextAttemptAt) -- and the pass stops: the rest would be
+ *              sent to a server that has just said it is overloaded.
  *   untracked  a create whose record PathQuote may not have
  *              (ActUntrackedCreateError). The drain deals with it where the
  *              create is made; this is what reaches the row if it did not.
@@ -208,11 +240,12 @@ export function refusedReason(kind: ActStepKind, status: number, body: string): 
  *   foreign    anything else -- the drain's own code, the database. Backs
  *              off like `failed`, but says nothing about ACT!.
  */
-export type DrainFailure = "refused" | "stop" | "untracked" | "failed" | "foreign";
+export type DrainFailure = "refused" | "stop" | "try-later" | "untracked" | "failed" | "foreign";
 
 export function drainFailure(error: unknown): DrainFailure {
   if (error instanceof ActUntrackedCreateError) return "untracked";
   if (error instanceof ActApiError) {
+    if (tryLaterStatus(error.status)) return "try-later";
     if (error.failure === "failed") return "failed";
     if (error.status === 401 || error.status === 403 || (error.status >= 300 && error.status < 400)) return "stop";
     return error.failure === "refused" ? "refused" : "failed";
@@ -235,6 +268,9 @@ export function lastErrorText(kind: ActStepKind, error: unknown): string {
     text = `PathQuote could not ${stepAction(kind)}: ACT! did not answer — ${message}`;
   } else if (error instanceof ActUntrackedCreateError) {
     text = `PathQuote asked ACT! to ${stepAction(kind)} and did not learn whether it did — the next attempt looks for it in ACT! before creating anything.`;
+  } else if (error instanceof ActApiError && tryLaterStatus(error.status)) {
+    const wait = error.retryAfter ? ` (Retry-After: ${error.retryAfter.trim()})` : "";
+    text = `PathQuote could not ${stepAction(kind)}: ACT! answered ${error.status}, not now, try later${wait} — ${message}`;
   } else if (error instanceof ActApiError) {
     text = `PathQuote could not ${stepAction(kind)}: ACT! answered ${error.status} — ${message}`;
   } else {

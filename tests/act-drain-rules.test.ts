@@ -9,6 +9,8 @@ import {
   nextAttemptAt,
   opportunityNow,
   refusedReason,
+  retryAfterMs,
+  RETRY_AFTER_CAP_MS,
   revisionForAct,
   serviceAccountUserId,
   stepAction,
@@ -46,6 +48,43 @@ describe("backoffMs", () => {
   it("dates the next attempt from the time it is handed, not the clock", () => {
     const now = new Date("2026-10-12T03:00:00.000Z");
     expect(nextAttemptAt(now, 2).toISOString()).toBe("2026-10-12T03:10:00.000Z");
+  });
+
+  it("waits at least as long as a Retry-After asked, and never less than the backoff", () => {
+    const now = new Date("2026-10-12T03:00:00.000Z");
+    // Longer than the first backoff: the floor wins.
+    expect(nextAttemptAt(now, 1, 30 * MINUTE).toISOString()).toBe("2026-10-12T03:30:00.000Z");
+    // Shorter: the backoff stands.
+    expect(nextAttemptAt(now, 3, 60 * 1000).toISOString()).toBe("2026-10-12T03:20:00.000Z");
+    expect(nextAttemptAt(now, 1, null).toISOString()).toBe("2026-10-12T03:05:00.000Z");
+  });
+
+  it("caps what a Retry-After can impose at a day", () => {
+    const now = new Date("2026-10-12T03:00:00.000Z");
+    expect(nextAttemptAt(now, 1, 365 * 24 * 60 * MINUTE).getTime() - now.getTime()).toBe(RETRY_AFTER_CAP_MS);
+    expect(RETRY_AFTER_CAP_MS).toBe(24 * 60 * MINUTE);
+  });
+});
+
+describe("retryAfterMs", () => {
+  const now = new Date("2026-10-12T03:00:00.000Z");
+
+  it("reads a number of seconds", () => {
+    expect(retryAfterMs("120", now)).toBe(120_000);
+    expect(retryAfterMs(" 0 ", now)).toBe(0);
+  });
+
+  it("reads an HTTP-date relative to now, a past one as no wait", () => {
+    expect(retryAfterMs("Mon, 12 Oct 2026 03:10:00 GMT", now)).toBe(10 * MINUTE);
+    expect(retryAfterMs("Mon, 12 Oct 2026 02:00:00 GMT", now)).toBe(0);
+  });
+
+  it("is null for no header, or one that says nothing readable", () => {
+    expect(retryAfterMs(null, now)).toBeNull();
+    expect(retryAfterMs("", now)).toBeNull();
+    expect(retryAfterMs("soon", now)).toBeNull();
+    expect(retryAfterMs("-5", now)).toBeNull();
+    expect(retryAfterMs("1.5", now)).toBeNull();
   });
 });
 
@@ -196,6 +235,12 @@ describe("drainFailure", () => {
     expect(drainFailure(new ActNoAnswerError("GET /api/opportunities/x", 3, "timeout"))).toBe("failed");
   });
 
+  it("calls a 429 or a 408 try-later, on a create or a read: back off, and stop the pass", () => {
+    expect(drainFailure(new ActApiError("x", "POST", 429, "", "failed"))).toBe("try-later");
+    expect(drainFailure(new ActApiError("x", "GET", 429, "", "failed"))).toBe("try-later");
+    expect(drainFailure(new ActApiError("x", "PATCH", 408, "", "failed"))).toBe("try-later");
+  });
+
   it("knows a create that may have made a record", () => {
     expect(drainFailure(new ActUntrackedCreateError("x", "POST /api/opportunities", null, "", null))).toBe("untracked");
   });
@@ -218,6 +263,14 @@ describe("lastErrorText", () => {
     expect(lastErrorText("win-opportunity", new Error("boom"))).toBe(
       "PathQuote could not mark this quote's opportunity Won: something in PathQuote failed — boom",
     );
+  });
+
+  it("says ACT! asked for it to be tried later, with the wait it asked for", () => {
+    const throttled = new ActApiError("POST /api/contacts failed (429)", "POST", 429, "", "failed", { retryAfter: "120" });
+    expect(lastErrorText("create-contact", throttled)).toBe(
+      "PathQuote could not create this quote's contact: ACT! answered 429, not now, try later (Retry-After: 120) — POST /api/contacts failed (429)",
+    );
+    expect(lastErrorText("create-contact", new ActApiError("x", "POST", 408, "", "failed"))).toMatch(/answered 408, not now, try later — x$/);
   });
 
   it("tells a lost create's answer from a failure, and says the next attempt looks first", () => {

@@ -132,6 +132,13 @@ describe("createMadeNothing: the errors on which a createInFlight marker may be 
     expect(createMadeNothing(new ActApiError("authorize failed (401)", "GET", 401, "", "refused"))).toBe(true);
   });
 
+  it("is true for a create ACT! answered 429 or 408: turned away for now, before it was acted on", () => {
+    expect(createMadeNothing(new ActApiError("POST /api/contacts failed (429)", "POST", 429, "", "failed"))).toBe(true);
+    expect(createMadeNothing(new ActApiError("POST /api/History failed (408)", "POST", 408, "", "failed"))).toBe(true);
+    // An authorisation throttled before the POST left.
+    expect(createMadeNothing(new ActApiError("authorize failed (429)", "GET", 429, "", "failed"))).toBe(true);
+  });
+
   it("is false for an untracked create, with or without the id it made", () => {
     expect(createMadeNothing(new ActUntrackedCreateError("lost", "POST /api/History", null, "", null))).toBe(false);
     // The id is stored, and that clears the marker -- not this.
@@ -159,8 +166,10 @@ describe("filterRefused: when a filtered lookup falls back to its unfiltered for
     for (const status of [400, 404, 405, 422, 499]) expect(filterRefused(api(status))).toBe(true);
   });
 
-  it("is false for a 401, a redirect, a 5xx and a 200 that was not a list", () => {
+  it("is false for a 401, a redirect, a 429 or a 408, a 5xx and a 200 that was not a list", () => {
     for (const status of [401, 301, 500, 503]) expect(filterRefused(api(status))).toBe(false);
+    // "Not now" is not about the filter: the lookup is tried again later, filter and all.
+    for (const status of [408, 429]) expect(filterRefused(new ActApiError("throttled", "GET", status, "", "failed"))).toBe(false);
     expect(filterRefused(new ActApiError("not a list", "GET", 200, "", "failed"))).toBe(false);
   });
 

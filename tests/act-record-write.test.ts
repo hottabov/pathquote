@@ -3,6 +3,7 @@ import {
   NEVER_CONNECTED_CODES,
   OPPORTUNITY_COMPUTED_FIELDS,
   classifyWriteFailure,
+  tryLaterStatus,
   failureOf,
   isRetried,
   mergeForWrite,
@@ -97,6 +98,14 @@ describe("classifyWriteFailure", () => {
     for (const method of ["GET", "PATCH"] as const) {
       for (const status of [301, 302, 303, 304, 307, 308]) expect(classifyWriteFailure(method, status)).toBe("refused");
     }
+  });
+
+  it("calls a 429 or a 408 failed for every method, a create included: \"not now\", answered before anything was made", () => {
+    for (const method of ["GET", "POST", "PATCH"] as const) {
+      for (const status of [408, 429]) expect(classifyWriteFailure(method, status)).toBe("failed");
+    }
+    expect([408, 429].every(tryLaterStatus)).toBe(true);
+    expect([400, 403, 409, 425, 503].some(tryLaterStatus)).toBe(false);
   });
 
   it("calls a request that never connected failed, a create included: nothing reached ACT!, so trying again is safe", () => {

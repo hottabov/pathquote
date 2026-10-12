@@ -64,6 +64,7 @@ import {
   nextAttemptAt,
   opportunityNow,
   refusedReason,
+  retryAfterMs,
   revisionForAct,
   serviceAccountUserId,
   wonCloseDate,
@@ -120,8 +121,8 @@ export type DrainOptions = {
  * `status`: `ran`; `busy`, another drain held the lock and nothing was done;
  * `switched-off`, the switch was off at the start or turned off part way, and
  * nothing more was sent; `stopped`, a fault every row would meet (the
- * service account not found, the login refused, a 403) ended the pass --
- * `stopReason` says which.
+ * service account not found, the login refused, a 403), or ACT! answering
+ * "not now" (a 429 or a 408), ended the pass -- `stopReason` says which.
  */
 export type DrainResult = {
   status: "ran" | "busy" | "switched-off" | "stopped";
@@ -505,7 +506,7 @@ class Pass {
         }
         if (failure === "untracked") this.result.untracked += 1;
         const stored = await this.backOff(row, step.kind, error);
-        if (failure === "stop") throw new StopPass(false, lastErrorText(step.kind, error));
+        if (failure === "stop" || failure === "try-later") throw new StopPass(false, lastErrorText(step.kind, error));
         if (stored) return;
         continue;
       }
@@ -524,15 +525,21 @@ class Pass {
     return true;
   }
 
-  /** attempts + 1, lastError, and the next attempt by the backoff. */
+  /**
+   * attempts + 1, lastError, and the next attempt by the backoff -- no sooner
+   * than an answer's Retry-After asked, when it carried one (a 429 or a 408,
+   * above all).
+   */
   private async backOff(row: Row, kind: ActStepKind, error: unknown): Promise<boolean> {
     const attempts = row.attempts + 1;
     const lastError = lastErrorText(kind, error);
+    const now = this.clock();
+    const floor = error instanceof ActApiError ? retryAfterMs(error.retryAfter, now) : null;
     console.warn(`act: ${kind} failed; backing off`, { id: row.id, attempts, error });
     const stored = await this.storeRow(row, {
       attempts,
       lastError,
-      nextAttemptAt: nextAttemptAt(this.clock(), attempts),
+      nextAttemptAt: nextAttemptAt(now, attempts, floor),
     });
     if (stored) this.result.failed.push({ documentId: row.documentId, error: lastError });
     return stored;
