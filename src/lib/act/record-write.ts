@@ -1,8 +1,8 @@
 // The decisions behind every write the ACT! client makes: which requests may be
-// repeated after a failure, what record an update sends, and what an answer to
-// a write is taken to mean. Pure, so the suite can test them under
-// `isolate: false` (see vitest.config.ts); src/lib/act/client.ts does the I/O
-// and nothing else.
+// repeated after a failure, what a failure means, what record an update sends,
+// and what an answer to a write is taken to mean. Pure, so the suite can test
+// them under `isolate: false` (see vitest.config.ts); src/lib/act/client.ts
+// does the I/O, and carries out what these functions decide.
 
 /** The methods the client sends. No PUT: nothing here needs one. */
 export type HttpMethod = "GET" | "POST" | "PATCH";

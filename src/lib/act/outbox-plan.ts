@@ -7,7 +7,11 @@
 // keeps the number for an unchanged snapshot). The plan's addendum of
 // 2026-10-12 has the client's signature (completeSigning) and acceptQuote
 // queue a row the same way; see DEAL EVENTS below. The row is a short
-// sequence of steps, each one a single request to ACT!, in this order:
+// sequence of steps, each one a single change to one ACT! record -- or a
+// decision, made on a fresh read, to change nothing -- in this order. A step
+// is not a single request: a create is one POST, but an update is a GET, a
+// PATCH and a GET again (ActClient's `update` in src/lib/act/client.ts), and
+// write-product-line reads the opportunity before it touches the line.
 //
 //   create-contact      only when the quote's contact exists only in PathQuote
 //   create-opportunity  only when the deal has no opportunity yet

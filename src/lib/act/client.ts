@@ -28,9 +28,13 @@ import type {
   SummaryProductPatch,
 } from "@/lib/act/write-payloads";
 
-// HTTP against the Act! Web API. Every judgement this integration makes lives
-// in the pure modules beside this one; what is left here is transport, and it
-// is deliberately dull.
+// HTTP against the Act! Web API. Every judgement this integration makes --
+// what a write sends, whether a failed request may be repeated, what a
+// failure or an answer means -- lives in the pure modules beside this one
+// (src/lib/act/record-write.ts, write-payloads.ts and the rest); what is left
+// here is transport: sending, re-authorising, reading a record back, and
+// turning each verdict into the request or the error it names. It is
+// deliberately dull.
 //
 // Three details of this API that cost time to discover, all verified against
 // the live system (docs/act-integration-reference.md):
@@ -164,15 +168,24 @@ export class ActUntrackedCreateError extends Error {
  *               A GET changes nothing, and every PATCH this client sends
  *               carries the whole record, so a second copy writes what the
  *               first did.
- *   POST        sent ONCE. Not repeated on a timeout, a network failure
- *               or a 5xx: every POST here creates a record, and none of those
- *               failures says the record was not created -- the server may
- *               have committed it and only the answer been lost. Sending it
- *               again would create a second History, a second opportunity for
- *               the deal, a duplicate contact, or a second product line --
- *               which doubles the deal's amount. A timeout or network failure
- *               throws ActUntrackedCreateError; a 5xx comes back as a reply,
- *               which `parse` turns into the same error.
+ *   POST        sent ONCE here -- though a 401 re-authorises and resends it
+ *               once; see `request`. Not repeated on a timeout, a network
+ *               failure or a 5xx: every POST here creates a record, and none
+ *               of those failures says the record was not created -- the
+ *               server may have committed it and only the answer been lost.
+ *               Sending it again would create a second History, a second
+ *               opportunity for the deal, a duplicate contact, or a second
+ *               product line -- which doubles the deal's amount. A timeout
+ *               or network failure throws ActUntrackedCreateError; a 5xx
+ *               comes back as a reply, which `parse` turns into the same
+ *               error.
+ *
+ * Why a failed PATCH or GET is retried only these few times, a second or two
+ * apart, and a failed POST not at all: the outbox's `nextAttemptAt` is the
+ * better place to try a write again -- the row waits there without holding
+ * the drain, survives a restart, and is tried again from a fresh plan and a
+ * fresh read of ACT!, long after whatever made the request fail (ACT!
+ * restarting, the NAT rule down for the night) has had time to clear.
  *
  * 4xx is never repeated, whatever the method: it is a real answer, and
  * repeating a rejected request only repeats the rejection. The single 401
@@ -403,8 +416,12 @@ export class ActClient {
   /**
    * Send a request, re-authorising once if the token was rejected.
    *
-   * The re-send after a 401 is safe for a POST too: a 401 is the request
-   * refused at authentication, before anything was written.
+   * The re-send after a 401 is safe for a POST too, and is the one time a
+   * POST is sent twice. ACT!'s Web API is ASP.NET: the bearer token is
+   * validated once, in the pipeline, before the controller action runs, so a
+   * 401 means the action never ran -- nothing was created for the second
+   * copy to duplicate. That is the framework's order of work, not something
+   * tried against this server.
    *
    * Two explicit attempts rather than a loop. A `for` loop here needs a throw
    * after it to satisfy the compiler, that throw is unreachable, and its

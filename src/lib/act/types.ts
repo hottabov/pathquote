@@ -7,6 +7,8 @@
 // section 4 for the full table and resolve anything new through
 // GET /api/metadata/contact/fields rather than guessing.
 
+import type { ContactStatus } from "@/lib/act/write-payloads";
+
 /** An address object as the API nests it under a contact or company. */
 export type ActAddress = {
   line1: string | null;
@@ -159,14 +161,24 @@ export type ActProductLine = {
 };
 
 /**
- * The fields of a contact an update may change: any of ActContact's own
- * except `id`, `created` and `edited`, which ACT! sets, with `customFields`
- * naming only the custom fields to change. How it is laid over the record is mergeForWrite in
- * src/lib/act/record-write.ts.
+ * The fields of a contact an update may change: `idStatus`, which promotion
+ * changes (contactPromotion in src/lib/act/write-payloads.ts), and
+ * `customFields`, naming only the custom fields to change, which are merged
+ * key by key so that naming one cannot blank the rest. Nothing else: nothing
+ * else is changed today, and the design spec's write
+ * whitelist (docs/superpowers/specs/2026-09-08-act-integration-design.md)
+ * sends only the fields PathQuote displays and edits, naming `recordManager`
+ * among those never sent. (It named `idStatus` too; the plan's addendum of
+ * 2026-10-12 made promotion the one exception.) `companyID` and
+ * `contactType` are not PathQuote's to change on an existing contact
+ * either. Nor is an address: one built from ActAddress would drop the
+ * `latitude` and `longitude` ACT! keeps beside it, and a nested object in a
+ * patch replaces the record's whole (mergeForWrite in
+ * src/lib/act/record-write.ts, which also says how this is laid over the
+ * record). Widening this is a decision, not a type fix.
  */
-export type ActContactPatch = Partial<
-  Omit<ActContact, "id" | "customFields" | "created" | "edited">
-> & {
+export type ActContactPatch = {
+  idStatus?: ContactStatus;
   customFields?: Record<string, string | number | boolean | null>;
 };
 
