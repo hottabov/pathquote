@@ -8,7 +8,7 @@
 // if there is one -- there is never more than one -- else the last to
 // finish), or none:
 //
-//   not queued   a FINAL quote with no row at all
+//   not queued   a FINAL quote with no row at all -- an administrator only
 //   waiting      an unfinished row, due or backing off after a failure
 //   held         an unfinished row with a blockedReason
 //   in ACT!      a finished row
@@ -21,12 +21,23 @@
 // quote has done since -- and because the Settings list sends readers to this
 // page for every held row, a voided-and-reopened draft's included.
 //
-// WHO READS IT. Everyone who can open the quote: the page is already scoped
-// (getDocumentForBuilder, documentWhereForUser). So every sentence in
-// `headline`, `detail` and `facts` is written to be true for a manager, who
+// WHO READS IT. Whoever can open the quote (the page is already scoped:
+// getDocumentForBuilder, documentWhereForUser) AND can see the ACT! sync
+// section -- canSeeActSync in src/lib/roles.ts, the one rule for who has
+// ACT! in front of them: an administrator or developer always, anybody else
+// only with User.actSyncVisible ticked. A distributor has no ACT! licence,
+// so the card is not theirs to read, as the Settings section is not; their
+// quotes are queued and sent all the same, and the Settings list and this
+// card show those quotes to an administrator. Of the five states, "not
+// queued" is shown to an administrator only: every quote finalised before
+// sending began says it until it is next signed, accepted or finalised --
+// hundreds of them -- and nothing in it is a manager's to act on, where an
+// administrator reads it as information. So a manager with the tick sees
+// no card for such a quote. Every sentence in `headline`, `detail` and
+// `facts` of the other four states is written to be true for a manager, who
 // sees the state but none of the administrator's buttons. `adminNote` and
-// the button texts (adminHelpFor) are for an administrator only, and the page
-// shows them to nobody else.
+// the button texts (adminHelpFor) are for an administrator only, and the
+// page shows them to nobody else.
 //
 // NO LINKS INTO ACT!. Nothing in this repository knows an address for an ACT!
 // record (docs/act-integration-reference.md has the API's base and nothing a
@@ -38,11 +49,25 @@
 // be driven by a test (tests/act-quote-view.test.ts).
 
 import { BLOCKED_BY } from "@/lib/act/drain-rules";
-import { UNTRACKED_CONTACT_REASON } from "@/lib/act/outbox-plan";
+import { heldForContact } from "@/lib/act/outbox-admin";
 import { melbourneTime } from "@/lib/act/sync-view";
 import { opportunityName } from "@/lib/act/write-payloads";
 import { formatDateAU, formatMoney } from "@/lib/format";
 import { formatCount } from "@/lib/plural";
+import { canSeeActSync, isAdminRole } from "@/lib/roles";
+
+/** Who is reading the card: the session's role and its ACT! sync tick (User.actSyncVisible). */
+export type QuoteActViewer = { role: string | null | undefined; actSyncVisible: boolean };
+
+/**
+ * Whether `viewer` gets the quote's ACT! card at all: canSeeActSync, the rule
+ * the Settings section follows (see WHO READS IT above). The page asks this
+ * before it reads anything for the card; describeQuoteAct asks it again, so
+ * the rule holds wherever the card is built.
+ */
+export function showsQuoteActCard(viewer: QuoteActViewer): boolean {
+  return canSeeActSync(viewer);
+}
 
 /** What the card is built from: the quote, its contact, and its latest row. */
 export type QuoteActFacts = {
@@ -211,6 +236,10 @@ function notQueued(facts: QuoteActFacts): QuoteActView {
  * back by the backoff until nextAttemptAt, and goes at the first pass after
  * that -- nothing retries a row on a clock of its own (backoffMs in
  * src/lib/act/drain-rules.ts) -- which is what "at the first send after" says.
+ * "Keeps trying until it gets through", not "waiting longer each time": the
+ * waits stop growing at BACKOFF_CAP_MS (same file), and a Retry-After from
+ * ACT! can set one longer still; what is always true is that no row is ever
+ * given up on.
  */
 function waiting(facts: QuoteActFacts, row: NonNullable<QuoteActFacts["row"]>, now: Date): QuoteActView {
   const failed = row.attempts > 0;
@@ -220,7 +249,7 @@ function waiting(facts: QuoteActFacts, row: NonNullable<QuoteActFacts["row"]>, n
   } else if (!failed) {
     detail = "It goes on its own — PathQuote sends queued quotes every 15 minutes.";
   } else if (row.nextAttemptAt.getTime() > now.getTime()) {
-    detail = `PathQuote has tried ${times(row.attempts)} and not got through to ACT! yet. It tries again on its own at the first send after ${melbourneTime(row.nextAttemptAt)}, ${inAbout(row.nextAttemptAt, now)}, and keeps trying, waiting longer each time.`;
+    detail = `PathQuote has tried ${times(row.attempts)} and not got through to ACT! yet. It tries again on its own at the first send after ${melbourneTime(row.nextAttemptAt)}, ${inAbout(row.nextAttemptAt, now)}, and keeps trying until it gets through.`;
   } else {
     detail = `PathQuote has tried ${times(row.attempts)} and not got through to ACT! yet. It is due to be tried again at the next send — PathQuote sends queued quotes every 15 minutes.`;
   }
@@ -242,18 +271,13 @@ function waiting(facts: QuoteActFacts, row: NonNullable<QuoteActFacts["row"]>, n
  * (blockedBy) is not repeated to the reader: each reason already says what to
  * do, and where it differs is in what an administrator can do, which the
  * buttons' own texts say (adminHelpFor). The one note an administrator gets
- * here is for a contact held after a create: where to look, and from when.
+ * here is for a contact held after a create: where to look, and from when --
+ * given exactly when the two contact actions it leads into are offered
+ * (heldForContact in src/lib/act/outbox-admin.ts, the same function).
  */
 function held(facts: QuoteActFacts, row: NonNullable<QuoteActFacts["row"]>): QuoteActView {
   const contact = facts.contact;
-  // The test heldForContact (src/lib/act/outbox-admin.ts) makes before it
-  // offers the two contact actions this note leads into.
-  const contactHeld =
-    row.blockedBy === null &&
-    row.blockedReason === UNTRACKED_CONTACT_REASON &&
-    contact !== null &&
-    contact.actContactId === null &&
-    contact.actCreateInFlightAt !== null;
+  const contactHeld = heldForContact(row, contact);
   return {
     state: "held",
     tone: "warn",
@@ -262,7 +286,7 @@ function held(facts: QuoteActFacts, row: NonNullable<QuoteActFacts["row"]>): Quo
     facts: [],
     lastError: null,
     adminNote:
-      contactHeld && contact.actCreateInFlightAt
+      contactHeld && contact?.actCreateInFlightAt
         ? `Look in ACT! for ${contact.name}. If PathQuote's request reached ACT!, they were created there at about ${melbourneTime(contact.actCreateInFlightAt)}. Then choose one of the two below.`
         : null,
   };
@@ -336,12 +360,34 @@ function inAct(facts: QuoteActFacts, row: NonNullable<QuoteActFacts["row"]>): Qu
 }
 
 /**
+ * What queues a quote taken out of the queue again, as a sentence, by where
+ * the quote stands: the only way back from "Don't send", which the enqueue
+ * gives by inserting a new row (dontSendDecision in
+ * src/lib/act/outbox-admin.ts) on the quote's next finalise, signature or
+ * acceptance. Which of those can still happen differs: a FINAL quote not yet
+ * signed can be signed, or unfinalized and finalised again; a signed one
+ * cannot be unfinalized (canUnfinalize in src/lib/signing/state.ts) and can
+ * only be accepted; one signed and accepted has nothing left that queues it
+ * -- only voiding the client's signature and finalising again would, which is
+ * no way to send a quote to ACT!, so the sentence sends the reader to the
+ * developer. A draft (shown only while its row is unfinished) is queued by
+ * being finalised.
+ */
+function requeuedBy(facts: Pick<QuoteActFacts, "status" | "signingStatus" | "acceptedAt">): string {
+  if (facts.status !== "FINAL") return "If it is finalised, it is queued for ACT! again and sent as usual.";
+  if (facts.signingStatus !== "SIGNED") {
+    return "If the client signs it, or it is unfinalized and finalised again, it is queued for ACT! again and sent as usual.";
+  }
+  if (facts.acceptedAt === null) return "If it is accepted, it is queued for ACT! again and sent as usual.";
+  return "It is signed and accepted, so nothing left to happen to it queues it again — if it has to go to ACT! after all, ask your developer.";
+}
+
+/**
  * A finished row an administrator stopped ("Don't send", dontSendDecision in
- * src/lib/act/outbox-admin.ts). What a later event does is said, because it
- * is the only way back and a reader may want it: the enqueue inserts a new
- * row, and that one is sent. Whatever the row had sent before it was stopped
- * -- an opportunity, a History -- is still in ACT!, and that is said only when
- * PathQuote has stored that something went.
+ * src/lib/act/outbox-admin.ts). What can still queue it is said (requeuedBy),
+ * because it is the only way back and a reader may want it. Whatever the row
+ * had sent before it was stopped -- an opportunity, a History -- is still in
+ * ACT!, and that is said only when PathQuote has stored that something went.
  */
 function notSent(facts: QuoteActFacts, row: NonNullable<QuoteActFacts["row"]>): QuoteActView {
   const sentBefore = facts.actOpportunityId !== null || row.revision.actHistoryId !== null;
@@ -349,18 +395,22 @@ function notSent(facts: QuoteActFacts, row: NonNullable<QuoteActFacts["row"]>): 
     state: "not-sent",
     tone: "ok",
     headline: "Not sent to ACT! — an administrator chose not to",
-    detail: `${sentBefore ? "What had already gone to ACT! for it before then stays there. " : ""}If this quote is finalised, signed or accepted again, it is queued for ACT! and sent as usual.`,
+    detail: `${sentBefore ? "What had already gone to ACT! for it before then stays there. " : ""}${requeuedBy(facts)}`,
     facts: [],
     lastError: null,
     adminNote: null,
   };
 }
 
-/** The card, or null for a quote that shows none. */
-export function describeQuoteAct(facts: QuoteActFacts, now: Date): QuoteActView | null {
-  if (hidden(facts)) return null;
+/**
+ * The card `viewer` reads, or null for none: a viewer without ACT! sync
+ * (showsQuoteActCard), a draft with nothing unfinished, or -- for anyone but
+ * an administrator -- a quote not queued. See WHO READS IT above.
+ */
+export function describeQuoteAct(facts: QuoteActFacts, now: Date, viewer: QuoteActViewer): QuoteActView | null {
+  if (!showsQuoteActCard(viewer) || hidden(facts)) return null;
   const row = facts.row;
-  if (!row) return notQueued(facts);
+  if (!row) return isAdminRole(viewer.role) ? notQueued(facts) : null;
   if (row.completedAt !== null) {
     return row.blockedBy === BLOCKED_BY.admin ? notSent(facts, row) : inAct(facts, row);
   }
@@ -390,9 +440,14 @@ export function adminHelpFor(input: {
   blockedBy: string | null;
   contactName: string | null;
   number: string | null;
+  /** Where the quote stands, for what can still queue it after "Don't send" (requeuedBy). */
+  status: string;
+  signingStatus: string;
+  acceptedAt: Date | null;
 }): AdminHelp {
   const person = input.contactName ?? "this contact";
   const quote = input.number ?? "this quote";
+  const requeue = requeuedBy(input);
   const tryAgainHelp =
     input.blockedBy === BLOCKED_BY.revision
       ? "Reads this quote's finalised copy again and sends it, now. That copy does not change, so this only helps once your developer has put right what the reason above describes."
@@ -403,7 +458,7 @@ export function adminHelpFor(input: {
     tryAgain: { label: "Try again now", help: tryAgainHelp },
     contactFound: {
       label: "ACT! has this person",
-      help: `Choose this once you have found ${person} in ACT!. Enter their ACT! contact id, and PathQuote links this contact to that person and carries on with every quote on it. If you do not have the id, your developer can find it in PathQuote's log when ACT! sent one back.`,
+      help: `Choose this once you have found ${person} in ACT!. Enter their ACT! contact id. PathQuote first asks ACT! for that contact, and links nothing unless ACT! has it and its name or its email matches ${person}'s; then it links this contact to that person and carries on with every quote on it. If you do not have the id, your developer can find it in PathQuote's log when ACT! sent one back.`,
       field: "ACT! contact id",
       submit: "Link to this ACT! contact",
     },
@@ -418,11 +473,10 @@ export function adminHelpFor(input: {
     },
     dontSend: {
       label: "Don't send this quote to ACT!",
-      help: "Takes this quote out of the queue for ACT! — a test quote, say. Whatever has already gone to ACT! stays there. If the quote is finalised, signed or accepted again later, it is queued again and goes to ACT! as usual.",
+      help: `Takes this quote out of the queue for ACT! — a test quote, say. Whatever has already gone to ACT! stays there. ${requeue}`,
       confirm: {
         title: `Don't send ${quote} to ACT!?`,
-        description:
-          "PathQuote stops trying to send this quote to ACT!. Nothing on this page undoes that — only finalising, signing or accepting the quote again queues it again.",
+        description: `PathQuote stops trying to send this quote to ACT!, and nothing on this page undoes that. ${requeue}`,
         confirmLabel: "Don't send",
       },
     },
@@ -434,21 +488,31 @@ export function adminHelpFor(input: {
  * off. With it on, the action starts a send for this quote straight away (the
  * fast path, drainAfterResponse in src/lib/act/drain-after.ts), which finds
  * the drain busy now and then and leaves the row to the next 15-minute send --
- * hence "usually". Other quotes on a contact just settled are not sent by
- * that, only made due, so they go at the next 15-minute send.
+ * hence "or within 15 minutes". Other quotes on a contact just settled are
+ * not sent by that, only made due, so they go at the next 15-minute send.
+ * `sendingOn` null is the switch not read (finish in
+ * src/lib/actions/act-outbox.ts, after a failure that follows the write):
+ * the message then says what was done, and promises no time.
  */
 export function adminDoneMessage(
   action: "tryAgain" | "contactFound" | "contactAbsent" | "dontSend",
-  sendingOn: boolean,
+  sendingOn: boolean | null,
 ): string {
-  const when = sendingOn ? "now, or within 15 minutes if another send is under way" : "once sending is switched on";
+  const when =
+    sendingOn === null
+      ? "at the next send"
+      : sendingOn
+        ? "now, or within 15 minutes if another send is under way"
+        : "once sending is switched on";
   switch (action) {
     case "tryAgain":
       return `Released — it goes to ACT! ${when}.`;
     case "contactFound":
-      return sendingOn
-        ? "Linked — this quote goes on to ACT! now, or within 15 minutes if another send is under way, and any other quote held for this contact within 15 minutes."
-        : "Linked — this quote, and any other held for this contact, go on to ACT! once sending is switched on.";
+      return sendingOn === null
+        ? "Linked — this quote, and any other held for this contact, go on to ACT! at the next send."
+        : sendingOn
+          ? "Linked — this quote goes on to ACT! now, or within 15 minutes if another send is under way, and any other quote held for this contact within 15 minutes."
+          : "Linked — this quote, and any other held for this contact, go on to ACT! once sending is switched on.";
     case "contactAbsent":
       return `Released — PathQuote creates them in ACT! ${when}.`;
     case "dontSend":

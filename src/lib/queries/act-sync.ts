@@ -8,7 +8,7 @@
 
 import { db } from "@/lib/db";
 import { readActWriteSwitch } from "@/lib/act/drain";
-import { UNTRACKED_CONTACT_REASON } from "@/lib/act/outbox-plan";
+import { UNTRACKED_CONTACT_REASONS } from "@/lib/act/outbox-plan";
 import { LAST_RUN_KEY, parseStoredRun, type ActSyncRun } from "@/lib/act/run-record";
 import { isSyncRunning, readCursor } from "@/lib/act/sync";
 import { HELD_QUOTES_LISTED } from "@/lib/act/sync-view";
@@ -42,9 +42,11 @@ export type ActOutboxStanding = {
    * marker is also set for the second or so of every contact create that
    * goes well, and stands on the contact of a quote that is not blocked yet
    * -- one due, not yet worked. The planner and the drain block such a row
-   * with exactly this sentence, and the drain's re-plan of blocked rows
-   * rewrites an older wording of it (`reblock`, replanBlocked in
-   * src/lib/act/drain-rules.ts), so the reason is what says "held for this".
+   * with exactly this sentence, so the reason is what says "held for this".
+   * Counted in any of its wordings (UNTRACKED_CONTACT_REASONS): the drain's
+   * re-plan of blocked rows rewrites an older one (`reblock`, replanBlocked
+   * in src/lib/act/drain-rules.ts), but only when a pass runs, and none runs
+   * while sending is switched off.
    */
   heldForContact: number;
   /**
@@ -121,7 +123,7 @@ async function readOutboxStanding(user: ScopeUser): Promise<ActOutboxStanding> {
   const [heldCount, heldForContact, heldQuotes, waitingCount, retrying] = await db.$transaction(
     [
       db.actOutbox.count({ where: held }),
-      db.actOutbox.count({ where: { ...unfinished, blockedReason: UNTRACKED_CONTACT_REASON } }),
+      db.actOutbox.count({ where: { ...unfinished, blockedReason: { in: [...UNTRACKED_CONTACT_REASONS] } } }),
       db.actOutbox.findMany({
         where: held,
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],

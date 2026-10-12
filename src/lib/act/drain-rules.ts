@@ -288,8 +288,9 @@ export function deniedReason(kind: ActStepKind, method: string, body: string): s
  *             what tells the quote's page "not sent" from "in ACT!", which a
  *             finished row otherwise means.
  *
- * Any of the three, on an unfinished row, can also be cleared by an
- * administrator's "Try again now" (tryAgainDecision, same file).
+ * `act`, `revision` and `drain`, on an unfinished row, can also be cleared
+ * by an administrator's "Try again now" (tryAgainDecision in
+ * src/lib/act/outbox-admin.ts).
  */
 export const BLOCKED_BY = {
   act: "act",

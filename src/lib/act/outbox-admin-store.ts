@@ -9,16 +9,24 @@
 // apart so the guarded writes can be run against a real PostgreSQL, racing a
 // drain, without a session.
 //
-// No call into ACT! is made here, and no transaction is held open across
-// one (requirement 3 in src/lib/act/outbox.ts): each write is one statement
-// or one short transaction.
+// One call into ACT! is made here: "ACT! has this person" reads the typed id
+// back from ACT! (lookUpActContact) before it writes anything. It is made
+// between the reads and the write, never inside a transaction, so no row or
+// contact is locked while ACT! answers (requirement 3 in
+// src/lib/act/outbox.ts): each write is one statement or one short
+// transaction, and the contact's write is guarded on the hold the action read
+// -- so a hold the drain or another administrator changed during the call is
+// not settled on the strength of it.
 
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
+import { actClientFromEnv } from "@/lib/act/client";
 import {
   CONTACT_NOT_HELD_ERROR,
   ROW_CHANGED_ERROR,
   BAD_ACT_ID_ERROR,
+  actContactCheck,
+  actLookupFailure,
   contactAbsentDecision,
   contactFoundDecision,
   dontSendDecision,
@@ -26,9 +34,11 @@ import {
   heldForContactRelease,
   parseActContactId,
   tryAgainDecision,
+  type ActContactLookup,
   type AdminContact,
   type AdminRow,
   type DuplicateContact,
+  type HeldContactIdentity,
 } from "@/lib/act/outbox-admin";
 import { LATEST_ROW } from "@/lib/queries/act-quote";
 
@@ -41,12 +51,19 @@ export type AdminOutcome = { ok: true } | { ok: false; error: string } | { ok: f
 
 const NOT_FOUND = { ok: false, notFound: true } as const;
 
-/** The quote's latest row and its contact, as the decisions read them; null for no such quote. */
-async function readState(documentId: string): Promise<{ row: AdminRow | null; contact: AdminContact | null } | null> {
+/**
+ * The quote's latest row and its contact, as the decisions read them, and the
+ * contact's name and email for actContactCheck; null for no such quote.
+ */
+async function readState(
+  documentId: string,
+): Promise<{ row: AdminRow | null; contact: (AdminContact & HeldContactIdentity) | null } | null> {
   const document = await db.document.findUnique({
     where: { id: documentId },
     select: {
-      contact: { select: { id: true, actContactId: true, actCreateInFlightAt: true } },
+      contact: {
+        select: { id: true, actContactId: true, actCreateInFlightAt: true, firstName: true, lastName: true, email: true },
+      },
       actOutbox: {
         orderBy: [...LATEST_ROW],
         take: 1,
@@ -106,8 +123,8 @@ class ContactNotHeld extends Error {}
  * it (heldForContactRelease), in one transaction -- the rows first and the
  * contact second, the order in which the drain takes the same two locks
  * before a contact create (setContactMarker in src/lib/act/drain.ts), so the
- * two cannot deadlock. If the contact's guarded write finds it no longer held,
- * nothing is released either.
+ * two cannot deadlock. If the contact's guarded write finds it no longer held
+ * as it was read, nothing is released either.
  */
 async function settleContact(
   contactId: string,
@@ -128,9 +145,37 @@ async function settleContact(
 }
 
 /**
+ * The contact ACT! holds under `actContactId`, or why it could not say
+ * (actLookupFailure). A failure is logged for the developer, whom
+ * ACT_LOOKUP_FAILED_ERROR sends the administrator to; a 404 is ACT!'s
+ * answer, not a failure, and is not logged.
+ */
+async function lookUpActContact(actContactId: string): Promise<ActContactLookup> {
+  try {
+    const contact = await actClientFromEnv().getContact(actContactId);
+    return { kind: "found", firstName: contact.firstName, lastName: contact.lastName, email: contact.emailAddress };
+  } catch (error) {
+    const lookup = actLookupFailure(error);
+    if (lookup.kind !== "missing") {
+      console.error("[act] could not read an ACT! contact an administrator typed in; nothing was linked", {
+        actContactId,
+        error,
+      });
+    }
+    return lookup;
+  }
+}
+
+/**
  * "ACT! has this person". The duplicate is looked for before the write, to
  * refuse with its name; and the write is caught for the unique key besides,
- * for a duplicate an inbound sync imports between the two.
+ * for a duplicate an inbound sync imports in between -- a window that
+ * includes the call into ACT!.
+ *
+ * Then ACT! is asked for the id (lookUpActContact), after every check that
+ * needs no ACT! and before any write, and outside any transaction: an id ACT!
+ * does not confirm, or one that belongs to somebody else by both name and
+ * email, is refused (actContactCheck) and nothing is written.
  */
 export async function contactFound(documentId: string, typedId: string, now: Date): Promise<AdminOutcome> {
   const actContactId = parseActContactId(typedId);
@@ -140,6 +185,10 @@ export async function contactFound(documentId: string, typedId: string, now: Dat
   const duplicate = state.contact ? await duplicateOf(actContactId, state.contact.id) : null;
   const decision = contactFoundDecision({ row: state.row, contact: state.contact, actContactId, duplicate });
   if (!decision.ok) return decision;
+  // contactFoundDecision has already refused a quote with no contact.
+  if (!state.contact) return { ok: false, error: CONTACT_NOT_HELD_ERROR };
+  const refusal = actContactCheck({ actContactId, lookup: await lookUpActContact(actContactId), held: state.contact });
+  if (refusal) return { ok: false, error: refusal };
   try {
     await settleContact(decision.write.where.id, decision.write, now);
     return { ok: true };

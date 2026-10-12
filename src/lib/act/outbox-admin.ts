@@ -2,14 +2,17 @@
 // quote's own page, and exactly what each of those writes to the database.
 //
 // Four actions, each a pure decision here -- is it allowed for this row, and
-// what does it write -- carried out by src/lib/actions/act-outbox.ts, which
-// reads the rows, calls these, and runs what they return:
+// what does it write -- carried out by src/lib/act/outbox-admin-store.ts,
+// which reads the rows, calls these, and runs what they return, for the
+// server actions in src/lib/actions/act-outbox.ts:
 //
 //   Try again now          a row held by ACT!'s answer, by its frozen
 //                          revision, or by a lookup's duplicates
 //                          (tryAgainDecision)
 //   ACT! has this person   a quote held over a contact create whose outcome
-//                          PathQuote never learned (contactFoundDecision)
+//                          PathQuote never learned (contactFoundDecision),
+//                          with the typed id checked against ACT! first
+//                          (actContactCheck)
 //   ACT! has nobody        the same quote, the other answer
 //                          (contactAbsentDecision)
 //   Don't send             any unfinished row (dontSendDecision)
@@ -28,10 +31,11 @@
 //     reads the row again and plans from what the administrator left -- the
 //     same footing as a take-over. For "Don't send" the drain's own
 //     `completedAt IS NULL` already stops it. For "Try again now" and the
-//     release of a contact's quotes the drain is not working the row (it
-//     works no held row), but its pass over blocked rows reads them, and a
-//     re-block or an unblock it decided on the row as it was would otherwise
-//     land on the row the administrator just released. The one
+//     release of a contact's quotes the row is held, which the drain works
+//     only after its own guarded store has reopened it (a `drain` recheck),
+//     but its pass over blocked rows reads them, and a re-block, an unblock
+//     or a recheck it decided on the row as it was would otherwise land on
+//     the row the administrator just released. The one
 //     store of the drain's not guarded by generation is clearing a create's
 //     marker on the row (requirement 1's exception), which an administrator's
 //     action never sets or clears.
@@ -44,14 +48,19 @@
 // the administrator left it.
 //
 // The Contact's writes are guarded on its own state instead, as the FOR TASK
-// 10 SQL in src/lib/act/outbox-plan.ts is: the hold must still be there.
+// 10 SQL in src/lib/act/outbox-plan.ts is: the hold must still be there --
+// no ACT! id, and the very marker the action read, so a hold released and
+// set again by a newer create since the read is not the one settled.
 //
 // Pure: no I/O. `Prisma` is imported for its types only, so the no-database
-// test suite (vitest.config.ts) can import this file.
+// test suite (vitest.config.ts) can import this file; the ACT! client's
+// error classes are imported to tell its failures apart, never to call it.
 
 import type { Prisma } from "@prisma/client";
-import { UNTRACKED_CONTACT_REASON } from "@/lib/act/outbox-plan";
+import { isUntrackedContactReason } from "@/lib/act/outbox-plan";
 import { BLOCKED_BY } from "@/lib/act/drain-rules";
+import { ActApiError, ActNoAnswerError, ActNotSentError } from "@/lib/act/client";
+import { tryLaterStatus } from "@/lib/act/record-write";
 
 /** The ActOutbox row, as an action reads it. */
 export type AdminRow = {
@@ -123,15 +132,19 @@ export const NO_ROW_ERROR = "This quote is not queued for ACT!, so there is noth
  * offered them, though its contact may be held: the reason it shows is not
  * about the contact.
  *
- * The exact sentence, so a row blocked with an older wording of it is not
- * offered the actions until the next drain pass rewrites it
- * (UNTRACKED_CONTACT_REASON says so) -- at most a quarter of an hour.
+ * The sentence in any of its wordings (isUntrackedContactReason): a row
+ * blocked before the last rewording keeps the old text until a full drain
+ * pass rewrites it, and no pass runs while sending is switched off -- which
+ * is when an administrator is most likely to be settling holds.
  */
-export function heldForContact(row: AdminRow | null, contact: AdminContact | null): boolean {
+export function heldForContact(
+  row: Pick<AdminRow, "completedAt" | "blockedReason" | "blockedBy"> | null,
+  contact: Pick<AdminContact, "actContactId" | "actCreateInFlightAt"> | null,
+): boolean {
   return (
     row !== null &&
     row.completedAt === null &&
-    row.blockedReason === UNTRACKED_CONTACT_REASON &&
+    isUntrackedContactReason(row.blockedReason) &&
     row.blockedBy === null &&
     contact !== null &&
     contact.actContactId === null &&
@@ -234,9 +247,9 @@ export function parseActContactId(text: string): string | null {
 export const BAD_ACT_ID_ERROR =
   "That is not an ACT! contact id. It is 36 characters: letters a to f and digits in five groups joined by dashes, like 2f6c1a9e-4b7d-4c2e-9a51-0d3e8f7b6a10.";
 
-/** Shown when the contact is not held any more: somebody, or the drain, got there first. */
+/** Shown when the contact is not held any more, or not as it was read: somebody, or the drain, got there first. */
 export const CONTACT_NOT_HELD_ERROR =
-  "This quote's contact is not held any more — it has an ACT! id, or the hold was released. Reload the page to see where the quote stands now.";
+  "This quote's contact is not held as it was any more — it has an ACT! id, or the hold was released. Reload the page to see where the quote stands now.";
 
 /** Another PathQuote contact that already carries the ACT! id, as the refusal names it. */
 export type DuplicateContact = { name: string; companyName: string };
@@ -257,11 +270,17 @@ export function duplicateContactError(actContactId: string, duplicate: Duplicate
  * "ACT! has this person": the held contact is given the ACT! id an
  * administrator found -- the FOR TASK 10 UPDATE in src/lib/act/outbox-plan.ts,
  * as the drain's own store sets it: actContactId, actSyncState SYNCED, and
- * the marker cleared, guarded on the marker still being there and no id yet.
+ * the marker cleared, guarded on the marker read still being there and no id
+ * yet.
  *
  * `actContactId` is the typed text, parsed here (parseActContactId).
  * `duplicate` is whichever other contact carries that id, which the caller
  * looks up with the parsed id: present, it refuses.
+ *
+ * Not the whole of the check: before running the write, the caller asks ACT!
+ * for the contact and refuses on actContactCheck's verdict. Decided here
+ * first, so that a quote no longer held, or an id another contact carries,
+ * is refused without a call into ACT!.
  */
 export function contactFoundDecision(input: {
   row: AdminRow | null;
@@ -279,15 +298,122 @@ export function contactFoundDecision(input: {
   return {
     ok: true,
     write: {
-      where: { id: input.contact.id, actCreateInFlightAt: { not: null }, actContactId: null },
+      where: { id: input.contact.id, actCreateInFlightAt: input.contact.actCreateInFlightAt, actContactId: null },
       data: { actContactId: id, actSyncState: "SYNCED", actCreateInFlightAt: null },
     },
   };
 }
 
+/** What ACT! said when asked for the contact behind a typed id. */
+export type ActContactLookup =
+  | { kind: "found"; firstName: string | null; lastName: string | null; email: string | null }
+  /** ACT! answered 404: it has no contact with that id. */
+  | { kind: "missing" }
+  /** No answer, or one that says to come back: worth trying again shortly. */
+  | { kind: "unreachable" }
+  /** Anything else -- a login refused, a record denied, PathQuote's own setup: not mended by waiting. */
+  | { kind: "failed" };
+
+/**
+ * The lookup's verdict for an error the ACT! client threw asking for one
+ * contact (ActClient.getContact). Unreachable is what retrying can mend:
+ * nothing sent or no answer (ActNotSentError, ActNoAnswerError -- the
+ * client has already retried those itself), a 408 or 429, or a 5xx.
+ * Everything else, a missing ACT_* variable included, is `failed`.
+ */
+export function actLookupFailure(error: unknown): ActContactLookup {
+  if (error instanceof ActApiError) {
+    if (error.status === 404) return { kind: "missing" };
+    if (tryLaterStatus(error.status) || error.status >= 500) return { kind: "unreachable" };
+    return { kind: "failed" };
+  }
+  if (error instanceof ActNotSentError || error instanceof ActNoAnswerError) return { kind: "unreachable" };
+  return { kind: "failed" };
+}
+
+/** Shown when ACT! answers that it has no contact with the typed id. */
+export function noSuchActContactError(actContactId: string): string {
+  return `ACT! has no contact with the id ${actContactId}, so nothing was linked. Copy the id from the person's record in ACT! again, and check it is a contact's id rather than a company's or an opportunity's.`;
+}
+
+/** Shown when ACT! could not be asked about the id. Nothing is written on an id ACT! has not confirmed. */
+export const ACT_UNREACHABLE_ERROR =
+  "PathQuote could not reach ACT! to check that id, so nothing was linked. Try again in a few minutes.";
+
+/** Shown when ACT! was reached but would not give the contact, for a reason waiting does not mend. */
+export const ACT_LOOKUP_FAILED_ERROR =
+  "PathQuote could not read that contact from ACT! to check it, so nothing was linked. Ask your developer — PathQuote's log says what ACT! answered.";
+
+/** The PathQuote contact being linked, as actContactCheck compares it. */
+export type HeldContactIdentity = { firstName: string; lastName: string | null; email: string | null };
+
+/** A name as compared: first and last, trimmed, spaces collapsed, case ignored. */
+function comparableName(first: string | null, last: string | null): string {
+  return `${first ?? ""} ${last ?? ""}`.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/** An email as compared: trimmed, case ignored; empty is no email. */
+function comparableEmail(email: string | null): string {
+  return (email ?? "").trim().toLowerCase();
+}
+
+/** A person as the mismatch refusal prints them: name, and email or "no email". */
+function printed(name: string, email: string | null): string {
+  const shownName = name.trim() === "" ? "no name" : name.trim();
+  const shownEmail = (email ?? "").trim();
+  return `${shownName} (${shownEmail === "" ? "no email" : shownEmail})`;
+}
+
+/**
+ * Whether the contact ACT! holds under the typed id can be linked to the
+ * held PathQuote contact: null when it can, else the sentence refusing it.
+ *
+ *   missing      ACT! has no contact with that id: refused, naming the id.
+ *   unreachable  refused, and nothing written -- an id ACT! has not
+ *                confirmed is never linked: try again.
+ *   failed       refused, for the developer.
+ *   found        refused only when NEITHER the name NOR the email matches.
+ *
+ * The rule for `found` is deliberately the floor, not more. Requiring both
+ * to match would refuse the legitimate cases this action exists for: the
+ * person's email changed in ACT! since, or their name was spelt differently
+ * there, or ACT! holds no email for them. What it catches is an id copied
+ * from the wrong record -- a different person entirely -- before every later
+ * write for this contact goes to them. A name matches on first and last
+ * together (comparableName); an email only when both sides have one.
+ */
+export function actContactCheck(input: {
+  actContactId: string;
+  lookup: ActContactLookup;
+  held: HeldContactIdentity;
+}): string | null {
+  const { lookup, held } = input;
+  switch (lookup.kind) {
+    case "missing":
+      return noSuchActContactError(input.actContactId);
+    case "unreachable":
+      return ACT_UNREACHABLE_ERROR;
+    case "failed":
+      return ACT_LOOKUP_FAILED_ERROR;
+    case "found": {
+      const heldName = comparableName(held.firstName, held.lastName);
+      const actName = comparableName(lookup.firstName, lookup.lastName);
+      const heldEmail = comparableEmail(held.email);
+      const actEmail = comparableEmail(lookup.email);
+      const nameMatches = heldName !== "" && heldName === actName;
+      const emailMatches = heldEmail !== "" && heldEmail === actEmail;
+      if (nameMatches || emailMatches) return null;
+      const ours = printed(`${held.firstName} ${held.lastName ?? ""}`, held.email);
+      const theirs = printed(`${lookup.firstName ?? ""} ${lookup.lastName ?? ""}`, lookup.email);
+      return `The ACT! contact with that id is ${theirs}, but this quote's contact is ${ours} — neither the name nor the email matches, so nothing was linked. Check the id was copied from the right person in ACT!. If it is the same person, correct the name or the email on one side so that one of them matches, then try again.`;
+    }
+  }
+}
+
 /**
  * "ACT! has nobody": the hold is released -- the marker cleared, guarded on
- * the contact still having no ACT! id, as the FOR TASK 10 release is -- and
+ * the contact still having no ACT! id, as the FOR TASK 10 release is, and on
+ * the marker being the one read -- and
  * the next pass creates the contact in ACT!. If ACT! did hold them, that is a
  * second person in ACT!; the button's helper text and its confirmation say
  * so, and that is the whole of the protection.
@@ -298,7 +424,7 @@ export function contactAbsentDecision(row: AdminRow | null, contact: AdminContac
   return {
     ok: true,
     write: {
-      where: { id: contact.id, actContactId: null },
+      where: { id: contact.id, actContactId: null, actCreateInFlightAt: contact.actCreateInFlightAt },
       data: { actCreateInFlightAt: null },
     },
   };
@@ -318,7 +444,11 @@ export function contactAbsentDecision(row: AdminRow | null, contact: AdminContac
  * of an hour after.
  *
  * Only rows still held for exactly that: unfinished, blocked by the planner,
- * with UNTRACKED_CONTACT_REASON. A row on the same contact the planner holds
+ * with UNTRACKED_CONTACT_REASON in any of its wordings
+ * (isUntrackedContactReason) -- matched on the current one alone, a row
+ * blocked before a rewording would stay held, telling its reader to wait for
+ * a hold already settled, until the next full pass, and no pass runs while
+ * sending is switched off. A row on the same contact the planner holds
  * for something else -- an unmapped region, which nextStep checks first -- is
  * left to the drain, which would only block it again. attempts and lastError
  * are left as they are: the row was not refused, and its history of failures
@@ -327,7 +457,7 @@ export function contactAbsentDecision(row: AdminRow | null, contact: AdminContac
 export function heldForContactRelease(rows: readonly AdminRow[], now: Date): RowWrite[] {
   return rows
     .filter(
-      (row) => row.completedAt === null && row.blockedBy === null && row.blockedReason === UNTRACKED_CONTACT_REASON,
+      (row) => row.completedAt === null && row.blockedBy === null && isUntrackedContactReason(row.blockedReason),
     )
     .map((row) => guarded(row, { blockedReason: null, blockedBy: null, nextAttemptAt: now }));
 }

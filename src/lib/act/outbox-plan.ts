@@ -548,12 +548,17 @@
 //   On the held quote's own page, an administrator has the two common cases
 //   as actions (src/lib/act/outbox-admin.ts, src/lib/actions/act-outbox.ts):
 //   "ACT! has this person", which takes the ACT! id and makes the first
-//   UPDATE above, guarded the same way and on the contact having no ACT! id
-//   yet, and "ACT! has nobody", which makes the release just above. Each also
-//   makes due, at once, every quote on the contact still blocked with
-//   UNTRACKED_CONTACT_REASON, rather than leaving that to the next full
-//   pass. The runbook points to them first, and keeps the SQL for when the
-//   app cannot be used.
+//   UPDATE above, and "ACT! has nobody", which makes the release just above
+//   -- each guarded the same way, and also on the contact having no ACT! id
+//   yet and the marker being the one the action read. "ACT! has this
+//   person" first reads the id back from ACT! (GET /api/contacts/{id}),
+//   outside any transaction, and links nothing when ACT! has no such
+//   contact, cannot be asked, or holds somebody whose name and email both
+//   differ from the PathQuote contact's (actContactCheck). Each also makes
+//   due, at once, every quote on the contact still blocked with
+//   UNTRACKED_CONTACT_REASON (in any of its wordings), rather than leaving
+//   that to the next full pass. The runbook points to them first, and keeps
+//   the SQL for when the app cannot be used.
 //
 //   THE MERGE STAYS SQL. "ACT! has this person" refuses when another
 //   PathQuote contact already carries that ACT! id, names it, and sends the
@@ -562,6 +567,22 @@
 //   since the create: a person ACT! did make is a Prospect, edited after the
 //   sync's cursor, so the nightly sync -- or a Sync now press -- imports them
 //   as a new PathQuote contact, and the duplicate is there by morning.
+//
+//   FOLLOW-UP, not built: the inbound sync could ADOPT instead of import.
+//   When it meets a NEW ACT! contact -- no PathQuote contact carries its id
+//   -- whose `created` is at or after a PathQuote contact's
+//   actCreateInFlightAt, and whose email and name match that held contact's
+//   exactly, it could set the held contact's actContactId (and actSyncState
+//   SYNCED) and clear its marker, rather than import a second contact. That
+//   settles the common case of a lost contact-create answer by itself, with
+//   no merge by the developer. Not built now because the window is rare --
+//   a POST whose answer was lost, or whose id PathQuote failed to store --
+//   and because among ACT!'s 17.5k contacts an email is no identity (shared
+//   inboxes, duplicates, contacts with none; the reason the drain never
+//   looks a contact up by email, A CREATE IN FLIGHT above). The
+//   created-at-or-after-the-marker condition narrows it to one candidate,
+//   which is what would make it safe enough; an adoption should still be
+//   logged, and should refuse when more than one ACT! contact qualifies.
 //
 // A REQUIREMENT ON THE DRAIN (src/lib/act/drain.ts): after
 // create-opportunity, the two stores -- Document.actOpportunityId and the
@@ -779,18 +800,40 @@ export function unmappedRegionReason(regionCode: string): string {
  * administrator's buttons under it, so it sends them to an administrator
  * rather than naming the buttons.
  *
- * REWORDING IT is safe but not instant. A row the planner blocked with an
- * older wording is rewritten with this one by the next full drain pass
- * (`reblock`, replanBlocked in src/lib/act/drain-rules.ts); until then the
- * Settings count of rows held for a contact (readOutboxStanding in
- * src/lib/queries/act-sync.ts), the administrator's two contact actions on
- * the quote, and the release of the contact's other quotes (heldForContact
- * and heldForContactRelease in src/lib/act/outbox-admin.ts), which all match
- * this exact text, pass that row over. The 2026-10-13 wording replaced "ask
- * your developer" once the administrator's actions existed.
+ * REWORDING IT: move the old text into EARLIER_UNTRACKED_CONTACT_REASONS,
+ * below. A row already blocked keeps the wording it was blocked with until
+ * the next full drain pass rewrites it (`reblock`, replanBlocked in
+ * src/lib/act/drain-rules.ts) -- and no pass runs while sending is switched
+ * off (drainActOutbox returns before it re-plans anything). Everything that
+ * asks "is this row held for its contact?" asks isUntrackedContactReason,
+ * which knows every wording: the Settings count (readOutboxStanding in
+ * src/lib/queries/act-sync.ts), the administrator's two contact actions and
+ * the release of the contact's other quotes (heldForContact and
+ * heldForContactRelease in src/lib/act/outbox-admin.ts). Matched on the
+ * current text alone, a row with an old one would be offered no contact
+ * action, and left held by a release, for as long as sending stays off.
  */
 export const UNTRACKED_CONTACT_REASON =
   "PathQuote asked ACT! to create this quote's contact and has no record of whether it did, so they may be in ACT! already, and creating them again could put the same person in ACT! twice — PathQuote will not try again on its own: an administrator has to look in ACT! and settle it on this quote's page, and nobody should delete or re-add this contact.";
+
+/**
+ * Every earlier wording of UNTRACKED_CONTACT_REASON, newest first, which a
+ * row blocked before the rewording may still carry. Each meant the same: the
+ * drain saw a contact create go unaccounted for. Only ever added to.
+ */
+export const EARLIER_UNTRACKED_CONTACT_REASONS: readonly string[] = [
+  "PathQuote asked ACT! to create this quote's contact and has no record of whether it did, so they may be in ACT! already, and creating them again could put the same person in ACT! twice — PathQuote will not try again on its own: ask your developer, and do not delete or re-add this contact.",
+  "PathQuote asked ACT! to create this quote's contact and has no record of whether it did, so they may be in ACT! already — check ACT! for them before this is tried again, or ACT! could end up with the same person twice.",
+  "PathQuote asked ACT! to create this quote's contact but never learned whether it did, so they may be in ACT! already — check ACT! for them before this is tried again, or ACT! could end up with the same person twice.",
+];
+
+/** UNTRACKED_CONTACT_REASON and every earlier wording of it, for a query's `in`. */
+export const UNTRACKED_CONTACT_REASONS: readonly string[] = [UNTRACKED_CONTACT_REASON, ...EARLIER_UNTRACKED_CONTACT_REASONS];
+
+/** Whether `reason` is UNTRACKED_CONTACT_REASON, in its current wording or an earlier one. */
+export function isUntrackedContactReason(reason: string | null): boolean {
+  return reason !== null && UNTRACKED_CONTACT_REASONS.includes(reason);
+}
 
 /**
  * The sentence for a value in ActOutbox.createInFlight that nothing here

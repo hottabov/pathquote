@@ -1,9 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
+  ACT_LOOKUP_FAILED_ERROR,
+  ACT_UNREACHABLE_ERROR,
   BAD_ACT_ID_ERROR,
   CONTACT_NOT_HELD_ERROR,
   NO_ROW_ERROR,
   ROW_CHANGED_ERROR,
+  actContactCheck,
+  actLookupFailure,
   adminActionsFor,
   contactAbsentDecision,
   contactFoundDecision,
@@ -17,7 +21,13 @@ import {
   type AdminRow,
 } from "../src/lib/act/outbox-admin";
 import { BLOCKED_BY, refusedReason } from "../src/lib/act/drain-rules";
-import { NO_CONTACT_REASON, UNTRACKED_CONTACT_REASON, unmappedRegionReason } from "../src/lib/act/outbox-plan";
+import {
+  EARLIER_UNTRACKED_CONTACT_REASONS,
+  NO_CONTACT_REASON,
+  UNTRACKED_CONTACT_REASON,
+  unmappedRegionReason,
+} from "../src/lib/act/outbox-plan";
+import { ActApiError, ActNoAnswerError, ActNotSentError } from "../src/lib/act/client";
 
 const NOW = new Date("2026-10-13T03:00:00.000Z");
 const ACT_ID = "2f6c1a9e-4b7d-4c2e-9a51-0d3e8f7b6a10";
@@ -80,8 +90,19 @@ describe("adminActionsFor: what the page offers", () => {
   it("only for a quote held for exactly that: not one the planner holds for its region first", () => {
     expect(heldForContact(heldRow, heldContact())).toBe(true);
     expect(heldForContact(row({ blockedReason: unmappedRegionReason("ZZ") }), heldContact())).toBe(false);
-    // An older wording waits for the drain's next pass to rewrite it.
+    // Any sentence that is not one of its wordings is not that hold.
     expect(heldForContact(row({ blockedReason: "an older wording" }), heldContact())).toBe(false);
+  });
+
+  it("offers them for a row still carrying an earlier wording -- no pass rewrites it while sending is off", () => {
+    expect(EARLIER_UNTRACKED_CONTACT_REASONS.length).toBeGreaterThan(0);
+    for (const earlier of EARLIER_UNTRACKED_CONTACT_REASONS) {
+      expect(earlier).not.toBe(UNTRACKED_CONTACT_REASON);
+      expect(adminActionsFor(row({ blockedReason: earlier }), heldContact())).toMatchObject({
+        contactFound: true,
+        contactAbsent: true,
+      });
+    }
   });
 });
 
@@ -146,13 +167,13 @@ describe("parseActContactId", () => {
 });
 
 describe("contactFoundDecision", () => {
-  it("writes the id, SYNCED and the marker cleared, guarded on the hold still being there", () => {
+  it("writes the id, SYNCED and the marker cleared, guarded on the very marker read still being there", () => {
     expect(
       contactFoundDecision({ row: heldRow, contact: heldContact(), actContactId: ` ${ACT_ID.toUpperCase()}`, duplicate: null }),
     ).toEqual({
       ok: true,
       write: {
-        where: { id: "contact1", actCreateInFlightAt: { not: null }, actContactId: null },
+        where: { id: "contact1", actCreateInFlightAt: new Date("2026-10-12T23:05:00.000Z"), actContactId: null },
         data: { actContactId: ACT_ID, actSyncState: "SYNCED", actCreateInFlightAt: null },
       },
     });
@@ -196,10 +217,13 @@ describe("contactFoundDecision", () => {
 });
 
 describe("contactAbsentDecision", () => {
-  it("clears the marker, guarded on the contact still having no ACT! id", () => {
+  it("clears the marker, guarded on the contact still having no ACT! id and on the marker read", () => {
     expect(contactAbsentDecision(heldRow, heldContact())).toEqual({
       ok: true,
-      write: { where: { id: "contact1", actContactId: null }, data: { actCreateInFlightAt: null } },
+      write: {
+        where: { id: "contact1", actContactId: null, actCreateInFlightAt: new Date("2026-10-12T23:05:00.000Z") },
+        data: { actCreateInFlightAt: null },
+      },
     });
   });
 
@@ -228,6 +252,11 @@ describe("heldForContactRelease", () => {
     ]);
   });
 
+  it("releases a row still carrying an earlier wording too, rather than leave it held for a hold now settled", () => {
+    const rows = EARLIER_UNTRACKED_CONTACT_REASONS.map((reason, i) => row({ id: `old${i}`, generation: i, blockedReason: reason }));
+    expect(heldForContactRelease(rows, NOW).map((write) => write.where.id)).toEqual(rows.map((r) => r.id));
+  });
+
   it("leaves rows held for anything else, rows ACT! refused, waiting rows and finished ones", () => {
     const rows = [
       row({ id: "region", blockedReason: unmappedRegionReason("ZZ") }),
@@ -236,5 +265,101 @@ describe("heldForContactRelease", () => {
       row({ id: "done", completedAt: NOW, blockedReason: UNTRACKED_CONTACT_REASON }),
     ];
     expect(heldForContactRelease(rows, NOW)).toEqual([]);
+  });
+});
+
+describe("actLookupFailure: what an error asking ACT! for the contact means", () => {
+  it("a 404 is ACT! having no such contact", () => {
+    expect(actLookupFailure(new ActApiError("GET failed (404)", "GET", 404, "", "refused"))).toEqual({ kind: "missing" });
+  });
+
+  it("no answer, nothing sent, a 5xx, a 408 or a 429 is worth trying again", () => {
+    for (const error of [
+      new ActNoAnswerError("GET /api/contacts/x", 3, "timed out"),
+      new ActNotSentError("GET /api/contacts/x", "connection refused"),
+      new ActApiError("GET failed (503)", "GET", 503, "", "failed"),
+      new ActApiError("GET failed (429)", "GET", 429, "", "failed"),
+      new ActApiError("GET failed (408)", "GET", 408, "", "failed"),
+    ]) {
+      expect(actLookupFailure(error)).toEqual({ kind: "unreachable" });
+    }
+  });
+
+  it("anything else -- a 401, a 403, PathQuote's own setup -- is not mended by waiting", () => {
+    for (const error of [
+      new ActApiError("authorize failed (401)", "GET", 401, "", "refused", { authorizing: true }),
+      new ActApiError("GET failed (403)", "GET", 403, "{}", "refused"),
+      new Error("missing environment: ACT_PASS"),
+    ]) {
+      expect(actLookupFailure(error)).toEqual({ kind: "failed" });
+    }
+  });
+});
+
+describe("actContactCheck: the typed id against what ACT! holds", () => {
+  const held = { firstName: "Nora", lastName: "Quinn", email: "nora@fielding.example" };
+  const found = (over: Partial<{ firstName: string | null; lastName: string | null; email: string | null }> = {}) => ({
+    kind: "found" as const,
+    firstName: "Nora",
+    lastName: "Quinn",
+    email: "nora@fielding.example",
+    ...over,
+  });
+
+  it("refuses an id ACT! has no contact for, naming the id", () => {
+    expect(actContactCheck({ actContactId: ACT_ID, lookup: { kind: "missing" }, held })).toBe(
+      "ACT! has no contact with the id 2f6c1a9e-4b7d-4c2e-9a51-0d3e8f7b6a10, so nothing was linked. Copy the id from the person's record in ACT! again, and check it is a contact's id rather than a company's or an opportunity's.",
+    );
+  });
+
+  it("refuses when ACT! cannot be asked -- an unconfirmed id is never written", () => {
+    expect(actContactCheck({ actContactId: ACT_ID, lookup: { kind: "unreachable" }, held })).toBe(ACT_UNREACHABLE_ERROR);
+    expect(ACT_UNREACHABLE_ERROR).toBe(
+      "PathQuote could not reach ACT! to check that id, so nothing was linked. Try again in a few minutes.",
+    );
+    expect(actContactCheck({ actContactId: ACT_ID, lookup: { kind: "failed" }, held })).toBe(ACT_LOOKUP_FAILED_ERROR);
+    expect(ACT_LOOKUP_FAILED_ERROR).toBe(
+      "PathQuote could not read that contact from ACT! to check it, so nothing was linked. Ask your developer — PathQuote's log says what ACT! answered.",
+    );
+  });
+
+  it("links when both match, or either one alone -- case and spacing aside", () => {
+    expect(actContactCheck({ actContactId: ACT_ID, lookup: found(), held })).toBeNull();
+    // The email changed in ACT! since: the name still says it is them.
+    expect(actContactCheck({ actContactId: ACT_ID, lookup: found({ email: "nq@new.example" }), held })).toBeNull();
+    // ACT! has no email for them.
+    expect(actContactCheck({ actContactId: ACT_ID, lookup: found({ email: null }), held })).toBeNull();
+    // Spelt differently in ACT!: the email says it is them.
+    expect(actContactCheck({ actContactId: ACT_ID, lookup: found({ firstName: "Norah" }), held })).toBeNull();
+    expect(
+      actContactCheck({ actContactId: ACT_ID, lookup: found({ firstName: " nora ", lastName: "QUINN", email: null }), held }),
+    ).toBeNull();
+    expect(
+      actContactCheck({ actContactId: ACT_ID, lookup: found({ firstName: "X", email: " NORA@Fielding.example " }), held }),
+    ).toBeNull();
+  });
+
+  it("refuses when neither the name nor the email matches, showing both", () => {
+    expect(
+      actContactCheck({
+        actContactId: ACT_ID,
+        lookup: found({ firstName: "Peter", lastName: "Hale", email: "peter@hale.example" }),
+        held,
+      }),
+    ).toBe(
+      "The ACT! contact with that id is Peter Hale (peter@hale.example), but this quote's contact is Nora Quinn (nora@fielding.example) — neither the name nor the email matches, so nothing was linked. Check the id was copied from the right person in ACT!. If it is the same person, correct the name or the email on one side so that one of them matches, then try again.",
+    );
+  });
+
+  it("two missing emails are not a match, and say so", () => {
+    expect(
+      actContactCheck({
+        actContactId: ACT_ID,
+        lookup: found({ firstName: "Peter", lastName: null, email: null }),
+        held: { firstName: "Nora", lastName: null, email: null },
+      }),
+    ).toBe(
+      "The ACT! contact with that id is Peter (no email), but this quote's contact is Nora (no email) — neither the name nor the email matches, so nothing was linked. Check the id was copied from the right person in ACT!. If it is the same person, correct the name or the email on one side so that one of them matches, then try again.",
+    );
   });
 });

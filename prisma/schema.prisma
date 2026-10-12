@@ -1779,8 +1779,10 @@ model ActOutbox {
   lastError            String?
   /// When the row may next be tried. A new row is due at once.
   nextAttemptAt        DateTime      @default(now())
-  /// When the planner reported the row done. Null is "unfinished", pending or
-  /// blocked alike, and is what the one-unfinished-row index keys on.
+  /// When the planner reported the row done -- or when an administrator took
+  /// it out of the queue unsent, which blockedBy "admin" tells apart. Null is
+  /// "unfinished", pending or blocked alike, and is what the
+  /// one-unfinished-row index keys on.
   completedAt          DateTime?
   /// Why the write cannot proceed: a sentence read by a manager on the quote
   /// -- one of src/lib/act/outbox-plan.ts's, or the drain's for ACT!'s answer
