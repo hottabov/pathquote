@@ -430,10 +430,11 @@ export function opportunityIsOpen(status: string | null): boolean {
  *
  * A union rather than a patch that might be empty, or null: an Open patch is
  * never empty, so "nothing to send" is a different answer, not a smaller one,
- * and it should say why. It also keeps the drain from sending a `{}` "to be
- * safe" -- which, with an update that reads the opportunity and writes it back
- * whole (the plan's Task 5), would still rewrite the closed record and bump
- * its `edited`.
+ * and it should say why. A `{}` would not be sent anyway -- the client sends
+ * no PATCH for a patch with nothing in it (patchToSend in
+ * src/lib/act/record-write.ts), because writing the record back whole would
+ * still rewrite the closed record and bump its `edited` -- but it would not
+ * say that the deal was closed.
  */
 export type RevisionUpdate =
   | { kind: "patch"; patch: OpportunityPatch; stage: StageMove }

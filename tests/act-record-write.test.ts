@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { isRetried, mergeForWrite, writeAnswer } from "../src/lib/act/record-write";
-import { lostOpportunityBody, wonOpportunityBody } from "../src/lib/act/write-payloads";
+import {
+  OPPORTUNITY_COMPUTED_FIELDS,
+  isRetried,
+  mergeForWrite,
+  patchToSend,
+  writableOpportunity,
+  writeAnswer,
+} from "../src/lib/act/record-write";
+import { lostOpportunityBody, revisedOpportunityBody, wonOpportunityBody } from "../src/lib/act/write-payloads";
 
 const ID = "0b1e2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
 
@@ -155,6 +162,107 @@ describe("mergeForWrite", () => {
     const relost = mergeForWrite(ID, merged, lostOpportunityBody("Cancelled", new Date("2026-10-13T00:00:00Z")));
     expect(relost.reason).toBe("Cancelled");
     expect(relost.stage).toEqual(merged.stage);
+  });
+});
+
+/** An opportunity as GET /api/opportunities/{id} might return it, computed fields and all. */
+function opportunity(): Record<string, unknown> {
+  return {
+    id: ID,
+    name: "Q-AU-2026-014 — AUD 45,000.00",
+    status: "Open",
+    stage: { id: "s3", name: "Quoted", number: 3, probability: 50, process: { id: "p1" } },
+    probability: 50,
+    productTotal: 45000,
+    weightedTotal: 22500,
+    grossMargin: 45000,
+    daysOpen: 12,
+    daysInStage: 4,
+    contactNames: "Ross Fielding",
+    totalPerContact: 45000,
+    totalPerCompany: 45000,
+    totalPerGroup: 0,
+    creator: "John Hollo",
+    manager: "John Hollo",
+    recordManager: "John Hollo",
+    recordManagerID: "a0000000-0000-0000-0000-000000000001",
+    reason: null,
+    customFields: { opportunity_field_1: "x" },
+    created: "2026-10-01T00:00:00Z",
+    edited: "2026-10-12T00:00:00Z",
+    editedBy: "John Hollo",
+  };
+}
+
+describe("writableOpportunity", () => {
+  it("drops every field ACT! computes: the three fields_all.json protects, and the eight it derives on read", () => {
+    expect([...OPPORTUNITY_COMPUTED_FIELDS].sort()).toEqual(
+      [
+        "productTotal",
+        "weightedTotal",
+        "grossMargin",
+        "daysOpen",
+        "daysInStage",
+        "contactNames",
+        "totalPerContact",
+        "totalPerCompany",
+        "totalPerGroup",
+        "creator",
+        "manager",
+      ].sort(),
+    );
+    const writable = writableOpportunity(opportunity());
+    for (const field of OPPORTUNITY_COMPUTED_FIELDS) expect(writable).not.toHaveProperty(field);
+  });
+
+  it("sends everything else back exactly as read, edited and created included", () => {
+    const record = opportunity();
+    const writable = writableOpportunity(record);
+    const kept = Object.fromEntries(
+      Object.entries(record).filter(([field]) => !(OPPORTUNITY_COMPUTED_FIELDS as readonly string[]).includes(field)),
+    );
+    expect(writable).toEqual(kept);
+    expect(writable.edited).toBe("2026-10-12T00:00:00Z");
+    expect(writable.recordManager).toBe("John Hollo");
+  });
+
+  it("does not touch the record it was given", () => {
+    const record = opportunity();
+    writableOpportunity(record);
+    expect(record).toEqual(opportunity());
+  });
+
+  it("does not carry a won deal's old weighted total back with the win", () => {
+    const won = wonOpportunityBody("AU", { processId: "2380e83d-cef4-4b6d-ad15-dc9a558431ab", number: 3, status: "Open" }, new Date("2026-10-12T00:00:00Z"));
+    if (won.kind !== "patch") throw new Error("expected a patch");
+    const body = writableOpportunity(mergeForWrite(ID, opportunity(), won.patch));
+    expect(body.status).toBe("Won");
+    expect(body).not.toHaveProperty("weightedTotal");
+    expect(body).not.toHaveProperty("productTotal");
+    expect(body.id).toBe(ID);
+  });
+});
+
+describe("patchToSend", () => {
+  it("is null for no decision, and for a patch with nothing in it", () => {
+    expect(patchToSend(null)).toBeNull();
+    expect(patchToSend({})).toBeNull();
+    expect(patchToSend({ name: undefined, stage: undefined })).toBeNull();
+  });
+
+  it("is the patch itself when anything in it is set, a null that clears a field included", () => {
+    const patch = { idStatus: "Customer" };
+    expect(patchToSend(patch)).toBe(patch);
+    const clearing = { reason: null, name: undefined };
+    expect(patchToSend(clearing)).toBe(clearing);
+  });
+
+  it("sends nothing for a closed deal's revision: the decision the drain hands in is null", () => {
+    const update = revisedOpportunityBody(
+      { number: "Q-AU-2026-014", revision: 1, regionCode: "AU", total: 47500, currency: "AUD", validityDays: 30, finalizedAt: new Date("2026-10-12T00:00:00Z") },
+      { processId: "2380e83d-cef4-4b6d-ad15-dc9a558431ab", number: 3, status: "Lost" },
+    );
+    expect(patchToSend(update.kind === "patch" ? update.patch : null)).toBeNull();
   });
 });
 

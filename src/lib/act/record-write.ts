@@ -41,7 +41,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * (scripts/act-fix-country-usa.py, scripts/act-fix-country-spellings.py) read
  * each record in full, changed one field and sent every field back, because a
  * partial write to a nested object blanks its siblings. That is the path that
- * is known to work; see ActClient.updateContact for what is not.
+ * is known to work; see ActClient's `update` for what is not.
  *
  * THE RULES:
  *
@@ -99,6 +99,78 @@ export function mergeForWrite(
   return { ...merged, id };
 }
 
+/**
+ * The fields of an opportunity ACT! works out for itself, which a PATCH
+ * therefore never sends back (writableOpportunity). Two sources:
+ *
+ *   - `productTotal`, `weightedTotal`, `grossMargin`: `isReadOnly: true,
+ *     isProtected: true` in RAW/ACT/meta/fields_all.json, the field metadata
+ *     captured off the production box (`TBL_OPPORTUNITY`; a local capture, not
+ *     committed). ACT! computes them from the products and the stage.
+ *   - `daysOpen`, `daysInStage`, `contactNames`, `totalPerContact`,
+ *     `totalPerCompany`, `totalPerGroup`, `creator`, `manager`: derived on
+ *     read from other fields, by their own descriptions in swagger's
+ *     act.web.api.models.Opportunities.Opportunity ("the number of days this
+ *     opportunity has been opened", "the names of the contacts associated",
+ *     "the average total per associated contact", "the name of the creator",
+ *     "the name of the record manager"...). fields_all.json has no entry for
+ *     any of them -- though it has none for `status` or `stage` either, so
+ *     that absence alone proves nothing.
+ *
+ * Swagger marks none of these read-only. Sent back as read, they are stale
+ * the moment the write changes what they are computed from: a deal moved to
+ * Won could carry its old 50% weighted total back, and if ACT! enforces the
+ * protection instead, the refusal may come back as a 5xx -- which a PATCH
+ * retries, three times.
+ */
+export const OPPORTUNITY_COMPUTED_FIELDS = [
+  "productTotal",
+  "weightedTotal",
+  "grossMargin",
+  "daysOpen",
+  "daysInStage",
+  "contactNames",
+  "totalPerContact",
+  "totalPerCompany",
+  "totalPerGroup",
+  "creator",
+  "manager",
+] as const;
+
+/**
+ * An opportunity as a PATCH sends it: the merged record (mergeForWrite)
+ * without OPPORTUNITY_COMPUTED_FIELDS. Everything else goes back as read --
+ * `edited`, `created` and `editedBy` included, as on a contact.
+ *
+ * Opportunities only. A contact is sent back whole, those three fields
+ * included, because that exact body is what the two scripts that wrote
+ * production contacts sent (scripts/act-fix-country-usa.py,
+ * scripts/act-fix-country-spellings.py); nothing has been learned since that
+ * says otherwise. A product line is sent back whole too: fields_all.json marks
+ * none of its fields read-only, and the patch sets `total` itself
+ * (summaryProductPatch in src/lib/act/write-payloads.ts).
+ */
+export function writableOpportunity<T extends ActRecordJson>(record: T): T {
+  const writable: ActRecordJson = { ...record };
+  for (const field of OPPORTUNITY_COMPUTED_FIELDS) delete writable[field];
+  return writable as T;
+}
+
+/**
+ * The patch a write is to send, or null for none at all.
+ *
+ * The decisions a read-modify-write hands the client (ActClient's `update`)
+ * return null for "nothing to send". A patch whose every field is undefined
+ * says the same thing -- mergeForWrite would leave the record exactly as read
+ * -- and is null here too. Either way no PATCH goes out: writing a record
+ * back unchanged still moves its `edited`, and on a closed deal is a rewrite
+ * of a record PathQuote decided to leave alone.
+ */
+export function patchToSend<P extends object>(patch: P | null): P | null {
+  if (patch === null) return null;
+  return Object.values(patch).some((value) => value !== undefined) ? patch : null;
+}
+
 function mergeCustomFields(current: unknown, patch: unknown): Record<string, unknown> {
   if (!isPlainObject(patch)) {
     throw new Error(
@@ -116,19 +188,18 @@ function mergeCustomFields(current: unknown, patch: unknown): Record<string, unk
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * What the body of a successful write's answer is.
+ * What the body of a successful create's answer, or a GET's, is. (A PATCH's
+ * answer is not read at all: ActClient's `update` reads the record again.)
  *
  * - `record`: an object with a string `id` -- the record as ACT! now holds it.
- *   Swagger declares this for every POST and PATCH the client sends (201 or
- *   200 with the record), and the design doc records it for
+ *   Swagger declares this for every POST the client sends (201 with the
+ *   record) and every GET of one record, and the design doc records it for
  *   `POST /api/contacts` on the live system.
  * - `id`: a bare uuid string. Not what swagger declares; recognised so that a
  *   create answered this way is read back by id, rather than becoming an error
  *   after the record already exists -- which is how a create that succeeded
  *   turns into a duplicate on the next attempt.
- * - `nothing`: anything else, an empty body included. The scripts that PATCHed
- *   production never looked at the answer, so an empty one has not been ruled
- *   out.
+ * - `nothing`: anything else, an empty body included.
  */
 export type WriteAnswer =
   | { kind: "record"; record: ActRecordJson & { id: string } }

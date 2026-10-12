@@ -1,6 +1,8 @@
 import {
   isRetried,
   mergeForWrite,
+  patchToSend,
+  writableOpportunity,
   writeAnswer,
   type ActRecordJson,
   type HttpMethod,
@@ -97,6 +99,14 @@ const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 1_000;
 
 type Reply = { status: number; ok: boolean; body: string };
+
+/**
+ * What a read-modify-write did. `written` is false when the decision was to
+ * send nothing, and `record` is then the record as read; when true, `record`
+ * is the record read again after the PATCH. Either way it is ACT!'s, `edited`
+ * included -- what the drain stores as the snapshot.
+ */
+export type Updated<T> = { written: boolean; record: T };
 
 /** What goes out besides the URL and headers. A body is sent as JSON. */
 type Outgoing = { method: HttpMethod; body?: unknown };
@@ -320,6 +330,9 @@ export class ActClient {
     if (!reply.ok) {
       throw new ActApiError(`${request} failed (${reply.status})`, reply.status, reply.body);
     }
+    // A PATCH's answer is not read, whatever it is: `update` reads the record
+    // again, so a 2xx is all that is needed of it.
+    if (method === "PATCH") return null;
     if (!reply.body) return null;
     try {
       return JSON.parse(reply.body);
@@ -424,7 +437,29 @@ export class ActClient {
   }
 
   /**
-   * Read a record, lay `patch` over it, and PATCH the whole thing back.
+   * Read a record, decide on that read, and PATCH the whole record back -- or
+   * send nothing at all.
+   *
+   * ONE READ, AND THE DECISION IS MADE ON IT. `decide` is handed the record
+   * exactly as this GET returned it and answers with what to change, or null
+   * for nothing; its answer is laid over that same record and written. The
+   * decisions are pure and live elsewhere -- revisedOpportunityBody,
+   * wonOpportunityBody, contactPromotion, summaryProductPatch in
+   * src/lib/act/write-payloads.ts -- and the drain hands them in. Were the
+   * drain to read the record to decide and this method to read it again to
+   * write, an edit made in ACT! between the two reads would be overwritten by
+   * a patch decided without it: a stage somebody advanced in between would be
+   * moved back. Deciding on the read that is about to be overwritten is the
+   * design spec's optimistic-concurrency guardrail in the one form that
+   * matters here. What is left is the window between this GET's answer and
+   * the PATCH's arrival: an edit made in ACT! inside it is overwritten with
+   * what was read. The two scripts below ran with the same window.
+   *
+   * NOTHING MEANS NO REQUEST. When the decision is null, or a patch with
+   * nothing in it (patchToSend), no PATCH is sent: writing a record back
+   * unchanged still moves its `edited`, and on a closed deal is a rewrite of
+   * a record PathQuote decided to leave alone. The result then says
+   * `written: false` and carries the record as read.
    *
    * READ-MODIFY-WRITE, ON PURPOSE. Swagger says PATCH takes a partial record
    * ("Update (partially) an already existing ..."), and a partial PATCH may
@@ -434,36 +469,36 @@ export class ActClient {
    * wrote production contacts and companies that way, because a partial write
    * to a nested object blanks its siblings. So this is the proven path. Once a
    * partial PATCH has been tried live -- a partial `customFields` included --
-   * switching to it is a two-line change: drop the read, and send
-   * `{ ...patch, id }` instead of `mergeForWrite(...)`.
+   * switching to it is a small change: send `{ ...patch, id }` instead of the
+   * merged record, keeping the read, which the decision needs anyway.
    * What is merged how, `customFields` key by key above all, is mergeForWrite
-   * in src/lib/act/record-write.ts.
-   *
-   * Between the read's answer and the write's arrival, an edit made in ACT!
-   * would be overwritten with what was read. The two scripts ran with the same
-   * window.
+   * in src/lib/act/record-write.ts; `writable` then drops what must not go
+   * back (writableOpportunity, for an opportunity).
    *
    * WHAT COMES BACK is the record as ACT! holds it after the write, because
    * the drain stores it as the ActSnapshot and its `edited` as the sync's
-   * baseline -- echo suppression needs ACT!'s `edited`, not ours. Swagger
-   * declares a 200 with the record, and that is used when it arrives. The two
-   * scripts never read the answer, so an empty one has not been ruled out;
-   * then the record is read again rather than returning what was sent, whose
-   * `edited` is the one from before the write.
+   * baseline -- echo suppression needs ACT!'s `edited`, not ours. So it is
+   * ALWAYS READ AGAIN after the PATCH, and the PATCH's own answer is not read
+   * at all. Swagger declares a 200 with the record, but an answer that merely
+   * echoed the body sent would carry the `edited` from before the write, and
+   * nothing in a single answer tells the two apart; the next inbound sync
+   * would then take PathQuote's own write for a change made in ACT!. At a few
+   * writes a day the second GET costs nothing, and it is certain.
    */
-  private async update(
+  private async update<T, P extends object>(
     path: string,
     id: string,
-    patch: Record<string, unknown>,
-  ): Promise<ActRecordJson & { id: string }> {
+    decide: (current: T) => P | null,
+    writable: (merged: ActRecordJson & { id: string }) => ActRecordJson = (merged) => merged,
+  ): Promise<Updated<T>> {
     const current = await this.getRecord(path);
-    const payload = await this.request(path, {
+    const patch = patchToSend(decide(current as unknown as T));
+    if (!patch) return { written: false, record: current as unknown as T };
+    await this.request(path, {
       method: "PATCH",
-      body: mergeForWrite(id, current, patch),
+      body: writable(mergeForWrite(id, current, patch as Record<string, unknown>)),
     });
-    const answer = writeAnswer(payload);
-    if (answer.kind === "record") return answer.record;
-    return this.getRecord(path);
+    return { written: true, record: (await this.getRecord(path)) as unknown as T };
   }
 
   /**
@@ -491,12 +526,17 @@ export class ActClient {
   }
 
   /**
-   * Change an opportunity: read it, lay `patch` over it, and
-   * `PATCH /api/opportunities/{opportunityId}` the whole record back. See
-   * `update` for why the whole record and what is returned.
+   * Change an opportunity: read it, ask `decide` what to change on that very
+   * read -- null for nothing -- and `PATCH /api/opportunities/{opportunityId}`
+   * the whole record back without the fields ACT! computes
+   * (writableOpportunity). See `update` for why one read, why the whole
+   * record and what is returned.
    */
-  async updateOpportunity(id: string, patch: OpportunityPatch): Promise<ActOpportunity> {
-    return (await this.update(opportunityPath(id), id, patch)) as unknown as ActOpportunity;
+  async updateOpportunity(
+    id: string,
+    decide: (current: ActOpportunity) => OpportunityPatch | null,
+  ): Promise<Updated<ActOpportunity>> {
+    return this.update(opportunityPath(id), id, decide, writableOpportunity);
   }
 
   /**
@@ -512,7 +552,7 @@ export class ActClient {
   }
 
   /**
-   * Change the deal's product line: read it, lay `patch` over it, and
+   * Change the deal's product line: read it, ask `decide` on that read, and
    * `PATCH /api/opportunities/{opportunityId}/products/{productId}`
    * (`Opportunities_PatchOpportunityProductAndOpportunityIdAndProductId`) the
    * whole line back. See `update`. Never a DELETE and a new line: see THE DEAL
@@ -521,13 +561,9 @@ export class ActClient {
   async updateProductLine(
     opportunityId: string,
     productId: string,
-    patch: SummaryProductPatch,
-  ): Promise<ActProductLine> {
-    return (await this.update(
-      productLinePath(opportunityId, productId),
-      productId,
-      patch,
-    )) as unknown as ActProductLine;
+    decide: (current: ActProductLine) => SummaryProductPatch | null,
+  ): Promise<Updated<ActProductLine>> {
+    return this.update(productLinePath(opportunityId, productId), productId, decide);
   }
 
   /**
@@ -547,11 +583,15 @@ export class ActClient {
   }
 
   /**
-   * Change a contact: read it, lay `patch` over it, and
-   * `PATCH /api/contacts/{contactId}` the whole record back. See `update`.
+   * Change a contact: read it, ask `decide` on that read -- contactPromotion,
+   * today -- and `PATCH /api/contacts/{contactId}` the whole record back,
+   * exactly as read apart from the patch. See `update`.
    */
-  async updateContact(id: string, patch: ActContactPatch): Promise<ActContact> {
-    return (await this.update(contactPath(id), id, patch)) as unknown as ActContact;
+  async updateContact(
+    id: string,
+    decide: (current: ActContact) => ActContactPatch | null,
+  ): Promise<Updated<ActContact>> {
+    return this.update(contactPath(id), id, decide);
   }
 
   /** The API version, and the Act! version behind it. Logged on every run so a

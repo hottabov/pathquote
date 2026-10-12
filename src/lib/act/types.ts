@@ -107,8 +107,10 @@ export type ActStage = {
  * One opportunity (`act.web.api.models.Opportunities.Opportunity` in swagger),
  * trimmed to the fields the write-back reads or sends. The object at runtime
  * carries every field ACT! sent -- `weightedTotal`, `daysOpen` and the rest --
- * which is what an update sends back, and what the drain (Task 7) is to store
- * as the snapshot.
+ * which is what the drain (Task 7) is to store as the snapshot, and what an
+ * update sends back less the fields ACT! computes (writableOpportunity in
+ * src/lib/act/record-write.ts). `productTotal` is read, never written: ACT!
+ * computes it from the products.
  *
  * `status` is not narrowed to OPPORTUNITY_STATUS: what ACT! says is not ours
  * to assume (OpportunityNow in src/lib/act/write-payloads.ts).
