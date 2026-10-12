@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
+  NEVER_CONNECTED_CODES,
   OPPORTUNITY_COMPUTED_FIELDS,
   classifyWriteFailure,
   isRetried,
   mergeForWrite,
+  neverConnected,
   patchToSend,
   sameRecordId,
   writableOpportunity,
@@ -79,11 +81,81 @@ describe("classifyWriteFailure", () => {
     }
   });
 
+  it("calls a request that never connected failed, a create included: nothing reached ACT!, so trying again is safe", () => {
+    for (const method of ["GET", "POST", "PATCH"] as const) expect(classifyWriteFailure(method, "not-sent")).toBe("failed");
+  });
+
   it("agrees with isRetried: the methods repeated after a lost answer are the ones whose lost answer is not untracked", () => {
     for (const method of ["GET", "POST", "PATCH"] as const) {
       expect(isRetried(method)).toBe(classifyWriteFailure(method, "no-answer") !== "untracked");
       expect(isRetried(method)).toBe(classifyWriteFailure(method, 503) !== "untracked");
     }
+  });
+});
+
+/** What Node's fetch rejects with: a TypeError whose cause carries the code. */
+function fetchFailed(cause: unknown): TypeError {
+  return new TypeError("fetch failed", { cause });
+}
+
+function systemError(code: string, message = `connect ${code}`): Error {
+  return Object.assign(new Error(message), { code });
+}
+
+describe("neverConnected", () => {
+  it("is the exact list the review asked for, and the two Node codes that mean the same", () => {
+    expect([...NEVER_CONNECTED_CODES].sort()).toEqual(
+      [
+        "ECONNREFUSED",
+        "ENOTFOUND",
+        "EAI_AGAIN",
+        "EHOSTUNREACH",
+        "UND_ERR_CONNECT_TIMEOUT",
+        "ENETUNREACH",
+        "ERR_SOCKET_CONNECTION_TIMEOUT",
+      ].sort(),
+    );
+  });
+
+  it.each(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH", "ERR_SOCKET_CONNECTION_TIMEOUT"])(
+    "reads %s off fetch's cause: no connection, so nothing was sent",
+    (code) => {
+      expect(neverConnected(fetchFailed(systemError(code)))).toBe(code);
+    },
+  );
+
+  it("reads undici's ConnectTimeoutError, whose code is its own", () => {
+    const timeout = Object.assign(new Error("Connect Timeout Error (attempted address: 10.0.0.1:443, timeout: 10000ms)"), {
+      name: "ConnectTimeoutError",
+      code: "UND_ERR_CONNECT_TIMEOUT",
+    });
+    expect(neverConnected(fetchFailed(timeout))).toBe("UND_ERR_CONNECT_TIMEOUT");
+  });
+
+  it("reads the code Node puts on the AggregateError of a name with several addresses, all refused", () => {
+    const refused = [systemError("ECONNREFUSED"), systemError("ECONNREFUSED")];
+    const aggregate = Object.assign(new AggregateError(refused), { code: "ECONNREFUSED" });
+    expect(neverConnected(fetchFailed(aggregate))).toBe("ECONNREFUSED");
+  });
+
+  it.each(["ECONNRESET", "UND_ERR_SOCKET", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT", "ETIMEDOUT", "EPIPE"])(
+    "is null for %s, which can come after the request was written",
+    (code) => {
+      expect(neverConnected(fetchFailed(systemError(code)))).toBeNull();
+    },
+  );
+
+  it("is null for the request's own timeout, which carries no code", () => {
+    const timeout = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    expect(neverConnected(timeout)).toBeNull();
+    expect(neverConnected(fetchFailed(undefined))).toBeNull();
+  });
+
+  it("reads only fetch's cause, not a code on the error itself, and nothing from a non-error", () => {
+    expect(neverConnected(systemError("ECONNREFUSED"))).toBeNull();
+    expect(neverConnected("ECONNREFUSED")).toBeNull();
+    expect(neverConnected(null)).toBeNull();
+    expect(neverConnected(fetchFailed({ code: 111 }))).toBeNull();
   });
 });
 

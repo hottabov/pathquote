@@ -2,10 +2,12 @@ import {
   classifyWriteFailure,
   isRetried,
   mergeForWrite,
+  neverConnected,
   patchToSend,
   sameRecordId,
   writableOpportunity,
   writeAnswer,
+  type ActAnswer,
   type ActRecordJson,
   type HttpMethod,
 } from "@/lib/act/record-write";
@@ -178,7 +180,13 @@ export class ActUntrackedCreateError extends Error {
  *               product line -- which doubles the deal's amount. A timeout
  *               or network failure throws ActUntrackedCreateError; a 5xx
  *               comes back as a reply, which `parse` turns into the same
- *               error.
+ *               error. The one network failure that is not "may have
+ *               created it" is a connection never made (neverConnected in
+ *               src/lib/act/record-write.ts: refused, unresolvable, no route,
+ *               connect timeout): nothing reached ACT!, and it throws a plain
+ *               error that says so, for the outbox to back off and retry. A
+ *               night of ACT! being down is then a night of rows waiting,
+ *               not a morning of rows blocked for a person to check.
  *
  * Why a failed PATCH or GET is retried only these few times, a second or two
  * apart, and a failed POST not at all: the outbox's `nextAttemptAt` is the
@@ -198,8 +206,10 @@ export class ActUntrackedCreateError extends Error {
  * sent. Inside `fetch` the same faults would surface as the same TypeError a
  * dropped connection does, and a POST that never left would be reported as
  * "ACT! may have created the record". What fails inside the attempt is then
- * only what can fail once the request may be on its way, and
- * classifyWriteFailure (src/lib/act/record-write.ts) says what that means.
+ * a connection that could not be made -- told apart by its code
+ * (neverConnected) and reported as not sent -- or something that can fail
+ * once the request may be on its way, and classifyWriteFailure
+ * (src/lib/act/record-write.ts) says what each means.
  *
  * Content-Type is set only when there is a body to describe.
  *
@@ -247,13 +257,21 @@ async function send(
       failure = `HTTP ${response.status}`;
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      if (classifyWriteFailure(outgoing.method, "no-answer") === "untracked") {
+      const neverConnectedCode = neverConnected(error);
+      const answer: ActAnswer = neverConnectedCode ? "not-sent" : "no-answer";
+      if (classifyWriteFailure(outgoing.method, answer) === "untracked") {
         throw new ActUntrackedCreateError(
           `${label} failed and was not retried: ${reason}. ACT! may have created the record anyway -- check before creating it again.`,
           label,
           null,
           "",
           null,
+          { cause: error },
+        );
+      }
+      if (neverConnectedCode && attempt === attempts) {
+        throw new Error(
+          `${label} was not sent, so nothing reached ACT!: no connection could be made (${neverConnectedCode})`,
           { cause: error },
         );
       }

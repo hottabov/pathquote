@@ -28,17 +28,90 @@ export function isRetried(method: HttpMethod): boolean {
 
 /**
  * What came back from one request, as far as deciding what a failure means
- * needs to know: the HTTP status; `no-answer` when the request may have left
- * but no status came back (a timeout, a dropped connection); or `unreadable`
- * when a 2xx came back that does not give the record asked for -- not JSON,
- * no id, the wrong id, or a created id whose read-back failed.
+ * needs to know: the HTTP status; `not-sent` when no connection to ACT! was
+ * ever made, so the request cannot have reached it (neverConnected);
+ * `no-answer` when the request may have left but no status came back (a
+ * timeout, a connection dropped after it was made); or `unreadable` when a 2xx
+ * came back that does not give the record asked for -- not JSON, no id, the
+ * wrong id, or a created id whose read-back failed.
  *
- * A request that never left is none of these. ActClient's `send` does
- * everything that can fail before sending -- the JSON body, the URL, the
- * headers -- ahead of the first attempt, and such a failure is an ordinary
- * error that says nothing was sent; it never reaches classifyWriteFailure.
+ * A request that failed before `fetch` was even called is none of these.
+ * ActClient's `send` does everything that can fail before sending -- the JSON
+ * body, the URL, the headers -- ahead of the first attempt, and such a
+ * failure is an ordinary error that says nothing was sent; it never reaches
+ * classifyWriteFailure.
  */
-export type ActAnswer = number | "no-answer" | "unreadable";
+export type ActAnswer = number | "not-sent" | "no-answer" | "unreadable";
+
+/**
+ * The `code`s Node gives a failed `fetch` when no connection to the server was
+ * ever made, so not one byte of the request can have reached it. Each is
+ * raised before the request is written: undici writes a request only once its
+ * socket has connected -- after TLS's secureConnect for https -- and these
+ * all come before that.
+ *
+ *   ECONNREFUSED             the server's host refused the connection: nothing
+ *                            listening (ACT!'s IIS stopped, say)
+ *   ENOTFOUND, EAI_AGAIN     the host name did not resolve: no such name, or
+ *                            the resolver failing for now. ENOTFOUND is Node's
+ *                            own name for getaddrinfo's EAI_NONAME and
+ *                            EAI_NODATA (DNSException in Node's
+ *                            lib/internal/errors.js)
+ *   EHOSTUNREACH, ENETUNREACH
+ *                            connect(2) found no route to the host, or to its
+ *                            network
+ *   UND_ERR_CONNECT_TIMEOUT  undici's ConnectTimeoutError: no connection within
+ *                            its connect timeout (10 s by default)
+ *   ERR_SOCKET_CONNECTION_TIMEOUT
+ *                            Node's own, when it tried each address a name
+ *                            resolved to and every attempt timed out
+ *                            (internalConnectMultiple in Node's lib/net.js)
+ *
+ * Checked against Node 22.23's bundled undici 6.28 (process.versions.undici;
+ * the project has no undici of its own in node_modules): ConnectTimeoutError
+ * sets that code, and its timer is cleared on `connect`, or `secureConnect`
+ * for https, before the request is handed the socket. Seen live in this
+ * sandbox: a POST to a closed port fails with cause.code ECONNREFUSED, to an
+ * unresolvable name with ENOTFOUND, to an address that never answers with
+ * UND_ERR_CONNECT_TIMEOUT after 10 s.
+ *
+ * NOT here, because each can come after the request was written, which is
+ * exactly when ACT! may have acted on it: ECONNRESET (the connection reset,
+ * possibly mid-answer), undici's UND_ERR_SOCKET ("other side closed"),
+ * UND_ERR_HEADERS_TIMEOUT and UND_ERR_BODY_TIMEOUT, ETIMEDOUT (a socket that
+ * went quiet, not necessarily while connecting), and the client's own
+ * request timeout (AbortSignal.timeout, a TimeoutError with no code at all).
+ */
+export const NEVER_CONNECTED_CODES: readonly string[] = [
+  "ECONNREFUSED",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "ERR_SOCKET_CONNECTION_TIMEOUT",
+];
+
+/**
+ * The code, when an error thrown by `fetch` says no connection was ever made
+ * (NEVER_CONNECTED_CODES); null for any other error.
+ *
+ * Node's fetch rejects with `TypeError("fetch failed", { cause })`, and the
+ * code is the cause's -- a plain system error, undici's ConnectTimeoutError,
+ * or, when Node tried several addresses for one name, the AggregateError it
+ * gives the first failure's code. Only the cause is read: an error of some
+ * other shape is not what fetch throws for these, and is not taken to mean
+ * "nothing was sent".
+ */
+export function neverConnected(error: unknown): string | null {
+  const cause = isObject(error) ? error.cause : undefined;
+  const code = isObject(cause) ? cause.code : undefined;
+  return typeof code === "string" && NEVER_CONNECTED_CODES.includes(code) ? code : null;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
 
 /**
  * What kind of failure an answer is, or null when it is not one (a 2xx).
@@ -49,12 +122,13 @@ export type ActAnswer = number | "no-answer" | "unreadable";
  *   PathQuote cannot account for. Running it again is how a create becomes a
  *   duplicate (ActUntrackedCreateError in src/lib/act/client.ts).
  * - `failed`: anything else that went wrong. Repeating the request is safe --
- *   a GET changes nothing, a PATCH writes the same whole record again -- so
- *   the drain tries the step again later.
+ *   a GET changes nothing, a PATCH writes the same whole record again, and a
+ *   request that never reached ACT! did nothing at all -- so the drain tries
+ *   the step again later.
  *
- *                 no answer   2xx unreadable   1xx, 3xx, 4xx   5xx
- *     POST        untracked   untracked        refused         untracked
- *     GET, PATCH  failed      failed           refused         failed
+ *                 not sent   no answer   2xx unreadable   1xx, 3xx, 4xx   5xx
+ *     POST        failed     untracked   untracked        refused         untracked
+ *     GET, PATCH  failed     failed      failed           refused         failed
  *
  * WHY 5xx IS UNTRACKED FOR A POST BUT 4xx IS REFUSED. ACT!'s Web API is
  * ASP.NET: authentication, routing and model binding all run before the
@@ -74,11 +148,15 @@ export type ActAnswer = number | "no-answer" | "unreadable";
  * and a plain Error when there is none -- and the drain can ask this
  * function of an ActApiError's method and status to tell `refused` from
  * `failed`. isRetried agrees with the table: the methods it repeats are the
- * ones whose lost answer is `failed`, not `untracked`.
+ * ones whose lost answer is `failed`, not `untracked`. (`not sent` is `failed`
+ * for a POST too, but `send` does not repeat it on the spot: the outbox's
+ * backoff does, long after whatever refused the connection has had time to
+ * come back.)
  */
 export type WriteFailure = "refused" | "untracked" | "failed";
 
 export function classifyWriteFailure(method: HttpMethod, answer: ActAnswer): WriteFailure | null {
+  if (answer === "not-sent") return "failed";
   if (typeof answer === "number" && answer >= 200 && answer < 300) return null;
   const refused = typeof answer === "number" && answer < 500;
   if (refused) return "refused";
