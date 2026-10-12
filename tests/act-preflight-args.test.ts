@@ -31,13 +31,29 @@ describe("parsePreflightArgs", () => {
     expect(result.error).toContain("--apply");
   });
 
-  it("refuses when npm swallowed --apply", () => {
-    // `npm run act:sync-preflight --apply` (no `--`): npm keeps the flag and
-    // leaves npm_config_apply behind.
-    const result = parsePreflightArgs([], { npm_config_apply: "true" });
+  it("refuses the environment `npm run act:sync-preflight --apply` really leaves", () => {
+    // This is the regression. npm 10.9.8 cannot match the word `apply` to an
+    // option of its own, reads a-p-p-l-y as single-letter shorthands, and sets
+    // --all, --parseable, --long and --yes instead. It never sets
+    // npm_config_apply, which is the only key this function used to check -- so
+    // the guard written to catch exactly this mistake could not fire, and
+    // `npm run act:sync-preflight --apply` printed a report and exited 0 while
+    // the operator read that as proof the write had happened.
+    const result = parsePreflightArgs([], {
+      npm_config_all: "true",
+      npm_config_parseable: "true",
+      npm_config_long: "true",
+      npm_config_yes: "true",
+    });
     if (result.ok) throw new Error("expected an error");
     expect(result.error).toContain("swallowed --apply");
     expect(result.error).toContain("npm run act:sync-preflight -- --apply");
+  });
+
+  it("still refuses an npm_config_apply another npm version may set", () => {
+    const result = parsePreflightArgs([], { npm_config_apply: "true" });
+    if (result.ok) throw new Error("expected an error");
+    expect(result.error).toContain("swallowed --apply");
   });
 
   it("does not mistake a passed --apply for a swallowed one", () => {
@@ -45,6 +61,20 @@ describe("parsePreflightArgs", () => {
       ok: true,
       args: { apply: true },
     });
+    expect(
+      parsePreflightArgs(["--apply"], {
+        npm_config_all: "true",
+        npm_config_parseable: "true",
+        npm_config_long: "true",
+        npm_config_yes: "true",
+      }),
+    ).toEqual({ ok: true, args: { apply: true } });
+  });
+
+  it("does not fire on the correct `-- --apply`, which leaves no npm_config_* at all", () => {
+    // Measured: the correct form sets none of these keys, so neither check can
+    // fire on the invocation it is protecting.
+    expect(parsePreflightArgs(["--apply"], {})).toEqual({ ok: true, args: { apply: true } });
   });
 
   it("ignores unrelated npm environment", () => {

@@ -69,18 +69,20 @@ export type { ActionResultWithWarning };
  *         three-attempts-plus-backoff reasoning belongs to the 2h16m.
  *     No timeout anywhere in this app stops either of them.
  *
- * What bounds it is not in this repository. nginx's `proxy_read_timeout`
- * defaults to 60 seconds, and the proxy configuration written out in
- * docs/runbook.md §3 sets no timeouts at all -- though the live site is a
- * WordOps proxy site (runbook, "Nginx: do not add global directives") whose
- * generated template is not in this repo, so 60 seconds is the documented
- * default rather than a number anyone has read off the VPS. Nothing in the app
- * narrows it: next.config.ts declares no `serverActions` limits, `maxDuration`
- * means nothing to a long-running `node server.js` behind a reverse proxy, and
- * Node's own response timeout is off by default. So at whatever that number
- * is, nginx stops waiting and answers 504, and the browser gets a gateway
- * error page where it expected an action result -- the button reports a
- * failure in whatever words the page's error handling uses.
+ * What bounds it is not in this repository: nginx's `proxy_read_timeout`, and
+ * on the VPS that is 60 seconds. Measured 2026-10-10 rather than assumed --
+ * the directive is set nowhere in the live configuration, 21,450 lines of it
+ * with zero occurrences, so nginx's compiled-in default of 60s is what applies
+ * (docs/runbook.md §4c, '"Sync now", and what bounds it', carries the two
+ * commands for re-checking it after a WordOps update rewrites that generated
+ * template). Neither the proxy block in runbook §3 nor the WordOps template
+ * serving the live site sets a timeout. Nothing in the app narrows it either:
+ * next.config.ts declares no `serverActions` limits, `maxDuration` means
+ * nothing to a long-running `node server.js` behind a reverse proxy, and Node's
+ * own response timeout is off by default. So at 60 seconds nginx stops waiting
+ * and answers 504, and the browser gets a gateway error page where it expected
+ * an action result -- the button reports a failure in whatever words the page's
+ * error handling uses.
  *
  * The sync does not stop when that happens: nothing cancels a server action
  * because the client went away, so the process carries on, keeps the advisory
@@ -94,7 +96,8 @@ export type { ActionResultWithWarning };
  * hours and is not worth building for one whose ordinary case is seconds.
  * What is required instead is that the section around this button tells the
  * truth about the wait; and if 60 seconds turns out to bite in practice,
- * `proxy_read_timeout` on the VPS is a one-line change.
+ * raising it is one `proxy_read_timeout` line in the site's own nginx override
+ * directory -- nothing to edit, since nothing sets it today.
  */
 export async function runActSyncNow(): Promise<ActionResultWithWarning> {
   await requireSession();

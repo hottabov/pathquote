@@ -1,4 +1,4 @@
-import type { ActContact } from "@/lib/act/types";
+import type { ActContact, ActHistory, ActPicklistItem, ActUser } from "@/lib/act/types";
 
 // HTTP against the Act! Web API. Every judgement this integration makes lives
 // in the pure modules beside this one; what is left here is transport, and it
@@ -14,7 +14,11 @@ import type { ActContact } from "@/lib/act/types";
 //   - Response envelopes are not consistent. /api/contacts returns
 //     { value: [...], Count: n }; /api/users and the metadata endpoints return
 //     a bare array. Reading .value off a bare array yields nothing and looks
-//     exactly like a permissions failure.
+//     exactly like a permissions failure. The /api/users half of that is in
+//     doubt: swagger describes a bare array, but the response captured from the
+//     live system into RAW/ACT/meta/users.json carries the { value, Count }
+//     envelope. Nothing here depends on which it is -- every list goes through
+//     unwrapRows, which takes either and throws on anything else.
 //   - Count is the size of the page, not a total.
 
 export type ActClientConfig = {
@@ -29,6 +33,25 @@ export type ActClientConfig = {
 const TOKEN_TTL_MS = 55 * 60 * 1000;
 
 const PAGE_SIZE = 200;
+
+/** A week of the whole office's history in one request, normally. */
+const HISTORY_PAGE_SIZE = 1000;
+
+/**
+ * The picklist behind Account Mgr (`customFields/rep`), named `Rep` in Act!.
+ *
+ * Pinned because it is an identifier, not data: the id came off the production
+ * box in the field metadata, `GET /api/metadata/contact/fields`, captured into
+ * RAW/ACT/meta/fields_contact.json, where the `customFields/rep` entry carries
+ * `picklist: { id: "65898243-...", name: "Rep", isLimitToList: true }`. It is
+ * stable for the life of the picklist.
+ *
+ * The id is pinned; the items are not. Nothing in this repo may hardcode the
+ * items -- an administrator edits them in Act!, and distributor names are being
+ * added, so a copied list would be stale almost immediately. Read them with
+ * ActClient.picklistItems.
+ */
+export const REP_PICKLIST_ID = "65898243-e8ef-4c0f-84d6-bbc93144eac0";
 
 export class ActApiError extends Error {
   constructor(
@@ -214,6 +237,121 @@ export class ActClient {
       apiVersion: payload?.apiVersion ?? "unknown",
       sdkVersion: payload?.sdkVersion ?? "unknown",
     };
+  }
+
+  /**
+   * Every Act! user, inactive ones and the integration account included.
+   *
+   * `GET /api/users` -- the path is in the reference's endpoint table
+   * (docs/act-integration-reference.md section 3) and in swagger.json as
+   * `Users_Get`, returning `act.web.api.models.Users.UserInfo`. Still a GET:
+   * this client remains read-only, and the users endpoint's POST is not
+   * reachable from here.
+   *
+   * Not paged, because the endpoint takes no parameters at all -- swagger lists
+   * `"parameters": []` for it, so there is no $top or $skip to send -- and the
+   * database has 20 users.
+   *
+   * The envelope is the reason this goes through unwrapRows rather than a cast.
+   * Swagger describes the response as a bare array, and the reference says the
+   * same; the copy captured from the live system
+   * (RAW/ACT/meta/users.json) is `{ "value": [...], "Count": 20 }` instead.
+   * Whichever is right today, unwrapRows accepts both and throws on anything
+   * else rather than quietly reporting no users, which is what a cast would do.
+   */
+  async users(): Promise<ActUser[]> {
+    const path = "/api/users";
+    return unwrapRows<ActUser>(await this.get(path), path);
+  }
+
+  /**
+   * Every item of one Act! picklist: `[{ id, value, description }]`.
+   *
+   * Read rather than hardcoded on purpose. The `Rep` picklist behind Account
+   * Mgr is a list an administrator edits in Act!, and distributor names are
+   * about to be added to it, so a constant in this repo would be wrong within
+   * the week. See REP_PICKLIST_ID for the one id that is pinned.
+   *
+   * TWO PATHS, and this is the honest reason. The items read off the production
+   * box on 2026-10-12 came back from
+   * `/api/metadata/picklists/{id}/items`. That path is in no version of
+   * swagger.json we hold: swagger offers
+   * `/api/metadata/drop-down/lists/{list}/items`
+   * (`MetadataInfo_GetDropDownPickListItemsAndList`), whose response schema is
+   * exactly the `{ id, value, description }` that came back, and
+   * `/api/metadata/{recordType}/picklists/{id}`, which needs a record type in
+   * front and returns a list, not its items. So either this box routes a path
+   * swagger does not document, or the path was written down loosely and the
+   * documented one is what answered. Both cannot be checked from here -- the
+   * API is IP-allowlisted to the VPS -- and both return the same shape, so the
+   * measured path is tried first and a 404 falls through to the documented one.
+   * Delete the loser once a run on the box says which it was.
+   *
+   * Two explicit attempts rather than a loop, for the same reason `get` is
+   * written that way: a loop needs an unreachable throw after it, and an
+   * unreachable throw is a diagnostic that can never print.
+   *
+   * Through unwrapRows, like every other list here: the metadata endpoints are
+   * documented to return a bare array, /api/users may or may not, and a cast
+   * would turn a changed envelope into "the picklist is empty" -- which in this
+   * caller means "no Account Mgr value is writable", a quiet wrong answer
+   * instead of a loud one.
+   */
+  async picklistItems(listId: string): Promise<ActPicklistItem[]> {
+    const measured = `/api/metadata/picklists/${listId}/items`;
+    const documented = `/api/metadata/drop-down/lists/${listId}/items`;
+
+    try {
+      return unwrapRows<ActPicklistItem>(await this.get(measured), measured);
+    } catch (error) {
+      if (!(error instanceof ActApiError) || error.status !== 404) throw error;
+      console.warn(
+        `act: GET ${measured} is 404 on this box; falling back to the swagger-documented ${documented}`,
+      );
+    }
+
+    return unwrapRows<ActPicklistItem>(await this.get(documented), documented);
+  }
+
+  /**
+   * Every history record the account can see whose `startTime` falls in
+   * [from - 1 day, to + 1 day), oldest first.
+   *
+   * The day of slack either side is deliberate: the filter is sent as UTC
+   * instants and how this box compares `startTime` against them -- UTC or the
+   * server's local time -- has not been measured. Fetching a little wide and
+   * letting the caller cut to the exact window (countForManager does) is right
+   * whichever it is.
+   *
+   * `$top` of HISTORY_PAGE_SIZE rather than PAGE_SIZE: a week of history for
+   * the whole office fits in one or two pages, and every extra page is another
+   * `$skip` step over a sort key that can tie (reference section 10). The API
+   * caps `$top` at 5000. The caller de-duplicates by id regardless.
+   *
+   * `GET /api/History` is `History_GetOrFormat` in swagger.json; it is an OData
+   * collection like /api/contacts. Filtering on `startTime` is the one part not
+   * yet exercised against the live box -- `npm run act:weekly-report --
+   * --dry-run` on the VPS is where that is confirmed.
+   */
+  async historiesBetween(from: Date, to: Date): Promise<ActHistory[]> {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const lower = new Date(from.getTime() - DAY_MS).toISOString();
+    const upper = new Date(to.getTime() + DAY_MS).toISOString();
+    const rows: ActHistory[] = [];
+    let skip = 0;
+    for (;;) {
+      const params = new URLSearchParams({
+        $top: String(HISTORY_PAGE_SIZE),
+        $skip: String(skip),
+        $orderby: "startTime",
+        $filter: `startTime ge ${lower} and startTime lt ${upper}`,
+      });
+      const path = `/api/History?${params}`;
+      const page = unwrapRows<ActHistory>(await this.get(path), path);
+      rows.push(...page);
+      if (page.length < HISTORY_PAGE_SIZE) return rows;
+      skip += HISTORY_PAGE_SIZE;
+    }
   }
 
   /**

@@ -12,6 +12,7 @@
 // from there unchanged.
 
 import type { DatabaseTarget } from "@/lib/act/cli-args";
+import { npmSwallowedApply, type NpmEnv } from "@/lib/npm-swallowed-flags";
 
 export type PreflightArgs = { apply: boolean };
 
@@ -21,18 +22,20 @@ export type PreflightParseResult =
 
 export const PREFLIGHT_ACCEPTED_ARGS = "--apply (with no flag the run is report-only)";
 
-type Env = Readonly<Record<string, string | undefined>>;
-
 /**
  * `argv` is `process.argv.slice(2)`. `env` is `process.env`, read for one
  * reason: `npm run act:sync-preflight --apply` -- no `--` -- does not hand the
  * flag to the script. npm keeps it as its own option and the script starts with
- * no arguments. Here that means a report where the person expected a write,
- * which is the safe direction, but a run that quietly did something other than
- * what was typed is exactly what this module exists to refuse. npm leaves the
- * swallowed flag in the environment as `npm_config_apply`, so it is detectable.
+ * no arguments, so the run reports where the operator asked for a write and
+ * exits 0, which reads as proof that the write happened. That is what this
+ * check refuses.
+ *
+ * Detection is npmSwallowedApply, not a direct read of npm_config_apply: on
+ * npm 10.9.8 the word `apply` is expanded into single-letter shorthands and
+ * npm_config_apply is never set, so the npm_config_apply test this function
+ * shipped with could not fire. See src/lib/npm-swallowed-flags.ts.
  */
-export function parsePreflightArgs(argv: readonly string[], env: Env = {}): PreflightParseResult {
+export function parsePreflightArgs(argv: readonly string[], env: NpmEnv = {}): PreflightParseResult {
   let apply = false;
 
   for (const arg of argv) {
@@ -46,7 +49,7 @@ export function parsePreflightArgs(argv: readonly string[], env: Env = {}): Pref
     }
   }
 
-  if (env.npm_config_apply === "true" && !apply) {
+  if (npmSwallowedApply(env) && !apply) {
     return {
       ok: false,
       error:

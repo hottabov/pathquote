@@ -52,6 +52,7 @@
  *     npm run clients:normalise-place-names -- --apply       # writes
  */
 import "dotenv/config";
+import { npmSwallowedApply } from "../src/lib/npm-swallowed-flags";
 import { normalisePlaceName, normaliseStateName } from "../src/lib/place-name";
 
 const APPLY = "--apply";
@@ -141,9 +142,19 @@ async function main() {
     process.exit(2);
   }
   // npm keeps a flag that is not after `--`, so the script would run in report
-  // mode while the operator believed they had asked for a write -- or worse,
-  // the other way round. Refuse rather than guess. (npm also knows `--all`.)
-  if (process.env.npm_config_apply || process.env.npm_config_all) {
+  // mode while the operator believed they had asked for a write. Refuse rather
+  // than guess.
+  //
+  // Two tests, for this script's two flags. The swallowed `--apply` is the one
+  // npmSwallowedApply knows about: npm 10.9.8 expands the word `apply` into
+  // single-letter shorthands and never sets npm_config_apply. This guard did
+  // catch that case before, but by accident -- npm_config_all is one of those
+  // shorthands and happened to be checked here because `--all` is a flag of
+  // ours too. The sibling guards in scripts/normalise-websites.ts and
+  // src/lib/act/preflight-args.ts had no second flag and so caught nothing.
+  // npm_config_all on its own is still a swallowed `--all`, which is the second
+  // test. See src/lib/npm-swallowed-flags.ts.
+  if (npmSwallowedApply(process.env) || process.env.npm_config_all === "true") {
     console.error(
       `put the flags after a bare -- : npm run clients:normalise-place-names -- ${APPLY}`,
     );

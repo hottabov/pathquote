@@ -637,6 +637,77 @@ docker compose exec -T postgres psql -U pathquote -d pathquote -c \
 The only other lever is `tcp_keepalives_idle` in `postgresql.conf`, which
 applies to every session on that server rather than just this one.
 
+### Proving the lock holds off the button
+
+Done on production 2026-10-10, and holding the lock from a second session is
+the only way that works. Starting the service and racing it with the button by
+hand does not: a night's delta is seconds, so the run is over before anyone
+reaches the browser. That was tried first and proved nothing.
+
+Take the lock in an interactive psql, which is the reliable form:
+
+```bash
+cd /opt/pathquote
+docker compose exec postgres psql -U pathquote -d pathquote
+```
+
+Then, in psql — press **Sync now** in the browser between the two statements:
+
+```sql
+SELECT pg_try_advisory_lock(8472001);   -- t: the lock is yours
+SELECT pg_advisory_unlock(8472001);     -- t: released
+\q
+```
+
+With the lock held, the button answered in amber with the lock's own sentence —
+"A sync is already running. Wait for it to finish and try again." — under the
+hint that promised it would ("A sync is already running, so this will not start
+a second one — it will come back and tell you to wait. Reload the page instead
+to see how the one that is going is getting on."). Not "Sync finished".
+
+**The page itself looks entirely normal while the lock is held this way, and
+that is the design, not a bug.** It reports the last run that finished: once a
+record has a finish time the page describes that outcome and stops caring
+whether the lock is held. Only the button refuses.
+
+What the page reports and what psql shows are the same question asked twice.
+This is `isSyncRunning`'s predicate (`src/lib/act/sync.ts`), so running it from
+a second terminal while the lock is held is a check on the page as much as on
+the lock:
+
+```bash
+cd /opt/pathquote
+docker compose exec -T postgres psql -U pathquote -d pathquote \
+  -c "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype='advisory' AND database=(SELECT oid FROM pg_database WHERE datname=current_database()) AND ((classid::bigint<<32)|objid::bigint)=8472001 AND objsubid=1 AND granted) AS running;"
+```
+
+`t` while held, `f` after the unlock. That is the first time this predicate has
+been confirmed against production's own Postgres — 16.15; until then it had
+only been measured in a sandbox, which the comment at `isSyncRunning` records.
+
+A lock taken by hand in an interactive session is released by
+`pg_advisory_unlock` or by `\q`. Kill the terminal without either and it is
+held until the connection dies, which is the wedged lock above, keepalives and
+all.
+
+**Do not background a one-liner to hold it for you.** This form self-releases
+when `pg_sleep` ends, which is what makes it attractive:
+
+```bash
+cd /opt/pathquote
+docker compose exec -T postgres psql -U pathquote -d pathquote \
+  -c "SELECT pg_try_advisory_lock(8472001); SELECT pg_sleep(180);" &
+```
+
+The lock was taken and released on time, but the shell printed `[1]+ Stopped`
+and a later `wait` warned `job 1[...] stopped`: a backgrounded
+`docker compose exec` that touches the controlling terminal gets SIGTTIN and
+the shell suspends it, `-T` or no `-T`. The psql inside the container keeps
+running, so the test is still valid — and the operator cannot tell that from
+the outside, which is the whole problem with it. Appending `</dev/null` before
+the `&` should stop the suspension; that has not been tried on this box, so it
+is a convenience to test, not the recipe to follow.
+
 ### The first import has to be run on the server
 
 With no stored position in ACT!'s edit history, "the changes since last time"
@@ -680,16 +751,26 @@ Nothing in the application bounds either of them: `next.config.ts` declares no
 `serverActions` limit, `maxDuration` means nothing to a long-running
 `node server.js` behind a reverse proxy, and Node's own response timeout is off.
 
-What bounds it is nginx's `proxy_read_timeout`. **That number has not been
-measured on this server yet.** nginx's documented default is 60 seconds and
-that is what the code's comments assume; the proxy block in §3 sets no timeouts
-at all, and the live site is a WordOps proxy site (§6) whose generated template
-is not in this repo. Read it off the box and replace this paragraph with the
-real number:
+What bounds it is nginx's `proxy_read_timeout`, and on this server that is
+**60 seconds**. Measured 2026-10-10: the directive is set nowhere in the live
+configuration — 21,450 lines of it, with zero occurrences — so nginx's own
+compiled-in default of 60s applies. Neither the proxy block in §3 nor the
+WordOps template (§6) that actually serves the site sets a timeout, which is
+what the code's comments had assumed; the number is now a fact about this box
+rather than a value read out of nginx's documentation.
+
+Re-check it after a WordOps update, which rewrites that generated template:
 
 ```bash
-nginx -T 2>/dev/null | grep -n 'proxy_read_timeout\|proxy_send_timeout'
+nginx -T 2>&1 | wc -l                           # 21450 on 2026-10-10
+nginx -T 2>&1 | grep -c 'proxy_read_timeout'    # 0: the compiled-in 60s applies
 ```
+
+60 seconds is comfortable for what the button actually does. A night's delta is
+seconds. Both larger figures above need a large backlog to read, and a backlog
+cannot build up now that the timer runs every night — so the 504 below is a
+real case rather than the expected one. It is not unreachable: a long ACT!
+outage followed by a click still gets there, which is why the page handles it.
 
 When it trips, nginx answers 504, the page reports that no answer came back —
 and **the sync carries on**. Nothing cancels a server action because the client
@@ -723,6 +804,67 @@ use one set of credentials. `ACT_USER` is the Act! display name, not a login
 id. The ACT! Web API is IP-allowlisted to this VPS: any other address, a laptop
 included, gets `403` however correct the credentials, so this sync cannot be run
 from anywhere else. Full reference: `docs/act-integration-reference.md`.
+
+## 4d. Monday ACT! activity report
+
+Every Monday each sales manager gets one email with last week's activity from
+ACT!, in the format marketing used to send by hand: Call Completed, E-mail Sent,
+Meeting Held (ACT! history types 1, 16, 6, counted by Record Manager) and
+Prospects generated (contacts they manage, created in the week, ID/Status
+Prospect). Added 2026-10-12.
+
+| | |
+|---|---|
+| Unit | `pq-act-weekly-report.timer` → `.service` → `pq-act-weekly-report.sh` |
+| When | Mondays 08:00 Australia/Melbourne; `Persistent=true` |
+| Period | the last finished Monday–Sunday week in Melbourne, whatever day it runs |
+| Runs | `docker compose run --rm -T tools npm run act:weekly-report`, `TAG` from `git rev-parse HEAD` |
+| Recipients | `src/lib/act/weekly-report-recipients.ts` — To is the manager's ACT! email, CC per manager; a change is a commit and a deploy |
+| Sends | through the app's SMTP (Resend), From `Pathfinder Marketing <EMAIL_FROM address>`, Reply-To marketing@ |
+| Log | `/var/log/pq-act-weekly-report.log` |
+| Failure | `pq-backup-alert@pq-act-weekly-report.service` emails marketing@ with the log |
+
+Read-only against ACT!, no database. Logic in `src/lib/act/weekly-report.ts`.
+
+### Before trusting it, and any time a number looks wrong
+
+```bash
+cd /opt/pathquote
+TAG=$(git rev-parse HEAD) docker compose run --rm -T tools npm run act:weekly-report -- --dry-run
+TAG=$(git rev-parse HEAD) docker compose run --rm -T tools npm run act:weekly-report -- --dry-run --from 2026-10-04 --to 2026-10-11
+TAG=$(git rev-parse HEAD) docker compose run --rm -T tools npm run act:weekly-report -- --send-to you@pathfindercut.com
+```
+
+`--dry-run` sends nothing and prints, per manager, the four numbers, every
+history type they have in the window (so a count can be checked against ACT!'s
+History tab) and the email exactly as it would go: From, To, Cc, Reply-To,
+Subject and the text body. Nothing is stored anywhere; the sent emails are the
+only record. `--send-to` sends every report to one address with no CC.
+`--from`/`--to` are inclusive Melbourne days. The `--` is required; without it
+the script refuses rather than sending for real.
+
+`GET /api/History` filtered on `startTime` had not been exercised against the
+live box when this was written. If the dry run fails with a 400 on that path,
+that is where to look (`ActClient.historiesBetween`).
+
+Private history records are invisible to the integration account, so they are
+not counted.
+
+### Installing or updating
+
+```bash
+scp -P 3498 scripts/ops/pq-act-weekly-report.sh scripts/ops/pq-backup-alert.sh root@74.208.106.34:/usr/local/bin/
+scp -P 3498 scripts/ops/pq-act-weekly-report.service scripts/ops/pq-act-weekly-report.timer root@74.208.106.34:/etc/systemd/system/
+ssh -p 3498 root@74.208.106.34 'chmod 700 /usr/local/bin/pq-act-weekly-report.sh /usr/local/bin/pq-backup-alert.sh && systemctl daemon-reload && systemctl enable --now pq-act-weekly-report.timer'
+```
+
+`pq-backup-alert.sh` is in the list because it learned this unit's wording.
+
+```bash
+systemctl list-timers 'pq-act-weekly*'               # next Monday
+systemctl start pq-act-weekly-report.service         # send last week's reports now
+tail -40 /var/log/pq-act-weekly-report.log
+```
 
 ## 5. Troubleshooting
 
