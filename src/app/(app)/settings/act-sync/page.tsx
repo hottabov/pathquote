@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { AlertTriangle, CalendarClock, Play, RefreshCw, RotateCw } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, CalendarClock, Play, RefreshCw, RotateCw, Send } from "lucide-react";
 import { requireActSyncPage } from "@/lib/authz";
 import { getActSyncStatus } from "@/lib/queries/act-sync";
 import { runActSyncNow } from "@/lib/actions/act-sync";
@@ -35,7 +36,9 @@ const SUMMARY_TONE: Record<ActSyncView["summary"]["tone"], string> = {
 /**
  * Settings -> ACT! sync. Everything a reader needs in order to trust the
  * nightly contact pull, in the order they ask about it: when did it last run,
- * what did it do, is anything wrong, and can I run it now.
+ * what did it do, is anything wrong, and can I run it now -- and, in a card
+ * of its own after the last run, the quotes queued for ACT! as they stand,
+ * which no run's record can say (describeOutbox in src/lib/act/sync-view.ts).
  *
  * Written for the director and now read by the managers an admin has granted
  * it to as well, which is the one thing to know before rewording anything
@@ -53,8 +56,10 @@ const SUMMARY_TONE: Record<ActSyncView["summary"]["tone"], string> = {
  * reads can produce -- never run, a clean night, a name collision, failed
  * contacts, a run that was killed, a run going on right now, a record this
  * version cannot read, no stored position at all, and a stored position with no
- * record, which is the state this release itself lands in. What is left here is
- * layout: which card a part goes in, and how a tone looks.
+ * record, which is the state this release itself lands in -- and, for the
+ * queue, nothing waiting, quotes waiting with sending on or off, and quotes
+ * held back, listed or past the list. What is left here is layout: which card
+ * a part goes in, and how a tone looks.
  *
  * `requireActSyncPage`, not `requireAdminPage` and no longer the bare
  * `requireSession` this was between 2026-10-10 and the per-user grant: the
@@ -72,16 +77,18 @@ const SUMMARY_TONE: Record<ActSyncView["summary"]["tone"], string> = {
  * app's own answer to (see requireSession).
  */
 export default async function ActSyncPage() {
-  await requireActSyncPage();
+  const session = await requireActSyncPage();
 
-  const status = await getActSyncStatus();
+  // The reader, because the queue card counts only the quotes they can open
+  // (getActSyncStatus in src/lib/queries/act-sync.ts says why).
+  const status = await getActSyncStatus(session.user);
   const view = describeActSyncStatus(status, new Date());
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="ACT! sync"
-        description="PathQuote copies contacts and clients out of ACT! every night. This page says how the last one went, and lets you run it now if you cannot wait for tonight."
+        description="PathQuote copies contacts and clients out of ACT! every night, and sends ACT! the quotes queued for it. This page says how the last sync went and which quotes are still to go, and lets you run the sync now if you cannot wait for tonight."
       />
 
       <SectionCard
@@ -121,9 +128,9 @@ export default async function ActSyncPage() {
             </div>
             {/* A paragraph, not a clipped line: the detail runs to several
                 sentences in the cases that matter most -- more when the
-                drain has quotes to report -- and the sentence that would get
-                cut off is the one saying nothing was lost, or that a quote is
-                waiting on somebody. */}
+                drain has something to report -- and the sentence that would
+                get cut off is the one saying nothing was lost, or that
+                sending has stopped until somebody acts. */}
             {view.summary.detail ? (
               <p className="mt-1 max-w-prose">{view.summary.detail}</p>
             ) : null}
@@ -146,6 +153,52 @@ export default async function ActSyncPage() {
               <RotateCw className="size-4" data-icon="inline-start" aria-hidden="true" />
               Reload this page
             </a>
+          ) : null}
+        </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Quotes for ACT!"
+        icon={<Send className="size-5" />}
+        description="The quotes still to be sent to ACT!, as they stand now — not just what the last run did."
+      >
+        <div className="flex flex-col gap-3">
+          <div className={cn("rounded-lg border px-3 py-2 text-sm", SUMMARY_TONE[view.outbox.tone])}>
+            <p className="flex min-w-0 items-start gap-2">
+              {view.outbox.tone === "ok" ? null : (
+                <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              )}
+              <span className="min-w-0 font-medium break-words">{view.outbox.headline}</span>
+            </p>
+            {view.outbox.detail ? <p className="mt-1 max-w-prose">{view.outbox.detail}</p> : null}
+          </div>
+
+          {/* Each held quote by number, a link to it, with the reason it is
+              held. The reason is a manager's sentence that can run to a few
+              lines and quote what ACT! said, so it wraps under the number
+              rather than sharing a line with it; `break-words` because ACT!'s
+              words can carry an unbroken token. */}
+          {view.outbox.held.length > 0 ? (
+            <ul className="flex flex-col gap-3">
+              {view.outbox.held.map((quote) => (
+                <li key={quote.href} className="flex flex-col gap-0.5 text-sm">
+                  <Link
+                    href={quote.href}
+                    className="w-fit font-medium text-brand-dark underline underline-offset-2"
+                  >
+                    {quote.label}
+                  </Link>
+                  <span className="max-w-prose break-words text-slate-600">{quote.reason}</span>
+                </li>
+              ))}
+              {view.outbox.more ? (
+                <li className="text-sm text-slate-600">{view.outbox.more}</li>
+              ) : null}
+            </ul>
+          ) : null}
+
+          {view.outbox.scope ? (
+            <p className="max-w-prose text-xs text-slate-500">{view.outbox.scope}</p>
           ) : null}
         </div>
       </SectionCard>

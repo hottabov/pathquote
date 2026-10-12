@@ -1,7 +1,9 @@
 // Everything the ACT! sync section says, decided here instead of in the page.
 //
 // The section answers four questions in order -- when did it last run, what did
-// it do, is anything wrong, can I run it now -- and every one of them has cases
+// it do, is anything wrong, can I run it now -- and a fifth beside them, about
+// the write side rather than any run: which quotes are still waiting to go to
+// ACT!, and which of those are held for a person. Every one of them has cases
 // that are easy to get wrong in a way that looks right: "Never run" about a
 // sync that runs nightly, a Sync now button offered when pressing it would
 // start a ten-minute import, a 504 reported as a failed sync. Those are
@@ -48,7 +50,8 @@
 
 import { describeRun, type ActSyncRun, type RunDescription } from "@/lib/act/run-record";
 import { relativeTime } from "@/lib/format";
-import type { ActSyncStatus } from "@/lib/queries/act-sync";
+import { formatCount, plural } from "@/lib/plural";
+import type { ActOutboxStanding, ActSyncStatus } from "@/lib/queries/act-sync";
 
 /**
  * The nightly timer's schedule in the reader's words.
@@ -109,9 +112,38 @@ export type ActSyncRunNow =
 /** How far through ACT!'s own edit history PathQuote has read. */
 export type ActSyncCaughtUp = { headline: string; detail: string };
 
+/** One held quote, as the queue section lists it. */
+export type ActSyncHeldQuote = {
+  /** The quote's number, or words for a quote that has none. */
+  label: string;
+  /** The quote's own page. */
+  href: string;
+  /** ActOutbox.blockedReason: the sentence a manager reads about it. */
+  reason: string;
+};
+
+/**
+ * The quotes queued for ACT! as they stand -- the queue section, apart from
+ * the last run. See describeOutbox.
+ */
+export type ActSyncOutboxView = {
+  /** `warn` while any quote is held for a person; `ok` otherwise. */
+  tone: "ok" | "warn";
+  headline: string;
+  /** Whole sentences, a paragraph; null when the headline says it all. */
+  detail: string | null;
+  /** The held quotes, longest-queued first, at most HELD_QUOTES_LISTED. */
+  held: ActSyncHeldQuote[];
+  /** "and 3 more quotes", for held quotes past the list; null when all are listed. */
+  more: string | null;
+  /** For a reader counted only their own quotes, a sentence saying so; null for an admin. */
+  scope: string | null;
+};
+
 export type ActSyncView = {
   when: ActSyncWhen | null;
   summary: ActSyncSummary;
+  outbox: ActSyncOutboxView;
   /**
    * Whether the page should offer a reload control.
    *
@@ -325,6 +357,133 @@ function caughtUpToFor(cursor: Date | null): ActSyncCaughtUp {
   };
 }
 
+/** How many held quotes the queue section lists by number; the rest are counted. */
+export const HELD_QUOTES_LISTED = 20;
+
+/**
+ * The queue, in words: which quotes are still to go to ACT!, which of them
+ * are held for a person, and whether sending is switched on.
+ *
+ * From the rows as they stand (ActOutboxStanding, read by getActSyncStatus),
+ * not from any run's record. That is the whole reason this is a section of
+ * its own: the 15-minute drain runs 96 times a day and is nearly always the
+ * pass that blocks a row, and no later pass counts it again -- so the
+ * nightly record says nothing of a quote that has been held all week, while
+ * the row itself has said so the whole time (describeDrain in
+ * src/lib/act/run-record.ts has the other half).
+ *
+ * `warn` for a quote held back, and nothing else. A held row stays held until
+ * somebody acts -- a manager fixes what its reason names, the developer looks
+ * in ACT! -- which is what amber means on this page. Quotes waiting while
+ * sending is switched off are somebody's decision, and quotes waiting while
+ * it is on go by themselves: both `ok`, as describeDrain words them.
+ *
+ * Each held quote is listed by number, as a link to it, with its reason --
+ * the sentence the drain or the planner stored for its manager. That list is
+ * the only place in the app a reader can find out which quotes are held and
+ * why (the drain's log aside): the quote's own page does not show it yet. FOR TASK 9: once the quote page
+ * shows the ACT! state and the reason, the sentence that introduces the list
+ * can say so too ("and on the quote's own page"); until then it must not.
+ */
+export function describeOutbox(outbox: ActOutboxStanding, now: Date): ActSyncOutboxView {
+  const scope =
+    outbox.scope === "yours"
+      ? "Only the quotes you can open are counted here; an administrator sees every quote."
+      : null;
+  const notes: string[] = [];
+
+  if (outbox.held > 0) {
+    const one = outbox.held === 1;
+
+    if (outbox.heldForContact > 0) {
+      const all = outbox.heldForContact === outbox.held;
+      // Which contact, and where not to touch it: the contact on the quote,
+      // in PathQuote. Deleting it there and adding it again makes a contact
+      // with no record that its create may have gone through, and the next
+      // send would create the same person in ACT! a second time.
+      notes.push(
+        outbox.heldForContact === 1
+          ? `${one ? "It is" : "1 of them is"} held because PathQuote asked ACT! to create the contact on that quote and never heard whether it did — somebody has to look in ACT! before it can go on, so ask your developer, and do not delete or re-add that contact in PathQuote.`
+          : `${all ? (outbox.held === 2 ? "Both are" : "All of them are") : `${formatCount(outbox.heldForContact)} of them are`} held because PathQuote asked ACT! to create the contact on each and never heard whether it did — somebody has to look in ACT! before they can go on, so ask your developer, and do not delete or re-add those contacts in PathQuote.`,
+      );
+    }
+
+    const listed = Math.min(outbox.held, outbox.heldQuotes.length);
+    notes.push(
+      one
+        ? "It is listed below with the reason PathQuote gives for holding it."
+        : listed < outbox.held
+          ? `The ${formatCount(listed)} queued longest are listed below, each with the reason PathQuote gives for holding it.`
+          : "Each is listed below with the reason PathQuote gives for holding it.",
+    );
+    if (outbox.oldestHeldQueuedAt) {
+      notes.push(
+        `${one ? "It" : "The oldest"} was queued for ACT! ${relativeTime(outbox.oldestHeldQueuedAt, now)}.`,
+      );
+    }
+  }
+
+  if (outbox.waiting > 0) {
+    const one = outbox.waiting === 1;
+    // With nothing held the headline has already given the count, so the
+    // sentence carries only what follows from it.
+    const count =
+      outbox.held > 0
+        ? `${plural(outbox.waiting, "other quote is", "other quotes are")} waiting to go to ACT!`
+        : null;
+    if (!outbox.sendingOn) {
+      notes.push(
+        count
+          ? `${count}, but sending to ACT! is switched off — ${one ? "it goes" : "they go"} as soon as it is switched on.`
+          : `Sending to ACT! is switched off — ${one ? "it goes" : "they go"} as soon as it is switched on.`,
+      );
+    } else {
+      notes.push(
+        count
+          ? `${count}, and ${one ? "goes" : "go"} on ${one ? "its" : "their"} own — PathQuote sends queued quotes every 15 minutes.`
+          : `${one ? "It goes" : "They go"} on ${one ? "its" : "their"} own — PathQuote sends queued quotes every 15 minutes.`,
+      );
+      if (outbox.retrying > 0) {
+        notes.push(
+          `${outbox.retrying === outbox.waiting ? (one ? "It has" : outbox.waiting === 2 ? "Both have" : "All of them have") : `${formatCount(outbox.retrying)} of them ${outbox.retrying === 1 ? "has" : "have"}`} failed to get through at least once — PathQuote keeps trying, waiting longer each time.`,
+        );
+      }
+    }
+  }
+
+  if (outbox.held === 0 && outbox.waiting === 0 && !outbox.sendingOn) {
+    // The state the write-back ships in: nothing queued yet, and sending off
+    // on purpose. Said without amber, and said, because the reader's next
+    // question -- will a quote finalised now reach ACT!? -- has an answer.
+    notes.push(
+      "Sending to ACT! is switched off. Quotes finalised, signed or accepted while it is off wait here, and go once it is switched on.",
+    );
+  }
+
+  const headline =
+    outbox.held > 0
+      ? `${plural(outbox.held, "quote is", "quotes are")} held back from ACT!`
+      : outbox.waiting > 0
+        ? `${plural(outbox.waiting, "quote is", "quotes are")} waiting to go to ACT!`
+        : "Nothing waiting to go to ACT!";
+
+  const held = outbox.heldQuotes.slice(0, HELD_QUOTES_LISTED).map((quote) => ({
+    label: quote.number ?? "A quote with no number",
+    href: `/quotes/${quote.documentId}`,
+    reason: quote.reason,
+  }));
+  const unlisted = outbox.held - held.length;
+
+  return {
+    tone: outbox.held > 0 ? "warn" : "ok",
+    headline,
+    detail: notes.length > 0 ? notes.join(" ") : null,
+    held,
+    more: unlisted > 0 ? `and ${plural(unlisted, "more quote", "more quotes")}` : null,
+    scope,
+  };
+}
+
 /**
  * The whole section, from one read of the status.
  *
@@ -332,7 +491,7 @@ function caughtUpToFor(cursor: Date | null): ActSyncCaughtUp {
  * or a browser; the page passes `new Date()`.
  */
 export function describeActSyncStatus(status: ActSyncStatus, now: Date = new Date()): ActSyncView {
-  const { lastRun, lastRunUnreadable, running, cursor } = status;
+  const { lastRun, lastRunUnreadable, running, cursor, outbox } = status;
 
   return {
     // `startedAt`, not `finishedAt`: it is the one timestamp every record has
@@ -346,6 +505,7 @@ export function describeActSyncStatus(status: ActSyncStatus, now: Date = new Dat
         }
       : null,
     summary: summaryFor(lastRun, lastRunUnreadable, running, cursor),
+    outbox: describeOutbox(outbox, now),
     reload: running,
     runNow: runNowFor(cursor, running),
     caughtUpTo: caughtUpToFor(cursor),

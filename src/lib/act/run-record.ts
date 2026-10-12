@@ -76,7 +76,13 @@ export type RunDrain = {
   rowsDone: number;
   /** Writes to ACT! that were made and stored. */
   stepsWritten: number;
-  /** Rows blocked during this pass, with a reason a person has to act on. */
+  /**
+   * Rows blocked during this pass, with a reason a person has to act on --
+   * this pass's, not every row that stands blocked: a row a pass leaves
+   * blocked as it found it is not counted again. For the CLI's report and
+   * the stored row; the Settings page counts the rows that stand blocked
+   * instead (describeDrain says why).
+   */
   blocked: number;
   /** The first of those reasons, for whoever reads the record or the CLI. */
   firstBlockedReason: string | null;
@@ -84,9 +90,8 @@ export type RunDrain = {
    * Of `blocked`, the rows held because PathQuote asked ACT! to create the
    * quote's contact and never learned whether it did
    * (UNTRACKED_CONTACT_REASON in src/lib/act/outbox-plan.ts). Counted apart
-   * because the page says something different about them: nothing on the
-   * quote settles it, and somebody has to look in ACT! for the person before
-   * any quote on that contact goes on.
+   * because they need somebody to look in ACT! for the person before any
+   * quote on that contact goes on. This pass's, like `blocked`.
    */
   heldForContact: number;
   /** Rows that failed this pass and will be tried again, later each time. */
@@ -521,38 +526,37 @@ function clause(text: string): string {
 
 /**
  * What the write side did, in words: the quotes the run's drain sent to ACT!
- * before it read anything.
+ * before it read anything, and how the pass ended.
  *
- * Silent when there is nothing to say -- a drain that sent nothing because
- * nothing was queued, and a switch that is off with nothing waiting behind
- * it, which is every night until somebody turns sending on. Not silent when
- * the switch is off and quotes ARE queued: that is the state right after the
- * write-back is deployed, and the one fact the reader cannot get anywhere
- * else is that finalised quotes are piling up rather than going.
+ * About THIS RUN'S PASS only, and so silent about the queue as it stands:
+ * quotes held back, quotes waiting behind the switch. Those are said by the
+ * Settings page's own section about the queue (describeOutbox in
+ * src/lib/act/sync-view.ts), from the rows themselves, because the 15-minute
+ * drain makes 96 passes a day and is almost always the one that blocks a
+ * row -- after which every later pass keeps it blocked without counting it
+ * again (`keep`, replanBlocked in src/lib/act/drain-rules.ts). Counted
+ * from the nightly pass, a quote held all week would read as none held on
+ * almost every night of it. The record still carries the pass's own counts
+ * (`blocked`, `heldForContact`, `waiting`), for the CLI's report and for
+ * whoever reads the row; this function does not put them in front of the
+ * reader.
  *
- * `needsPerson` decides the tone, and only these do: a quote held for its
- * untracked contact (the developer has to look in ACT!), a quote held back
- * for any other reason (its manager, or the developer, has to fix what its
- * page names), a pass stopped by a fault that will not mend itself
- * (`setup`), and a drain that threw. Each of those stays as it is until
- * somebody acts, which is what amber says on this page. A quote that did not
- * get through and will be tried again, ACT! too busy to finish, more quotes
- * than one pass sends, and the switch being off are all `ok`: each clears
- * itself, or -- the switch -- is somebody's decision already, and amber over
- * the page the day the write-back ships, while sending is still off on
- * purpose, is how a reader learns that amber here means nothing.
+ * `needsPerson` decides the tone, and only these do: a pass stopped by a
+ * fault that will not mend itself (`setup`), and a drain that threw. Each
+ * stays as it is until somebody acts, which is what amber says on this page.
+ * ACT! too busy to finish, more quotes than one pass sends, and a quote that
+ * did not get through and will be tried again are all `ok`: each clears
+ * itself.
  *
  * Never `error`. That tone is for the sync not having worked -- the read --
  * and a night whose read went through is not a failure because ACT! would
  * not take a quote.
  *
- * Untracked creates are spoken of only through `heldForContact`. A contact
- * PathQuote may have made in ACT! holds its quotes for a person, and they
- * are counted among the blocked rows with UNTRACKED_CONTACT_REASON; any other
- * untracked create -- an opportunity, a product line, a history -- is looked
- * for in ACT! by the drain before it is made again (A CREATE IN FLIGHT in
- * src/lib/act/outbox-plan.ts), so it needs nobody, and its row is among the
- * ones backing off.
+ * `busy` has no words, because a run record cannot hold it: the sync drains
+ * with `lockHeldOn`, and a drain given its lock never answers busy (it is
+ * the drain taking its own lock that can find it held, drainActOutbox in
+ * src/lib/act/drain.ts). The status stays readable (DRAIN_STATUSES) because
+ * it is one of DrainResult's, which RunDrain's is built from.
  */
 function describeDrain(drain: RunDrain | null): DrainWords {
   const words: DrainWords = { sent: null, notes: [], needsPerson: false };
@@ -571,8 +575,12 @@ function describeDrain(drain: RunDrain | null): DrainWords {
       // No reason quoted: it is a status code and a timeout in this
       // repository's words, about something that has already mended itself
       // or will. The record and the log keep it for whoever asks.
+      //
+      // "Some quotes were not sent", not "stopped partway": a pass stops on
+      // a failed step, so the quote being worked did not go -- but it may
+      // have been the first, with nothing sent before it.
       words.notes.push(
-        "ACT! was busy or not answering, so sending quotes stopped partway — the rest go on their own once it answers.",
+        "ACT! was busy or not answering, so some quotes were not sent this time — they go on their own once it answers.",
       );
     } else {
       // `setup`, or a stored null that should not be there: the side to err
@@ -588,36 +596,6 @@ function describeDrain(drain: RunDrain | null): DrainWords {
   }
   if (drain.status === "out-of-time") {
     words.notes.push("There were more quotes to send than one go allows — the rest are sent on their own shortly.");
-  }
-  if (drain.status === "busy") {
-    words.notes.push("No quotes were sent this time because another send to ACT! was already under way — they go with the next.");
-  }
-  if (drain.status === "switched-off" && drain.waiting > 0) {
-    words.notes.push(
-      `${plural(drain.waiting, "quote is", "quotes are")} waiting to go to ACT!, but sending to ACT! is switched off — ${drain.waiting === 1 ? "it goes" : "they go"} as soon as it is switched on.`,
-    );
-  }
-
-  if (drain.heldForContact > 0) {
-    words.needsPerson = true;
-    words.notes.push(
-      drain.heldForContact === 1
-        ? "1 quote is held because PathQuote asked ACT! to create its contact and never heard whether it did — somebody has to look in ACT! before it can go on, so ask your developer, and do not delete or re-add that contact."
-        : `${plural(drain.heldForContact, "quote is", "quotes are")} held because PathQuote asked ACT! to create their contact and never heard whether it did — somebody has to look in ACT! before they can go on, so ask your developer, and do not delete or re-add those contacts.`,
-    );
-  }
-  const heldBack = drain.blocked - drain.heldForContact;
-  if (heldBack > 0) {
-    words.needsPerson = true;
-    // The reason is on the quote (ActOutbox.blockedReason, shown on the
-    // quote's own page), worded for its manager. The record keeps only the
-    // first (firstBlockedReason), which is not printed here: it is written
-    // about "this quote", and this page cannot say which one that is.
-    words.notes.push(
-      heldBack === 1
-        ? "1 quote was held back from ACT! — the quote's own page says why, and what to do about it."
-        : `${plural(heldBack, "quote was", "quotes were")} held back from ACT! — each quote's own page says why, and what to do about it.`,
-    );
   }
   if (drain.backingOff > 0) {
     words.notes.push(
