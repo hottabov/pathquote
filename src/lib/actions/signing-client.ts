@@ -21,6 +21,7 @@ import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { enqueueActWriteForNewestRevision } from "@/lib/act/outbox";
+import { drainAfterResponse } from "@/lib/act/drain-after";
 import { uploadsDir, saveUpload, UploadValidationError, IMAGE_URL_PATTERN, resolveUploadPath } from "@/lib/uploads";
 import { parseSignatureDataUrl } from "@/lib/signing/data-url";
 import { hashSigningToken } from "@/lib/signing/token";
@@ -457,6 +458,9 @@ export async function completeSigning(token: string): Promise<ActionResult> {
       pdf,
     }),
   );
+  // The signature's row, written into ACT! the same way: after the response,
+  // best-effort, never this completion's concern (src/lib/act/drain-after.ts).
+  drainAfterResponse(request.documentId, "signature");
 
   revalidatePath(`/sign/${token}`);
   return {};

@@ -22,6 +22,7 @@ import {
 import { planRevision, revisionLabel } from "@/lib/documents/revision-plan";
 import { generateRevisionPdf } from "@/lib/documents/revision";
 import { enqueueActWrite, enqueueActWriteForNewestRevision } from "@/lib/act/outbox";
+import { drainAfterResponse } from "@/lib/act/drain-after";
 import { NOT_FOUND_ERROR } from "./_shared";
 
 /** Thrown inside `finalizeDocument`'s `$transaction` to roll it back when
@@ -448,6 +449,10 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
     throw err;
   }
 
+  // The row just queued, written into ACT! once the response has gone --
+  // best-effort, and never this finalise's concern (src/lib/act/drain-after.ts).
+  drainAfterResponse(document.id, "finalise");
+
   // Best-effort: render and store this revision's PDF outside the transaction
   // so a Gotenberg failure can never roll back an issued quote (spec §5.4). A
   // null pdfPath just means "not generated yet", regenerable later.
@@ -713,7 +718,7 @@ export async function acceptQuote(documentId: string): Promise<AcceptResult> {
   if (!verdict.ok) return { error: verdict.reason };
 
   const now = new Date();
-  await db.$transaction(async (tx) => {
+  const accepted = await db.$transaction(async (tx) => {
     // Guard the transition with a status/acceptance-scoped updateMany so two
     // concurrent accepts don't both write an event.
     const res = await tx.document.updateMany({
@@ -728,10 +733,16 @@ export async function acceptQuote(documentId: string): Promise<AcceptResult> {
     // newest revision: the one the client signed (src/lib/act/outbox.ts). Not
     // reached for a quote already accepted, which returns above.
     await enqueueActWriteForNewestRevision(tx, { documentId: document.id, now });
+    return true;
   }).catch((err) => {
-    if (err instanceof Error && err.message === "ALREADY_ACCEPTED") return;
+    if (err instanceof Error && err.message === "ALREADY_ACCEPTED") return false;
     throw err;
   });
+
+  // This acceptance's row, written into ACT! once the response has gone --
+  // best-effort (src/lib/act/drain-after.ts). Not for an accept that lost the
+  // race: the one that won queued the row and drains it.
+  if (accepted) drainAfterResponse(document.id, "acceptance");
 
   revalidateDocumentList();
   revalidateDocument(document.id);
