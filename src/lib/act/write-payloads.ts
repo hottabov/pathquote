@@ -933,6 +933,13 @@ export type ContactForAct = {
   position: string | null;
   /** Company.name of the contact's company (Contact.companyId). */
   companyName: string;
+  /**
+   * The company's country (Company.country) as an item of ACT!'s Countries
+   * picklist -- actCountryValue in src/lib/act/country-picklist.ts, from the
+   * list as the drain read it -- or null when it has none or no item matches.
+   * Already the picklist's spelling: this module does not look it up.
+   */
+  country: string | null;
 };
 
 /** Who a contact PathQuote creates belongs to in ACT!: the quote's author. */
@@ -958,6 +965,8 @@ export type NewContactBody = {
   businessPhone?: string;
   jobTitle?: string;
   company?: string;
+  /** Only ever `country`: see THE ADDRESS on newContactBody. */
+  businessAddress?: { country: string };
   idStatus: ContactStatus;
   contactType: "Contact";
   isPrivate: false;
@@ -997,6 +1006,8 @@ function given(value: string | null): string | undefined {
  *   jobTitle             "Title", map's `position`. Its picklist, "Jobtitles",
  *                        is NOT limited to the list, so any text is accepted.
  *   company              the free-text company map derives the company from.
+ *   businessAddress      its `country` only, map's company country; see THE
+ *                        ADDRESS below.
  *   customFields.rep     "Account Mgr", limited to the "Rep" picklist. Only
  *                        the author's User.actAccountMgr, which can only hold
  *                        an item of that list; left out when it is null
@@ -1012,21 +1023,35 @@ function given(value: string | null): string | undefined {
  * A field PathQuote has no value for is left out, not sent empty, so a contact
  * with no email or phone is still a valid body.
  *
+ * THE ADDRESS. businessAddress/country is limited to the "Countries"
+ * picklist (COUNTRIES_PICKLIST_ID in src/lib/act/client.ts) and marked
+ * isAllowBlank false. The drain reads that list and hands in the item that
+ * spells the company's country (`country`), so the rule for Account Mgr
+ * applies here too: sent when PathQuote has a value ACT! lists, left out
+ * rather than guessed when it has not. Whether ACT! enforces isAllowBlank on
+ * a create through the API is UNVERIFIED: RAW/ACT/act-country-fixes.csv lists
+ * 113 contacts stored with a blank country, so it does not enforce it on what
+ * it holds, and the first live create without one will say. Should it refuse,
+ * the refusal blocks the row with ACT!'s own answer for a person to read.
+ *
+ * The address object carries the country and nothing else. A nested object
+ * is sent whole or not at all (mergeForWrite in src/lib/act/record-write.ts
+ * says why for a PATCH, where a partial one blanks the record's siblings); on
+ * a create there is no record to blank, so this object IS the whole address
+ * the contact starts with. No street, city or state is sent: PathQuote holds
+ * them for the company, not the person, and ACT!'s state may be a limited
+ * list as well, whose items have not been read either.
+ *
  * THE COMPANY DOES NOT SPLIT on the round trip, but not because of a key. The
  * sync finds a contact it already has by Contact.actContactId -- which the
  * drain stores from this create's answer -- and keeps it on the company it is
  * on (src/lib/act/sync.ts); it derives a company only for a contact it has
- * never seen. No country is sent: businessAddress/country is limited to the
- * "Countries" picklist, whose items have not been read, so the rule for
- * Account Mgr applies. Should the sync ever meet this contact without knowing
- * it -- the create went through and its id was not stored, the repeat window
- * in src/lib/act/outbox-plan.ts -- it would derive `<name>|??` from the
- * company text alone (companyKey in src/lib/act/company-key.ts) and, missing,
- * create a second company for it as well as a second contact. (The country is
- * also marked isAllowBlank false. RAW/ACT/act-country-fixes.csv lists 113
- * contacts stored with a blank one, so ACT! does not enforce it on what it
- * holds; whether a create through the API does has not been tried, and the
- * first live create will say.)
+ * never seen. Should the sync ever meet this contact without knowing it --
+ * the create went through and its id was not stored, the repeat window in
+ * src/lib/act/outbox-plan.ts -- it would derive `<name>|<country>` from the
+ * company text and the country sent (companyKey in
+ * src/lib/act/company-key.ts), `<name>|??` when none was, and, missing, create
+ * a second company for it as well as a second contact.
  */
 export function newContactBody(contact: ContactForAct, owner: NewContactOwner): NewContactBody {
   const firstName = given(contact.firstName);
@@ -1036,6 +1061,9 @@ export function newContactBody(contact: ContactForAct, owner: NewContactOwner): 
   const jobTitle = given(contact.position);
   const company = given(contact.companyName);
   const accountMgr = given(owner.authorActAccountMgr);
+  // Not trimmed: it is the picklist's own spelling, and a list limited to its
+  // items compares what it is sent exactly. Only a blank one is left out.
+  const country = contact.country !== null && contact.country.trim() !== "" ? contact.country : undefined;
   return {
     ...(firstName ? { firstName } : {}),
     ...(lastName ? { lastName } : {}),
@@ -1043,6 +1071,7 @@ export function newContactBody(contact: ContactForAct, owner: NewContactOwner): 
     ...(businessPhone ? { businessPhone } : {}),
     ...(jobTitle ? { jobTitle } : {}),
     ...(company ? { company } : {}),
+    ...(country ? { businessAddress: { country } } : {}),
     idStatus: CONTACT_STATUS.prospect,
     contactType: "Contact",
     isPrivate: false,

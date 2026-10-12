@@ -452,6 +452,9 @@ function asCreated(body: ReturnType<typeof newContactBody>): ActContact {
     emailAddress: body.emailAddress ?? null,
     businessPhone: body.businessPhone ?? null,
     company: body.company ?? null,
+    businessAddress: body.businessAddress
+      ? { line1: null, line2: null, line3: null, city: null, state: null, postalCode: null, country: body.businessAddress.country }
+      : null,
     recordManagerID: body.recordManagerID,
     customFields: body.customFields ?? null,
   });
@@ -465,6 +468,7 @@ describe("newContactBody", () => {
     phone: "+61394679176",
     position: "Operations Manager",
     companyName: "Fielding Signs Pty Ltd",
+    country: null,
     ...overrides,
   });
   const owner = (overrides: Partial<NewContactOwner> = {}): NewContactOwner => ({
@@ -545,7 +549,7 @@ describe("newContactBody", () => {
     expect(result.company.name).toBe("Fielding Signs Pty Ltd");
   });
 
-  it("derives a company key from the name alone, since no country is sent", () => {
+  it("derives a company key from the name alone when no country is sent", () => {
     // The sync keeps a contact it already has on its company and derives no
     // key for it; this is the key it WOULD derive, for the doc comment's one
     // case where it meets the contact without knowing it.
@@ -553,6 +557,26 @@ describe("newContactBody", () => {
     if (result.kind !== "mapped") throw new Error(`expected mapped, got ${result.kind}`);
     expect(result.company.actCompanyKey).toBe(companyKey("Fielding Signs Pty Ltd", null));
     expect(result.company.actCompanyKey).toBe("fielding signs|??");
+  });
+
+  it("sends the company's country as the business address's country, and nothing else of the address", () => {
+    const body = newContactBody(person({ country: "Australia" }), owner());
+    expect(body.businessAddress).toEqual({ country: "Australia" });
+  });
+
+  it("sends the picklist's spelling exactly as it was handed in, and leaves a blank one out", () => {
+    expect(newContactBody(person({ country: "United States " }), owner()).businessAddress).toEqual({
+      country: "United States ",
+    });
+    expect(newContactBody(person({ country: "  " }), owner())).not.toHaveProperty("businessAddress");
+    expect(newContactBody(person({ country: null }), owner())).not.toHaveProperty("businessAddress");
+  });
+
+  it("comes back through the inbound mapper in the same country, keyed by it", () => {
+    const result = mapContact(asCreated(newContactBody(person({ country: "Australia" }), owner())), () => null);
+    if (result.kind !== "mapped") throw new Error(`expected mapped, got ${result.kind}`);
+    expect(result.company.country).toBe("AU");
+    expect(result.company.actCompanyKey).toBe(companyKey("Fielding Signs Pty Ltd", "AU"));
   });
 });
 

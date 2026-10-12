@@ -102,6 +102,19 @@ const HISTORY_PAGE_SIZE = 1000;
 export const REP_PICKLIST_ID = "65898243-e8ef-4c0f-84d6-bbc93144eac0";
 
 /**
+ * The "Countries" picklist ("Master list of Countries") behind a contact's
+ * `businessAddress/country`, which is limited to it (`isLimitToList: true`)
+ * and marked `isAllowBlank: false`. Pinned for REP_PICKLIST_ID's reason: the
+ * id came off the production box in the same capture,
+ * RAW/ACT/meta/fields_contact.json, where `businessAddress/country` carries
+ * `picklist: { id: "3e852010-...", name: "Countries", isLimitToList: true }`
+ * (`homeAddress/country` names the same list, not limited to it). The items
+ * are read with ActClient.picklistItems and matched by actCountryValue in
+ * src/lib/act/country-picklist.ts; none has been read from this repo yet.
+ */
+export const COUNTRIES_PICKLIST_ID = "3e852010-1901-41e3-ac65-2b3ab6c25d2c";
+
+/**
  * ACT! answered, and the answer was not what was asked for: a status that is
  * a failure, or a 2xx that does not give the record or the list (`status`
  * then 200, and `failure` that of an `unreadable` answer).
@@ -517,6 +530,15 @@ export class ActClient {
   private tokenExpiresAt = 0;
 
   constructor(private readonly config: ActClientConfig) {}
+
+  /**
+   * The login this client authorises as -- ACT_USER, for a client from
+   * actClientFromEnv. A login name, not a user uuid: the drain looks the
+   * uuid up in `users()` (serviceAccountUserId in src/lib/act/drain-rules.ts).
+   */
+  get loginName(): string {
+    return this.config.username;
+  }
 
   private async authorize(): Promise<string> {
     const credentials = Buffer.from(
