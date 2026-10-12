@@ -248,6 +248,7 @@ keeps tagged images) and every build is in GHCR by SHA:
 ```bash
 cd /opt/pathquote
 systemctl disable --now pq-act-sync.timer     # first, always — see below
+systemctl disable --now pq-act-drain.timer    # likewise, once §4d's units are installed
 TAG=<previous commit sha> docker compose up -d app
 curl -fsS http://127.0.0.1:3010/api/health
 git checkout <previous commit sha>            # only if the checkout moves too
@@ -284,6 +285,16 @@ unchanged.
 A rollback does **not** revert migrations. If the bad deploy migrated the
 schema, roll back to a commit whose code still works against the current
 schema, or restore from a dump (§4).
+
+**Rolling back past the ACT! write-back (§4d).** Switch sending off first
+("The switch", §4d), so nothing writes to ACT! while the box moves, then the
+block above — `pq-act-drain.timer` included: it runs the checkout's image too,
+and code from before the write-back has no `act:drain`, so every tick would
+fail. `z65_act_outbox` stays applied, and older code runs against it unchanged:
+its columns are nullable, nothing before it reads them, and the `ActOutbox`
+table is simply not used. Quotes finalised, signed or accepted on the older
+code queue nothing; the rows already queued wait, untouched, for the
+write-back to come back.
 
 ## 3. Nginx + TLS
 
