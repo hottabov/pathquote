@@ -1066,8 +1066,9 @@ model Document {
   /// its amount: ACT! computes an opportunity's total from its products and
   /// will not take one directly (THE DEAL AMOUNT IS ONE PRODUCT LINE in
   /// src/lib/act/write-payloads.ts). Created once by the outbox's
-  /// write-product-line step (or by win-opportunity, for a deal closed before
-  /// it had one) and PATCHed in place by every later revision --
+  /// write-product-line step (or by write-accepted-line, the step before the
+  /// win, for a deal closed before it had one) and PATCHed in place by every
+  /// later revision --
   /// never deleted and re-created, because PathQuote never calls DELETE in
   /// ACT!. Null until created. Unique for the reason actOpportunityId is.
   actProductLineId        String?             @unique
@@ -1629,9 +1630,10 @@ model ActSnapshot {
 ///
 /// A row is a short sequence of steps -- create the contact if ACT! does not
 /// have it, create or update the deal's opportunity and the product line that
-/// carries its amount, write this revision's History, then promote the
-/// contact to Customer once the client's signature stands, and win the
-/// opportunity once the quote is accepted as well -- and
+/// carries its amount, write this revision's History, then win the
+/// opportunity once the quote is accepted with the client's signature
+/// standing, and last promote the contact to Customer once that signature
+/// stands -- and
 /// src/lib/act/outbox-plan.ts decides which comes next from what has already
 /// been stored. Each step's result is stored before the next begins, so a row
 /// that fails halfway resumes where it stopped rather than repeating what

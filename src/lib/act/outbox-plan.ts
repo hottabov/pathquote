@@ -21,8 +21,6 @@
 //                       revision, left alone when productLineWrite says so
 //                       (see THE PRODUCT LINE)
 //   write-history       one History record for this revision
-//   promote-contact     once the client's signature stands: the contact goes
-//                       from Prospect to Customer
 //   write-product-line  again, after the journal, when the client's signature
 //                       stands and the line is still behind this revision
 //                       (see A WON DEAL SHOWS THE LATEST SIGNED FIGURE)
@@ -34,6 +32,9 @@
 //                       stands and the line shows this revision: the
 //                       opportunity is Won (see THE WIN NEEDS A STANDING
 //                       SIGNATURE)
+//   promote-contact     once the client's signature stands: the contact goes
+//                       from Prospect to Customer. Last of all (see PROMOTION
+//                       GOES LAST)
 //
 // THE STORED FIELDS THIS PLANNER READS, and the model each lives on. The
 // schema (Task 4) is built from this list: a result stored anywhere else is a
@@ -231,10 +232,10 @@
 //     too (promotionDue).
 //   - When the client signs that revision, completeSigning's row finds
 //     acceptedAt still set, the signature standing and actOpportunityWonAt
-//     null: the win is due. The contact is promoted first if it has not been
-//     (PROMOTION IS ONCE PER CONTACT); write-accepted-line brings the line to
-//     that revision if it does not show it; and the deal is won at the figure
-//     the client signed.
+//     null: the win is due. write-accepted-line brings the line to that
+//     revision if it does not show it; the deal is won at the figure the
+//     client signed; and then the contact is promoted, if it has not been
+//     (PROMOTION IS ONCE PER CONTACT, PROMOTION GOES LAST).
 //   - A void after the win changes nothing: actOpportunityWonAt is set, so the
 //     win is never planned again (THE WIN IS ONCE PER DEAL).
 //
@@ -256,8 +257,9 @@
 //     unfinished, the signature would take it over, and a take-over clears
 //     the skip). That row finds the revision journaled, the line behind it
 //     and nothing skipped of its own, and with the signature standing plans
-//     write-product-line again, after promote-contact and before `done`.
-//     productLineWrite, asked with the signature standing, says `write`.
+//     write-product-line again -- before promote-contact, when that is still
+//     due, and before `done`. productLineWrite, asked with the signature
+//     standing, says `write`.
 //
 // Only a standing signature brings the line step back after the journal: an
 // acceptance has write-accepted-line, and nothing else PathQuote does to a
@@ -269,7 +271,8 @@
 //
 // DEAL EVENTS: promote-contact and win-opportunity, from the plan's addendum
 // of 2026-10-12. They come after write-history and are checked before "done",
-// as are the two line steps that can follow the journal.
+// as are the two line steps that can follow the journal; of the four, the
+// promotion comes last (PROMOTION GOES LAST).
 // A row queued by a signature or an acceptance usually finds the finalise row
 // long finished: its revision is journaled, so it skips straight to them --
 // and is not done merely because that revision's History exists. A row that
@@ -288,6 +291,17 @@
 // after the step ran changes nothing in ACT!. A signature voided BEFORE the
 // step ran leaves neither due, until the client signs again -- accepted or
 // not, since both need the signature.
+//
+// PROMOTION GOES LAST, after the line steps and the win. A contact PATCH sends
+// the whole record back (mergeForWrite in src/lib/act/record-write.ts), and
+// ACT! can refuse it over a value already on the record -- an Account Mgr or a
+// country off its limited picklist, which the inbound data has on old
+// contacts. The drain blocks a row on a refusal (a 4xx is the same answer
+// every time). Before the line and the win, a refused promotion would hold
+// back the deal's amount and its Won with it, over nothing but the contact's
+// status; last, it holds back nothing but itself. Nothing the promotion does
+// is needed by the steps before it: they read the contact's ACT! id, which
+// create-contact has stored before any of them runs.
 //
 // Each fact records that the step is DONE, not that ACT! was changed. The
 // drain reads the contact's idStatus, or the opportunity's status, just
@@ -392,9 +406,9 @@
 //                      or several, is adopted -- the oldest, the rest noted --
 //                      as QuoteRevision.actHistoryId, and the row goes on: a
 //                      duplicate journal entry is not worth holding back the
-//                      promote-contact and the win that follow it, which carry
-//                      the deal's status. The lookup is what resolves the
-//                      marker.
+//                      line, the win and the promote-contact that may follow
+//                      it, which carry the deal's amount and status. The
+//                      lookup is what resolves the marker.
 //
 // Anything else in the column blocks as well (untrackedCreateReason): a
 // record nobody here can name may exist. A take-over does NOT clear the
@@ -760,22 +774,27 @@ export function nextStep(
     return { kind: "write-history" };
   }
 
-  if (promote) return { kind: "promote-contact" };
-
-  // Only line work and the win are left. The row that journaled this revision
-  // did its opportunity step first, and nothing clears
-  // Document.actOpportunityId, so it is set here unless the database was
-  // edited by hand; if it is not, the opportunity is created before its line
-  // is written or it is won, rather than either being sent to nothing.
-  if (!quote.actOpportunityId) return { kind: "create-opportunity" };
-  if (win) {
-    // Whatever this row skipped: the win overturns a closed status, and a won
-    // deal shows the accepted, signed figure -- written first, as a step of
-    // its own.
-    return lineBehind(revision, quote)
-      ? { kind: "write-accepted-line", line: lineWrite(quote) }
-      : { kind: "win-opportunity" };
+  // The deal's money first, the contact's status last (PROMOTION GOES LAST).
+  if (win || signedLine) {
+    // The row that journaled this revision did its opportunity step first,
+    // and nothing clears Document.actOpportunityId, so it is set here unless
+    // the database was edited by hand; if it is not, the opportunity is
+    // created before its line is written or it is won, rather than either
+    // being sent to nothing.
+    if (!quote.actOpportunityId) return { kind: "create-opportunity" };
+    if (win) {
+      // Whatever this row skipped: the win overturns a closed status, and a
+      // won deal shows the accepted, signed figure -- written first, as a
+      // step of its own.
+      return lineBehind(revision, quote)
+        ? { kind: "write-accepted-line", line: lineWrite(quote) }
+        : { kind: "win-opportunity" };
+    }
+    // A signature, with the line behind: the line step again.
+    return { kind: "write-product-line", line: lineWrite(quote) };
   }
-  // A signature, with the line behind: the line step again.
-  return { kind: "write-product-line", line: lineWrite(quote) };
+
+  // Journaled, and neither the win nor the line due: so the promotion is,
+  // or `done` would have been returned above.
+  return { kind: "promote-contact" };
 }

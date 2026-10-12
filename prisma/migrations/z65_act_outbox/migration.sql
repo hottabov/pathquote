@@ -6,8 +6,9 @@
 -- way. A drain then runs that row's steps against ACT! -- create the contact
 -- if ACT! does not have it, create or update the deal's opportunity and the
 -- one product line that carries its amount, write the revision's History,
--- then promote the contact to Customer once the client's signature stands,
--- and win the opportunity once the quote is accepted as well -- storing each
+-- then win the opportunity once the quote is accepted and the client's
+-- signature stands, and last promote the contact to Customer once that
+-- signature stands -- storing each
 -- result before the next step, so a row that fails halfway resumes rather than
 -- repeating. What comes next is decided by src/lib/act/outbox-plan.ts, whose
 -- header lists the stored fields it reads; this migration adds the ones that

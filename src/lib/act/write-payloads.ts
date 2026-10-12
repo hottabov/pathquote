@@ -881,8 +881,9 @@ export type HistoryLookup = { kind: "create" } | { kind: "adopt"; id: string; ma
  * MORE THAN ONE DOES NOT BLOCK, unlike the opportunity and the line. A
  * duplicate History says twice that a revision went out, but carries no
  * figure the deal is summed from, as a second line or opportunity does; a
- * blocked row would hold back its promote-contact and its win, which carry
- * the deal's status. So the oldest is adopted -- by `created`,
+ * blocked row would hold back the line steps, the win and the promotion that
+ * can follow it, which carry the deal's amount and status. So the oldest is
+ * adopted -- by `created`,
  * then by id, so the same answer always gives the same choice, with a match
  * whose `created` ACT! did not give after those that have one -- and the rest
  * are noted. A match with no id is one the drain could not store, and is
