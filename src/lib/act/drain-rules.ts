@@ -313,19 +313,42 @@ export function replanBlocked(
  *              off -- for at least as long as its Retry-After asks
  *              (nextAttemptAt) -- and the pass stops: the rest would be
  *              sent to a server that has just said it is overloaded.
+ *   unreachable
+ *              ACT! not answering at all: ActNotSentError (no connection, or
+ *              the login before the request failed), ActNoAnswerError (a GET
+ *              or PATCH with no answer to any of its attempts), or a create
+ *              that got no answer (ActUntrackedCreateError `noAnswer`). The
+ *              row backs off and the pass stops: every further row would
+ *              wait out the same timeouts -- up to 93 seconds a GET -- and
+ *              fail the same way.
  *   untracked  a create whose record PathQuote may not have
- *              (ActUntrackedCreateError). The drain deals with it where the
+ *              (ActUntrackedCreateError) though ACT! answered -- a 5xx, or a
+ *              success it could not read. The drain deals with it where the
  *              create is made; this is what reaches the row if it did not.
+ *              (A create with no answer is `unreachable`, and just as
+ *              untracked: its marker stays.)
  *   failed     safe to try again later: an ActApiError `failed` (a 5xx, an
- *              unreadable answer), ActNotSentError, ActNoAnswerError. The
- *              row backs off.
+ *              unreadable answer). The row backs off.
  *   foreign    anything else -- the drain's own code, the database. Backs
  *              off like `failed`, but says nothing about ACT!.
  */
-export type DrainFailure = "refused" | "denied" | "stop" | "try-later" | "untracked" | "failed" | "foreign";
+export type DrainFailure =
+  | "refused"
+  | "denied"
+  | "stop"
+  | "try-later"
+  | "unreachable"
+  | "untracked"
+  | "failed"
+  | "foreign";
+
+/** The failures after which the pass goes no further: see DrainFailure. */
+export function stopsPass(failure: DrainFailure): boolean {
+  return failure === "stop" || failure === "try-later" || failure === "unreachable";
+}
 
 export function drainFailure(error: unknown): DrainFailure {
-  if (error instanceof ActUntrackedCreateError) return "untracked";
+  if (error instanceof ActUntrackedCreateError) return error.noAnswer ? "unreachable" : "untracked";
   if (error instanceof ActApiError) {
     if (tryLaterStatus(error.status)) return "try-later";
     if (error.failure === "failed") return "failed";
@@ -333,7 +356,7 @@ export function drainFailure(error: unknown): DrainFailure {
     if (error.status === 401 || (error.status >= 300 && error.status < 400)) return "stop";
     return error.failure === "refused" ? "refused" : "failed";
   }
-  if (error instanceof ActNotSentError || error instanceof ActNoAnswerError) return "failed";
+  if (error instanceof ActNotSentError || error instanceof ActNoAnswerError) return "unreachable";
   return "foreign";
 }
 
@@ -350,7 +373,13 @@ export function lastErrorText(kind: ActStepKind, error: unknown): string {
   } else if (error instanceof ActNoAnswerError) {
     text = `PathQuote could not ${stepAction(kind)}: ACT! did not answer — ${message}`;
   } else if (error instanceof ActUntrackedCreateError) {
-    text = `PathQuote asked ACT! to ${stepAction(kind)} and did not learn whether it did — the next attempt looks for it in ACT! before creating anything.`;
+    // A contact is never looked up (A CREATE IN FLIGHT in outbox-plan.ts):
+    // its marker holds it for a person instead.
+    const next =
+      kind === "create-contact"
+        ? "it is not tried again until a person has checked ACT! for the contact"
+        : "the next attempt looks for it in ACT! before creating anything";
+    text = `PathQuote asked ACT! to ${stepAction(kind)} and ${error.noAnswer ? "got no answer, so " : ""}did not learn whether it did — ${next}.`;
   } else if (error instanceof ActApiError && tryLaterStatus(error.status)) {
     const wait = error.retryAfter ? ` (Retry-After: ${error.retryAfter.trim()})` : "";
     text = `PathQuote could not ${stepAction(kind)}: ACT! answered ${error.status}, not now, try later${wait} — ${message}`;

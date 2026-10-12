@@ -18,6 +18,7 @@ import {
   BLOCKED_BY,
   deniedReason,
   replanBlocked,
+  stopsPass,
   type ActStepKind,
 } from "../src/lib/act/drain-rules";
 import {
@@ -295,8 +296,21 @@ describe("drainFailure", () => {
 
   it("backs off for what may go through next time", () => {
     expect(drainFailure(api(503, "failed"))).toBe("failed");
-    expect(drainFailure(new ActNotSentError("POST /api/History", "ECONNREFUSED"))).toBe("failed");
-    expect(drainFailure(new ActNoAnswerError("GET /api/opportunities/x", 3, "timeout"))).toBe("failed");
+    expect(drainFailure(new ActApiError("not a list", "GET", 200, "", "failed"))).toBe("failed");
+  });
+
+  it("calls ACT! not answering at all unreachable: nothing sent, no answer to a read, no answer to a create", () => {
+    expect(drainFailure(new ActNotSentError("POST /api/History", "ECONNREFUSED"))).toBe("unreachable");
+    expect(drainFailure(new ActNoAnswerError("GET /api/opportunities/x", 3, "timeout"))).toBe("unreachable");
+    const lost = new ActUntrackedCreateError("x", "POST /api/contacts", null, "", null, { noAnswer: true });
+    expect(drainFailure(lost)).toBe("unreachable");
+    // Still a create that may have made a record: its marker is not cleared.
+    expect(createMadeNothing(lost)).toBe(false);
+  });
+
+  it("stops the pass after a stop, a try-later or ACT! unreachable, and after nothing else", () => {
+    const all = ["refused", "denied", "stop", "try-later", "unreachable", "untracked", "failed", "foreign"] as const;
+    expect(all.filter(stopsPass)).toEqual(["stop", "try-later", "unreachable"]);
   });
 
   it("calls a 429 or a 408 try-later, on a create or a read: back off, and stop the pass", () => {
@@ -305,8 +319,9 @@ describe("drainFailure", () => {
     expect(drainFailure(new ActApiError("x", "PATCH", 408, "", "failed"))).toBe("try-later");
   });
 
-  it("knows a create that may have made a record", () => {
+  it("knows a create that may have made a record though ACT! answered", () => {
     expect(drainFailure(new ActUntrackedCreateError("x", "POST /api/opportunities", null, "", null))).toBe("untracked");
+    expect(drainFailure(new ActUntrackedCreateError("x", "POST /api/opportunities", 502, "", null))).toBe("untracked");
   });
 
   it("calls anything else foreign, which never says nothing was sent", () => {
@@ -340,6 +355,11 @@ describe("lastErrorText", () => {
   it("tells a lost create's answer from a failure, and says the next attempt looks first", () => {
     const text = lastErrorText("create-opportunity", new ActUntrackedCreateError("x", "POST /api/opportunities", null, "", null));
     expect(text).toMatch(/did not learn whether it did — the next attempt looks for it/);
+    // A contact is not looked up: a person checks first.
+    const contact = new ActUntrackedCreateError("x", "POST /api/contacts", null, "", null, { noAnswer: true });
+    expect(lastErrorText("create-contact", contact)).toBe(
+      "PathQuote asked ACT! to create this quote's contact and got no answer, so did not learn whether it did — it is not tried again until a person has checked ACT! for the contact.",
+    );
   });
 
   it("keeps it short enough to show on a quote", () => {

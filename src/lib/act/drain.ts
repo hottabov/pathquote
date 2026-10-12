@@ -10,11 +10,15 @@
 // (src/lib/act/drain-rules.ts). The requirements on this file are numbered
 // in src/lib/act/outbox.ts; each is marked below where it is met.
 //
-// ONE PASS: take the drain's advisory lock; re-plan the blocked rows; take a
-// batch of due rows, oldest first; for each, plan a step, do it, store its
-// result, and plan again, until the row is done, blocked, or fails. A pass
-// sends nothing while the off switch (src/lib/act/write-switch.ts) is off,
-// and stops the moment it is turned off (requirement 2).
+// ONE PASS: take the drain's advisory lock; re-plan the blocked rows; work
+// the rows the drain's own checks blocked, then a batch of due rows, oldest
+// first; for each, plan a step, do it, store its result, and plan again,
+// until the row is done, blocked, or fails. A pass sends nothing while the
+// off switch (src/lib/act/write-switch.ts) is off, and stops the moment it is
+// turned off (requirement 2). It also stops at the first failure every row
+// would meet -- ACT! not answering, answering "not now", refusing the login
+// -- and once its time budget (DRAIN_TIME_BUDGET_MS) is spent, leaving the
+// rows it did not reach due for the next pass.
 //
 // Called after a finalise, a client's signature or an acceptance for that
 // one quote (`onlyDocumentId`, drainAfterResponse in
@@ -64,6 +68,7 @@ import {
   drainFailure,
   lastErrorText,
   nextAttemptAt,
+  stopsPass,
   opportunityNow,
   refusedReason,
   replanBlocked,
@@ -97,6 +102,25 @@ export const DRAIN_LOCK_KEY = 8_472_002;
 const BATCH = 50;
 
 /**
+ * How long one pass may keep working: 5 minutes. Checked before each row and
+ * before each step, so a pass that runs over finishes the step it is in --
+ * its result stored -- and stops there, leaving the rest due for the next.
+ *
+ * Why 5 minutes. While a pass runs it holds DRAIN_LOCK_KEY and a database
+ * connection, every fast path after a finalise, signature or acceptance finds
+ * the lock busy and leaves its row for the next pass, and -- once Task 8
+ * drains before the nightly inbound read -- that read waits for it. Task 8's
+ * periodic drain runs every 15 minutes, so 5 is a third of that: a pass is
+ * over long before the next one is due, and a backlog drains 5 minutes in
+ * every 15 rather than in one sitting. A healthy step is a few requests of
+ * well under a second each, so 5 minutes is dozens of rows; a hung ACT! stops
+ * the pass at its first unanswered request (`unreachable` in
+ * src/lib/act/drain-rules.ts) rather than spending the budget on it. The
+ * most a pass can run past it is the step in flight when it ran out.
+ */
+export const DRAIN_TIME_BUDGET_MS = 5 * 60 * 1000;
+
+/**
  * How many steps one row may take in one pass. The longest plan is seven
  * (create-contact through promote-contact), each adoption by a lookup adds
  * one, and a take-over re-plans from where it left the row; a row
@@ -116,6 +140,11 @@ export type DrainOptions = {
   now?: Date;
   /** Only this quote's rows: the fast path after one quote's event. */
   onlyDocumentId?: string;
+  /**
+   * How long the pass may work, in real time whatever `now` says.
+   * DRAIN_TIME_BUDGET_MS unless given; a script or a check may pass less.
+   */
+  timeBudgetMs?: number;
 };
 
 /**
@@ -124,12 +153,15 @@ export type DrainOptions = {
  * `status`: `ran`; `busy`, another drain held the lock and nothing was done;
  * `switched-off`, the switch was off at the start or turned off part way, and
  * nothing more was sent; `stopped`, a fault every row would meet (the
- * service account not found, the login refused, a 403 to the login or the
- * users lookup -- not to one record, which blocks that row), or ACT! answering
- * "not now" (a 429 or a 408), ended the pass -- `stopReason` says which.
+ * service account not found or its lookup failing, the login refused, a 403
+ * to the login or the users lookup -- not to one record, which blocks that
+ * row), ACT! answering "not now" (a 429 or a 408), or ACT! not answering at
+ * all, ended the pass; `out-of-time`, the pass used up its time budget
+ * (DRAIN_TIME_BUDGET_MS) and left the rest for the next. `stopReason` says
+ * which.
  */
 export type DrainResult = {
-  status: "ran" | "busy" | "switched-off" | "stopped";
+  status: "ran" | "busy" | "switched-off" | "stopped" | "out-of-time";
   /** Rows the planner reported done, and marked finished. */
   rowsDone: number;
   /** Steps that called ACT! and stored their result. */
@@ -170,13 +202,14 @@ export async function readActWriteSwitch(): Promise<boolean> {
 }
 
 /**
- * Ends the pass: the switch went off, or a fault every row would meet.
- * `failed`, when set, is the ACT! failure behind it, which the row being
- * worked backs off for; without it the row is left as it is, still due.
+ * Ends the pass, and says how (DrainResult's status): the switch went off, a
+ * fault every row would meet, or the time budget ran out. `failed`, when
+ * set, is the ACT! failure behind it, which the row being worked backs off
+ * for; without it the row is left as it is, still due.
  */
 class StopPass extends Error {
   constructor(
-    readonly switchedOff: boolean,
+    readonly status: "switched-off" | "stopped" | "out-of-time",
     message: string,
     readonly failed?: unknown,
   ) {
@@ -189,12 +222,15 @@ class StopPass extends Error {
  * Blocks the row being worked, with a sentence for its manager, and who
  * blocked it (ActOutbox.blockedBy): null when the planner will block it from
  * now on too, BLOCKED_BY.drain for the drain's own checks. Never about ACT!
- * having refused anything: that is handled where the failure is.
+ * having refused anything: that is handled where the failure is. `failed`,
+ * when set, is the ACT! failure behind the block; once the row is blocked,
+ * the pass stops if that failure stops a pass (stopsPass).
  */
 class BlockRow extends Error {
   constructor(
     readonly reason: string,
     readonly by: typeof BLOCKED_BY.drain | null,
+    readonly failed?: unknown,
   ) {
     super(reason);
     this.name = "BlockRow";
@@ -260,7 +296,7 @@ export async function drainActOutbox(client: ActClient, options: DrainOptions = 
       return result;
     }
 
-    const pass = new Pass(client, result, clock);
+    const pass = new Pass(client, result, clock, Date.now() + (options.timeBudgetMs ?? DRAIN_TIME_BUDGET_MS));
     // The rows the drain's own checks blocked go first, each reopened only
     // as it is worked (Pass.recheck); then the due rows, up to BATCH in all.
     const rechecks = (await pass.replanBlocked(options.onlyDocumentId)).slice(0, BATCH);
@@ -273,13 +309,14 @@ export async function drainActOutbox(client: ActClient, options: DrainOptions = 
     const work = [...rechecks.map((id) => ({ id, recheck: true })), ...due.map(({ id }) => ({ id, recheck: false }))];
     for (let i = 0; i < work.length; i++) {
       try {
+        pass.checkTime();
         if (work[i].recheck && !(await pass.recheck(work[i].id))) continue;
         await pass.drainRow(work[i].id);
       } catch (error) {
         if (!(error instanceof StopPass)) throw error;
-        result.status = error.switchedOff ? "switched-off" : "stopped";
+        result.status = error.status;
         result.stopReason = error.message;
-        if (error.switchedOff) result.skippedSwitchOff = work.length - i;
+        if (error.status === "switched-off") result.skippedSwitchOff = work.length - i;
         console.warn(`act: drain pass stopped: ${error.message}`);
         break;
       }
@@ -418,7 +455,19 @@ class Pass {
     private readonly client: ActClient,
     private readonly result: DrainResult,
     private readonly clock: () => Date,
+    /** When the pass's time budget runs out, as Date.now() reads it. */
+    private readonly deadline: number,
   ) {}
+
+  /** Stop the pass once its time budget is spent (DRAIN_TIME_BUDGET_MS). */
+  checkTime(): void {
+    if (Date.now() >= this.deadline) {
+      throw new StopPass(
+        "out-of-time",
+        "the pass used up its time budget; the rows not reached wait for the next pass",
+      );
+    }
+  }
 
   // --- the row ---------------------------------------------------------------
 
@@ -540,6 +589,9 @@ class Pass {
         continue;
       }
 
+      // Out of time: the step before this one is stored; this one is not
+      // begun, and the row stays due for the next pass.
+      this.checkTime();
       lastKind = step.kind;
       let outcome: StepOutcome;
       try {
@@ -553,7 +605,11 @@ class Pass {
           throw error;
         }
         if (error instanceof BlockRow) {
-          if (await this.block(row, error.reason, error.by)) return;
+          const blocked = await this.block(row, error.reason, error.by);
+          if (error.failed !== undefined && stopsPass(drainFailure(error.failed))) {
+            throw new StopPass("stopped", lastErrorText(step.kind, error.failed));
+          }
+          if (blocked) return;
           continue;
         }
         const failure = drainFailure(error);
@@ -569,9 +625,9 @@ class Pass {
           if (await this.block(row, reason, BLOCKED_BY.act)) return;
           continue;
         }
-        if (failure === "untracked") this.result.untracked += 1;
+        if (error instanceof ActUntrackedCreateError) this.result.untracked += 1;
         const stored = await this.backOff(row, step.kind, error);
-        if (failure === "stop" || failure === "try-later") throw new StopPass(false, lastErrorText(step.kind, error));
+        if (stopsPass(failure)) throw new StopPass("stopped", lastErrorText(step.kind, error));
         if (stored) return;
         continue;
       }
@@ -621,14 +677,18 @@ class Pass {
    */
   private async beforeCall(): Promise<void> {
     if (!(await readActWriteSwitch())) {
-      throw new StopPass(true, "the ACT! write switch was turned off part way through the pass, so nothing more was sent");
+      throw new StopPass("switched-off", "the ACT! write switch was turned off part way through the pass, so nothing more was sent");
     }
   }
 
   /**
    * The service account's ACT! user id, looked up once a pass; a pass that
-   * cannot find it stops. So does a 403 to the lookup: that is the service
-   * account's own access, not any one record's, and every row would meet it.
+   * cannot find it stops. So does a lookup that FAILS, however it fails: it
+   * is not cached on failure, so going on would ask again for every row that
+   * needs it -- each time waiting out the same timeouts, or meeting the same
+   * answer. A 403 to it is the service account's own access, not any one
+   * record's. The row being worked backs off for the failure (StopPass's
+   * `failed`); the rest are left for the next pass.
    */
   private async serviceAccount(): Promise<string> {
     if (this.serviceAccountId) return this.serviceAccountId;
@@ -637,19 +697,19 @@ class Pass {
     try {
       users = await this.client.users();
     } catch (error) {
-      if (error instanceof ActApiError && error.status === 403) {
-        throw new StopPass(
-          false,
-          `ACT! answered 403 to the users lookup, so PathQuote's login "${this.client.loginName}" (ACT_USER) is not allowed to read ACT!'s users -- check its licence and permissions`,
-          error,
-        );
-      }
-      throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new StopPass(
+        "stopped",
+        error instanceof ActApiError && error.status === 403
+          ? `ACT! answered 403 to the users lookup, so PathQuote's login "${this.client.loginName}" (ACT_USER) is not allowed to read ACT!'s users -- check its licence and permissions`
+          : `the lookup of ACT!'s users failed, and the service account cannot be known without it: ${message}`,
+        error,
+      );
     }
     const id = serviceAccountUserId(users, this.client.loginName);
     if (!id) {
       throw new StopPass(
-        false,
+        "stopped",
         `no ACT! user, or more than one, has the login "${this.client.loginName}" (ACT_USER), so there is no record manager for a quote whose author has no ACT! user -- check ACT_USER against ACT!'s users`,
       );
     }
@@ -840,9 +900,10 @@ class Pass {
       }
       if (error instanceof ActUntrackedCreateError) {
         // The marker stays; a person has to look in ACT! before any quote on
-        // this contact goes on.
+        // this contact goes on. A POST with no answer at all also stops the
+        // pass, once this row is blocked (BlockRow's `failed`).
         this.result.untracked += 1;
-        throw new BlockRow(UNTRACKED_CONTACT_REASON, null);
+        throw new BlockRow(UNTRACKED_CONTACT_REASON, null, error);
       }
       // Not from a request (writeFailureOf's `foreign`): it says nothing about
       // what ACT! did, so the marker stays, and the row's failure handling

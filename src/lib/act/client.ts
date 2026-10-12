@@ -205,6 +205,12 @@ type Outgoing = { method: HttpMethod; body?: unknown };
 export class ActUntrackedCreateError extends Error {
   /** classifyWriteFailure's kind, on the error as on ActApiError. */
   readonly failure = "untracked" as const;
+  /**
+   * True when no answer came back at all -- the POST timed out, or its
+   * connection dropped after it was made (`send`): ACT! not answering, which
+   * the drain reads as ACT! unreachable rather than as this record's trouble.
+   */
+  readonly noAnswer: boolean;
 
   constructor(
     message: string,
@@ -223,10 +229,11 @@ export class ActUntrackedCreateError extends Error {
      * only the read-back by it failed. Null when no id came back at all.
      */
     readonly createdId: string | null,
-    options?: { cause?: unknown },
+    options?: { cause?: unknown; noAnswer?: boolean },
   ) {
-    super(message, options);
+    super(message, { cause: options?.cause });
     this.name = "ActUntrackedCreateError";
+    this.noAnswer = options?.noAnswer ?? false;
   }
 }
 
@@ -407,7 +414,7 @@ async function send(
           null,
           "",
           null,
-          { cause: error },
+          { cause: error, noAnswer: true },
         );
       }
       if (neverConnectedCode && attempt === attempts) {
