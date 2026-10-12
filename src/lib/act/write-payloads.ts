@@ -8,7 +8,8 @@
 //
 // THE CURRENCY PROBLEM. An ACT! opportunity has no currency field anywhere --
 // `productTotal`, `weightedTotal`, `grossMargin` and the rest are bare numbers
-// (act.web.api.models.Opportunities.Opportunity in RAW/ACT/swagger.json).
+// (act.web.api.models.Opportunities.Opportunity in RAW/ACT/swagger.json, a
+// local capture, not committed).
 // PathQuote quotes exist in AUD, USD and GBP, and nothing in the schema
 // converts between them. So the currency travels as text where people read it:
 // in the opportunity's `name` ("Q-AU-2026-014 — AUD 45,000.00"), which every
@@ -39,13 +40,21 @@
 // WHO OWNS WHAT IS WRITTEN. The record manager is the quote author's mapped
 // ACT! user (User.actUserId, filled by `npm run act:map-users`). An author with
 // no mapping -- a distributor with no ACT! login, say -- falls back to the
-// service account's own user id, which the caller passes in from
-// configuration (it is the account `ACT_USER` authenticates as, and it is not
-// a constant in this file so that changing that account is a configuration
-// change, not a code change). Nothing in a body then claims a person: there is
-// no second user field filled in to suggest otherwise.
+// service account's own ACT! user id, passed in by the caller. Nothing in a
+// body then claims a person: there is no second user field filled in to
+// suggest otherwise.
+//
+// THAT ID HAS NO SOURCE YET -- Task 7 must give it one. The service account
+// is the user `ACT_USER` logs in as, but `ACT_USER` is a login name, not a
+// user uuid (actClientFromEnv in src/lib/act/client.ts passes it as
+// `username`), and no setting holds the uuid. So the drain must either add a
+// setting for the uuid, or look it up from `GET /api/users` by matching
+// `username` against `ACT_USER` (docs/act-integration-reference.md lists the
+// fields; it returns every user, unpaged). It is a parameter here rather than
+// a constant so that changing the account stays a configuration change.
 
 import { revisionLabel } from "@/lib/documents/revision-plan";
+import { plural } from "@/lib/plural";
 import {
   processForRegion,
   stageMove,
@@ -59,7 +68,8 @@ export const HISTORY_TYPE_QUOTE = 62;
 /**
  * ACT!'s opportunity status values.
  *
- * From the `enum` declared on Opportunity.status in RAW/ACT/swagger.json:
+ * From the `enum` declared on Opportunity.status in RAW/ACT/swagger.json (a
+ * local capture, not committed):
  * `Open`, `Won`, `Lost`, `Inactive` ("This displays the status of the
  * opportunity (Open, Won, Lost, or inactive)"). That is ACT!'s own published
  * schema for this installation, not a guess -- but no opportunity has yet been
@@ -76,25 +86,72 @@ export const OPPORTUNITY_STATUS = {
 
 export type OpportunityStatus = (typeof OPPORTUNITY_STATUS)[keyof typeof OPPORTUNITY_STATUS];
 
-/** The quote, as plain values. */
+/**
+ * One finalised revision of a quote, as plain values.
+ *
+ * READ THESE FROM THE REVISION, NOT THE DOCUMENT. The figures come from the
+ * QuoteRevision the outbox row was queued for (ActOutbox.quoteRevisionId) and
+ * its frozen `snapshot` (RevisionSnapshot in
+ * src/lib/documents/revision-snapshot.ts), never from the live Document.
+ * Unfinalising a quote leaves Document.revision and Document.finalizedAt as
+ * they were but makes the draft editable again -- its total, its validity,
+ * every price -- and a row can be drained after that has happened. Read off
+ * the Document, the History would say "Revision n" beside the draft's current
+ * total: a figure no customer was ever sent. The revision row and its snapshot
+ * are what was sent, and nothing edits them.
+ *
+ * Only `number` and `regionCode` are read live, each for the reason given on
+ * it.
+ */
 export type QuoteForAct = {
-  /** Document.number, e.g. "Q-AU-2026-014". */
+  /**
+   * Document.number, e.g. "Q-AU-2026-014". Safe to read live: allocated at the
+   * first finalise, kept by unfinalise and reused by every later finalise
+   * (finalizeDocument in src/lib/actions/finalize.ts), and edited by nothing.
+   */
   number: string;
-  /** Document.revision: 0 on the first finalise, then 1, 2, ... */
+  /**
+   * QuoteRevision.revision: 0 for the first, then 1, 2, ... Not
+   * Document.revision, which a later finalise moves on to the next revision.
+   */
   revision: number;
-  /** Region.code of Document.regionId. */
+  /**
+   * Region.code of Document.regionId. Safe to read live: createDraft sets the
+   * region and no action on a draft changes it.
+   */
   regionCode: string;
-  /** Document.total, in `currency`, as a number. */
+  /**
+   * QuoteRevision.total (Decimal(12,2), the same figure as the snapshot's
+   * `totals.total`), in `currency`, as a number. Not Document.total.
+   */
   total: number;
-  /** Document.currency, an ISO 4217 code. */
+  /**
+   * The snapshot's `currency`, an ISO 4217 code. QuoteRevision has no currency
+   * column. (Document.currency is set by createDraft and never changed, so the
+   * two agree; the snapshot is named so every figure in a record comes from
+   * the one frozen place.)
+   */
   currency: string;
   /**
-   * The validity the printed quote carries, in days: Document.validityDays,
-   * or the org-wide default when that is null -- the caller resolves the
-   * fallback exactly as the quote sheet does (src/lib/sheet-data.ts).
+   * The snapshot's `terms.validityDays`: the validity the revision was sent
+   * with, in days. No fallback is left for the caller to apply --
+   * finalizeDocument resolves the org-wide default for a quote with no
+   * override of its own and freezes the result, into Document.validityDays and
+   * into this snapshot. The snapshot's type still allows null, which only a
+   * revision 0 written by scripts/backfill-quote-revisions.ts can hold; a
+   * finalise never writes one, and never keeps one either (its own snapshot
+   * always carries a number, so the hashes differ and planRevision mints a new
+   * revision). A null here therefore means a row pointing at a revision no
+   * finalise produced: refuse it rather than default it.
    */
   validityDays: number;
-  /** Document.finalizedAt. */
+  /**
+   * QuoteRevision.createdAt: when this revision was first finalised, written
+   * inside the finalise transaction that created it. Not
+   * Document.finalizedAt, which every finalise overwrites -- an unchanged
+   * re-finalise that keeps this revision, and the finalise of a later one.
+   * (For a revision 0 written by the backfill it is when the backfill ran.)
+   */
   finalizedAt: Date;
 };
 
@@ -106,7 +163,10 @@ export type ActParties = {
   companyActId: string | null;
   /** The author's mapped ACT! user (User.actUserId), or null when unmapped. */
   authorActUserId: string | null;
-  /** The service account's ACT! user id, from configuration. */
+  /**
+   * The service account's ACT! user uuid. Not `ACT_USER`, which is its login
+   * name; see WHO OWNS WHAT IS WRITTEN above for where Task 7 must get it.
+   */
   serviceAccountUserId: string;
 };
 
@@ -239,7 +299,7 @@ export function historyBody(
     regarding: `Quote ${label} finalised in PathQuote`,
     details: [
       `Total: ${moneyWithCode(quote.total, quote.currency)}`,
-      `Valid for ${quote.validityDays} ${quote.validityDays === 1 ? "day" : "days"}`,
+      `Valid for ${plural(quote.validityDays, "day", "days")}`,
       `Revision ${quote.revision}`,
     ].join("\n"),
     startTime: at,

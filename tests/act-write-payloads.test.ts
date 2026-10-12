@@ -57,6 +57,10 @@ describe("historyBody", () => {
     expect(body.recordManagerID).toBe(AUTHOR);
   });
 
+  it("says a one-day validity in the singular", () => {
+    expect(historyBody(quote({ validityDays: 1 }), parties(), null).details).toContain("Valid for 1 day\n");
+  });
+
   it("names the revision label, not only the number, once there has been a revision", () => {
     expect(historyBody(quote({ revision: 2 }), parties(), null).regarding).toContain("Q-AU-2026-014-R2");
     expect(historyBody(quote({ revision: 0 }), parties(), null).regarding).not.toContain("-R0");
