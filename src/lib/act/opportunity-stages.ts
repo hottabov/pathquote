@@ -13,7 +13,10 @@
 // wrong instead, and the forward-only rule below orders by the old numbers.
 // To re-read them:
 // `GET /api/opportunities/processes` for the process ids, then
-// `GET /api/opportunities/processes/{processId}/stages` for each one's stages.
+// `GET /api/opportunities/processes/{processId}/stages` for each one's stages
+// -- or `npm run act:write-preflight` on the VPS, whose check 10 reads
+// `GET /api/opportunities/stages`, compares every stage below by id, and
+// prints ACT!'s when one differs (docs/runbook.md section 4d).
 // Change the table below to match, never the other way round.
 //
 // UK SHARES AU'S PROCESS BY DECISION, not by fallback. ACT! has no UK process;
@@ -130,6 +133,20 @@ export function processForRegion(code: string): RegionProcess | null {
   // `Object.hasOwn`, not `BY_REGION[code] ?? null`: a code such as
   // "constructor" or "toString" would otherwise find Object.prototype.
   return Object.hasOwn(BY_REGION, code) ? BY_REGION[code] : null;
+}
+
+/**
+ * Every stage this file transcribes -- each mapped process's sent and won
+ * stage -- once each, whichever regions share it. For the write preflight,
+ * which compares them with the stages ACT! has now (transcribedCheck in
+ * src/lib/act/write-preflight.ts).
+ */
+export function transcribedStages(): StageDef[] {
+  const byId = new Map<string, StageDef>();
+  for (const process of Object.values(BY_REGION)) {
+    for (const stage of [process.sent, process.won]) byId.set(stage.id, stage);
+  }
+  return [...byId.values()];
 }
 
 /** The stage a finalised quote puts its opportunity at, or null for an unmapped region. */

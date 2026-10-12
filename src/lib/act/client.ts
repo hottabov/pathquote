@@ -75,8 +75,24 @@ export type ActClientConfig = {
  * well under this; a full page means the answer may have been cut off, and is
  * refused rather than read as complete -- a match on a page not fetched is
  * exactly the record the lookup exists to find.
+ *
+ * Exported, with lookupQuery, for `npm run act:write-preflight`, which sends
+ * ACT! the very request a lookup sends (scripts/act-write-preflight.ts) and
+ * judges what comes back against this number (src/lib/act/write-preflight.ts).
  */
-const LOOKUP_TOP = 1000;
+export const LOOKUP_TOP = 1000;
+
+/**
+ * The query string of a lookup before a create: `$top` of LOOKUP_TOP and,
+ * when given, `$filter`. What `lookupRows` sends -- and, from the same
+ * function, what the write preflight sends to see whether ACT! applies the
+ * filter -- so the two cannot drift apart.
+ */
+export function lookupQuery(filter?: string): URLSearchParams {
+  const query = new URLSearchParams({ $top: String(LOOKUP_TOP) });
+  if (filter !== undefined) query.set("$filter", filter);
+  return query;
+}
 
 /** Tokens last 65 minutes; renew early rather than racing the boundary. */
 const TOKEN_TTL_MS = 55 * 60 * 1000;
@@ -596,6 +612,20 @@ export function unwrapRows<T>(payload: unknown, path: string): T[] {
 }
 
 /**
+ * The `$filter` opportunitiesNamed sends: `name eq '<name>'`, the name as an
+ * OData literal. A function of its own so that the write preflight
+ * (scripts/act-write-preflight.ts) asks ACT! exactly what the lookup asks.
+ */
+export function opportunityNameFilter(name: string): string {
+  return `name eq ${odataString(name)}`;
+}
+
+/** The `$filter` contactHistories sends: `regarding eq '<regarding>'`. As opportunityNameFilter. */
+export function historyRegardingFilter(regarding: string): string {
+  return `regarding eq ${odataString(regarding)}`;
+}
+
+/**
  * Whether a filtered lookup's error is ACT! refusing the filter, so the
  * lookup falls back to its unfiltered form (ActClient's opportunitiesNamed,
  * contactHistories): an ActApiError `refused` with a 4xx other than 401 --
@@ -1090,7 +1120,7 @@ export class ActClient {
   async opportunitiesNamed(name: string, contactId: string): Promise<ActOpportunity[]> {
     return this.filteredLookup<ActOpportunity>(
       "/api/opportunities",
-      `name eq ${odataString(name)}`,
+      opportunityNameFilter(name),
       () => this.contactOpportunities(contactId),
     );
   }
@@ -1129,7 +1159,7 @@ export class ActClient {
    */
   async contactHistories(contactId: string, regarding: string): Promise<ActHistoryRecord[]> {
     const path = `${contactPath(contactId)}/history`;
-    return this.filteredLookup<ActHistoryRecord>(path, `regarding eq ${odataString(regarding)}`, () =>
+    return this.filteredLookup<ActHistoryRecord>(path, historyRegardingFilter(regarding), () =>
       this.lookupRows<ActHistoryRecord>(path),
     );
   }
@@ -1163,9 +1193,7 @@ export class ActClient {
    * a match it never saw. Through unwrapRows, like every list here.
    */
   private async lookupRows<T>(path: string, filter?: string): Promise<T[]> {
-    const query = new URLSearchParams({ $top: String(LOOKUP_TOP) });
-    if (filter !== undefined) query.set("$filter", filter);
-    const paged = `${path}?${query}`;
+    const paged = `${path}?${lookupQuery(filter)}`;
     const rows = unwrapRows<T>(await this.get(paged), paged);
     if (rows.length >= LOOKUP_TOP) {
       throw new ActApiError(
@@ -1369,7 +1397,54 @@ export class ActClient {
       skip += PAGE_SIZE;
     }
   }
+
+  /**
+   * This client as an ActReader: GETs and nothing else. See ActReader.
+   *
+   * Every function on the object returned calls `users`, `picklistItems` or
+   * the private `get`, and each of those sends GET and only GET -- the login
+   * included, which is a GET to /authorize. The object holds no reference to
+   * this client that a caller could reach, and is frozen, so a holder of it
+   * has no path to `create`, `update` or any other method that writes.
+   */
+  reader(): ActReader {
+    return Object.freeze({
+      loginName: this.loginName,
+      users: () => this.users(),
+      picklistItems: (listId: string) => this.picklistItems(listId),
+      rows: async (path: string, query?: URLSearchParams) => {
+        // A path of ACT!'s API, never a URL: the base is this client's.
+        if (!/^\/api\/[^?#]*$/.test(path)) {
+          throw new Error(`ActReader.rows takes a path under /api/ with no query of its own, got ${JSON.stringify(path)}`);
+        }
+        const full = query && [...query.keys()].length > 0 ? `${path}?${query}` : path;
+        return unwrapRows<Record<string, unknown>>(await this.get(full), full);
+      },
+    });
+  }
 }
+
+/**
+ * A view of ACT! that can only read: for `npm run act:write-preflight`
+ * (scripts/act-write-preflight.ts), which must never write to the production
+ * CRM it is checking. Made by ActClient's `reader`, or actReaderFromEnv. It
+ * has no method that sends anything but a GET, so read-only is a property of
+ * the type and of the object, not a promise made by its caller.
+ */
+export type ActReader = {
+  /** ACT_USER, as ActClient's loginName. */
+  readonly loginName: string;
+  /** ActClient's `users`: `GET /api/users`. */
+  users(): Promise<ActUser[]>;
+  /** ActClient's `picklistItems`: a GET on one of two paths. */
+  picklistItems(listId: string): Promise<ActPicklistItem[]>;
+  /**
+   * `GET {path}?{query}`, the rows through unwrapRows as every list here:
+   * a bare array or `{ value: [...] }`, anything else thrown. Not cut at
+   * LOOKUP_TOP, unlike a lookup: the caller judges a full page itself.
+   */
+  rows(path: string, query?: URLSearchParams): Promise<Record<string, unknown>[]>;
+};
 
 /** Build a client from the environment. Throws with the missing names rather
  * than failing later with an unhelpful 401. `limits` is DEFAULT_REQUEST_LIMITS
@@ -1389,4 +1464,13 @@ export function actClientFromEnv(limits: ActRequestLimits = DEFAULT_REQUEST_LIMI
     },
     limits,
   );
+}
+
+/**
+ * A read-only view of ACT! from the environment: actClientFromEnv's client,
+ * as an ActReader, with the client itself kept out of the caller's reach.
+ * Throws as actClientFromEnv does.
+ */
+export function actReaderFromEnv(limits: ActRequestLimits = DEFAULT_REQUEST_LIMITS): ActReader {
+  return actClientFromEnv(limits).reader();
 }
