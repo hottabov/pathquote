@@ -93,6 +93,8 @@ OData query options work on collection endpoints. Verified: `$top`, `$filter`, `
 
 `/api/contacts` and `/api/companies` return `{ "value": [...], "Count": n }`. `/api/users` and `/api/users/{id}/permissions` return a bare array. The client must handle both rather than assume a common envelope — silently reading `.value` off a bare array yields nothing and looks exactly like a permissions failure.
 
+The `/api/users` half of that is in doubt and nobody should rely on either reading. `swagger.json` describes `Users_Get` as returning a bare array, but the response captured from the live system into `RAW/ACT/meta/users.json` carries the `{ "value": [...], "Count": 20 }` envelope. `unwrapRows` in `src/lib/act/client.ts` accepts either and throws on anything else, so every caller is already covered; what is not known is which one the box sends today.
+
 `Count` on a paged response is the size of the page, not the total. There is no total without paging to the end.
 
 `$top` caps out: a request for 5000 returns at most 5000, so two different accounts both hitting the ceiling prove nothing about their relative access. Compare them on a window narrow enough to come in under the cap.
@@ -245,6 +247,20 @@ A PathQuote quote that has been sent maps to `Proposal` (AU) or `Engage` (US).
 ## 9. Users
 
 20 Act! users, most with an email address, which is the join key to PathQuote users. Record Manager appears on a contact both as `recordManagerID` (uuid) and `recordManager` (display name); the uuid is the stable one.
+
+`GET /api/users` returns, per user: `id` (the uuid), `username`, `displayName`, `email`, `firstName`, `lastName`, `role`, `status` and `lastLogOnDate`. In the 20 read on 2026-10-02 (`RAW/ACT/meta/users.json`): 17 have an email and 3 do not; `status` is `Active` on 9 and `Inactive` on 11; `role` is `Standard` on 17, `Browse` on 2 and `Administrator` on 1. The endpoint takes no parameters, so there is nothing to page.
+
+### Where the user ids come from
+
+`npm run act:map-users` fills `User.actUserId`, the join this depends on. It matches on email, case-insensitively and trimmed, and on nothing weaker — reports by default, writes only with `--apply`, and names separately the users it could not map (ambiguous, unmatched, and stored mappings that have drifted). Run it on the VPS like the sync, because of the IP allowlist in section 11:
+
+```
+cd /opt/pathquote
+TAG=$(git rev-parse HEAD) docker compose run --rm -T tools npm run act:map-users
+TAG=$(git rev-parse HEAD) docker compose run --rm -T tools npm run act:map-users -- --apply
+```
+
+It deliberately does **not** write `User.actAccountMgr`. Account Mgr is `customFields/rep`, limited to the picklist named `Rep` (`isLimitToList: true`), and that picklist's items are not the users' display names: the 17,373-contact export holds 26 distinct non-empty Account Mgr values against 20 users, 10 of which match no user's display name — `Achim Degel`, `Mr Sistemas` and `AOS ArtOfService` are not users at all, and one real user differs by case alone (`Kevin du Plessis` the user, `Kevin Du Plessis` the Account Mgr value on 77 contacts). Resolving that column needs the picklist items — `GET /api/metadata/drop-down/lists/{list}/items`, list `65898243-e8ef-4c0f-84d6-bbc93144eac0` — and a person to pair them with users. Section 4 is where the field itself is documented.
 
 ## 10. Reading with a delta cursor
 
