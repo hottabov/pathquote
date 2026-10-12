@@ -1,11 +1,11 @@
 // What a queued ACT! write still has to do, decided from what has already been
 // stored and the quote as it stands now.
 //
-// One finalise queues one outbox row for one revision -- the revision that
-// finalise created, or the one it kept when nothing had changed (planRevision
-// in src/lib/documents/revision-plan.ts keeps the number for an unchanged
-// snapshot). The row is a short sequence of steps, each one a single request
-// to ACT!:
+// One finalise queues one outbox row, or takes over the unfinished one, for one
+// revision -- the revision that finalise created, or the one it kept when
+// nothing had changed (planRevision in src/lib/documents/revision-plan.ts
+// keeps the number for an unchanged snapshot). The row is a short sequence of
+// steps, each one a single request to ACT!:
 //
 //   create-contact      only when the quote's contact exists only in PathQuote
 //   create-opportunity  only when the deal has no opportunity yet
@@ -50,8 +50,10 @@
 // ONE HISTORY PER REVISION, so its progress is on the revision, not the row. A
 // manager can unfinalise a quote whose row has finished and re-finalise it
 // without changing anything; planRevision then keeps the revision number and
-// creates no new revision, but a new row is queued all the same (the plan has
-// Task 6 hold one UNFINISHED row per document, and the old one has finished).
+// creates no new revision, but a new row is queued all the same (only one
+// UNFINISHED row per document is allowed -- the partial unique index
+// ActOutbox_documentId_unfinished_key in z65_act_outbox -- and the old one has
+// finished).
 // Held on the row, "history written" would start null on that new row and
 // journal the same revision twice. Held on QuoteRevision, the new row finds it
 // set and is done.
