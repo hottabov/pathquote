@@ -5,7 +5,7 @@
 import { Prisma } from "@prisma/client";
 
 export type EnqueueValues = {
-  /** The new row's id, used only when the statement inserts (cuid, src/lib/cuid.ts). */
+  /** The new row's id, used only when the statement inserts (a crypto.randomUUID()). */
   id: string;
   documentId: string;
   /** The revision the write is for. */
@@ -26,6 +26,8 @@ export type EnqueueValues = {
  * `WHERE "completedAt" IS NULL`, Postgres finds no constraint to match and
  * refuses the statement.
  *
+ * A new row starts at generation 0.
+ *
  * THE TAKE-OVER, as the outbox planner's header (src/lib/act/outbox-plan.ts)
  * and the migration describe it: the row is pointed at this revision, and
  * what it had stored about its old revision is cleared --
@@ -33,9 +35,12 @@ export type EnqueueValues = {
  * opportunity and line steps are done, and would otherwise mark them done
  * for a revision they were never run for -- along with blockedReason,
  * lastError and attempts, and nextAttemptAt is set to `now`, so the row is
- * due at once and tried afresh. It KEEPS createInFlight: a record a create
- * of the old revision's may have made is in ACT! whatever revision the row
- * carries now (A CREATE IN FLIGHT). It keeps createdAt too, and its id.
+ * due at once and tried afresh. generation goes up by 1: that, not the
+ * revision, is how a drain already working the row finds out it was taken
+ * over, since most take-overs keep the revision (requirement 1 on the drain,
+ * in src/lib/act/outbox.ts). It KEEPS createInFlight: a record a create of the
+ * old revision's may have made is in ACT! whatever revision the row carries
+ * now (A CREATE IN FLIGHT). It keeps createdAt too, and its id.
  *
  * EVERY TIMESTAMP IS `now`, a parameter, never the database's clock. The
  * columns are timestamp(3) WITHOUT time zone, holding UTC as Prisma writes
@@ -44,18 +49,21 @@ export type EnqueueValues = {
  * Australia/Sydney a row stamped that way reads 10 or 11 hours later than it
  * happened, so it falls due that much late. (Compared the other way, with
  * now() in the drain's WHERE, rows come due that much early; see the
- * migration.) So createdAt is supplied as well, though the worked statement
- * in the migration's comment leaves it to the default. id and updatedAt have
- * no default at all: Prisma fills both in its client.
+ * migration.) So createdAt is supplied as well. id and updatedAt have no
+ * default at all: Prisma fills both in its client.
+ *
+ * The migration's comment quotes this statement; tests/act-outbox-sql.test.ts
+ * holds the two together.
  */
 export function enqueueStatement(values: EnqueueValues): Prisma.Sql {
   const { id, documentId, quoteRevisionId, now } = values;
   return Prisma.sql`
     INSERT INTO "ActOutbox"
-      ("id", "documentId", "quoteRevisionId", "nextAttemptAt", "createdAt", "updatedAt")
-    VALUES (${id}, ${documentId}, ${quoteRevisionId}, ${now}, ${now}, ${now})
+      ("id", "documentId", "quoteRevisionId", "generation", "nextAttemptAt", "createdAt", "updatedAt")
+    VALUES (${id}, ${documentId}, ${quoteRevisionId}, 0, ${now}, ${now}, ${now})
     ON CONFLICT ("documentId") WHERE "completedAt" IS NULL DO UPDATE SET
       "quoteRevisionId" = EXCLUDED."quoteRevisionId",
+      "generation" = "ActOutbox"."generation" + 1,
       "opportunityActId" = NULL,
       "productLineSkippedAt" = NULL,
       "blockedReason" = NULL,

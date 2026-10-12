@@ -181,8 +181,11 @@
 // The skip is on the ROW, not the Document, for two reasons. It is not a fact
 // about ACT!'s line, which the Document's two columns are kept for. And it is
 // this row's answer about this row's revision: a take-over (which points the
-// row at the revision the enqueue is for, usually a newer one) clears it with
-// opportunityActId, so that revision asks ACT! again, and any later row
+// row at the revision the enqueue is for -- a newer one after a changed
+// re-finalise, the same one for a signature, an acceptance or an unchanged
+// re-finalise) clears it with opportunityActId, so that revision asks ACT!
+// again (A TAKE-OVER CAN LAND MID-STEP says why no stale store puts it back),
+// and any later row
 // starts without it. A deal that
 // is reopened in ACT! therefore gets the next revision's figure as usual,
 // creating the line then if it never had one.
@@ -417,6 +420,19 @@
 // this step as an update. The win is a step of its own, which this planner
 // returns only once that UPDATE says the line shows the row's revision (THE
 // LINE IS WRITTEN BEFORE THE WIN).
+//
+// A TAKE-OVER CAN LAND MID-STEP, between nextStep and the store of the step's
+// result, and it usually keeps the revision -- a signature or an acceptance
+// landing on the finalise's unfinished row, or a re-finalise that changed
+// nothing. So the drain's stores on the row are guarded by
+// ActOutbox.generation, which every take-over adds 1 to, and NOT by
+// quoteRevisionId: a store on the row that finds the generation moved on
+// changes nothing, and the row is planned again from what the take-over left
+// it. Otherwise a `skip` decided before a signature's take-over and stored
+// after it would put back the productLineSkippedAt the take-over cleared, and
+// a Won deal would never show the signed figure (A WON DEAL SHOWS THE LATEST
+// SIGNED FIGURE). The exact rule, and its one exception, is requirement 1 in
+// src/lib/act/outbox.ts.
 //
 // BLOCKED REASONS ARE READ BY A MANAGER on the quote, so they are sentences
 // that say what to do, in the voice of src/lib/act/sync-view.ts: a fault the

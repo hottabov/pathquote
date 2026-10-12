@@ -6,9 +6,9 @@
 -- way. A drain then runs that row's steps against ACT! -- create the contact
 -- if ACT! does not have it, create or update the deal's opportunity and the
 -- one product line that carries its amount, write the revision's History,
--- and once the quote is signed or accepted, promote
--- the contact to Customer and win the opportunity -- storing each result
--- before the next step, so a row that fails halfway resumes rather than
+-- then promote the contact to Customer once the client's signature stands,
+-- and win the opportunity once the quote is accepted as well -- storing each
+-- result before the next step, so a row that fails halfway resumes rather than
 -- repeating. What comes next is decided by src/lib/act/outbox-plan.ts, whose
 -- header lists the stored fields it reads; this migration adds the ones that
 -- did not exist:
@@ -29,7 +29,10 @@
 --                                     alone on a closed deal, and
 --                                     createInFlight for a create that may
 --                                     have made a record whose id was never
---                                     stored
+--                                     stored; and generation, which the
+--                                     planner does not read: the count of
+--                                     take-overs, which the drain's stores
+--                                     on the row are conditioned on
 --
 -- Why ACT!'s ids are kept here rather than a PathQuote id stamped into an ACT!
 -- custom field is on the ActOutbox model in schema.prisma: the `PQ ` fields
@@ -96,6 +99,7 @@ CREATE TABLE "ActOutbox" (
     "id" TEXT NOT NULL,
     "documentId" TEXT NOT NULL,
     "quoteRevisionId" TEXT NOT NULL,
+    "generation" INTEGER NOT NULL DEFAULT 0,
     "opportunityActId" TEXT,
     "productLineSkippedAt" TIMESTAMP(3),
     "createInFlight" TEXT,
@@ -146,7 +150,9 @@ ALTER TABLE "ActOutbox" ADD CONSTRAINT "ActOutbox_quoteRevisionId_fkey" FOREIGN 
 -- re-finalise, or a signature or acceptance -- that finds an unfinished row,
 -- pending or blocked, does not insert: it takes that row over, pointing it at
 -- the revision the enqueue is for, clearing blockedReason, opportunityActId,
--- productLineSkippedAt and lastError, and resetting attempts. It keeps
+-- productLineSkippedAt and lastError, resetting attempts, and adding 1 to
+-- generation, which a drain already working the row checks before it
+-- stores anything on it (ActOutbox.generation in schema.prisma). It keeps
 -- createInFlight: a record a create of the old revision's may have made is in
 -- ACT! whatever revision the row carries now, and the planner blocks on it,
 -- or the drain looks it up, from that alone. That is how "unfinalize, choose a contact,
@@ -156,19 +162,31 @@ ALTER TABLE "ActOutbox" ADD CONSTRAINT "ActOutbox_quoteRevisionId_fkey" FOREIGN 
 -- its blockedReason -- the fix for a nameless contact or an unmapped region
 -- needs no re-finalise -- would put two live rows on one deal.
 --
--- An enqueue can name this index as its conflict target, every value a
--- parameter ($4 is the JS Date of the enqueue; see the drain's query below
--- for why not now()):
+-- The enqueue names this index as its conflict target. This is the statement
+-- enqueueStatement (src/lib/act/outbox-sql.ts) builds, layout aside -- a
+-- test in tests/act-outbox-sql.test.ts holds the two together -- and
+-- enqueueActWrite (src/lib/act/outbox.ts) runs it with $executeRaw, because
+-- Prisma's `upsert` cannot target a partial index:
 --   INSERT INTO "ActOutbox"
---     ("id", "documentId", "quoteRevisionId", "nextAttemptAt", "updatedAt")
---   VALUES ($1, $2, $3, $4, $4)
+--     ("id", "documentId", "quoteRevisionId", "generation", "nextAttemptAt", "createdAt", "updatedAt")
+--   VALUES ($1, $2, $3, 0, $4, $5, $6)
 --   ON CONFLICT ("documentId") WHERE "completedAt" IS NULL DO UPDATE SET
---     "quoteRevisionId" = EXCLUDED."quoteRevisionId", "opportunityActId" = NULL,
---     "productLineSkippedAt" = NULL, "blockedReason" = NULL, "attempts" = 0,
---     "lastError" = NULL, "nextAttemptAt" = $4, "updatedAt" = $4
--- "id" and "updatedAt" have no database default (Prisma fills both in the
--- client), so a raw insert must supply them; and Prisma's `upsert` cannot
--- target a partial index, so Task 6 issues this with $executeRaw.
+--     "quoteRevisionId" = EXCLUDED."quoteRevisionId",
+--     "generation" = "ActOutbox"."generation" + 1,
+--     "opportunityActId" = NULL,
+--     "productLineSkippedAt" = NULL,
+--     "blockedReason" = NULL,
+--     "lastError" = NULL,
+--     "attempts" = 0,
+--     "nextAttemptAt" = EXCLUDED."nextAttemptAt",
+--     "updatedAt" = EXCLUDED."updatedAt"
+-- $4, $5 and $6 are all the same JS Date, the time of the enqueue: every
+-- timestamp is a parameter, never now() and never a column's DEFAULT
+-- CURRENT_TIMESTAMP, both of which are the session's local time (see the
+-- drain's query below). "id" and "updatedAt" have no database default
+-- (Prisma fills both in its client), so the insert has to supply them; the
+-- id is a crypto.randomUUID(). A new row's generation is 0; a take-over adds
+-- 1 and keeps createInFlight, createdAt and the id.
 CREATE UNIQUE INDEX "ActOutbox_documentId_unfinished_key" ON "ActOutbox"("documentId") WHERE "completedAt" IS NULL;
 
 -- The drain's query: unfinished, not blocked, due, longest overdue first --

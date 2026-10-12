@@ -11,7 +11,11 @@ import { taxNameSchema, taxRateSchema } from "./regions";
 import { validityDayCountSchema } from "./validity-days";
 
 /** Every id in this app is a Prisma `cuid()` — 25 lowercase base36
- * characters starting with "c". We don't couple to that exact alphabet
+ * characters starting with "c". (Not quite every: ids the app mints itself
+ * are 36-character `crypto.randomUUID()`s, which the length check below
+ * passes -- DocumentLine ids in src/lib/actions/documents/items.ts and
+ * options.ts, and ActOutbox rows, written by raw SQL in
+ * src/lib/act/outbox.ts.) We don't couple to that exact alphabet
  * (tests use handwritten fixture ids too), just to a plausible length, so a
  * stray empty string or an obviously-wrong value (e.g. a raw name) is
  * rejected before it ever reaches a database query. */
