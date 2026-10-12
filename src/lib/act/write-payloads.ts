@@ -1,7 +1,8 @@
-// The request bodies a finalised quote sends to ACT!: one History record per
-// revision, the Opportunity that stands for the whole deal, and -- once the
-// client signs or the quote is accepted -- the contact's promotion from
-// Prospect to Customer. Where a body depends on what ACT! holds now (a later
+// The request bodies a finalised quote sends to ACT!: the contact, when ACT!
+// does not have it yet; one History record per revision; the Opportunity that
+// stands for the whole deal; and -- once the client signs or the quote is
+// accepted -- the contact's promotion from Prospect to Customer and the
+// opportunity's win. Where a body depends on what ACT! holds now (a later
 // revision's opportunity update, the win, the promotion), the function here
 // takes that state as read back by the drain and decides, including deciding
 // to send nothing.
@@ -60,6 +61,7 @@
 
 import { revisionLabel } from "@/lib/documents/revision-plan";
 import { plural } from "@/lib/plural";
+import { ACT_FIELD } from "@/lib/act/types";
 import {
   processForRegion,
   stageMove,
@@ -83,9 +85,9 @@ export const HISTORY_TYPE_QUOTE = 62;
  * schema can declare an enum the server serialises differently. Confirm
  * against a live `GET /api/opportunities` before the first write. Every status
  * this module sends comes from here, and so do the ones it reads back (`open`
- * in revisedOpportunityBody and wonOpportunityBody, `won` in
- * wonOpportunityBody), so that check changes one place. `Inactive` is absent
- * only because nothing here sends it or tests for it.
+ * in revisedOpportunityBody, `won` in wonOpportunityBody), so that check
+ * changes one place. `Inactive` is absent only because nothing here sends it
+ * or tests for it.
  */
 export const OPPORTUNITY_STATUS = {
   open: "Open",
@@ -105,8 +107,8 @@ export type OpportunityStatus = (typeof OPPORTUNITY_STATUS)[keyof typeof OPPORTU
  * exactly as the list has it. (Whether the API itself refuses a value off the
  * list has not been tried.) They are also the two statuses the inbound sync
  * imports (ACTIVE_STATUSES in src/lib/act/types.ts), which is what keeps a
- * contact PathQuote promotes in PathQuote on the next sync; a test ties the
- * two lists together.
+ * contact PathQuote creates (as a Prospect, newContactBody) or promotes in
+ * PathQuote on the next sync; a test ties the two lists together.
  */
 export const CONTACT_STATUS = {
   prospect: "Prospect",
@@ -277,7 +279,7 @@ export function moneyWithCode(amount: number, currency: string): string {
   return `${currency} ${figure}`;
 }
 
-function recordManager(parties: ActParties): string {
+function recordManager(parties: Pick<ActParties, "authorActUserId" | "serviceAccountUserId">): string {
   return parties.authorActUserId ?? parties.serviceAccountUserId;
 }
 
@@ -438,39 +440,60 @@ export function revisedOpportunityBody(
 /**
  * What accepting the quote does to the deal's opportunity.
  *
- * - `patch`: the opportunity is Open. Close it as won; `stage` is stageMove's
- *   verdict on the won stage, for the drain to report.
+ * - `patch`: the opportunity is not Won -- Open, Lost, Inactive, or a status
+ *   never seen before. Close it as Won. `stage` is stageMove's verdict on the
+ *   won stage, and `found` the status ACT! returned, both for the drain to
+ *   report: a deal taken from Lost to Won is worth a line in the run report.
  * - `already-won`: it is Won already -- closed by hand in ACT!, or a resumed
  *   step whose patch went through before its result was stored. Nothing to
  *   send; sending it again would only move the close date.
- * - `closed`: any other status -- Lost, Inactive, or one never seen before.
- *   Nothing is sent, and `status` is what ACT! said, for the drain to report.
  */
 export type WonUpdate =
-  | { kind: "patch"; patch: OpportunityPatch; stage: StageMove }
-  | { kind: "already-won" }
-  | { kind: "closed"; status: string };
+  | { kind: "patch"; patch: OpportunityPatch; stage: StageMove; found: string }
+  | { kind: "already-won" };
 
 /**
  * Closing the opportunity as won, when the quote is accepted.
  *
- * For an Open opportunity: the status and close date always; the won stage
- * only when `stageMove` allows it, which in practice means unless the
- * opportunity has been moved to another process -- the won stage is the last
- * in each process, so nothing in the same process is past it. `current` is
- * required for the same reason as in `revisedOpportunityBody`: an opportunity
- * being closed already exists, and what it says now decides what is sent.
+ * The status and close date always; the won stage only when `stageMove`
+ * allows it. `current` is required for the same reason as in
+ * `revisedOpportunityBody`: an opportunity being closed already exists, and
+ * what it says now decides what is sent.
  *
- * A LOST (OR INACTIVE) OPPORTUNITY IS LEFT ALONE, and that is an OPEN
- * QUESTION, not a settled rule. Accepting needs the client's signature, the
- * manager's signature and acceptQuote, which is strong evidence the deal is
- * won. But a status that is not Open was set by somebody in ACT!, and silently
- * overturning it is the harm revisedOpportunityBody avoids for revisions. So
- * this returns `closed` with the status, the same way revisedOpportunityBody
- * does, and the choice between leaving it, overturning it, and asking a
- * person is Vadym's to make. As for revisions, "not Open" is any status other
- * than exactly OPPORTUNITY_STATUS.open, so a misspelling errs towards leaving
- * a deal alone.
+ * ACCEPTANCE OVERTURNS A CLOSED DEAL. Vadym's decision, 2026-10-12: "Overwrite
+ * to Won -- PathQuote confirms." Accepting needs the client's signature, the
+ * manager's signature and acceptQuote, and that is the confirmation he means:
+ * the deal is won, whatever somebody had recorded in ACT! before. Nothing in
+ * that reasoning depends on which closed status it was, so Lost, Inactive and
+ * any status other than exactly OPPORTUNITY_STATUS.won are all patched to Won
+ * like an Open one. This is the opposite of revisedOpportunityBody, which
+ * leaves every closed deal alone -- a new revision says nothing about how the
+ * deal ended, and an acceptance says exactly that.
+ *
+ * ONCE, SO A LATER LOST STANDS. The rest of the same decision: "If after that
+ * someone changes it to Lost by hand in ACT!, it stays that way." Nothing here
+ * has to enforce it. When this step is done the drain stores
+ * Document.actOpportunityWonAt; nothing clears it, and the planner
+ * (src/lib/act/outbox-plan.ts) never plans win-opportunity again once it is
+ * set -- not on a second acceptance, not on a later revision. So an
+ * opportunity moved to Lost after the win is never read here, let alone
+ * overturned; tests/act-outbox-plan.test.ts holds that. The one exception is
+ * the planner's repeat window: a win that went through but was not yet stored
+ * runs again, and overturns a Lost only if somebody set it in those seconds.
+ *
+ * THE STAGE ON AN OVERTURN follows the forward-only rule as for an Open deal.
+ * The won stage is the last of both processes PathQuote writes into (AU 7 of
+ * 7, US 5 of 5), so from wherever a Lost deal stopped in the same process it
+ * is forward (`move`, with the stage's 100%) or already reached (`stay`). A
+ * deal sitting in a different process from the region's still gets the Won
+ * status, and keeps its stage and probability
+ * (`different-process`): the status is what the acceptance decides, while
+ * stage numbers cannot be compared across processes, and moving a deal into
+ * another process is what stageMove refuses everywhere else.
+ *
+ * `reason` is not sent, so a reason somebody typed for the loss stays on the
+ * record beside the Won status. It is that person's note, and PathQuote has
+ * no reason of its own to put in its place.
  */
 export function wonOpportunityBody(
   regionCode: string,
@@ -478,14 +501,12 @@ export function wonOpportunityBody(
   acceptedAt: Date,
 ): WonUpdate {
   if (current.status === OPPORTUNITY_STATUS.won) return { kind: "already-won" };
-  if (current.status !== OPPORTUNITY_STATUS.open) {
-    return { kind: "closed", status: current.status };
-  }
   const won = stagesFor(regionCode).won;
   const stage = stageMove(current, won);
   return {
     kind: "patch",
     stage,
+    found: current.status,
     patch: {
       status: OPPORTUNITY_STATUS.won,
       actualCloseDate: acceptedAt.toISOString(),
@@ -511,6 +532,138 @@ export function lostOpportunityBody(reason: string, closedAt: Date): Opportunity
 /** A body for `PATCH /api/contacts/{id}`: the one field promotion changes. */
 export type ContactStatusPatch = { idStatus: ContactStatus };
 
+/** A PathQuote contact ACT! does not have yet, as plain values off its rows. */
+export type ContactForAct = {
+  /** Contact.firstName. */
+  firstName: string;
+  /** Contact.lastName. */
+  lastName: string | null;
+  /** Contact.email. */
+  email: string | null;
+  /** Contact.phone: E.164, as PathQuote stores it. */
+  phone: string | null;
+  /** Contact.position. */
+  position: string | null;
+  /** Company.name of the contact's company (Contact.companyId). */
+  companyName: string;
+};
+
+/** Who a contact PathQuote creates belongs to in ACT!: the quote's author. */
+export type NewContactOwner = Pick<ActParties, "authorActUserId" | "serviceAccountUserId"> & {
+  /**
+   * User.actAccountMgr: the author's item of the "Rep" picklist, or null. Set
+   * only by `npm run act:map-users` (scripts/map-act-users.ts), and only from
+   * an exact match against the picklist as ACT! returned it.
+   */
+  authorActAccountMgr: string | null;
+};
+
+/**
+ * The body of `POST /api/contacts`. Field names are the API's
+ * (act.web.api.models.Contacts.Contact in RAW/ACT/swagger.json), checked
+ * against RAW/ACT/meta/fields_contact.json; both are local captures, not
+ * committed.
+ */
+export type NewContactBody = {
+  firstName?: string;
+  lastName?: string;
+  emailAddress?: string;
+  businessPhone?: string;
+  jobTitle?: string;
+  company?: string;
+  idStatus: ContactStatus;
+  contactType: "Contact";
+  isPrivate: false;
+  recordManagerID: string;
+  customFields?: Record<string, string>;
+};
+
+/** Trimmed text, or undefined for nothing -- an absent field rather than an empty one. */
+function given(value: string | null): string | undefined {
+  const trimmed = value?.trim() ?? "";
+  return trimmed === "" ? undefined : trimmed;
+}
+
+/**
+ * The contact ACT! is asked to create when a quote's contact exists only in
+ * PathQuote (the planner's create-contact step).
+ *
+ * A PROSPECT, ALWAYS. Nothing else would set `idStatus` -- the field has no
+ * default (`defaultValue` null in RAW/ACT/meta/fields_contact.json) -- and a
+ * contact created with it blank is lost twice over: the inbound sync skips it as
+ * `inactive-status` (ACTIVE_STATUSES is Customer and Prospect only), and
+ * contactPromotion leaves a blank status alone, so it never becomes a
+ * Customer either. Somebody being quoted is a Prospect, and the signature or
+ * acceptance then promotes them like any other.
+ *
+ * EVERY FIELD IS THE ONE THE INBOUND SYNC READS IT BACK FROM (mapContact in
+ * src/lib/act/map.ts), so the next sync sees the same person PathQuote has:
+ *
+ *   firstName, lastName  map reads both, trimmed.
+ *   emailAddress         map reads it and lowercases it.
+ *   businessPhone        map reads businessPhone first and mobilePhone only
+ *                        when it is empty, so the one number goes here. Sent
+ *                        as E.164: with its "+" it resolves without the
+ *                        country map would otherwise need (actPhoneToE164).
+ *                        Whether ACT! keeps it as sent or reformats it to a
+ *                        phone mask has not been seen on a live record.
+ *   jobTitle             "Title", map's `position`. Its picklist, "Jobtitles",
+ *                        is NOT limited to the list, so any text is accepted.
+ *   company              the free-text company map derives the company from.
+ *   customFields.rep     "Account Mgr", limited to the "Rep" picklist. Only
+ *                        the author's User.actAccountMgr, which can only hold
+ *                        an item of that list; left out when it is null
+ *                        rather than guessed, since a wrong Account Mgr does
+ *                        not fail -- it hands the client to another manager.
+ *   contactType, isPrivate
+ *                        map skips anything that is not a "Contact", and any
+ *                        private one. Sent rather than left to ACT!'s
+ *                        defaults, which have not been seen on a live create.
+ *   recordManagerID      the author, else the service account, as for every
+ *                        other body here (WHO OWNS WHAT IS WRITTEN).
+ *
+ * A field PathQuote has no value for is left out, not sent empty, so a contact
+ * with no email or phone is still a valid body.
+ *
+ * THE COMPANY DOES NOT SPLIT on the round trip, but not because of a key. The
+ * sync finds a contact it already has by Contact.actContactId -- which the
+ * drain stores from this create's answer -- and keeps it on the company it is
+ * on (src/lib/act/sync.ts); it derives a company only for a contact it has
+ * never seen. No country is sent: businessAddress/country is limited to the
+ * "Countries" picklist, whose items have not been read, so the rule for
+ * Account Mgr applies. Should the sync ever meet this contact without knowing
+ * it -- the create went through and its id was not stored, the repeat window
+ * in src/lib/act/outbox-plan.ts -- it would derive `<name>|??` from the
+ * company text alone (companyKey in src/lib/act/company-key.ts) and, missing,
+ * create a second company for it as well as a second contact. (The country is
+ * also marked isAllowBlank false. RAW/ACT/act-country-fixes.csv lists 113
+ * contacts stored with a blank one, so ACT! does not enforce it on what it
+ * holds; whether a create through the API does has not been tried, and the
+ * first live create will say.)
+ */
+export function newContactBody(contact: ContactForAct, owner: NewContactOwner): NewContactBody {
+  const firstName = given(contact.firstName);
+  const lastName = given(contact.lastName);
+  const emailAddress = given(contact.email);
+  const businessPhone = given(contact.phone);
+  const jobTitle = given(contact.position);
+  const company = given(contact.companyName);
+  const accountMgr = given(owner.authorActAccountMgr);
+  return {
+    ...(firstName ? { firstName } : {}),
+    ...(lastName ? { lastName } : {}),
+    ...(emailAddress ? { emailAddress } : {}),
+    ...(businessPhone ? { businessPhone } : {}),
+    ...(jobTitle ? { jobTitle } : {}),
+    ...(company ? { company } : {}),
+    idStatus: CONTACT_STATUS.prospect,
+    contactType: "Contact",
+    isPrivate: false,
+    recordManagerID: recordManager(owner),
+    ...(accountMgr ? { customFields: { [ACT_FIELD.accountMgr]: accountMgr } } : {}),
+  };
+}
+
 /**
  * Whether winning the quote promotes its contact.
  *
@@ -529,21 +682,30 @@ export type ContactPromotion =
  * accepted, whichever comes first (the plan's addendum of 2026-10-12).
  *
  * CHANGE ONLY WHAT WE OWN. `currentIdStatus` is the contact's `idStatus` as
- * the drain reads it back from ACT! just before, and only exactly
- * CONTACT_STATUS.prospect is promoted. Overwriting a status somebody set
- * deliberately is the harm this prevents, so a status not quite spelled
- * Prospect -- other case, stray spaces -- is left alone rather than
- * normalised: a missed promotion is visible and harmless, a wrong one is not.
+ * the drain reads it back from ACT! just before, and only a Prospect is
+ * promoted. Overwriting a status somebody set deliberately is the harm this
+ * prevents, so a status not spelled Prospect -- another case, another word --
+ * is left alone rather than normalised: a missed promotion is visible and
+ * harmless, a wrong one is not.
+ *
+ * "A Prospect" is decided exactly as the inbound sync decides it (mapContact
+ * in src/lib/act/map.ts): trimmed, then compared case for case. A contact
+ * stored as " Prospect" is imported into PathQuote as a Prospect, and a
+ * comparison stricter than the import's would leave that contact quoted as a
+ * Prospect and never promoted. The patch still writes the constant exactly,
+ * so the stray space goes with the promotion. The same trim decides
+ * `already-customer`; `current` is always what ACT! said, untrimmed.
  *
  * FORWARD ONLY. A Customer never goes back to Prospect -- not on
  * voidSignature, not on unfinalise. There is no demote body, and the planner
  * (src/lib/act/outbox-plan.ts) has no step that would send one.
  */
 export function contactPromotion(currentIdStatus: string | null): ContactPromotion {
-  if (currentIdStatus === CONTACT_STATUS.prospect) {
+  const status = currentIdStatus?.trim() ?? null;
+  if (status === CONTACT_STATUS.prospect) {
     return { kind: "promote", patch: { idStatus: CONTACT_STATUS.customer } };
   }
-  if (currentIdStatus === CONTACT_STATUS.customer) {
+  if (status === CONTACT_STATUS.customer) {
     return { kind: "leave", reason: "already-customer", current: currentIdStatus };
   }
   return { kind: "leave", reason: "not-prospect", current: currentIdStatus };

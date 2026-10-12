@@ -7,16 +7,21 @@ import {
   historyBody,
   lostOpportunityBody,
   moneyWithCode,
+  newContactBody,
   newOpportunityBody,
   revisedOpportunityBody,
   wonOpportunityBody,
   type QuoteForAct,
   type ActParties,
+  type ContactForAct,
+  type NewContactOwner,
   type RevisionUpdate,
   type WonUpdate,
 } from "../src/lib/act/write-payloads";
 import { sentStage, wonStage } from "../src/lib/act/opportunity-stages";
-import { ACTIVE_STATUSES } from "../src/lib/act/types";
+import { companyKey } from "../src/lib/act/company-key";
+import { mapContact } from "../src/lib/act/map";
+import { ACTIVE_STATUSES, type ActContact } from "../src/lib/act/types";
 
 const SALES_CYCLE = "2380e83d-cef4-4b6d-ad15-dc9a558431ab";
 const US_PROCESS = "26ab3a1e-ff20-406d-a0b4-3b351955da45";
@@ -196,8 +201,9 @@ describe("wonOpportunityBody", () => {
 
   it("closes an open opportunity as won at the region's won stage", () => {
     const accepted = new Date("2026-11-02T01:00:00.000Z");
-    const { patch, stage } = patchOf(wonOpportunityBody("AU", open(4), accepted));
+    const { patch, stage, found } = patchOf(wonOpportunityBody("AU", open(4), accepted));
     expect(stage).toBe("move");
+    expect(found).toBe("Open");
     expect(patch.status).toBe(OPPORTUNITY_STATUS.won);
     expect(patch.stage).toMatchObject({ id: wonStage("AU")!.id });
     expect(patch.probability).toBe(100);
@@ -220,21 +226,184 @@ describe("wonOpportunityBody", () => {
     });
   });
 
-  it.each(["Lost", "Inactive"])("leaves a %s opportunity alone, and says what it found", (status) => {
-    // Somebody closed the deal by hand in ACT!. Overturning that is not this
-    // function's call -- see the doc comment -- so it reports the status
-    // rather than sending a patch.
-    expect(wonOpportunityBody("AU", { processId: SALES_CYCLE, number: 4, status }, FINALISED)).toEqual({
-      kind: "closed",
-      status,
+  it.each(["Lost", "Inactive"])("overturns a %s opportunity to Won, forward to the won stage, and says what it found", (status) => {
+    // Vadym, 2026-10-12: "Overwrite to Won -- PathQuote confirms." The
+    // acceptance is the confirmation, whichever closed status somebody set.
+    const accepted = new Date("2026-11-02T01:00:00.000Z");
+    const { patch, stage, found } = patchOf(
+      wonOpportunityBody("AU", { processId: SALES_CYCLE, number: 4, status }, accepted),
+    );
+    expect(found).toBe(status);
+    expect(stage).toBe("move");
+    expect(patch).toEqual({
+      status: OPPORTUNITY_STATUS.won,
+      actualCloseDate: "2026-11-02T01:00:00.000Z",
+      stage: expect.objectContaining({ id: wonStage("AU")!.id }),
+      probability: 100,
+    });
+    // A reason typed for the loss is somebody's note; the patch leaves it.
+    expect(patch).not.toHaveProperty("reason");
+  });
+
+  it("overturns a Lost opportunity sitting in another process to Won, and leaves its stage there", () => {
+    // Stage numbers do not compare across processes, so the forward-only rule
+    // has nothing to move it by; the status is the acceptance's to decide.
+    const { patch, stage } = patchOf(
+      wonOpportunityBody("AU", { processId: US_PROCESS, number: 2, status: "Lost" }, FINALISED),
+    );
+    expect(stage).toBe("different-process");
+    expect(patch.status).toBe(OPPORTUNITY_STATUS.won);
+    expect(patch).not.toHaveProperty("stage");
+    expect(patch).not.toHaveProperty("probability");
+  });
+
+  it("treats a status it has never seen as not Won, and closes it as won", () => {
+    // Only exactly Won is left alone. A misspelt Won costs at most a second
+    // close date, once per deal: the planner never plans the win again.
+    const update = wonOpportunityBody("AU", { processId: SALES_CYCLE, number: 4, status: "won" }, FINALISED);
+    expect(update).toMatchObject({ kind: "patch", found: "won", patch: { status: OPPORTUNITY_STATUS.won } });
+  });
+});
+
+/** An ACT! contact as GET /api/contacts returns it, for the inbound mapper. */
+function actContact(overrides: Partial<ActContact> = {}): ActContact {
+  return {
+    id: CONTACT,
+    companyID: "",
+    idStatus: "Prospect",
+    contactType: "Contact",
+    isPrivate: false,
+    firstName: "Ross",
+    lastName: "Fielding",
+    jobTitle: null,
+    emailAddress: null,
+    businessPhone: null,
+    mobilePhone: null,
+    company: "Fielding Signs",
+    website: null,
+    businessAddress: null,
+    recordManagerID: AUTHOR,
+    recordManager: null,
+    customFields: null,
+    created: "2026-10-12T04:30:00.000Z",
+    edited: "2026-10-12T04:30:00.000Z",
+    ...overrides,
+  };
+}
+
+/** What ACT! would hand back for a created body: the body's fields, on a record with an id. */
+function asCreated(body: ReturnType<typeof newContactBody>): ActContact {
+  return actContact({
+    idStatus: body.idStatus,
+    contactType: body.contactType,
+    isPrivate: body.isPrivate,
+    firstName: body.firstName ?? null,
+    lastName: body.lastName ?? null,
+    jobTitle: body.jobTitle ?? null,
+    emailAddress: body.emailAddress ?? null,
+    businessPhone: body.businessPhone ?? null,
+    company: body.company ?? null,
+    recordManagerID: body.recordManagerID,
+    customFields: body.customFields ?? null,
+  });
+}
+
+describe("newContactBody", () => {
+  const person = (overrides: Partial<ContactForAct> = {}): ContactForAct => ({
+    firstName: "Ross",
+    lastName: "Fielding",
+    email: "ross@fieldingsigns.example",
+    phone: "+61394679176",
+    position: "Operations Manager",
+    companyName: "Fielding Signs Pty Ltd",
+    ...overrides,
+  });
+  const owner = (overrides: Partial<NewContactOwner> = {}): NewContactOwner => ({
+    authorActUserId: AUTHOR,
+    authorActAccountMgr: "Jane Citizen",
+    serviceAccountUserId: SERVICE,
+    ...overrides,
+  });
+
+  it("creates a Prospect, never a blank status the sync would skip and promotion would ignore", () => {
+    const body = newContactBody(person(), owner());
+    expect(body.idStatus).toBe(CONTACT_STATUS.prospect);
+    expect(body.idStatus).toBe("Prospect");
+    expect(ACTIVE_STATUSES).toContain(body.idStatus);
+    // And the step that follows a signature would promote it.
+    expect(contactPromotion(body.idStatus).kind).toBe("promote");
+  });
+
+  it("names every field the way the ACT! API spells it", () => {
+    expect(newContactBody(person(), owner())).toEqual({
+      firstName: "Ross",
+      lastName: "Fielding",
+      emailAddress: "ross@fieldingsigns.example",
+      businessPhone: "+61394679176",
+      jobTitle: "Operations Manager",
+      company: "Fielding Signs Pty Ltd",
+      idStatus: "Prospect",
+      contactType: "Contact",
+      isPrivate: false,
+      recordManagerID: AUTHOR,
+      customFields: { rep: "Jane Citizen" },
     });
   });
 
-  it("treats a status it has never seen as closed, not open", () => {
-    expect(wonOpportunityBody("AU", { processId: SALES_CYCLE, number: 4, status: "won" }, FINALISED)).toEqual({
-      kind: "closed",
-      status: "won",
+  it("sets Account Mgr from the author's mapped picklist item", () => {
+    expect(newContactBody(person(), owner()).customFields).toEqual({ rep: "Jane Citizen" });
+  });
+
+  it("leaves Account Mgr out altogether when the author has none, rather than guess a picklist value", () => {
+    const body = newContactBody(person(), owner({ authorActAccountMgr: null }));
+    expect(body).not.toHaveProperty("customFields");
+    expect(JSON.stringify(body)).not.toContain("rep");
+  });
+
+  it("carries the company name as the contact's free-text company", () => {
+    expect(newContactBody(person({ companyName: "  Norco Composites & GRP  " }), owner()).company).toBe(
+      "Norco Composites & GRP",
+    );
+  });
+
+  it("is still a valid body for a contact with no email, phone, title or surname", () => {
+    const body = newContactBody(
+      person({ lastName: null, email: null, phone: "  ", position: null }),
+      owner({ authorActUserId: null, authorActAccountMgr: null }),
+    );
+    expect(body).toEqual({
+      firstName: "Ross",
+      company: "Fielding Signs Pty Ltd",
+      idStatus: "Prospect",
+      contactType: "Contact",
+      isPrivate: false,
+      recordManagerID: SERVICE,
     });
+  });
+
+  it("comes back through the inbound mapper as the same person, still a Prospect", () => {
+    const result = mapContact(asCreated(newContactBody(person({ email: "Ross@FieldingSigns.example" }), owner())), () => null);
+    if (result.kind !== "mapped") throw new Error(`expected mapped, got ${result.kind}`);
+    expect(result.contact).toMatchObject({
+      firstName: "Ross",
+      lastName: "Fielding",
+      email: "ross@fieldingsigns.example",
+      phone: "+61394679176",
+      position: "Operations Manager",
+      actAccountMgr: "Jane Citizen",
+    });
+    expect(result.company.actStatus).toBe("Prospect");
+    expect(result.company.name).toBe("Fielding Signs Pty Ltd");
+  });
+
+  it("derives a company key from the name alone, since no country is sent", () => {
+    // The sync keeps a contact it already has on its company and derives no
+    // key for it; this is the key it WOULD derive, for the doc comment's one
+    // case where it meets the contact without knowing it.
+    const result = mapContact(asCreated(newContactBody(person(), owner())), () => null);
+    if (result.kind !== "mapped") throw new Error(`expected mapped, got ${result.kind}`);
+    expect(result.company.actCompanyKey).toBe(companyKey("Fielding Signs Pty Ltd", null));
+    expect(result.company.actCompanyKey).toBe("fielding signs|??");
   });
 });
 
@@ -258,9 +427,22 @@ describe("contactPromotion", () => {
     expect(contactPromotion(status)).toEqual({ kind: "leave", reason: "not-prospect", current: status });
   });
 
-  it("matches Prospect exactly, so a near miss errs towards leaving the contact alone", () => {
+  it("reads a Prospect the way the inbound sync does: trimmed, so stray spaces still promote", () => {
+    // mapContact trims idStatus, so " Prospect" is imported as a Prospect; a
+    // stricter comparison here would never promote it. The patch writes the
+    // exact constant.
+    expect(contactPromotion(" Prospect ")).toEqual({ kind: "promote", patch: { idStatus: "Customer" } });
+    const imported = mapContact(actContact({ idStatus: " Prospect " }), () => null);
+    expect(imported.kind).toBe("mapped");
+  });
+
+  it("trims a Customer the same way, and reports the status as ACT! has it", () => {
+    expect(contactPromotion("Customer ")).toEqual({ kind: "leave", reason: "already-customer", current: "Customer " });
+  });
+
+  it("still matches case for case, as the inbound sync does, so another spelling is left alone", () => {
     expect(contactPromotion("prospect").kind).toBe("leave");
-    expect(contactPromotion(" Prospect").kind).toBe("leave");
+    expect(contactPromotion("PROSPECT").kind).toBe("leave");
   });
 
   it("only ever writes statuses the inbound sync imports", () => {
