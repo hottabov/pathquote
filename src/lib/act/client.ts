@@ -4,6 +4,7 @@ import {
   isRetried,
   mergeForWrite,
   neverConnected,
+  odataString,
   patchToSend,
   sameRecordId,
   writableOpportunity,
@@ -67,8 +68,10 @@ export type ActClientConfig = {
 
 /**
  * How many records a lookup before a create asks for (listProductLines,
- * contactOpportunities). One deal's lines and one contact's opportunities are
- * a handful; a full page means the answer may have been cut off, and is
+ * opportunitiesNamed, contactHistories). One deal's lines, the opportunities
+ * with one deal's name and one revision's Histories are a handful -- and a
+ * contact's opportunities or Histories when a filter falls back are usually
+ * well under this; a full page means the answer may have been cut off, and is
  * refused rather than read as complete -- a match on a page not fetched is
  * exactly the record the lookup exists to find.
  */
@@ -195,6 +198,58 @@ export class ActUntrackedCreateError extends Error {
 }
 
 /**
+ * A request that never left: classifyWriteFailure's `not-sent`
+ * (src/lib/act/record-write.ts), which is `failed` -- safe to try again,
+ * because nothing reached ACT!.
+ *
+ * Thrown when something failed before the request could be sent -- its body,
+ * its URL, its headers, or the authorisation it needed first (see
+ * `fetchOnce`) -- and when no connection to ACT! was ever made
+ * (neverConnected). For a create, it is one of the two errors that say
+ * nothing was made (createMadeNothing), so the drain may clear the row's
+ * createInFlight for it. That is why it has a class of its own: a plain
+ * Error says nothing about where it came from, and an error from the drain's
+ * own code -- the transaction storing a created record's id, say -- must
+ * never be read as "not sent" (src/lib/act/outbox-plan.ts, A CREATE IN
+ * FLIGHT).
+ */
+export class ActNotSentError extends Error {
+  readonly failure = "failed" as const;
+
+  constructor(
+    /** Method and path, e.g. "POST /api/History". */
+    readonly request: string,
+    reason: string,
+    options?: { cause?: unknown },
+  ) {
+    super(`${request} was not sent, so nothing reached ACT!: ${reason}`, options);
+    this.name = "ActNotSentError";
+  }
+}
+
+/**
+ * A GET or a PATCH that got no answer -- a timeout, a dropped connection --
+ * on every one of its attempts: classifyWriteFailure's `no-answer` for those
+ * methods, which is `failed`, safe to try again. (A POST with no answer is
+ * ActUntrackedCreateError instead.) A class of its own so that it reads as a
+ * request failure, not as an error from outside the client (writeFailureOf).
+ */
+export class ActNoAnswerError extends Error {
+  readonly failure = "failed" as const;
+
+  constructor(
+    /** Method and path, e.g. "GET /api/opportunities/{id}". */
+    readonly request: string,
+    readonly attempts: number,
+    reason: string,
+    options?: { cause?: unknown },
+  ) {
+    super(`${request} failed after ${attempts} attempts: ${reason}`, options);
+    this.name = "ActNoAnswerError";
+  }
+}
+
+/**
  * One HTTP exchange. Whether a failure is repeated depends on the method --
  * isRetried in src/lib/act/record-write.ts, which this follows exactly:
  *
@@ -216,8 +271,8 @@ export class ActUntrackedCreateError extends Error {
  *               error. The one network failure that is not "may have
  *               created it" is a connection never made (neverConnected in
  *               src/lib/act/record-write.ts: refused, unresolvable, no route,
- *               connect timeout): nothing reached ACT!, and it throws a plain
- *               error that says so, for the outbox to back off and retry. A
+ *               connect timeout): nothing reached ACT!, and it throws
+ *               ActNotSentError, for the outbox to back off and retry. A
  *               night of ACT! being down is then a night of rows waiting,
  *               not a morning of rows blocked for a person to check.
  *
@@ -235,12 +290,12 @@ export class ActUntrackedCreateError extends Error {
  *
  * NOTHING IS SENT UNTIL IT CAN BE. Everything that can fail before a request
  * leaves -- serialising the body, parsing the URL, checking the headers -- is
- * done ahead of the first attempt, and its failure says the request was NOT
- * sent. Inside `fetch` the same faults would surface as the same TypeError a
- * dropped connection does, and a POST that never left would be reported as
- * "ACT! may have created the record". What fails inside the attempt is then
+ * done ahead of the first attempt, and its failure is ActNotSentError: the
+ * request was NOT sent. Inside `fetch` the same faults would surface as the
+ * same TypeError a dropped connection does, and a POST that never left would
+ * be reported as "ACT! may have created the record". What fails inside the attempt is then
  * a connection that could not be made -- told apart by its code
- * (neverConnected) and reported as not sent -- or something that can fail
+ * (neverConnected) and thrown as ActNotSentError -- or something that can fail
  * once the request may be on its way, and classifyWriteFailure
  * (src/lib/act/record-write.ts) says what each means.
  *
@@ -283,7 +338,7 @@ async function send(
     );
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    throw new Error(`${label} was not sent, so nothing reached ACT!: ${reason}`, { cause: error });
+    throw new ActNotSentError(label, reason, { cause: error });
   }
 
   for (let attempt = 1; ; attempt++) {
@@ -322,15 +377,12 @@ async function send(
         );
       }
       if (neverConnectedCode && attempt === attempts) {
-        throw new Error(
-          `${label} was not sent, so nothing reached ACT!: no connection could be made (${neverConnectedCode})`,
-          { cause: error },
-        );
-      }
-      if (attempt === attempts) {
-        throw new Error(`${label} failed after ${attempts} attempts: ${reason}`, {
+        throw new ActNotSentError(label, `no connection could be made (${neverConnectedCode})`, {
           cause: error,
         });
+      }
+      if (attempt === attempts) {
+        throw new ActNoAnswerError(label, attempts, reason, { cause: error });
       }
       failure = reason;
     }
@@ -349,16 +401,46 @@ async function send(
  *                             record PathQuote cannot name (unless its
  *                             `createdId` names it).
  *   ActApiError               its `failure`: `refused` or `failed`.
- *   anything else             `failed`. Every other error the client throws
- *                             is a request that was not sent, a connection
- *                             never made, or a GET or PATCH that kept failing
- *                             -- all safe to try again; and an error from
- *                             outside the client says nothing about ACT!.
+ *   ActNotSentError           `failed`: nothing reached ACT!.
+ *   ActNoAnswerError          `failed`: a GET or PATCH that kept getting no
+ *                             answer.
+ *   anything else             `foreign`: not a request failure the client
+ *                             classified. An error from the drain's own code,
+ *                             a plain Error or a TypeError from anywhere, a
+ *                             `decide` callback that threw inside `update`.
+ *                             It says nothing about what ACT! did, so it is
+ *                             never read as `failed` -- which for a POST
+ *                             means "not sent" -- and never clears a
+ *                             createInFlight marker (createMadeNothing).
  */
-export function writeFailureOf(error: unknown): WriteFailure {
+export function writeFailureOf(error: unknown): WriteFailure | "foreign" {
   if (error instanceof ActUntrackedCreateError) return error.failure;
   if (error instanceof ActApiError) return error.failure;
-  return "failed";
+  if (error instanceof ActNotSentError) return error.failure;
+  if (error instanceof ActNoAnswerError) return error.failure;
+  return "foreign";
+}
+
+/**
+ * Whether an error thrown by a create says the create made nothing in ACT!:
+ * ActNotSentError (the request never left) or an ActApiError whose `failure`
+ * is `refused` (ACT! answered and turned it away). True for these two and
+ * nothing else -- the only errors on which the drain may clear the row's
+ * createInFlight without storing an id (src/lib/act/outbox-plan.ts, A CREATE
+ * IN FLIGHT). An ActUntrackedCreateError with a `createdId` is not here: it
+ * made something, and the drain stores that id, which clears the marker with
+ * it.
+ *
+ * Every ActApiError a create can throw that is `refused` stands for a POST
+ * that made nothing: the POST's own 1xx or 4xx (a 3xx to a POST is
+ * `untracked`), a second 401 after re-authorising (`request`), or an
+ * authorisation refused before the POST left (`fetchOnce`). A read-back by
+ * the created id that fails is wrapped in ActUntrackedCreateError, never
+ * thrown as itself.
+ */
+export function createMadeNothing(error: unknown): boolean {
+  if (error instanceof ActNotSentError) return true;
+  return error instanceof ActApiError && error.failure === "refused";
 }
 
 /** What a payload looked like, without any of its values: they are contact
@@ -396,6 +478,22 @@ export function unwrapRows<T>(payload: unknown, path: string): T[] {
     "",
     failureOf("GET", "unreadable"),
   );
+}
+
+/**
+ * Whether a filtered lookup's error is ACT! refusing the filter, so the
+ * lookup falls back to its unfiltered form (ActClient's opportunitiesNamed,
+ * contactHistories): an ActApiError with a 4xx other than 401 -- the answer
+ * of a server that does not take that OData query on that endpoint. A 401 is
+ * about the token, not the filter; a 3xx is a setup error (refused, with its
+ * own message); a 5xx, no answer or an unreadable 200 is `failed` like any
+ * GET, and is tried again later rather than answered without the filter.
+ * One 4xx here is not about the filter: an authorisation refused while the
+ * lookup was getting a token (`fetchOnce` throws it as it is). That falls
+ * back too, and the fallback meets the same refusal and throws it.
+ */
+export function filterRefused(error: unknown): error is ActApiError {
+  return error instanceof ActApiError && error.status >= 400 && error.status < 500 && error.status !== 401;
 }
 
 function opportunityPath(id: string): string {
@@ -449,11 +547,31 @@ export class ActClient {
     return this.authorize();
   }
 
-  /** One request, with whatever token is current, result uninterpreted. */
+  /**
+   * One request, with whatever token is current, result uninterpreted.
+   *
+   * The token comes first, and when getting one fails the request has not
+   * been sent. Authorisation's own errors are about the GET to /authorize,
+   * not this request, so all but two are thrown as ActNotSentError for it --
+   * without that, an /authorize that answered 5xx three times would reach a
+   * create's caller as a `failed` ActApiError, which is not one of the errors
+   * that say the create made nothing (createMadeNothing). The two kept as
+   * they are already say it: an ActNotSentError, and an ActApiError
+   * `refused` -- a login ACT! turned away, which repeating would only repeat.
+   */
   private async fetchOnce(path: string, outgoing: Outgoing): Promise<Reply> {
-    const token = await this.getToken();
+    const label = `${outgoing.method} ${path}`;
+    let token: string;
+    try {
+      token = await this.getToken();
+    } catch (error) {
+      if (error instanceof ActNotSentError) throw error;
+      if (error instanceof ActApiError && error.failure === "refused") throw error;
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new ActNotSentError(label, `authorising failed first: ${reason}`, { cause: error });
+    }
     return send(
-      `${outgoing.method} ${path}`,
+      label,
       `${this.config.baseUrl}${path}`,
       {
         Authorization: `Bearer ${token}`,
@@ -710,7 +828,8 @@ export class ActClient {
    * Create one History record: `POST /api/History` (`History_PostOrFormat` in
    * swagger.json), capital H as in the endpoint table of
    * docs/act-integration-reference.md section 3 and as historiesBetween reads
-   * it.
+   * it. The drain looks for it first (contactHistories, historyLookup in
+   * src/lib/act/write-payloads.ts), every time.
    */
   async createHistory(body: HistoryBody): Promise<ActHistoryRecord> {
     return (await this.create("/api/History", body, (id) =>
@@ -721,7 +840,7 @@ export class ActClient {
   /**
    * Create one opportunity: `POST /api/opportunities`
    * (`Opportunities_PostOpportunity`). The drain looks for it first
-   * (contactOpportunities, opportunityLookup in src/lib/act/write-payloads.ts),
+   * (opportunitiesNamed, opportunityLookup in src/lib/act/write-payloads.ts),
    * every time.
    */
   async createOpportunity(body: NewOpportunityBody): Promise<ActOpportunity> {
@@ -794,15 +913,87 @@ export class ActClient {
   }
 
   /**
+   * Every opportunity in ACT! named `name`, for opportunityLookup in
+   * src/lib/act/write-payloads.ts before every opportunity create:
+   * `GET /api/opportunities?$filter=name eq '<name>'`
+   * (`Opportunities_GetOpportunities`), whose 200 is swagger's array of
+   * act.web.api.models.Opportunities.Opportunity. Across every opportunity,
+   * not the contact's, so an opportunity created for this quote under an
+   * earlier contact is still found (see opportunityLookup).
+   *
+   * THE FILTER IS UNTRIED ON THIS ENDPOINT. Swagger declares no parameters
+   * for it at all -- `"parameters": []` -- and says only, in its summary, "Get
+   * all opportunity matching an (optional) OData query". That is word for
+   * word how it describes `GET /api/contacts`, which also declares none, and
+   * where `$filter` is verified: contactsEditedSince sends one on every
+   * inbound sync. So the filter is sent, and should ACT! answer it with a 4xx
+   * other than 401 -- an OData query it does not take here -- the lookup
+   * falls back to the contact's opportunities (contactOpportunities), the
+   * lookup this one replaced, with its blind spot: an opportunity made under
+   * another contact. A 401 is not about the filter, and a 5xx or no answer is
+   * `failed` like any GET, tried again later. Should ACT! ignore the filter
+   * and answer with opportunities of every name, opportunityLookup still
+   * keeps only this name, and a full page is refused (`lookupRows`).
+   */
+  async opportunitiesNamed(name: string, contactId: string): Promise<ActOpportunity[]> {
+    return this.filteredLookup<ActOpportunity>(
+      "/api/opportunities",
+      `name eq ${odataString(name)}`,
+      () => this.contactOpportunities(contactId),
+    );
+  }
+
+  /**
    * Every opportunity associated with one contact:
    * `GET /api/contacts/{contactId}/associated-opportunities`
    * (`Opportunities_GetAssociatedOpportunitiesFromContactAndContactId`), whose
    * 200 is swagger's array of act.web.api.models.Opportunities.Opportunity --
-   * `name` among their fields. For opportunityLookup, before every
-   * opportunity create. See `lookupRows`.
+   * `name` among their fields. opportunitiesNamed's fallback. See
+   * `lookupRows`.
    */
   async contactOpportunities(contactId: string): Promise<ActOpportunity[]> {
     return this.lookupRows<ActOpportunity>(`${contactPath(contactId)}/associated-opportunities`);
+  }
+
+  /**
+   * The contact's History records whose `regarding` is `regarding`, for
+   * historyLookup in src/lib/act/write-payloads.ts before every History
+   * create: `GET /api/contacts/{contactId}/history?$filter=regarding eq '...'`
+   * (`History_GetByContactByIdOrFormat`), whose 200 is swagger's array of
+   * act.web.api.models.Histories.History -- `id`, `historyTypeID`,
+   * `regarding` and `created` among its fields. (Its one declared query
+   * parameter, `format`, changes how `details` is rendered, which the lookup
+   * does not read, and is not sent.)
+   *
+   * Filtered because a contact's History is everything ever logged against
+   * them, and a long-standing customer's can run past LOOKUP_TOP -- a full
+   * page, which `lookupRows` refuses, would hold the row's write-history, and
+   * with it the promotion and the win after it, until a person looked.
+   * Swagger describes the endpoint as "matching an (optional) OData query", as
+   * it does /api/contacts; the filter on it is as untried as
+   * opportunitiesNamed's, and falls back the same way: on a 4xx other than
+   * 401, to the contact's History unfiltered. historyLookup matches exactly
+   * whatever the server returned.
+   */
+  async contactHistories(contactId: string, regarding: string): Promise<ActHistoryRecord[]> {
+    const path = `${contactPath(contactId)}/history`;
+    return this.filteredLookup<ActHistoryRecord>(path, `regarding eq ${odataString(regarding)}`, () =>
+      this.lookupRows<ActHistoryRecord>(path),
+    );
+  }
+
+  /**
+   * `lookupRows` with an OData `$filter`, or `fallback` when ACT! refuses the
+   * filter (filterRefused). Anything else is thrown as it is.
+   */
+  private async filteredLookup<T>(path: string, filter: string, fallback: () => Promise<T[]>): Promise<T[]> {
+    try {
+      return await this.lookupRows<T>(path, filter);
+    } catch (error) {
+      if (!filterRefused(error)) throw error;
+      console.warn(`act: GET ${path} answered ${error.status} to $filter=${filter}; looking up without it`);
+      return fallback();
+    }
   }
 
   /**
@@ -810,16 +1001,19 @@ export class ActClient {
    *
    * `$top` is sent because a collection answer is a page (`Count` is the
    * page's size, docs/act-integration-reference.md section 3) whose default
-   * size nobody has measured. Swagger describes both endpoints as "matching
-   * an (optional) OData query", the words it uses for /api/contacts, where
-   * `$top` is verified; on these two it has not been tried, and the first
-   * live create will say. A page of LOOKUP_TOP rows is refused as possibly
-   * cut short: a GET answer that does not give what was asked for, so
-   * `failed`, and the drain tries again later rather than creating beside a
-   * match it never saw. Through unwrapRows, like every list here.
+   * size nobody has measured. Swagger describes every endpoint this is used
+   * on as "matching an (optional) OData query", the words it uses for
+   * /api/contacts, where `$top` is verified; on these it has not been tried,
+   * and the first live create will say. `filter`, when given, is sent as
+   * `$filter` (filteredLookup). A page of LOOKUP_TOP rows is refused as
+   * possibly cut short: a GET answer that does not give what was asked for,
+   * so `failed`, and the drain tries again later rather than creating beside
+   * a match it never saw. Through unwrapRows, like every list here.
    */
-  private async lookupRows<T>(path: string): Promise<T[]> {
-    const paged = `${path}?${new URLSearchParams({ $top: String(LOOKUP_TOP) })}`;
+  private async lookupRows<T>(path: string, filter?: string): Promise<T[]> {
+    const query = new URLSearchParams({ $top: String(LOOKUP_TOP) });
+    if (filter !== undefined) query.set("$filter", filter);
+    const paged = `${path}?${query}`;
     const rows = unwrapRows<T>(await this.get(paged), paged);
     if (rows.length >= LOOKUP_TOP) {
       throw new ActApiError(

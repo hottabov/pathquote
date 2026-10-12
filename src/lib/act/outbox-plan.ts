@@ -18,14 +18,19 @@
 //   update-opportunity  instead, when an earlier revision already made one
 //   write-product-line  the deal's one product line, which carries its amount:
 //                       created the first time, PATCHed in place for a newer
-//                       revision (see THE PRODUCT LINE)
+//                       revision, left alone when productLineWrite says so
+//                       (see THE PRODUCT LINE)
 //   write-history       one History record for this revision
 //   promote-contact     once the client has signed or the quote is accepted:
 //                       the contact goes from Prospect to Customer
-//   win-opportunity     once the quote is accepted: the product line is
-//                       brought to this revision if it does not show it, and
-//                       then the opportunity is Won (see THE WIN WRITES THE
-//                       LINE FIRST)
+//   write-product-line  again, after the journal, when the client's signature
+//                       stands and the line is still behind this revision
+//                       (see A WON DEAL SHOWS THE LATEST SIGNED FIGURE)
+//   write-accepted-line once the quote is accepted, when the line does not
+//                       show this revision: the line is written whatever the
+//                       deal's status (see THE LINE IS WRITTEN BEFORE THE WIN)
+//   win-opportunity     once the quote is accepted and the line shows this
+//                       revision: the opportunity is Won
 //
 // THE STORED FIELDS THIS PLANNER READS, and the model each lives on. The
 // schema (Task 4) is built from this list: a result stored anywhere else is a
@@ -48,23 +53,25 @@
 //                                update mints no new id, so the row records
 //                                which opportunity it updated; that is what
 //                                stops a resumed row updating it twice.
-//   Document.actProductLineId    write-product-line or win-opportunity, when
-//                                it creates the line or adopts the one its
-//                                lookup found. The deal's one product line,
-//                                for every later revision to PATCH.
+//   Document.actProductLineId    write-product-line or write-accepted-line,
+//                                when it creates the line or adopts the one
+//                                its lookup found. The deal's one product
+//                                line, for every later revision to PATCH.
 //   Document.actProductLineRevision
-//                                write-product-line or win-opportunity, every
-//                                time it writes the line: the
+//                                write-product-line or write-accepted-line,
+//                                every time it writes the line: the
 //                                QuoteRevision.revision the line now shows.
 //                                Only ever what was written -- never stored
 //                                for a line left alone.
 //   ActOutbox.productLineSkippedAt
-//                                write-product-line, when it found the deal
-//                                closed and left the line alone. This row's
-//                                line step is done without the line showing
-//                                its revision (see A CLOSED OPPORTUNITY'S
-//                                LINE IS LEFT ALONE).
-//   QuoteRevision.actHistoryId   write-history, on the revision the row was
+//                                write-product-line, when productLineWrite
+//                                said `skip` and the line was left alone.
+//                                This row's line step is done without the
+//                                line showing its revision (see A CLOSED
+//                                OPPORTUNITY'S LINE IS LEFT ALONE).
+//   QuoteRevision.actHistoryId   write-history, on creating the History or on
+//                                adopting the one its lookup found (A CREATE
+//                                IN FLIGHT), on the revision the row was
 //                                queued for. So the row has to say which:
 //                                ActOutbox.quoteRevisionId, which the drain
 //                                follows to hand this planner that revision's
@@ -134,8 +141,11 @@
 // created once and PATCHed in place by every later revision -- never deleted
 // and re-created (THE DEAL AMOUNT IS ONE PRODUCT LINE in
 // src/lib/act/write-payloads.ts). The step comes after the opportunity step,
-// because the line belongs to the opportunity, and before write-history, so a
-// journaled revision has its amount in ACT! too.
+// because the line belongs to the opportunity, and before write-history, so
+// by the time a revision is journaled its line step has run: the line shows
+// the revision's amount, or productLineWrite decided to leave it alone (A
+// CLOSED OPPORTUNITY'S LINE IS LEFT ALONE). A journaled revision is not
+// proof that ACT! has its amount.
 //
 // Its progress is ONE NUMBER ON THE DOCUMENT: actProductLineRevision, the
 // revision the line in ACT! actually shows, beside actProductLineId, the line.
@@ -155,14 +165,15 @@
 // of how the deal ended. The planner never sees the status, as above. The
 // drain reads the opportunity first and asks productLineWrite
 // (src/lib/act/write-payloads.ts), which says `skip` for a deal that is not
-// Open -- unless it is Won and the quote is accepted, when the accepted
-// quote's figure is the won deal's (see THE WIN WRITES THE LINE FIRST). On a
-// skip the drain sends nothing and stores ActOutbox.productLineSkippedAt, and
-// NOT actProductLineRevision: that number says what the line shows, and a
-// line left alone still shows the older revision, or nothing at all. Stored
-// as the revision it was not written for, it would tell the win -- which
-// overturns a Lost deal to Won -- that the line was current, and ACT! would
-// record a Won deal at an earlier revision's figure, or at none.
+// Open -- unless it is Won and the quote is both accepted and signed, when
+// the signed figure is the won deal's (see A WON DEAL SHOWS THE LATEST SIGNED
+// FIGURE). On a skip the drain sends nothing and stores
+// ActOutbox.productLineSkippedAt, and NOT actProductLineRevision: that number
+// says what the line shows, and a line left alone still shows the older
+// revision, or nothing at all. Stored as the revision it was not written for,
+// it would tell this planner the line was current, so no write-accepted-line
+// would come before the win -- which overturns a Lost deal to Won -- and ACT!
+// would record a Won deal at an earlier revision's figure, or at none.
 //
 // The skip is on the ROW, not the Document, for two reasons. It is not a fact
 // about ACT!'s line, which the Document's two columns are kept for. And it is
@@ -173,34 +184,70 @@
 // is reopened in ACT! therefore gets the next revision's figure as usual,
 // creating the line then if it never had one.
 //
-// THE WIN WRITES THE LINE FIRST. A Won deal must show the accepted figure,
-// and the win overturns any closed status but Won (wonOpportunityBody), so
-// win-opportunity carries `line` -- `create` or `update` when the line does
-// not show the row's revision, null when it does. The drain writes the line
-// for the row's revision whatever the deal's status, stores its id and
-// actProductLineRevision exactly as write-product-line does, and only then
-// reads the opportunity and patches it to Won. Line first: a failure between
-// the two leaves a deal with the right figure that is not Won yet -- the next
-// attempt plans the win again, with `line` null -- where the other order
-// would leave a deal Won at the wrong figure, or at none, until the retry.
+// THE LINE IS WRITTEN BEFORE THE WIN. A Won deal must show the accepted
+// figure, and the win overturns any closed status but Won
+// (wonOpportunityBody). So while the win is due and the line does not show
+// the row's revision, this planner returns write-accepted-line -- `create` or
+// `update`, as for write-product-line -- and returns win-opportunity only once
+// the line shows it. write-accepted-line writes the line for the row's
+// revision whatever the deal's status, without asking productLineWrite: the
+// acceptance is what overturns the status, and the deal it wins has to carry
+// the accepted figure. The drain stores the line's id and
+// actProductLineRevision exactly as write-product-line does, and the next
+// plan is the win. Two steps, so the order is the plan's rather than a
+// promise about the drain: a failure between them, or a line write ACT!
+// refuses, leaves the deal at its old status -- the next attempt plans
+// write-accepted-line again, or the win once the line is stored -- where the
+// other order would leave a deal Won at the wrong figure, or at none.
+//
 // The row's revision is taken to be the accepted one, which makes it a
 // requirement on the enqueue (Task 6): acceptQuote's row, like finalise's and
 // any take-over, points at the quote's newest revision -- the one the client
 // signed and the manager accepted. There is no re-acceptance to wait for:
-// acceptQuote returns early for a quote already accepted, and voidSignature
-// leaves acceptedAt set, so a quote re-finalised after a void is still
-// accepted, at its new revision.
+// acceptQuote returns early for a quote already accepted. And voidSignature
+// leaves acceptedAt set, so a quote re-finalised after a void still reads as
+// accepted: a stale flag, not a new acceptance. For a deal already won, see
+// the next section. One case is left to the flag: a quote accepted, then
+// voided and re-finalised at a new figure before the drain has run the win.
+// The win is still due, so the deal is won at the new, unsigned revision's
+// figure -- written by write-product-line on an Open deal, or by
+// write-accepted-line on a closed one. It needs the void, the edit
+// and the re-finalise to land before the drain gets to the acceptance, and
+// what an acceptance whose signature was voided should win is not decided
+// here.
 //
-// That also covers a deal already won. Once actOpportunityWonAt is set the win
-// is never planned again (THE WIN IS ONCE PER DEAL), but after a void and a
-// changed re-finalise the quote is still accepted, at a new figure, and its
-// row's write-product-line finds the deal Won: productLineWrite says `write`
-// for a Won deal of an accepted quote, so the line follows the quote. A deal
-// somebody set to Lost after the win is not Won, so its line is left alone,
-// with its status.
+// A WON DEAL SHOWS THE LATEST SIGNED FIGURE. Once actOpportunityWonAt is set
+// the win is never planned again (THE WIN IS ONCE PER DEAL), but the quote can
+// still change: voidSignature, a changed re-finalise, and the client signing
+// the new revision. Vadym's rule is "PathQuote confirms", and the
+// confirmation is the client's signature, so the won deal's line follows the
+// latest SIGNED revision and nothing else:
+//
+//   - The re-finalised revision's row reaches write-product-line with the
+//     quote unsigned (voidSignature put it back to NOT_SENT).
+//     productLineWrite says `skip` for a Won deal without a signature
+//     standing; the row stores productLineSkippedAt, and
+//     actProductLineRevision stays at the revision the line shows -- the
+//     signed one.
+//   - When the client signs the new revision, completeSigning queues a row
+//     for it: a fresh one, since the finalise row has finished (were it still
+//     unfinished, the signature would take it over, and a take-over clears
+//     the skip). That row finds the revision journaled, the line behind it
+//     and nothing skipped of its own, and with the signature standing plans
+//     write-product-line again, after promote-contact and before `done`.
+//     productLineWrite, asked with the signature standing, says `write`.
+//
+// Only a standing signature brings the line step back after the journal: an
+// acceptance has write-accepted-line, and nothing else PathQuote does to a
+// journaled revision changes productLineWrite's answer. A deal that is not
+// Won is asked the same and answered as before: an Open one (reopened by
+// hand after a skip) gets the signed figure, and one somebody set to Lost
+// after the win keeps its line, with its status -- that row's step skips it
+// again.
 //
 // DEAL EVENTS: promote-contact and win-opportunity, from the plan's addendum
-// of 2026-10-12. They come after write-history and are checked before "done".
+// of 2026-10-12. They come after write-history and are checked before "done",
+// as are the two line steps that can follow the journal.
 // A row queued by a signature or an acceptance usually finds the finalise row
 // long finished: its revision is journaled, so it skips straight to them --
 // and is not done merely because that revision's History exists. A row that
@@ -232,8 +279,9 @@
 // If somebody then marks the deal Lost by hand in ACT!, nothing sends Won
 // again: a later revision's update-opportunity does read the status, and
 // revisedOpportunityBody leaves any closed deal alone -- as productLineWrite
-// leaves the line of a deal that is neither Open nor Won. It stays Lost, at
-// its figure, which is the second half of the same decision.
+// leaves the line of any deal that is not Open, unless it is Won with the
+// quote accepted and signed. It stays Lost, at its figure, which is the second
+// half of the same decision.
 //
 // PROMOTION IS ONCE PER CONTACT. voidSignature exists for a wrong signatory,
 // among other things: the quote goes back to DRAFT, its contact can be
@@ -271,48 +319,68 @@
 //
 // A CREATE IN FLIGHT. ActOutbox.createInFlight names the record a POST of this
 // row may have made: one of CREATE_IN_FLIGHT -- "contact", "opportunity",
-// "product-line" (from write-product-line or win-opportunity) or "history".
-// A REQUIREMENT ON THE DRAIN: it sets the marker in a write of its own,
-// committed before the POST leaves, and clears it in the same transaction
-// that stores the record's id, created or adopted -- or when the POST was
-// refused (a 4xx) or was not sent at all, either of which made nothing. It
-// stays set when the answer was lost (ActUntrackedCreateError with no
-// createdId) and when the drain itself died between ACT!'s answer and the
-// store -- the case no error reports, and the reason the marker exists. What
-// happens next depends on the record:
+// "product-line" (from write-product-line or write-accepted-line) or
+// "history". A REQUIREMENT ON THE DRAIN: it sets the marker in a write of its
+// own, committed before the POST leaves, and clears it in these cases and no
+// others:
 //
-//   contact, history   nextStep blocks, before anything else (`done`
+//   - in the same transaction that stores the record's id, created or adopted
+//     -- an ActUntrackedCreateError whose `createdId` is set included, since
+//     ACT! named the record it made;
+//   - when the create throws ActNotSentError (src/lib/act/client.ts): the
+//     request never left, so nothing was made;
+//   - when the create throws an ActApiError whose `failure` is `refused`:
+//     ACT! answered and turned it away, which made nothing.
+//
+// NEVER ON ANYTHING ELSE: not on writeFailureOf's `failed` or `foreign`, and
+// above all not on an error the drain's own code throws. That last is the
+// case the marker exists for -- the POST succeeded, and the transaction
+// storing its id threw. The catch around it holds an error that says nothing
+// about ACT!; cleared for it, the marker would let the next attempt create
+// the record again. createMadeNothing (src/lib/act/client.ts) is the rule
+// above as code, for the drain to call rather than restate. So the marker
+// stays set when the answer was lost (ActUntrackedCreateError with no
+// createdId), when the drain failed after ACT! answered, and when the drain
+// itself died between ACT!'s answer and the store -- the case no error
+// reports at all. What happens next depends on the record:
+//
+//   contact            nextStep blocks, before anything else (`done`
 //                      included): a person must look in ACT! before the row
-//                      goes on (UNTRACKED_CONTACT_REASON,
-//                      UNTRACKED_HISTORY_REASON). The contact is NOT looked
-//                      up by email: among ACT!'s 17.5k contacts an email is
-//                      no identity -- shared inboxes, duplicates already
-//                      there, contacts with none -- and adopting a match could
-//                      take over another manager's Customer. A History has no
-//                      key PathQuote writes to look it up by.
+//                      goes on (UNTRACKED_CONTACT_REASON). The contact is NOT
+//                      looked up by email: among ACT!'s 17.5k contacts an
+//                      email is no identity -- shared inboxes, duplicates
+//                      already there, contacts with none -- and adopting a
+//                      match could take over another manager's Customer.
 //   opportunity,       nextStep plans as usual, because the drain looks up
-//   product-line       before EVERY create of these two, marker or not: the
-//                      opportunity by its fixed name among the contact's, the
-//                      line by its item number among the opportunity's
-//                      (opportunityLookup, productLineLookup in
-//                      src/lib/act/write-payloads.ts). One match is adopted:
-//                      its id is stored alone, and the next step planned is
-//                      the update, which decides on a fresh read like any
-//                      other; none is created; more than one blocks, with
-//                      duplicateOpportunitiesReason or
+//   product-line,      before EVERY create of these three, marker or not: the
+//   history            opportunity by its fixed name across ACT!'s
+//                      opportunities, the line by its item number among the
+//                      opportunity's, the History by its `regarding` among
+//                      the contact's (opportunityLookup, productLineLookup,
+//                      historyLookup in src/lib/act/write-payloads.ts). None
+//                      found: the record is created. One opportunity or line
+//                      found is adopted: its id is stored alone, and the next
+//                      step planned is the update, which decides on a fresh
+//                      read like any other. More than one opportunity or line
+//                      blocks, with duplicateOpportunitiesReason or
 //                      duplicateProductLinesReason, for a person to settle --
-//                      PathQuote never deletes in ACT!. The lookup is what
-//                      resolves the marker.
+//                      PathQuote never deletes in ACT!. A History found, one
+//                      or several, is adopted -- the oldest, the rest noted --
+//                      as QuoteRevision.actHistoryId, and the row goes on: a
+//                      duplicate journal entry is not worth holding back the
+//                      promote-contact and the win that follow it, which carry
+//                      the deal's status. The lookup is what resolves the
+//                      marker.
 //
 // Anything else in the column blocks as well (untrackedCreateReason): a
 // record nobody here can name may exist. A take-over does NOT clear the
 // marker -- a record an earlier revision's step may have made is in ACT!
 // whatever revision the row carries now -- and the drain's pass over blocked
-// rows clears blockedReason only when nextStep no longer blocks, which for
-// these needs the marker gone. A row the drain blocked on a lookup's
-// duplicates is not blocked by nextStep, so that pass makes it due again and
-// the lookup runs again: blocked while the duplicates stand, on its way once
-// a person has dealt with them.
+// rows clears blockedReason only when nextStep no longer blocks, which for a
+// contact, or a value nothing here knows, needs the marker gone. A row the
+// drain blocked on a lookup's duplicates is not blocked by nextStep, so that
+// pass makes it due again and the lookup runs again: blocked while the
+// duplicates stand, on its way once a person has dealt with them.
 //
 // A REQUIREMENT ON THE DRAIN (Task 7): after create-opportunity, the two
 // stores -- Document.actOpportunityId and the row's opportunityActId -- MUST be
@@ -321,13 +389,13 @@
 // and the next revision's row finds Document.actOpportunityId null and creates
 // a second opportunity for the same deal. (The other way round only re-runs
 // this row's step as an update, which is harmless.) Likewise after
-// write-product-line or win-opportunity creates the line:
+// write-product-line or write-accepted-line creates the line:
 // Document.actProductLineId and Document.actProductLineRevision are stored by
 // one UPDATE of the Document. The revision without the id would create a
 // second line on the next revision; the id without the revision only re-runs
-// this step as an update. And inside win-opportunity, that UPDATE is
-// committed before the opportunity is read for the win, so a failure in the
-// win leaves the line's write recorded (THE WIN WRITES THE LINE FIRST).
+// this step as an update. The win is a step of its own, which this planner
+// returns only once that UPDATE says the line shows the row's revision (THE
+// LINE IS WRITTEN BEFORE THE WIN).
 //
 // BLOCKED REASONS ARE READ BY A MANAGER on the quote, so they are sentences
 // that say what to do, in the voice of src/lib/act/sync-view.ts: a fault the
@@ -368,10 +436,11 @@ export type OutboxProgress = {
   opportunityActId: string | null;
   /**
    * ActOutbox.productLineSkippedAt: set when this row's write-product-line
-   * found the deal closed and left the line alone (productLineWrite in
-   * src/lib/act/write-payloads.ts says `skip`). Null otherwise. The step is
-   * then done for this row although the line does not show its revision; see
-   * A CLOSED OPPORTUNITY'S LINE IS LEFT ALONE.
+   * left the line alone because productLineWrite in
+   * src/lib/act/write-payloads.ts said `skip` -- a deal not Open, and not Won
+   * with the quote accepted and signed. Null otherwise. The step is then done
+   * for this row although the line does not show its revision, before the
+   * journal and after it; see A CLOSED OPPORTUNITY'S LINE IS LEFT ALONE.
    */
   productLineSkippedAt: Date | null;
   /**
@@ -421,7 +490,9 @@ export type QuoteState = {
   /**
    * Document.signingStatus, as its enum name. "SIGNED" is the client's
    * signature standing; voidSignature puts it back to NOT_SENT. A string
-   * rather than Prisma's enum type, to keep this module free of Prisma.
+   * rather than Prisma's enum type, to keep this module free of Prisma. Read
+   * for promotion, and for the line step after the journal (A WON DEAL SHOWS
+   * THE LATEST SIGNED FIGURE).
    */
   signingStatus: string;
   /** Document.acceptedAt: set once the quote is accepted (acceptQuote). */
@@ -439,17 +510,22 @@ export type OutboxStep =
   | { kind: "create-contact" }
   | { kind: "create-opportunity" }
   | { kind: "update-opportunity" }
-  /** `create` when the deal has no line yet (Document.actProductLineId null), `update` otherwise. */
+  /**
+   * `create` when the deal has no line yet (Document.actProductLineId null),
+   * `update` otherwise. The drain asks productLineWrite first, and may leave
+   * the line alone (A CLOSED OPPORTUNITY'S LINE IS LEFT ALONE).
+   */
   | { kind: "write-product-line"; line: "create" | "update" }
   | { kind: "write-history" }
   | { kind: "promote-contact" }
   /**
-   * `line` is what to do to the product line BEFORE the opportunity is won:
-   * `create` or `update`, as for write-product-line, when the line does not
-   * show the row's revision; null when it does. See THE WIN WRITES THE LINE
-   * FIRST.
+   * The line brought to the row's revision before the win, `create` or
+   * `update` as for write-product-line, whatever the deal's status:
+   * productLineWrite is not asked. See THE LINE IS WRITTEN BEFORE THE WIN.
    */
-  | { kind: "win-opportunity"; line: "create" | "update" | null }
+  | { kind: "write-accepted-line"; line: "create" | "update" }
+  /** The opportunity patched to Won. Planned only once the line shows the row's revision. */
+  | { kind: "win-opportunity" }
   | { kind: "done" }
   | { kind: "blocked"; reason: string };
 
@@ -491,24 +567,25 @@ export function unmappedRegionReason(regionCode: string): string {
 export const UNTRACKED_CONTACT_REASON =
   "PathQuote asked ACT! to create this quote's contact but never learned whether it did, so they may be in ACT! already — check ACT! for them before this is tried again, or ACT! could end up with the same person twice.";
 
-/** A History create whose answer never reached the store, likewise. */
-export const UNTRACKED_HISTORY_REASON =
-  "PathQuote asked ACT! to record this quote in the contact's History but never learned whether it did, so the record may be in ACT! already — check the contact's History in ACT! before this is tried again, or the quote could be recorded twice.";
-
-/** The sentence for a createInFlight value: the two above, or one for a value nothing here knows. */
+/**
+ * The sentence for a createInFlight value nextStep blocks on: the contact's
+ * above, or one for a value nothing here knows. (An opportunity, a line or a
+ * History in flight does not block: the drain's lookup resolves it.)
+ */
 export function untrackedCreateReason(createInFlight: string): string {
   if (createInFlight === CREATE_IN_FLIGHT.contact) return UNTRACKED_CONTACT_REASON;
-  if (createInFlight === CREATE_IN_FLIGHT.history) return UNTRACKED_HISTORY_REASON;
   return `PathQuote asked ACT! to create a record for this quote ("${createInFlight}") but never learned whether it did, and does not know how to look for it — ask your developer to check ACT! before this is tried again.`;
 }
 
 /**
  * The drain's block when opportunityLookup finds more than one opportunity
- * with this deal's name on the contact. Not returned by nextStep: the drain
- * sets it from the lookup, and the lookup runs again on the next pass.
+ * with this deal's name -- across ACT!, or among the contact's on the
+ * lookup's fallback (ActClient.opportunitiesNamed). Not returned by nextStep:
+ * the drain sets it from the lookup, and the lookup runs again on the next
+ * pass.
  */
 export function duplicateOpportunitiesReason(name: string, count: number): string {
-  return `ACT! has ${count} opportunities named "${name}" for this quote's contact, and PathQuote makes one per quote, so it cannot tell which is this deal — in ACT!, rename or remove the ones that are not this quote's, and this will carry on.`;
+  return `ACT! has ${count} opportunities named "${name}", and PathQuote makes one per quote, so it cannot tell which is this deal — in ACT!, rename or remove the ones that are not this quote's, and this will carry on.`;
 }
 
 /**
@@ -552,20 +629,38 @@ function winDue(quote: QuoteState): boolean {
   return quote.acceptedAt !== null && quote.actOpportunityWonAt === null;
 }
 
+/**
+ * The line step again, after the journal: the client's signature stands, the
+ * line is still behind the row's revision, and this row has not already had
+ * productLineWrite's `skip` for it. Not while the win is due, which brings
+ * the line up to date itself (write-accepted-line). See A WON DEAL SHOWS THE
+ * LATEST SIGNED FIGURE.
+ */
+function signedLineDue(progress: OutboxProgress, revision: RevisionProgress, quote: QuoteState): boolean {
+  return (
+    !winDue(quote) &&
+    quote.signingStatus === "SIGNED" &&
+    lineBehind(revision, quote) &&
+    progress.productLineSkippedAt === null
+  );
+}
+
 export function nextStep(
   progress: OutboxProgress,
   revision: RevisionProgress,
   quote: QuoteState,
 ): OutboxStep {
-  // A create that may have made a contact or a History PathQuote cannot name
-  // stops everything, `done` included, until a person has looked (A CREATE
-  // IN FLIGHT). An opportunity or a line resolves itself: the drain looks it
-  // up before creating it.
+  // A create that may have made a contact PathQuote cannot name -- or a
+  // record of a kind nothing here knows -- stops everything, `done`
+  // included, until a person has looked (A CREATE IN FLIGHT). An opportunity,
+  // a line or a History resolves itself: the drain looks it up before
+  // creating it.
   const inFlight = progress.createInFlight;
   if (
     inFlight !== null &&
     inFlight !== CREATE_IN_FLIGHT.opportunity &&
-    inFlight !== CREATE_IN_FLIGHT.productLine
+    inFlight !== CREATE_IN_FLIGHT.productLine &&
+    inFlight !== CREATE_IN_FLIGHT.history
   ) {
     return { kind: "blocked", reason: untrackedCreateReason(inFlight) };
   }
@@ -573,12 +668,13 @@ export function nextStep(
   // A revision already journaled is finished, whichever row journaled it.
   // Nothing that has happened to the quote since -- an unfinalize, a contact
   // removed -- reaches back into a write that has already gone through. What
-  // can still be due is a deal event, which is new work rather than that
-  // revision's.
+  // can still be due is a deal event, or the line again for a signature,
+  // which is new work rather than that revision's.
   const journaled = revision.actHistoryId !== null;
   const promote = promotionDue(quote);
   const win = winDue(quote);
-  if (journaled && !promote && !win) return { kind: "done" };
+  const signedLine = signedLineDue(progress, revision, quote);
+  if (journaled && !promote && !win && !signedLine) return { kind: "done" };
 
   // Blocking checks, before every step: on a fresh row, before anything is
   // made in ACT!; on a row that has made something already, it keeps it (see
@@ -601,8 +697,9 @@ export function nextStep(
       // updated, never replaced (see ONE OPPORTUNITY PER DEAL above).
       return quote.actOpportunityId ? { kind: "update-opportunity" } : { kind: "create-opportunity" };
     }
-    // Behind and not skipped by this row: a closed deal's line is left
-    // alone, and the win brings it up to date if the quote is accepted.
+    // Behind and not skipped by this row. A line productLineWrite left alone
+    // is brought up to date by write-accepted-line if the quote is accepted,
+    // and asked about again by a later signature's row.
     if (lineBehind(revision, quote) && progress.productLineSkippedAt === null) {
       return { kind: "write-product-line", line: lineWrite(quote) };
     }
@@ -611,12 +708,19 @@ export function nextStep(
 
   if (promote) return { kind: "promote-contact" };
 
-  // Only a win is left. The row that journaled this revision did its
-  // opportunity step first, and nothing clears Document.actOpportunityId, so
-  // it is set here unless the database was edited by hand; if it is not, the
-  // opportunity is created before it is won rather than a win sent to nothing.
+  // Only line work and the win are left. The row that journaled this revision
+  // did its opportunity step first, and nothing clears
+  // Document.actOpportunityId, so it is set here unless the database was
+  // edited by hand; if it is not, the opportunity is created before its line
+  // is written or it is won, rather than either being sent to nothing.
   if (!quote.actOpportunityId) return { kind: "create-opportunity" };
-  // Whatever this row skipped: the win overturns a closed status, and a won
-  // deal shows the accepted figure.
-  return { kind: "win-opportunity", line: lineBehind(revision, quote) ? lineWrite(quote) : null };
+  if (win) {
+    // Whatever this row skipped: the win overturns a closed status, and a won
+    // deal shows the accepted figure -- written first, as a step of its own.
+    return lineBehind(revision, quote)
+      ? { kind: "write-accepted-line", line: lineWrite(quote) }
+      : { kind: "win-opportunity" };
+  }
+  // A signature, with the line behind: the line step again.
+  return { kind: "write-product-line", line: lineWrite(quote) };
 }

@@ -380,6 +380,19 @@ function stagesFor(regionCode: string) {
 }
 
 /**
+ * A revision's History `regarding`: "Quote Q-AU-2026-014-R2 finalised in
+ * PathQuote". PathQuote's own sentence, and one per revision -- the label
+ * carries the quote number and the revision -- which is what lets the drain
+ * find a History it created but did not store
+ * (historyLookup). historyBody and historyLookup both take it from here, so
+ * the two cannot drift apart.
+ */
+export function historyRegarding(quote: Pick<QuoteForAct, "number" | "revision">): string {
+  const label = revisionLabel(quote.number, quote.revision) ?? quote.number;
+  return `Quote ${label} finalised in PathQuote`;
+}
+
+/**
  * The History record for one finalised revision.
  *
  * `opportunityActId` links it to the deal's opportunity when there is one;
@@ -390,11 +403,10 @@ export function historyBody(
   parties: ActParties,
   opportunityActId: string | null,
 ): HistoryBody {
-  const label = revisionLabel(quote.number, quote.revision) ?? quote.number;
   const at = quote.finalizedAt.toISOString();
   return {
     historyTypeID: HISTORY_TYPE_QUOTE,
-    regarding: `Quote ${label} finalised in PathQuote`,
+    regarding: historyRegarding(quote),
     details: [
       `Total: ${moneyWithCode(quote.total, quote.currency)}`,
       `Valid for ${plural(quote.validityDays, "day", "days")}`,
@@ -437,7 +449,8 @@ export function newOpportunityBody(quote: QuoteForAct, parties: ActParties): New
  * not a missing one. Everything that writes a revision's figures into an
  * existing deal asks this first: revisedOpportunityBody for the opportunity,
  * and productLineWrite for its product line. A deal that is not Open is left
- * alone by both -- the line of a won deal of an accepted quote apart.
+ * alone by both -- the line of a won deal whose quote is accepted and signed
+ * apart.
  */
 export function opportunityIsOpen(status: string | null): boolean {
   return status === OPPORTUNITY_STATUS.open;
@@ -445,29 +458,40 @@ export function opportunityIsOpen(status: string | null): boolean {
 
 /**
  * Whether write-product-line writes the deal's line for the row's revision,
- * decided on the opportunity as the drain reads it just before.
+ * decided on the opportunity as the drain reads it just before, and on the
+ * quote as it stands: `accepted` is Document.acceptedAt set, `signed` is
+ * Document.signingStatus SIGNED.
  *
  * - `write`: the deal is Open, so the revision's figure is the deal's; or it
- *   is Won and the quote is accepted (`accepted`: Document.acceptedAt is
- *   set), so the accepted quote's figure is what the deal was won at. That
- *   second case is a quote voided and re-finalised after its win: still
- *   accepted, at a new figure, and the win never planned again
- *   (src/lib/act/outbox-plan.ts, THE WIN WRITES THE LINE FIRST).
- * - `skip`: anything else -- Lost, Inactive, Won without an acceptance in
- *   PathQuote, a status never seen. The line is part of the record of how the
+ *   is Won, the quote is accepted AND the client's signature stands. A won
+ *   deal shows the latest SIGNED figure. Vadym's rule is "PathQuote
+ *   confirms", and the confirmation is the client's signature; acceptedAt
+ *   alone is not it, because voidSignature leaves acceptedAt set. After a
+ *   void, a quote re-finalised at a new figure is still "accepted", at a
+ *   figure nobody has signed, and its finalise row skips the line here. When
+ *   the client signs that revision, the signature's row finds the line
+ *   behind and asks again, and this says `write`
+ *   (src/lib/act/outbox-plan.ts, A WON DEAL SHOWS THE LATEST SIGNED FIGURE).
+ * - `skip`: anything else -- Lost, Inactive, Won without both an acceptance
+ *   and a signature standing in PathQuote (a deal Won by hand in ACT! among
+ *   them), a status never seen. The line is part of the record of how the
  *   deal ended, and is left alone, as revisedOpportunityBody leaves the
  *   opportunity. `status` is what ACT! said, for the drain to report.
  *
  * On `skip` the drain sends nothing and stores ActOutbox.productLineSkippedAt
  * -- never Document.actProductLineRevision, which says what the line shows.
  * A skipped line on a deal the quote's acceptance then wins is written by
- * win-opportunity, before the status.
+ * write-accepted-line, which does not ask this: it comes before the win and
+ * writes the line whatever the status.
  */
 export type ProductLineWrite = { kind: "write" } | { kind: "skip"; status: string | null };
 
-export function productLineWrite(status: string | null, accepted: boolean): ProductLineWrite {
+export function productLineWrite(
+  status: string | null,
+  quote: { accepted: boolean; signed: boolean },
+): ProductLineWrite {
   if (opportunityIsOpen(status)) return { kind: "write" };
-  if (accepted && status === OPPORTUNITY_STATUS.won) return { kind: "write" };
+  if (status === OPPORTUNITY_STATUS.won && quote.accepted && quote.signed) return { kind: "write" };
   return { kind: "skip", status };
 }
 
@@ -500,8 +524,10 @@ export type RevisionUpdate =
  * A later revision's effect on the deal's existing opportunity.
  *
  * AN OPPORTUNITY THAT IS NOT OPEN IS LEFT ENTIRELY ALONE: no stage, no
- * probability -- and no product line either, which is what keeps its total
- * (productLineWrite). Won, Lost or Inactive, it is the record of
+ * probability -- and no product line either, which is what keeps its total,
+ * save the one exception productLineWrite makes: a Won deal whose quote is
+ * accepted and signed in PathQuote gets the signed figure. Won, Lost or
+ * Inactive, it is the record of
  * how the deal ended and at what figure, and silently rewriting a closed
  * record in somebody else's CRM is the worse harm. The
  * History is the journal: it still records that a new revision went out and
@@ -615,10 +641,12 @@ export type WonUpdate =
  * THE LINE COMES FIRST. A deal closed by hand before the acceptance may have
  * had its line left alone (productLineWrite), at an earlier revision's figure
  * or with no line at all; overturned to Won as it stands, ACT! would record
- * the win at that figure. So win-opportunity writes the line for the accepted
- * revision before this is asked, whenever it does not show it
- * (src/lib/act/outbox-plan.ts, THE WIN WRITES THE LINE FIRST) -- and an
- * `already-won` deal still gets that line.
+ * the win at that figure. So whenever the line does not show the accepted
+ * revision, the planner puts a step of its own, write-accepted-line, before
+ * win-opportunity, and the win is not planned until that step is done
+ * (src/lib/act/outbox-plan.ts, THE LINE IS WRITTEN BEFORE THE WIN). An
+ * `already-won` deal still gets that line: the step comes before this is
+ * asked anything.
  */
 export function wonOpportunityBody(
   regionCode: string,
@@ -711,10 +739,11 @@ export type SummaryProductBody = SummaryProductPatch & { discount: 0 };
  * label rather than the bare number because the line, unlike the
  * opportunity, says which revision's figure it is.
  *
- * Written when productLineWrite says so -- an Open deal, or a Won one whose
- * quote is accepted -- and by win-opportunity, before it patches the status,
- * whatever the status. Otherwise the line is left alone, as
- * revisedOpportunityBody leaves the opportunity.
+ * Written by write-product-line when productLineWrite says so -- an Open
+ * deal, or a Won one whose quote is accepted and signed -- and by
+ * write-accepted-line, the step before the win, whatever the status.
+ * Otherwise the line is left alone, as revisedOpportunityBody leaves the
+ * opportunity.
  */
 export function summaryProductPatch(quote: QuoteForAct): SummaryProductPatch {
   const label = revisionLabel(quote.number, quote.revision) ?? quote.number;
@@ -788,18 +817,28 @@ export function productLineLookup(
 }
 
 /**
- * The deal's opportunity among the contact's, by `name` -- opportunityName,
- * exactly -- read with `GET /api/contacts/{contactId}/associated-opportunities`
- * (ActClient.contactOpportunities). Looked up before every create, for the
- * line's reason; possible because the name is fixed on create and never
- * changed by PathQuote.
+ * The deal's opportunity, by `name` -- opportunityName, exactly -- among the
+ * opportunities ActClient.opportunitiesNamed returns: every opportunity in
+ * ACT! with that name (`GET /api/opportunities?$filter=name eq '...'`), or,
+ * when ACT! answers that filter with a 4xx, the contact's own
+ * (`GET /api/contacts/{contactId}/associated-opportunities`). Looked up before
+ * every create, for the line's reason; possible because the name is fixed on
+ * create and never changed by PathQuote. The comparison here is exact
+ * whatever the server matched, so a filter ACT! applies without regard to
+ * case, or does not apply at all, still leaves only this deal's name.
+ *
+ * ACROSS EVERY OPPORTUNITY, not the contact's, because the name is the quote
+ * number and its currency, and the quote number is unique. So a create lost
+ * on one contact is still found after the quote's contact was changed
+ * (unfinalise, choose another, finalise) before the next attempt -- a case
+ * a lookup among the new contact's opportunities misses, and answers with a
+ * second opportunity for the deal. Only the fallback has that blind spot
+ * again.
  *
  * What it cannot see: an opportunity created for this quote and then renamed
- * by hand in ACT!, or one created under a different contact -- the quote's
- * contact changed (unfinalise, choose another, finalise) between the lost
- * create and the next attempt. Both need the earlier create to have been lost
- * as well, and both end as a second opportunity for the deal, not a doubled
- * amount: the line is created on whichever opportunity the Document stores.
+ * by hand in ACT!. That needs the earlier create to have been lost as well,
+ * and ends as a second opportunity for the deal, not a doubled amount: the
+ * line is created on whichever opportunity the Document stores.
  */
 export function opportunityLookup(
   opportunities: readonly { id?: unknown; name?: unknown }[],
@@ -807,6 +846,72 @@ export function opportunityLookup(
 ): CreateLookup {
   const name = opportunityName(quote);
   return lookup(opportunities.filter((opportunity) => opportunity.name === name));
+}
+
+/**
+ * What the drain does before creating a revision's History: what its lookup
+ * found.
+ *
+ * - `create`: none of the contact's Histories is this revision's. Create it.
+ * - `adopt`: one is, or more than one. The drain stores `id` as
+ *   QuoteRevision.actHistoryId, clearing createInFlight in the same
+ *   transaction, and moves on. Nothing is updated: a History is never
+ *   rewritten, and the one found was made for this very revision -- its
+ *   `regarding` says so. `matches` is how many were found; more than one is a
+ *   duplicate journal entry already in ACT!, which the drain notes in its run
+ *   report and leaves where it is (PathQuote never deletes in ACT!).
+ */
+export type HistoryLookup = { kind: "create" } | { kind: "adopt"; id: string; matches: number };
+
+/**
+ * This revision's History among the contact's, read with
+ * `GET /api/contacts/{contactId}/history` (ActClient.contactHistories), whose
+ * 200 is swagger's array of act.web.api.models.Histories.History --
+ * `historyTypeID` and `regarding` among its fields. A History is this
+ * revision's when its `historyTypeID` is HISTORY_TYPE_QUOTE and its
+ * `regarding` is historyRegarding(quote), both exactly: PathQuote writes that
+ * sentence, one per revision, and a History somebody typed by hand that
+ * happens to read the same is the same journal entry anyway.
+ *
+ * LOOKED UP BEFORE EVERY CREATE, for the line's reason: a drain that dies
+ * between ACT!'s answer and the database write raises no error, and the next
+ * attempt would journal the revision again.
+ *
+ * MORE THAN ONE DOES NOT BLOCK, unlike the opportunity and the line. A
+ * duplicate History says twice that a revision went out, but carries no
+ * figure the deal is summed from, as a second line or opportunity does; a
+ * blocked row would hold back its promote-contact and its win, which carry
+ * the deal's status. So the oldest is adopted -- by `created`,
+ * then by id, so the same answer always gives the same choice, with a match
+ * whose `created` ACT! did not give after those that have one -- and the rest
+ * are noted. A match with no id is one the drain could not store, and is
+ * passed over; were every match without one, the History is created again,
+ * which is the duplicate this lookup already accepts.
+ *
+ * What it cannot see: a History made for this revision under another contact
+ * -- the quote's contact changed between the lost create and the next
+ * attempt. That ends as the revision journaled on both contacts.
+ */
+export function historyLookup(
+  histories: readonly { id?: unknown; historyTypeID?: unknown; regarding?: unknown; created?: unknown }[],
+  quote: Pick<QuoteForAct, "number" | "revision">,
+): HistoryLookup {
+  const regarding = historyRegarding(quote);
+  const matches = histories.filter(
+    (history) => history.historyTypeID === HISTORY_TYPE_QUOTE && history.regarding === regarding,
+  );
+  const adoptable = matches
+    .filter((history): history is typeof history & { id: string } => typeof history.id === "string" && history.id !== "")
+    .map((history) => ({ id: history.id, created: createdAt(history.created) }))
+    .sort((a, b) => a.created - b.created || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  if (adoptable.length === 0) return { kind: "create" };
+  return { kind: "adopt", id: adoptable[0].id, matches: matches.length };
+}
+
+/** A record's `created` as a time to sort by; a missing or unreadable one sorts last. */
+function createdAt(created: unknown): number {
+  const time = typeof created === "string" ? Date.parse(created) : Number.NaN;
+  return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
 }
 
 /** A body for `PATCH /api/contacts/{id}`: the one field promotion changes. */

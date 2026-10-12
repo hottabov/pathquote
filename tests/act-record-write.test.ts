@@ -7,6 +7,7 @@ import {
   isRetried,
   mergeForWrite,
   neverConnected,
+  odataString,
   patchToSend,
   sameRecordId,
   sameValue,
@@ -531,5 +532,20 @@ describe("writeAnswer", () => {
     expect(writeAnswer([{ id: ID }])).toEqual({ kind: "nothing" });
     expect(writeAnswer("Created")).toEqual({ kind: "nothing" });
     expect(writeAnswer(true)).toEqual({ kind: "nothing" });
+  });
+});
+
+describe("odataString", () => {
+  it("quotes a value for a $filter, doubling every single quote inside it", () => {
+    expect(odataString("Q-AU-2026-014 AUD")).toBe("'Q-AU-2026-014 AUD'");
+    expect(odataString("O'Brien's")).toBe("'O''Brien''s'");
+    expect(odataString("'")).toBe("''''");
+    expect(odataString("")).toBe("''");
+  });
+
+  it("survives URLSearchParams as the same literal", () => {
+    const filter = `regarding eq ${odataString("Quote Q-AU-2026-014-R2 finalised in PathQuote")}`;
+    const query = new URLSearchParams({ $filter: filter }).toString();
+    expect(new URLSearchParams(query).get("$filter")).toBe(filter);
   });
 });

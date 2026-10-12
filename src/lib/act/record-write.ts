@@ -35,11 +35,12 @@ export function isRetried(method: HttpMethod): boolean {
  * came back that does not give the record asked for -- not JSON, no id, the
  * wrong id, or a created id whose read-back failed.
  *
- * A request that failed before `fetch` was even called is none of these.
- * ActClient's `send` does everything that can fail before sending -- the JSON
- * body, the URL, the headers -- ahead of the first attempt, and such a
- * failure is an ordinary error that says nothing was sent; it never reaches
- * classifyWriteFailure.
+ * A request that failed before `fetch` was even called was not sent either,
+ * but is not an answer and never reaches classifyWriteFailure. ActClient's
+ * `send` does everything that can fail before sending -- the JSON body, the
+ * URL, the headers -- ahead of the first attempt, and its `fetchOnce` gets
+ * the token before that; such a failure is thrown as ActNotSentError
+ * directly.
  */
 export type ActAnswer = number | "not-sent" | "no-answer" | "unreadable";
 
@@ -158,10 +159,12 @@ function isObject(value: unknown): value is Record<string, unknown> {
  * again -- so `unreadable` reaches PATCH only in principle.)
  *
  * The client turns each kind into its error -- untracked into
- * ActUntrackedCreateError, the rest into ActApiError when there is a status
- * and a plain Error when there is none -- and each error carries its kind as
- * `failure` (writeFailureOf in src/lib/act/client.ts reads it off any error,
- * a plain one being `failed`), so the drain never has to work it out again.
+ * ActUntrackedCreateError; refused and failed into ActApiError when there is
+ * a status; `not sent` into ActNotSentError; and a GET's or PATCH's `no
+ * answer`, once its attempts are spent, into ActNoAnswerError -- and each
+ * error carries its kind as `failure`, so the drain never has to work it out
+ * again. writeFailureOf in src/lib/act/client.ts reads it off those errors,
+ * and calls any other error `foreign`: it did not come from a request.
  * isRetried agrees with the table: the methods it repeats are the
  * ones whose lost answer is `failed`, not `untracked`. (`not sent` is `failed`
  * for a POST too, but `send` does not repeat it on the spot: the outbox's
@@ -192,6 +195,15 @@ export function failureOf(method: HttpMethod, answer: ActAnswer): WriteFailure {
     throw new Error(`${method} answered ${answer}, which is not a failure; an error for it would say nothing`);
   }
   return failure;
+}
+
+/**
+ * A string as an OData literal, for a `$filter`: in single quotes, with every
+ * single quote inside it doubled -- OData's own escape, so "O'Brien" is
+ * 'O''Brien'. Percent-encoding is URLSearchParams's job, after this.
+ */
+export function odataString(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
 }
 
 /**

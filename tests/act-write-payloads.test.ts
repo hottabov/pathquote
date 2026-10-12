@@ -5,6 +5,8 @@ import {
   OPPORTUNITY_STATUS,
   contactPromotion,
   historyBody,
+  historyLookup,
+  historyRegarding,
   lostOpportunityBody,
   OPPORTUNITY_NAME_MAX,
   moneyWithCode,
@@ -335,26 +337,36 @@ describe("opportunityIsOpen", () => {
 });
 
 describe("productLineWrite", () => {
-  it("writes the line of an Open deal, accepted or not", () => {
-    expect(productLineWrite("Open", false)).toEqual({ kind: "write" });
-    expect(productLineWrite("Open", true)).toEqual({ kind: "write" });
+  const ANY = [
+    { accepted: false, signed: false },
+    { accepted: false, signed: true },
+    { accepted: true, signed: false },
+    { accepted: true, signed: true },
+  ];
+
+  it("writes the line of an Open deal, whatever the quote's acceptance or signature", () => {
+    for (const quote of ANY) expect(productLineWrite("Open", quote)).toEqual({ kind: "write" });
   });
 
-  it("writes the line of a Won deal once the quote is accepted: the accepted figure is what it was won at", () => {
-    expect(productLineWrite("Won", true)).toEqual({ kind: "write" });
+  it("writes the line of a Won deal when the quote is accepted and the client's signature stands", () => {
+    expect(productLineWrite("Won", { accepted: true, signed: true })).toEqual({ kind: "write" });
   });
 
-  it("leaves the line of a deal Won by hand alone until PathQuote accepts the quote", () => {
-    expect(productLineWrite("Won", false)).toEqual({ kind: "skip", status: "Won" });
+  it("leaves a won deal's line alone for an accepted quote nobody has signed: acceptedAt outlives a voided signature", () => {
+    expect(productLineWrite("Won", { accepted: true, signed: false })).toEqual({ kind: "skip", status: "Won" });
+  });
+
+  it("leaves the line of a deal Won by hand alone until PathQuote accepts the quote, signature or not", () => {
+    expect(productLineWrite("Won", { accepted: false, signed: false })).toEqual({ kind: "skip", status: "Won" });
+    expect(productLineWrite("Won", { accepted: false, signed: true })).toEqual({ kind: "skip", status: "Won" });
   });
 
   it.each(["Lost", "Inactive", "open", "won", "", null])(
-    "leaves the line of a %j deal alone, accepted or not, and says what ACT! said",
+    "leaves the line of a %j deal alone, accepted, signed or neither, and says what ACT! said",
     (status) => {
       // A Lost deal of an accepted quote is overturned by win-opportunity,
-      // which writes the line itself before the status.
-      expect(productLineWrite(status, false)).toEqual({ kind: "skip", status });
-      expect(productLineWrite(status, true)).toEqual({ kind: "skip", status });
+      // after write-accepted-line has written the line without asking this.
+      for (const quote of ANY) expect(productLineWrite(status, quote)).toEqual({ kind: "skip", status });
     },
   );
 });
@@ -694,7 +706,7 @@ describe("productLineLookup", () => {
 describe("opportunityLookup", () => {
   const OTHER = "c0000000-0000-0000-0000-0000000000a1";
 
-  it("creates when none of the contact's opportunities has this deal's name", () => {
+  it("creates when none of the opportunities ACT! returned has this deal's name", () => {
     expect(opportunityLookup([], quote())).toEqual({ kind: "create" });
     expect(
       opportunityLookup([{ id: OTHER, name: "Q-AU-2026-013 AUD" }, { id: OTHER, name: "Cutter upgrade" }], quote()),
@@ -722,5 +734,83 @@ describe("opportunityLookup", () => {
       { id: OTHER, name: "Q-AU-2026-014 AUD" },
     ];
     expect(opportunityLookup(opportunities, quote())).toEqual({ kind: "block", count: 2 });
+  });
+});
+
+describe("historyRegarding and historyLookup", () => {
+  const HISTORY = "c0000000-0000-0000-0000-0000000000b0";
+  const OLDER = "c0000000-0000-0000-0000-0000000000b1";
+  const NEWER = "c0000000-0000-0000-0000-0000000000b2";
+  const r2 = { number: "Q-AU-2026-014", revision: 2 };
+  const ours = (id: unknown, created?: unknown) => ({
+    id,
+    historyTypeID: HISTORY_TYPE_QUOTE,
+    regarding: "Quote Q-AU-2026-014-R2 finalised in PathQuote",
+    ...(created === undefined ? {} : { created }),
+  });
+
+  it("is the History's own regarding, one sentence per revision", () => {
+    expect(historyRegarding(r2)).toBe("Quote Q-AU-2026-014-R2 finalised in PathQuote");
+    expect(historyRegarding({ ...r2, revision: 0 })).toBe("Quote Q-AU-2026-014 finalised in PathQuote");
+    expect(historyBody(quote({ revision: 2 }), parties(), null).regarding).toBe(historyRegarding(r2));
+  });
+
+  it("creates when none of the contact's Histories is this revision's", () => {
+    expect(historyLookup([], r2)).toEqual({ kind: "create" });
+    const others = [
+      // Another revision of the same quote, another quote, a note somebody typed.
+      { ...ours(HISTORY), regarding: "Quote Q-AU-2026-014-R1 finalised in PathQuote" },
+      { ...ours(HISTORY), regarding: "Quote Q-AU-2026-0140-R2 finalised in PathQuote" },
+      { id: HISTORY, historyTypeID: 1, regarding: "Called about the cutter" },
+    ];
+    expect(historyLookup(others, r2)).toEqual({ kind: "create" });
+  });
+
+  it("matches the type and the regarding exactly", () => {
+    // The same words under another history type are not PathQuote's Quote entry.
+    expect(historyLookup([{ ...ours(HISTORY), historyTypeID: 1 }], r2)).toEqual({ kind: "create" });
+    expect(historyLookup([{ ...ours(HISTORY), historyTypeID: "62" }], r2)).toEqual({ kind: "create" });
+    for (const regarding of [
+      "quote Q-AU-2026-014-R2 finalised in PathQuote",
+      "Quote Q-AU-2026-014-R2 finalised in PathQuote ",
+      "Quote Q-AU-2026-014-R2 finalised in PathQuote.",
+    ]) {
+      expect(historyLookup([{ ...ours(HISTORY), regarding }], r2)).toEqual({ kind: "create" });
+    }
+  });
+
+  it("adopts the one History that is this revision's", () => {
+    expect(historyLookup([ours(HISTORY, "2026-10-12T04:30:05Z")], r2)).toEqual({ kind: "adopt", id: HISTORY, matches: 1 });
+  });
+
+  it("does not block on more than one: it adopts the oldest and says how many there were", () => {
+    const histories = [
+      ours(NEWER, "2026-10-13T00:00:00Z"),
+      ours(OLDER, "2026-10-12T04:30:05Z"),
+      ours(HISTORY, "2026-10-12T09:00:00Z"),
+    ];
+    expect(historyLookup(histories, r2)).toEqual({ kind: "adopt", id: OLDER, matches: 3 });
+    // The same answer in any order gives the same choice.
+    expect(historyLookup([...histories].reverse(), r2)).toEqual({ kind: "adopt", id: OLDER, matches: 3 });
+  });
+
+  it("puts a match with no readable `created` after the dated ones, and breaks a tie by id", () => {
+    expect(historyLookup([ours(OLDER), ours(NEWER, "2026-10-13T00:00:00Z")], r2)).toEqual({
+      kind: "adopt",
+      id: NEWER,
+      matches: 2,
+    });
+    expect(historyLookup([ours(NEWER, "not a date"), ours(OLDER)], r2)).toEqual({ kind: "adopt", id: OLDER, matches: 2 });
+    const same = "2026-10-12T04:30:05Z";
+    expect(historyLookup([ours(NEWER, same), ours(OLDER, same)], r2)).toEqual({ kind: "adopt", id: OLDER, matches: 2 });
+  });
+
+  it("passes over a match it could not store for want of an id, and creates when that is all there is", () => {
+    expect(historyLookup([ours(undefined), ours(""), ours(HISTORY, "2026-10-13T00:00:00Z")], r2)).toEqual({
+      kind: "adopt",
+      id: HISTORY,
+      matches: 3,
+    });
+    expect(historyLookup([ours(undefined), ours(42)], r2)).toEqual({ kind: "create" });
   });
 });
