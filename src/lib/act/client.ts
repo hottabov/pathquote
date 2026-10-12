@@ -1,4 +1,25 @@
-import type { ActContact, ActHistory, ActPicklistItem, ActUser } from "@/lib/act/types";
+import {
+  isRetried,
+  mergeForWrite,
+  writeAnswer,
+  type ActRecordJson,
+  type HttpMethod,
+} from "@/lib/act/record-write";
+import type {
+  ActContact,
+  ActContactPatch,
+  ActHistory,
+  ActHistoryRecord,
+  ActOpportunity,
+  ActPicklistItem,
+  ActUser,
+} from "@/lib/act/types";
+import type {
+  HistoryBody,
+  NewContactBody,
+  NewOpportunityBody,
+  OpportunityPatch,
+} from "@/lib/act/write-payloads";
 
 // HTTP against the Act! Web API. Every judgement this integration makes lives
 // in the pure modules beside this one; what is left here is transport, and it
@@ -74,42 +95,111 @@ const RETRY_DELAY_MS = 1_000;
 
 type Reply = { status: number; ok: boolean; body: string };
 
+/** What goes out besides the URL and headers. A body is sent as JSON. */
+type Outgoing = { method: HttpMethod; body?: unknown };
+
 /**
- * One HTTP exchange, retried when the network fails, the request times out or
- * the server answers 5xx -- up to MAX_ATTEMPTS attempts in all.
+ * A create that may have left a record in ACT! whose id PathQuote does not
+ * have.
  *
- * 4xx is never retried: it is a real answer, and repeating a rejected request
- * only repeats the rejection. The single 401 re-authorisation in `get` is a
- * different mechanism and sits above this; a 401 comes straight back out of
- * here as an ordinary reply.
+ * Thrown for a POST that timed out, lost its connection or was answered 5xx
+ * -- the server may have committed it before the failure -- and for a POST
+ * that succeeded but whose record could not be had from the answer: not
+ * JSON, no id in it, or an id whose read-back failed.
+ * Not retried here (see `send`), and not an ordinary failure for the caller
+ * either: running the same create again is what turns this into a duplicate
+ * History, opportunity or contact. A plain ActApiError, by contrast, is a
+ * create ACT! refused, which made nothing.
+ */
+export class ActUntrackedCreateError extends Error {
+  constructor(
+    message: string,
+    /** Method and path, e.g. "POST /api/History". */
+    readonly request: string,
+    /**
+     * The HTTP status when it is the reason: a 5xx, or a success whose body
+     * was not JSON. Null when no answer arrived, or when the failure came after
+     * a readable success -- no id in it, or the read-back by id failing.
+     */
+    readonly status: number | null,
+    readonly body: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = "ActUntrackedCreateError";
+  }
+}
+
+/**
+ * One HTTP exchange. Whether a failure is repeated depends on the method --
+ * isRetried in src/lib/act/record-write.ts, which this follows exactly:
+ *
+ *   GET, PATCH  sent again when the network fails, the request times out or
+ *               the server answers 5xx, up to MAX_ATTEMPTS attempts in all.
+ *               A GET changes nothing, and every PATCH this client sends
+ *               carries the whole record, so a second copy writes what the
+ *               first did.
+ *   POST        sent ONCE. Not repeated on a timeout, a network failure or a
+ *               5xx: every POST here creates a record, and none of those
+ *               failures says the record was not created -- the server may
+ *               have committed it and only the answer been lost. Sending it
+ *               again would create a second History, a second opportunity for
+ *               the deal, or a duplicate contact. A timeout or network failure
+ *               throws ActUntrackedCreateError; a 5xx comes back as a reply,
+ *               which `parse` turns into the same error.
+ *
+ * 4xx is never repeated, whatever the method: it is a real answer, and
+ * repeating a rejected request only repeats the rejection. The single 401
+ * re-authorisation in `request` is a different mechanism and sits above this;
+ * a 401 comes straight back out of here as an ordinary reply.
+ *
+ * Content-Type is set only when there is a body to describe.
  *
  * The timeout covers reading the body as well as receiving the headers, which
  * is why the body is read here and not by the caller.
  */
-async function send(label: string, url: string, headers: Record<string, string>): Promise<Reply> {
+async function send(
+  label: string,
+  url: string,
+  headers: Record<string, string>,
+  outgoing: Outgoing = { method: "GET" },
+): Promise<Reply> {
+  const attempts = isRetried(outgoing.method) ? MAX_ATTEMPTS : 1;
+  const hasBody = outgoing.body !== undefined;
   for (let attempt = 1; ; attempt++) {
     let failure: string;
     try {
       const response = await fetch(url, {
-        headers,
+        method: outgoing.method,
+        headers: hasBody ? { ...headers, "Content-Type": "application/json" } : headers,
+        ...(hasBody ? { body: JSON.stringify(outgoing.body) } : {}),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       const body = await response.text();
-      if (response.status < 500 || attempt === MAX_ATTEMPTS) {
+      if (response.status < 500 || attempt === attempts) {
         return { status: response.status, ok: response.ok, body };
       }
       failure = `HTTP ${response.status}`;
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      if (attempt === MAX_ATTEMPTS) {
-        throw new Error(`${label} failed after ${MAX_ATTEMPTS} attempts: ${reason}`, {
+      if (outgoing.method === "POST") {
+        throw new ActUntrackedCreateError(
+          `${label} failed and was not retried: ${reason}. ACT! may have created the record anyway -- check before creating it again.`,
+          label,
+          null,
+          "",
+          { cause: error },
+        );
+      }
+      if (attempt === attempts) {
+        throw new Error(`${label} failed after ${attempts} attempts: ${reason}`, {
           cause: error,
         });
       }
       failure = reason;
     }
     console.warn(
-      `act: ${label}: ${failure}; retrying (attempt ${attempt + 1} of ${MAX_ATTEMPTS})`,
+      `act: ${label}: ${failure}; retrying (attempt ${attempt + 1} of ${attempts})`,
     );
     await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS * attempt));
   }
@@ -150,6 +240,14 @@ export function unwrapRows<T>(payload: unknown, path: string): T[] {
   );
 }
 
+function opportunityPath(id: string): string {
+  return `/api/opportunities/${encodeURIComponent(id)}`;
+}
+
+function contactPath(id: string): string {
+  return `/api/contacts/${encodeURIComponent(id)}`;
+}
+
 export class ActClient {
   private token: string | null = null;
   private tokenExpiresAt = 0;
@@ -183,24 +281,53 @@ export class ActClient {
     return this.authorize();
   }
 
-  /** One GET, with whatever token is current, result uninterpreted. */
-  private async fetchOnce(path: string): Promise<Reply> {
+  /** One request, with whatever token is current, result uninterpreted. */
+  private async fetchOnce(path: string, outgoing: Outgoing): Promise<Reply> {
     const token = await this.getToken();
-    return send(`GET ${path}`, `${this.config.baseUrl}${path}`, {
-      Authorization: `Bearer ${token}`,
-      "Act-Database-Name": this.config.database,
-    });
+    return send(
+      `${outgoing.method} ${path}`,
+      `${this.config.baseUrl}${path}`,
+      {
+        Authorization: `Bearer ${token}`,
+        "Act-Database-Name": this.config.database,
+      },
+      outgoing,
+    );
   }
 
-  private parse(path: string, reply: Reply): unknown {
-    if (!reply.ok) {
-      throw new ActApiError(`GET ${path} failed (${reply.status})`, reply.status, reply.body);
+  private parse(path: string, method: HttpMethod, reply: Reply): unknown {
+    const request = `${method} ${path}`;
+    if (method === "POST" && reply.status >= 500) {
+      throw new ActUntrackedCreateError(
+        `${request} failed (${reply.status}) and was not retried. ACT! may have created the record before failing -- check before creating it again.`,
+        request,
+        reply.status,
+        reply.body,
+      );
     }
-    return reply.body ? JSON.parse(reply.body) : null;
+    if (!reply.ok) {
+      throw new ActApiError(`${request} failed (${reply.status})`, reply.status, reply.body);
+    }
+    if (!reply.body) return null;
+    try {
+      return JSON.parse(reply.body);
+    } catch (error) {
+      if (method !== "POST") throw error;
+      throw new ActUntrackedCreateError(
+        `${request} succeeded (${reply.status}) but its answer is not JSON, so the record it created cannot be identified.`,
+        request,
+        reply.status,
+        reply.body,
+        { cause: error },
+      );
+    }
   }
 
   /**
-   * GET a path, re-authorising once if the token was rejected.
+   * Send a request, re-authorising once if the token was rejected.
+   *
+   * The re-send after a 401 is safe for a POST too: a 401 is the request
+   * refused at authentication, before anything was written.
    *
    * Two explicit attempts rather than a loop. A `for` loop here needs a throw
    * after it to satisfy the compiler, that throw is unreachable, and its
@@ -208,22 +335,180 @@ export class ActClient {
    * bare "failed (401)" while the useful sentence sat in dead code. This shape
    * has no unreachable branch and the diagnostic actually fires.
    */
-  private async get(path: string): Promise<unknown> {
-    const first = await this.fetchOnce(path);
-    if (first.status !== 401) return this.parse(path, first);
+  private async request(path: string, outgoing: Outgoing): Promise<unknown> {
+    const first = await this.fetchOnce(path, outgoing);
+    if (first.status !== 401) return this.parse(path, outgoing.method, first);
 
     // Expired or revoked mid-run. Drop the cached token so the retry fetches a
     // fresh one.
     this.token = null;
-    const second = await this.fetchOnce(path);
+    const second = await this.fetchOnce(path, outgoing);
     if (second.status === 401) {
       throw new ActApiError(
-        `GET ${path} failed: still 401 after re-authorising. The account may have lost its "Web API Access" permission, or the password was rotated.`,
+        `${outgoing.method} ${path} failed: still 401 after re-authorising. The account may have lost its "Web API Access" permission, or the password was rotated.`,
         401,
         second.body,
       );
     }
-    return this.parse(path, second);
+    return this.parse(path, outgoing.method, second);
+  }
+
+  private get(path: string): Promise<unknown> {
+    return this.request(path, { method: "GET" });
+  }
+
+  /** GET one record by its path, refusing an answer that is not a record. */
+  private async getRecord(path: string): Promise<ActRecordJson & { id: string }> {
+    const payload = await this.get(path);
+    const answer = writeAnswer(payload);
+    if (answer.kind !== "record") {
+      throw new ActApiError(
+        `GET ${path} returned something other than a record with an id: it was ${describeShape(payload)}`,
+        200,
+        "",
+      );
+    }
+    return answer.record;
+  }
+
+  /**
+   * POST a new record and return it as ACT! holds it.
+   *
+   * Swagger declares a 201 with the created record for all three creates, and
+   * the design doc records the whole contact coming back from the live
+   * `POST /api/contacts`. Should an answer be only the new id, the record is
+   * read back by it (`readPath`), because throwing at that point would leave a
+   * created record PathQuote has no id for. An answer with neither is
+   * ActUntrackedCreateError, for the same reason.
+   */
+  private async create(
+    path: string,
+    body: unknown,
+    readPath: (id: string) => string,
+  ): Promise<ActRecordJson & { id: string }> {
+    const payload = await this.request(path, { method: "POST", body });
+    const answer = writeAnswer(payload);
+    if (answer.kind === "record") return answer.record;
+    if (answer.kind === "id") {
+      try {
+        return await this.getRecord(readPath(answer.id));
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new ActUntrackedCreateError(
+          `POST ${path} created ${answer.id}, but reading it back failed: ${reason}`,
+          `POST ${path}`,
+          null,
+          "",
+          { cause: error },
+        );
+      }
+    }
+    throw new ActUntrackedCreateError(
+      `POST ${path} succeeded but answered with ${describeShape(payload)}, not the record or its id, so the record it created cannot be identified.`,
+      `POST ${path}`,
+      null,
+      "",
+    );
+  }
+
+  /**
+   * Read a record, lay `patch` over it, and PATCH the whole thing back.
+   *
+   * READ-MODIFY-WRITE, ON PURPOSE. Swagger says PATCH takes a partial record
+   * ("Update (partially) an already existing ..."), and a partial PATCH may
+   * well work. Nothing in this repo records one being tried against this
+   * server. What has been is the whole record:
+   * scripts/act-fix-country-usa.py and scripts/act-fix-country-spellings.py
+   * wrote production contacts and companies that way, because a partial write
+   * to a nested object blanks its siblings. So this is the proven path. Once a
+   * partial PATCH has been tried live -- a partial `customFields` included --
+   * switching to it is a two-line change: drop the read, and send
+   * `{ ...patch, id }` instead of `mergeForWrite(...)`.
+   * What is merged how, `customFields` key by key above all, is mergeForWrite
+   * in src/lib/act/record-write.ts.
+   *
+   * Between the read's answer and the write's arrival, an edit made in ACT!
+   * would be overwritten with what was read. The two scripts ran with the same
+   * window.
+   *
+   * WHAT COMES BACK is the record as ACT! holds it after the write, because
+   * the drain stores it as the ActSnapshot and its `edited` as the sync's
+   * baseline -- echo suppression needs ACT!'s `edited`, not ours. Swagger
+   * declares a 200 with the record, and that is used when it arrives. The two
+   * scripts never read the answer, so an empty one has not been ruled out;
+   * then the record is read again rather than returning what was sent, whose
+   * `edited` is the one from before the write.
+   */
+  private async update(
+    path: string,
+    id: string,
+    patch: Record<string, unknown>,
+  ): Promise<ActRecordJson & { id: string }> {
+    const current = await this.getRecord(path);
+    const payload = await this.request(path, {
+      method: "PATCH",
+      body: mergeForWrite(id, current, patch),
+    });
+    const answer = writeAnswer(payload);
+    if (answer.kind === "record") return answer.record;
+    return this.getRecord(path);
+  }
+
+  /**
+   * Create one History record: `POST /api/History` (`History_PostOrFormat` in
+   * swagger.json), capital H as in the endpoint table of
+   * docs/act-integration-reference.md section 3 and as historiesBetween reads
+   * it.
+   */
+  async createHistory(body: HistoryBody): Promise<ActHistoryRecord> {
+    return (await this.create("/api/History", body, (id) =>
+      `/api/History/${encodeURIComponent(id)}`,
+    )) as unknown as ActHistoryRecord;
+  }
+
+  /** Create one opportunity: `POST /api/opportunities` (`Opportunities_PostOpportunity`). */
+  async createOpportunity(body: NewOpportunityBody): Promise<ActOpportunity> {
+    return (await this.create("/api/opportunities", body, (id) =>
+      opportunityPath(id),
+    )) as unknown as ActOpportunity;
+  }
+
+  /** One opportunity: `GET /api/opportunities/{opportunityId}`. */
+  async getOpportunity(id: string): Promise<ActOpportunity> {
+    return (await this.getRecord(opportunityPath(id))) as unknown as ActOpportunity;
+  }
+
+  /**
+   * Change an opportunity: read it, lay `patch` over it, and
+   * `PATCH /api/opportunities/{opportunityId}` the whole record back. See
+   * `update` for why the whole record and what is returned.
+   */
+  async updateOpportunity(id: string, patch: OpportunityPatch): Promise<ActOpportunity> {
+    return (await this.update(opportunityPath(id), id, patch)) as unknown as ActOpportunity;
+  }
+
+  /**
+   * Create one contact: `POST /api/contacts` (`Contacts_PostContact`). The
+   * answer is the whole contact (design doc, verified 2026-10-07), every
+   * field ACT! filled in included -- the drain's first ActSnapshot of it.
+   */
+  async createContact(body: NewContactBody): Promise<ActContact> {
+    return (await this.create("/api/contacts", body, (id) =>
+      contactPath(id),
+    )) as unknown as ActContact;
+  }
+
+  /** One contact: `GET /api/contacts/{contactId}`. */
+  async getContact(id: string): Promise<ActContact> {
+    return (await this.getRecord(contactPath(id))) as unknown as ActContact;
+  }
+
+  /**
+   * Change a contact: read it, lay `patch` over it, and
+   * `PATCH /api/contacts/{contactId}` the whole record back. See `update`.
+   */
+  async updateContact(id: string, patch: ActContactPatch): Promise<ActContact> {
+    return (await this.update(contactPath(id), id, patch)) as unknown as ActContact;
   }
 
   /** The API version, and the Act! version behind it. Logged on every run so a
@@ -244,9 +529,9 @@ export class ActClient {
    *
    * `GET /api/users` -- the path is in the reference's endpoint table
    * (docs/act-integration-reference.md section 3) and in swagger.json as
-   * `Users_Get`, returning `act.web.api.models.Users.UserInfo`. Still a GET:
-   * this client remains read-only, and the users endpoint's POST is not
-   * reachable from here.
+   * `Users_Get`, returning `act.web.api.models.Users.UserInfo`. A GET: the
+   * client writes only Histories, opportunities and contacts, and the users
+   * endpoint's POST is not reachable from here.
    *
    * Not paged, because the endpoint takes no parameters at all -- swagger lists
    * `"parameters": []` for it, so there is no $top or $skip to send -- and the

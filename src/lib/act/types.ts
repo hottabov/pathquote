@@ -18,7 +18,8 @@ export type ActAddress = {
   country: string | null;
 };
 
-/** One contact, trimmed to the fields the sync reads. */
+/** One contact, trimmed to the fields the sync reads. A contact the client
+ *  returns from a read or a write carries every field ACT! sent, beyond these. */
 export type ActContact = {
   id: string;
   /** Empty string, not null, when the contact is linked to no company. */
@@ -60,6 +61,89 @@ export type ActHistory = {
   startTime: string | null;
   created: string | null;
   isPrivate: boolean | null;
+};
+
+/** A record named inside another one: a History's contacts, an opportunity's companies. */
+export type ActEmbeddedRef = {
+  id: string;
+  /** EmbeddedContact's `displayName`; EmbeddedCompany and EmbeddedOpportunity carry `name`. */
+  displayName?: string | null;
+  name?: string | null;
+};
+
+/**
+ * A History record as `POST /api/History` answers with it: the whole
+ * `act.web.api.models.Histories.History`, where ActHistory is the subset the
+ * weekly report reads. Every added field is nullable for the reason ActUser's
+ * are: swagger marks no field of the model required.
+ */
+export type ActHistoryRecord = ActHistory & {
+  regarding: string | null;
+  details: string | null;
+  endTime: string | null;
+  edited: string | null;
+  contacts: ActEmbeddedRef[] | null;
+  companies: ActEmbeddedRef[] | null;
+  opportunities: ActEmbeddedRef[] | null;
+};
+
+/**
+ * An opportunity's stage as ACT! returns it
+ * (`act.web.api.models.Opportunities.Stage`). `process` is the sales process
+ * the stage belongs to; its `id` and the stage's `number` are what the
+ * forward-only rule compares (StagePosition in
+ * src/lib/act/opportunity-stages.ts).
+ */
+export type ActStage = {
+  id: string;
+  name: string | null;
+  description: string | null;
+  probability: number | null;
+  number: number | null;
+  process: { id: string; name: string | null } | null;
+};
+
+/**
+ * One opportunity (`act.web.api.models.Opportunities.Opportunity` in swagger),
+ * trimmed to the fields the write-back reads or sends. The object at runtime
+ * carries every field ACT! sent -- `weightedTotal`, `daysOpen` and the rest --
+ * which is what an update sends back, and what the drain (Task 7) is to store
+ * as the snapshot.
+ *
+ * `status` is not narrowed to OPPORTUNITY_STATUS: what ACT! says is not ours
+ * to assume (OpportunityNow in src/lib/act/write-payloads.ts).
+ */
+export type ActOpportunity = {
+  id: string;
+  name: string | null;
+  status: string | null;
+  stage: ActStage | null;
+  probability: number | null;
+  productTotal: number | null;
+  openDate: string | null;
+  actualCloseDate: string | null;
+  estimatedCloseDate: string | null;
+  reason: string | null;
+  isPrivate: boolean | null;
+  recordManagerID: string | null;
+  recordManager: string | null;
+  contacts: ActEmbeddedRef[] | null;
+  companies: ActEmbeddedRef[] | null;
+  customFields: Record<string, string | number | boolean | null> | null;
+  created: string | null;
+  edited: string | null;
+};
+
+/**
+ * The fields of a contact an update may change: any of ActContact's own
+ * except `id`, `created` and `edited`, which ACT! sets, with `customFields`
+ * naming only the custom fields to change. How it is laid over the record is mergeForWrite in
+ * src/lib/act/record-write.ts.
+ */
+export type ActContactPatch = Partial<
+  Omit<ActContact, "id" | "customFields" | "created" | "edited">
+> & {
+  customFields?: Record<string, string | number | boolean | null>;
 };
 
 /**
