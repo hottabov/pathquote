@@ -1048,7 +1048,20 @@ model Document {
   // bare user id for the same reason as finalizedById above.
   acceptedAt        DateTime?
   acceptedById      String?
+  /// The ACT! opportunity for this deal. One per quote, not per revision: the
+  /// first finalised revision's outbox row creates it, and every later
+  /// revision's row finds it here and updates it instead of opening a second
+  /// opportunity for the same deal -- whatever state it is in, closed included
+  /// (see src/lib/act/outbox-plan.ts, ONE OPPORTUNITY PER DEAL). Null until a
+  /// row has created it. Unique because one ACT! opportunity is one deal: two
+  /// quotes holding the same id would be a drain bug, and this makes it a
+  /// failed write rather than a quiet one.
+  ///
+  /// Kept here, rather than as a PathQuote id stamped into an ACT! custom
+  /// field, for the reason given on ActOutbox.
+  actOpportunityId  String?             @unique
   revisions         QuoteRevision[]
+  actOutbox         ActOutbox[]
   events            QuoteEvent[]
   emails            QuoteEmail[]
   exclusions        DocumentExclusion[]
@@ -1273,6 +1286,19 @@ model QuoteRevision {
   total         Decimal  @db.Decimal(12, 2)
   createdAt     DateTime @default(now())
   createdById   String // bare user id, no FK (see Document.finalizedById)
+
+  /// This revision's History record in ACT!. Null until some outbox row has
+  /// written it -- not necessarily the row that was first queued for it.
+  ///
+  /// On the revision rather than on the outbox row because an unfinalise and
+  /// an unchanged re-finalise keep this revision (no new QuoteRevision row,
+  /// see above) but still queue a new outbox row. Held on the row, "History
+  /// written" would start null on that new row and journal the same revision
+  /// twice; held here, the new row finds it set and has nothing to do (see
+  /// src/lib/act/outbox-plan.ts, ONE HISTORY PER REVISION). Unique for the
+  /// same reason as Document.actOpportunityId.
+  actHistoryId String?     @unique
+  actOutbox    ActOutbox[]
 
   @@unique([documentId, revision])
   @@index([documentId])
@@ -1539,4 +1565,109 @@ model ActSnapshot {
   payload   Json
   contact   Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
   company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+/// One finalised revision's write into ACT!, queued so that finalising a quote
+/// never waits on, or fails because of, the CRM.
+///
+/// A row is a short sequence of steps -- create the contact if ACT! does not
+/// have it, create or update the deal's opportunity, write this revision's
+/// History -- and src/lib/act/outbox-plan.ts decides which comes next from
+/// what has already been stored. Each step's result is stored before the next
+/// begins, so a row that fails halfway resumes where it stopped rather than
+/// repeating what ACT! already has. The results live where they belong, not
+/// all on the row: Contact.actContactId, Document.actOpportunityId and
+/// QuoteRevision.actHistoryId, plus this row's own opportunityActId.
+///
+/// WHY PATHQUOTE KEEPS ACT!'S IDS, rather than stamping a PathQuote id into an
+/// ACT! custom field and searching for it: the five `PQ ` custom fields do not
+/// exist yet, and creating them needs `Define Fields`, which the service
+/// account deliberately does not have (docs/act-integration-reference.md §2),
+/// so that path is blocked on an administrator login. And "which ACT! record
+/// did I create for this quote" is PathQuote's own fact to keep.
+///
+/// The successor to SupportMessage.emailedAt/emailError's "store the record
+/// even when the external call fails": this is the retry that comment says
+/// does not exist yet.
+///
+/// ONE UNFINISHED ROW PER DOCUMENT. Enforced by a partial unique index,
+/// "ActOutbox_documentId_unfinished_key" ON ("documentId") WHERE
+/// "completedAt" IS NULL, created in migration z65_act_outbox. It is NOT
+/// declared below: Prisma models a partial index only under the
+/// `partialIndexes` preview feature, which this project does not enable, and
+/// without it `prisma migrate diff` leaves partial indexes out of the
+/// comparison -- so the CI step "Migrations reproduce schema.prisma" stays
+/// quiet, exactly as it does for the two partial uniques on
+/// OptionCompatibility in 0_init. The same blindness means CI would not
+/// notice the index missing either; and enabling that preview feature would
+/// bring all of them into the comparison at once. A plain
+/// @@unique([documentId]) would be wrong: a document collects one finished
+/// row per finalise over its life.
+///
+/// A BLOCKED ROW IS UNFINISHED, and holds the document's slot. Re-finalising
+/// while a row is unfinished -- pending or blocked -- therefore cannot add a
+/// second row; the enqueue has to take that row over: point quoteRevisionId at
+/// the revision just finalised, clear blockedReason and opportunityActId, and
+/// make it due. That is the same move whether the row was waiting on ACT! or
+/// on the manager, and it is what lets "unfinalize, choose a contact, finalize
+/// again" (NO_CONTACT_REASON) work. Clearing opportunityActId is what makes
+/// the new revision's figures reach the opportunity; the opportunity itself is
+/// never lost, because Document.actOpportunityId still has it.
+model ActOutbox {
+  id               String        @id @default(cuid())
+  /// Cascade: a quote can be deleted while its row is unfinished (unfinalise,
+  /// then deleteDraft; or an admin's deleteDocument on a FINAL quote), and the
+  /// write cannot be made without the quote it describes -- the drain reads
+  /// the contact, region and number from it. Restrict would instead make such
+  /// a quote undeletable whenever ACT! was down or the row blocked, surfacing
+  /// as a raw foreign-key error from two actions with no handling for one.
+  /// Whatever ACT! already holds for the quote stays in ACT!.
+  documentId       String
+  document         Document      @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  /// The revision this row writes, and where its History progress is kept
+  /// (QuoteRevision.actHistoryId): the drain follows this to read it. Cascade,
+  /// matching documentId: nothing deletes a QuoteRevision except its
+  /// Document's own cascade, which removes this row through documentId
+  /// anyway, so today the choice changes nothing; it keeps a future revision
+  /// delete from being refused over a row that cannot be written without its
+  /// revision.
+  quoteRevisionId  String
+  quoteRevision    QuoteRevision @relation(fields: [quoteRevisionId], references: [id], onDelete: Cascade)
+  /// The opportunity this row's opportunity step created or updated. Null
+  /// until that step has gone through. An update mints no new id, so this is
+  /// the only record that the update was made; it is what stops a resumed row
+  /// updating the opportunity twice.
+  opportunityActId String?
+  /// Failed attempts at this row, for the drain's backoff to read -- and for a
+  /// person reading this table to tell a row that is merely new from one ACT!
+  /// has refused all week.
+  attempts         Int           @default(0)
+  /// The last failed attempt's error, as ACT! or the network reported it.
+  /// Not what says where the row stands -- completedAt and blockedReason do --
+  /// so a later success need not clear it.
+  lastError        String?
+  /// When the row may next be tried. A new row is due at once.
+  nextAttemptAt    DateTime      @default(now())
+  /// When the planner reported the row done. Null is "unfinished", pending or
+  /// blocked alike, and is what the one-unfinished-row index keys on.
+  completedAt      DateTime?
+  /// Why the write cannot proceed until a person acts: one of the sentences in
+  /// src/lib/act/outbox-plan.ts, read by a manager on the quote. A blocked row
+  /// is not due (the drain's index leaves it out) and is still unfinished.
+  blockedReason    String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  // The foreign keys, for the cascades above and for "this quote's ACT!
+  // writes" -- the partial unique on documentId covers unfinished rows only.
+  //
+  // The drain's own index is the second partial one in z65_act_outbox,
+  // "ActOutbox_due_idx" ON ("nextAttemptAt") WHERE "completedAt" IS NULL AND
+  // "blockedReason" IS NULL: every row it could ask for (unfinished, not
+  // blocked), ordered by nextAttemptAt, so "due, longest overdue first" is a
+  // range scan with no sort. Finished rows accumulate one per finalise
+  // forever; this index holds only the queue.
+  // Not declared here for the same reason as the unique.
+  @@index([documentId])
+  @@index([quoteRevisionId])
 }

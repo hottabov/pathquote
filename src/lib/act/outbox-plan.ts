@@ -42,9 +42,10 @@
 //   Contact.firstName/lastName   whether a contact ACT! must create has a name.
 //   Region.code                  of Document.regionId: which sales process.
 //
-// Of these, Contact.actContactId already exists; ActOutbox.opportunityActId,
-// ActOutbox.quoteRevisionId, Document.actOpportunityId and
-// QuoteRevision.actHistoryId are Task 4's to add.
+// Of these, Contact.actContactId dates from z60_act_sync;
+// ActOutbox.opportunityActId, ActOutbox.quoteRevisionId,
+// Document.actOpportunityId and QuoteRevision.actHistoryId were added by
+// z65_act_outbox.
 //
 // ONE HISTORY PER REVISION, so its progress is on the revision, not the row. A
 // manager can unfinalise a quote whose row has finished and re-finalise it
