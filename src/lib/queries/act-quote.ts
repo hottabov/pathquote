@@ -79,14 +79,15 @@ export async function getQuoteActState(user: ScopeUser, documentId: string): Pro
   });
   if (!document) return null;
 
-  // The revision the product line shows, for its label and figure. By number,
+  // The revision the product line shows, for its label and figure (its total
+  // and snapshot, which the card turns into the amount before tax). By number,
   // since that is what Document.actProductLineRevision holds.
   const line =
     document.actProductLineRevision === null
       ? null
       : await db.quoteRevision.findFirst({
           where: { documentId, revision: document.actProductLineRevision },
-          select: { revision: true, label: true, total: true },
+          select: { revision: true, label: true, total: true, snapshot: true },
         });
 
   const sendingOn = await readActWriteSwitch();
@@ -113,7 +114,9 @@ export async function getQuoteActState(user: ScopeUser, documentId: string): Pro
       actOpportunityId: document.actOpportunityId,
       actOpportunityWonAt: document.actOpportunityWonAt,
       actContactPromotedForId: document.actContactPromotedForId,
-      line: line ? { revision: line.revision, label: line.label, total: line.total.toString() } : null,
+      line: line
+        ? { revision: line.revision, label: line.label, total: line.total.toString(), snapshot: line.snapshot }
+        : null,
       row: latest
         ? {
             attempts: latest.attempts,

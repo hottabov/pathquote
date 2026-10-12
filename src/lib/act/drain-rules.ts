@@ -623,9 +623,9 @@ export function lastErrorText(kind: ActStepKind, error: unknown): string {
  *
  * `unreadable`, with the blocked reason, when the revision cannot be
  * described without guessing: no quote number, no currency in the snapshot,
- * a total that is not a number, or no validity -- a revision 0 written by
- * scripts/backfill-quote-revisions.ts can hold a null one, and QuoteForAct
- * says to refuse it rather than default it.
+ * no validity -- a revision 0 written by scripts/backfill-quote-revisions.ts
+ * can hold a null one, and QuoteForAct says to refuse it rather than default
+ * it -- or no amount excluding tax (revisionAmount).
  */
 export type RevisionForAct = { kind: "quote"; quote: QuoteForAct } | { kind: "unreadable"; reason: string };
 
@@ -648,7 +648,7 @@ export function revisionForAct(input: {
   if (!input.number) {
     return { kind: "unreadable", reason: `This quote has no number, so PathQuote has nothing to name it by in ACT! — ${ASK_DEVELOPER}` };
   }
-  const snapshot = typeof input.snapshot === "object" && input.snapshot !== null ? (input.snapshot as Record<string, unknown>) : {};
+  const snapshot = snapshotObject(input.snapshot);
   const currency = snapshot.currency;
   if (typeof currency !== "string" || currency.trim() === "") {
     return {
@@ -664,23 +664,102 @@ export function revisionForAct(input: {
       reason: `The revision of this quote being written to ACT! has no validity on record, and PathQuote will not write it with a guessed one — ${ASK_DEVELOPER}`,
     };
   }
-  const total = Number(input.total.toString());
-  if (!Number.isFinite(total)) {
-    return {
-      kind: "unreadable",
-      reason: `The revision of this quote being written to ACT! has no total PathQuote can read — ${ASK_DEVELOPER}`,
-    };
-  }
+  const amount = revisionAmount(input.total, input.snapshot);
+  if (amount.kind === "unreadable") return amount;
   return {
     kind: "quote",
     quote: {
       number: input.number,
       revision: input.revision,
       regionCode: input.regionCode,
-      total,
+      amountExTax: amount.amountExTax,
+      total: amount.total,
+      taxName: amount.taxName,
       currency,
       validityDays,
       finalizedAt: input.createdAt,
     },
   };
+}
+
+/**
+ * What a revision is worth in ACT!: its amount EXCLUDING TAX, with the
+ * tax-inclusive total beside it for reference and the name of the tax.
+ *
+ * EXCLUDING TAX, by Vadym's decision (2026-10-13): an AU quote carries GST and
+ * a UK one VAT where an export quote carries none, so tax-inclusive amounts
+ * leave the pipeline in ACT! incomparable from one region to the next, and an
+ * amount before tax is the usual pipeline base whatever the region.
+ *
+ * NOT THE SNAPSHOT'S `totals.subtotal`, although that is the field the
+ * decision was first put in terms of. The pricing engine's `subtotal` is the
+ * items and extra lines BEFORE the document-level discount (computeTotals in
+ * src/lib/pricing.ts: taxableBase = subtotal - discountAmount, total =
+ * taxableBase + taxAmount), so on a quote with a document discount it is
+ * more than the client is asked to pay before tax. The amount before tax is
+ * the taxable base, and the snapshot keeps no field of that name; it is
+ * exactly the total less the tax, and both of those are frozen. So:
+ *
+ *   total        QuoteRevision.total, the same figure as the snapshot's
+ *                `totals.total` -- finalizeDocument writes both from one
+ *                read, and the backfill both from Document.total.
+ *   taxAmount    the snapshot's `totals.taxAmount`: a canonical decimal
+ *                string, as every Money in a snapshot is
+ *                (src/lib/documents/revision-snapshot.ts).
+ *   amountExTax  total - taxAmount, worked in whole cents so the figure is
+ *                exact. On a quote that charges no tax it is the total.
+ *
+ * A REVISION WITHOUT A READABLE `totals.taxAmount` IS UNREADABLE, never
+ * written at its tax-inclusive total instead -- that would put a figure with
+ * tax in among the figures without, unmarked. Every snapshot both builders
+ * have written carries it (finalizeDocument and
+ * scripts/backfill-quote-revisions.ts both go through
+ * documentToRevisionSnapshotInput, from a non-null Decimal, in version 1 and
+ * version 2 alike), so this is a revision no finalise produced, refused the
+ * way a missing validity is.
+ *
+ * `taxName` is the snapshot's: the tax the quote names, frozen at finalise --
+ * the region's (GST, VAT, Sales Tax) on an Auto quote, export and reverse
+ * charge included (src/lib/documents/tax-rules.ts keeps the name and charges
+ * 0), or the salesperson's own on a Custom one. Null when the snapshot has
+ * none, which only labels the amount: the body then says "ex tax".
+ */
+export type RevisionAmount =
+  | { kind: "amount"; amountExTax: number; total: number; taxName: string | null }
+  | { kind: "unreadable"; reason: string };
+
+export function revisionAmount(total: { toString(): string }, snapshot: unknown): RevisionAmount {
+  const totalCents = moneyCents(total.toString());
+  if (totalCents === null) {
+    return {
+      kind: "unreadable",
+      reason: `The revision of this quote being written to ACT! has no total PathQuote can read — ${ASK_DEVELOPER}`,
+    };
+  }
+  const frozen = snapshotObject(snapshot);
+  const totals = typeof frozen.totals === "object" && frozen.totals !== null ? (frozen.totals as Record<string, unknown>) : {};
+  const taxCents = typeof totals.taxAmount === "string" ? moneyCents(totals.taxAmount) : null;
+  if (taxCents === null) {
+    return {
+      kind: "unreadable",
+      reason: `The revision of this quote being written to ACT! has no tax amount on record, so PathQuote cannot say what it comes to before tax, and will not send its total with tax in its place — ${ASK_DEVELOPER}`,
+    };
+  }
+  const taxName = typeof frozen.taxName === "string" && frozen.taxName.trim() !== "" ? frozen.taxName.trim() : null;
+  return { kind: "amount", amountExTax: (totalCents - taxCents) / 100, total: totalCents / 100, taxName };
+}
+
+function snapshotObject(snapshot: unknown): Record<string, unknown> {
+  return typeof snapshot === "object" && snapshot !== null ? (snapshot as Record<string, unknown>) : {};
+}
+
+/**
+ * A decimal string -- a Decimal(12,2)'s, or a snapshot's Money -- as whole
+ * cents, or null when it is not one. Strict, where Number() is not: Number
+ * reads "" and " " as 0, which would turn a blank figure into a real one.
+ */
+function moneyCents(text: string): number | null {
+  const trimmed = text.trim();
+  if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return null;
+  return Math.round(Number(trimmed) * 100);
 }

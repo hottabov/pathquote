@@ -23,9 +23,16 @@
 // and revision. Nothing here sends any of the three now. The amount is carried
 // by ONE SUMMARY PRODUCT LINE per deal instead -- summaryProductBody, posted to
 // `/api/opportunities/{opportunityId}/products`: quantity 1, priced at the
-// revision's total, named with the revision and the amount in its currency. A
-// later revision PATCHes that same line in place (summaryProductPatch); it is
-// never deleted and re-created.
+// revision's amount excluding tax, named with the revision and that amount in
+// its currency, marked as before tax. A later revision PATCHes that same line
+// in place (summaryProductPatch); it is never deleted and re-created.
+//
+// THE AMOUNT IS BEFORE TAX. Vadym's decision, 2026-10-13: GST on an AU quote,
+// VAT on a UK one and nothing on an export make tax-inclusive amounts
+// incomparable across regions, and before tax is the usual pipeline base.
+// What that figure is, and why it is not the snapshot's `subtotal`, is
+// revisionAmount in src/lib/act/drain-rules.ts. The History says it too, with
+// the tax-inclusive total beside it for reference (historyBody).
 //
 // Why one line and not the quote's lines. The design spec
 // (docs/superpowers/specs/2026-09-08-act-integration-design.md, "Quote line
@@ -46,7 +53,7 @@
 // converts between them. So the currency travels as text where people read it:
 // in the opportunity's `name` ("Q-AU-2026-014 AUD"), which every ACT! list and
 // lookup shows, in the product line's `name` with the amount ("Q-AU-2026-014
-// — AUD 45,000.00"), and again in the History `details`. The amount still
+// — AUD 45,000.00 ex GST"), and again in the History `details`. The amount still
 // reaches `productTotal`, through the product line and in the quote's own
 // currency, because it is the opportunity's amount field and an opportunity
 // without one is a deal with no value anywhere ACT! reads it.
@@ -152,11 +159,11 @@ export type ContactStatus = (typeof CONTACT_STATUS)[keyof typeof CONTACT_STATUS]
  * its frozen `snapshot` (RevisionSnapshot in
  * src/lib/documents/revision-snapshot.ts), never from the live Document.
  * Unfinalising a quote leaves Document.revision and Document.finalizedAt as
- * they were but makes the draft editable again -- its total, its validity,
+ * they were but makes the draft editable again -- its totals, its validity,
  * every price -- and a row can be drained after that has happened. Read off
  * the Document, the History would say "Revision n" beside the draft's current
- * total: a figure no customer was ever sent. The revision row and its snapshot
- * are what was sent, and nothing edits them.
+ * amount: a figure no customer was ever sent. The revision row and its
+ * snapshot are what was sent, and nothing edits them.
  *
  * Only `number` and `regionCode` are read live, each for the reason given on
  * it.
@@ -179,10 +186,26 @@ export type QuoteForAct = {
    */
   regionCode: string;
   /**
+   * The revision's amount EXCLUDING TAX, in `currency`: QuoteRevision.total
+   * less the snapshot's `totals.taxAmount` (revisionAmount in
+   * src/lib/act/drain-rules.ts, which says why it is not the snapshot's
+   * `subtotal`). The deal's amount in ACT!: the product line's price and its
+   * name, and the History's first line. Not Document.subtotal or anything else
+   * on the Document.
+   */
+  amountExTax: number;
+  /**
    * QuoteRevision.total (Decimal(12,2), the same figure as the snapshot's
-   * `totals.total`), in `currency`, as a number. Not Document.total.
+   * `totals.total`): the amount WITH tax, in `currency`. For reference only,
+   * in the History beside amountExTax; never a price. Not Document.total.
    */
   total: number;
+  /**
+   * The snapshot's `taxName` -- GST, VAT, Sales Tax, or a Custom quote's own
+   * -- which names the tax amountExTax is before. Null when the snapshot has
+   * none; the bodies then say "tax".
+   */
+  taxName: string | null;
   /**
    * The snapshot's `currency`, an ISO 4217 code. QuoteRevision has no currency
    * column. (Document.currency is set by createDraft and never changed, so the
@@ -393,8 +416,20 @@ export function historyRegarding(quote: Pick<QuoteForAct, "number" | "revision">
   return `Quote ${label} finalised in PathQuote`;
 }
 
+/** "ex GST": what the deal's amount is before, as the line and the History say it. */
+function exTaxWords(quote: Pick<QuoteForAct, "taxName">): string {
+  return `ex ${quote.taxName ?? "tax"}`;
+}
+
 /**
  * The History record for one finalised revision.
+ *
+ * `details`, one fact a line: the amount excluding tax, as the product line
+ * carries it ("Amount: AUD 45,000.00 ex GST"); the tax-inclusive total for
+ * reference ("Total incl. GST: AUD 49,500.00"), or, on a quote that charges
+ * no tax, that total and that none was charged ("Total: USD 30,000.00, no
+ * Sales Tax charged") -- "incl." would claim a tax the quote does not carry;
+ * the validity; the revision.
  *
  * `opportunityActId` links it to the deal's opportunity when there is one;
  * ACT! does not require the link.
@@ -409,7 +444,10 @@ export function historyBody(
     historyTypeID: HISTORY_TYPE_QUOTE,
     regarding: historyRegarding(quote),
     details: [
-      `Total: ${moneyWithCode(quote.total, quote.currency)}`,
+      `Amount: ${moneyWithCode(quote.amountExTax, quote.currency)} ${exTaxWords(quote)}`,
+      quote.total === quote.amountExTax
+        ? `Total: ${moneyWithCode(quote.total, quote.currency)}, no ${quote.taxName ?? "tax"} charged`
+        : `Total incl. ${quote.taxName ?? "tax"}: ${moneyWithCode(quote.total, quote.currency)}`,
       `Valid for ${plural(quote.validityDays, "day", "days")}`,
       `Revision ${quote.revision}`,
     ].join("\n"),
@@ -525,15 +563,16 @@ export type RevisionUpdate =
  * A later revision's effect on the deal's existing opportunity.
  *
  * AN OPPORTUNITY THAT IS NOT OPEN IS LEFT ENTIRELY ALONE: no stage, no
- * probability -- and no product line either, which is what keeps its total,
+ * probability -- and no product line either, which is what keeps its amount,
  * save the one exception productLineWrite makes: a Won deal whose quote is
  * accepted and signed in PathQuote gets the signed figure. Won, Lost or
  * Inactive, it is the record of
  * how the deal ended and at what figure, and silently rewriting a closed
  * record in somebody else's CRM is the worse harm. The
  * History is the journal: it still records that a new revision went out and
- * what its total was. Reached when an admin's voidSignature is followed by a
- * re-finalise, or when somebody closed the deal by hand in ACT!. If the deal
+ * what it came to, before tax and with it. Reached when an admin's
+ * voidSignature is followed by a re-finalise, or when somebody closed the
+ * deal by hand in ACT!. If the deal
  * genuinely reopens, a person reopens it in ACT!, and the next revision then
  * updates it as normal.
  *
@@ -696,21 +735,23 @@ export function lostOpportunityBody(reason: string, closedAt: Date): Opportunity
  * the labels in brackets are ACT!'s, from the `TBL_PRODUCTSERVICE` entries of
  * RAW/ACT/meta/fields_all.json, which mark none of these read-only.
  *
- *   name           ("Name", Character 256) the revision label and the amount
- *                  with its currency code. The product has no currency field,
- *                  so this is where the line says what its number means.
+ *   name           ("Name", Character 256) the revision label, the amount
+ *                  with its currency code, and that it is before tax. The
+ *                  product has no currency field, nor any field for tax, so
+ *                  this is where the line says what its number means.
  *   itemNumber     ("Item #", Character 64) the quote number, which is how the
  *                  drain finds the deal's line again before every create
  *                  (productLineLookup). Sent on every write, so a line whose
  *                  item number was edited by hand gets it back.
  *   quantity       ("Quantity") always 1: one line for the whole deal.
- *   price          ("Price") the revision's total.
+ *   price          ("Price") the revision's amount excluding tax
+ *                  (QuoteForAct.amountExTax).
  *   discountPrice  ("Adjusted Price") the same: no discount.
  *   total          ("Subtotal") the same. Swagger describes it as adjusted
  *                  price times quantity; it is sent anyway, agreeing with the
- *                  rest, so the line comes to the revision's total whichever of
- *                  these ACT! computes from the others -- which has not been
- *                  seen on a live record.
+ *                  rest, so the line comes to the revision's amount whichever
+ *                  of these ACT! computes from the others -- which has not
+ *                  been seen on a live record.
  *
  * Not sent: `discount` (swagger: "ignore on updates"; the create sends 0);
  * `productID`, the ACT! catalogue product, because the line is free-form by
@@ -740,9 +781,12 @@ export type SummaryProductBody = SummaryProductPatch & { discount: 0 };
  *
  * The name is the revision's label -- "Q-AU-2026-014" for the first,
  * "Q-AU-2026-014-R2" after that, as the History's `regarding` has it -- then
- * the amount with its currency code: "Q-AU-2026-014-R2 — AUD 47,500.00". The
- * label rather than the bare number because the line, unlike the
- * opportunity, says which revision's figure it is.
+ * the amount excluding tax with its currency code, and the tax it is before:
+ * "Q-AU-2026-014-R2 — AUD 47,500.00 ex GST". The label rather than the bare
+ * number because the line, unlike the opportunity, says which revision's
+ * figure it is. "ex GST" because ACT! shows the line's price as a bare
+ * number, and anyone reading it beside the quote PDF's tax-inclusive total
+ * needs telling which one it is.
  *
  * Written by write-product-line when productLineWrite says so -- an Open
  * deal, or a Won one whose quote is accepted and signed -- and by
@@ -753,12 +797,12 @@ export type SummaryProductBody = SummaryProductPatch & { discount: 0 };
 export function summaryProductPatch(quote: QuoteForAct): SummaryProductPatch {
   const label = revisionLabel(quote.number, quote.revision) ?? quote.number;
   return {
-    name: `${label} — ${moneyWithCode(quote.total, quote.currency)}`,
+    name: `${label} — ${moneyWithCode(quote.amountExTax, quote.currency)} ${exTaxWords(quote)}`,
     itemNumber: quote.number,
     quantity: 1,
-    price: quote.total,
-    discountPrice: quote.total,
-    total: quote.total,
+    price: quote.amountExTax,
+    discountPrice: quote.amountExTax,
+    total: quote.amountExTax,
   };
 }
 

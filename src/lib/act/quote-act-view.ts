@@ -48,7 +48,7 @@
 // Pure: no database, no React, and `now` is a parameter, so every state can
 // be driven by a test (tests/act-quote-view.test.ts).
 
-import { BLOCKED_BY } from "@/lib/act/drain-rules";
+import { BLOCKED_BY, revisionAmount } from "@/lib/act/drain-rules";
 import { heldForContact } from "@/lib/act/outbox-admin";
 import { melbourneTime } from "@/lib/act/sync-view";
 import { opportunityName } from "@/lib/act/write-payloads";
@@ -101,10 +101,13 @@ export type QuoteActFacts = {
   actContactPromotedForId: string | null;
   /**
    * The revision the deal's product line in ACT! shows
-   * (Document.actProductLineRevision), with that revision's label and total;
-   * null when nothing has been written to it.
+   * (Document.actProductLineRevision), with that revision's label, its total
+   * (QuoteRevision.total, as a string) and its frozen snapshot, from which
+   * the card works out the amount before tax the line carries
+   * (revisionAmount in src/lib/act/drain-rules.ts); null when nothing has
+   * been written to it.
    */
-  line: { revision: number; label: string; total: string } | null;
+  line: { revision: number; label: string; total: string; snapshot: unknown } | null;
   /** The latest row, as described in the header, or null for none. */
   row: {
     attempts: number;
@@ -310,7 +313,11 @@ function held(facts: QuoteActFacts, row: NonNullable<QuoteActFacts["row"]>): Quo
  *                somebody changes by hand in ACT! is not known here. The
  *                date it was marked Won is formatDateAU's, in the server's
  *                zone, as the Signing card beside this prints its dates.
- *   Amount       the revision the product line shows, and its figure. When
+ *   Amount       the revision the product line shows, and its figure: the
+ *                amount before tax the line carries, marked "ex GST" as the
+ *                line's own name is. A revision the figure cannot be read
+ *                from -- the drain never writes a line from one -- is named
+ *                without a figure. When
  *                this row left the line alone because the deal in ACT! is
  *                closed (productLineSkippedAt), that is said beside it,
  *                since the figure is then an older revision's, or none.
@@ -335,7 +342,11 @@ function inAct(facts: QuoteActFacts, row: NonNullable<QuoteActFacts["row"]>): Qu
   }
   const leftAlone = row.productLineSkippedAt !== null && (facts.line === null || facts.line.revision < row.revision.revision);
   if (facts.line) {
-    const figure = `${formatMoney(facts.line.total, facts.currency, facts.currencySymbol)}, from ${facts.line.label}`;
+    const amount = revisionAmount(facts.line.total, facts.line.snapshot);
+    const figure =
+      amount.kind === "amount"
+        ? `${formatMoney(amount.amountExTax, facts.currency, facts.currencySymbol)} ex ${amount.taxName ?? "tax"}, from ${facts.line.label}`
+        : `${facts.line.label}'s amount before tax`;
     out.push({
       label: "Amount",
       value: leftAlone

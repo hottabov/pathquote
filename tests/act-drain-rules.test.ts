@@ -279,13 +279,24 @@ describe("replanBlocked: what the drain's pass over blocked rows does with one",
       regionCode: "AU",
       revision: 0,
       total: "100.00",
-      snapshot: { currency: "AUD", terms: {} },
+      snapshot: { currency: "AUD", totals: { taxAmount: "0.00" }, terms: {} },
       createdAt: new Date("2026-10-12T00:00:00.000Z"),
     });
     if (unreadable.kind !== "unreadable") throw new Error("expected an unreadable revision");
     const held = { blockedReason: unreadable.reason, blockedBy: BLOCKED_BY.revision };
     expect(replanBlocked(held, fixed)).toEqual({ kind: "keep" });
     expect(replanBlocked(held, noContact)).toEqual({ kind: "keep" });
+    // One with no tax amount on record is held the same way: never written at its total with tax.
+    const untaxed = revisionForAct({
+      number: "Q-AU-2026-014",
+      regionCode: "AU",
+      revision: 0,
+      total: "110.00",
+      snapshot: { currency: "AUD", totals: { subtotal: "100.00", total: "110.00" }, terms: { validityDays: 30 } },
+      createdAt: new Date("2026-10-12T00:00:00.000Z"),
+    });
+    if (untaxed.kind !== "unreadable") throw new Error("expected an unreadable revision");
+    expect(replanBlocked({ blockedReason: untaxed.reason, blockedBy: BLOCKED_BY.revision }, fixed)).toEqual({ kind: "keep" });
   });
 
   it("works a row a lookup's duplicates blocked again, keeping its reason until then", () => {
@@ -598,12 +609,18 @@ describe("lastErrorText", () => {
 
 describe("revisionForAct", () => {
   const createdAt = new Date("2026-10-12T04:30:00.000Z");
-  const snapshot = { currency: "AUD", totals: { total: "1.00" }, terms: { validityDays: 30 } };
+  // A GST quote as finalizeDocument freezes it: 45,000.50 before tax, 4,500.05 GST.
+  const snapshot = {
+    currency: "AUD",
+    taxName: "GST",
+    totals: { subtotal: "45000.50", taxAmount: "4500.05", total: "49500.55" },
+    terms: { validityDays: 30 },
+  };
   const input = (overrides: Partial<Parameters<typeof revisionForAct>[0]> = {}) => ({
     number: "Q-AU-2026-014",
     regionCode: "AU",
     revision: 2,
-    total: { toString: () => "45000.50" },
+    total: { toString: () => "49500.55" },
     snapshot,
     createdAt,
     ...overrides,
@@ -616,12 +633,45 @@ describe("revisionForAct", () => {
         number: "Q-AU-2026-014",
         revision: 2,
         regionCode: "AU",
-        total: 45000.5,
+        amountExTax: 45000.5,
+        total: 49500.55,
+        taxName: "GST",
         currency: "AUD",
         validityDays: 30,
         finalizedAt: createdAt,
       },
     });
+  });
+
+  it("takes the amount before tax as the total less the frozen tax, not the subtotal, which is before the quote's discount", () => {
+    // 50,000 of items, a 10% document discount (5,000), GST on the 45,000 left.
+    const discounted = { ...snapshot, totals: { subtotal: "50000.00", taxAmount: "4500.00", total: "49500.00" } };
+    const result = revisionForAct(input({ total: { toString: () => "49500" }, snapshot: discounted }));
+    expect(result.kind === "quote" && result.quote).toMatchObject({ amountExTax: 45000, total: 49500, taxName: "GST" });
+  });
+
+  it("gives the total itself as the amount before tax for a revision that charged none", () => {
+    const zero = { ...snapshot, taxName: "Sales Tax", currency: "USD", totals: { subtotal: "30000", taxAmount: "0", total: "30000" } };
+    const result = revisionForAct(input({ total: { toString: () => "30000" }, snapshot: zero }));
+    expect(result.kind === "quote" && result.quote).toMatchObject({ amountExTax: 30000, total: 30000, taxName: "Sales Tax", currency: "USD" });
+  });
+
+  it("refuses a revision whose snapshot has no tax amount, rather than send its total with tax in its place", () => {
+    for (const totals of [undefined, {}, { subtotal: "45000.50", total: "49500.55" }, { taxAmount: null }, { taxAmount: "" }, { taxAmount: 4500.05 }]) {
+      const result = revisionForAct(input({ snapshot: { ...snapshot, totals } }));
+      expect(result.kind).toBe("unreadable");
+      if (result.kind === "unreadable") {
+        expect(result.reason).toMatch(/no tax amount on record/);
+        expect(result.reason).toContain("— ask your developer.");
+      }
+    }
+  });
+
+  it("leaves the tax unnamed (null) when the snapshot names none, for the bodies to say 'tax'", () => {
+    for (const taxName of [undefined, "", "  ", 7]) {
+      const result = revisionForAct(input({ snapshot: { ...snapshot, taxName } }));
+      expect(result.kind === "quote" && result.quote.taxName).toBeNull();
+    }
   });
 
   it("refuses a revision with no validity rather than default one", () => {
@@ -638,5 +688,6 @@ describe("revisionForAct", () => {
     expect(revisionForAct(input({ snapshot: null })).kind).toBe("unreadable");
     expect(revisionForAct(input({ number: null })).kind).toBe("unreadable");
     expect(revisionForAct(input({ total: { toString: () => "n/a" } })).kind).toBe("unreadable");
+    expect(revisionForAct(input({ total: { toString: () => "" } })).kind).toBe("unreadable");
   });
 });

@@ -871,7 +871,7 @@ code keeps: the header of `src/lib/act/outbox-plan.ts`.
 
 | When, in PathQuote | What ACT! gets |
 |---|---|
-| A quote is finalised | its contact, created as a **Prospect** when ACT! does not have them yet; **one opportunity for the deal**, named `<quote number> <currency>` (`Q-AU-2026-014 AUD`), at Proposal (AU, UK) or Engage (US); **one product line** on it, Item # the quote number, carrying the revision's total; and **a History** of type Quote for the revision, regarding `Quote Q-AU-2026-014 finalised in PathQuote` (`Q-AU-2026-014-R2` and so on for later revisions) |
+| A quote is finalised | its contact, created as a **Prospect** when ACT! does not have them yet; **one opportunity for the deal**, named `<quote number> <currency>` (`Q-AU-2026-014 AUD`), at Proposal (AU, UK) or Engage (US); **one product line** on it, Item # the quote number, carrying the revision's amount **before tax** and named with it (`Q-AU-2026-014 — AUD 45,000.00 ex GST`), so regions with GST, VAT or no tax compare in the pipeline (decided 2026-10-13); and **a History** of type Quote for the revision, regarding `Quote Q-AU-2026-014 finalised in PathQuote` (`Q-AU-2026-014-R2` and so on for later revisions) |
 | It is finalised again, changed | the same opportunity and the same line, updated in place, and a History for the new revision. A deal already closed in ACT! — Won, Lost, Inactive — is left as it is, except that a Won deal's line follows the latest figure the client has signed |
 | The client signs | the contact goes from **Prospect to Customer**; any other status is left alone |
 | It is accepted, the client's signature standing | the line brought to the signed figure, then the opportunity **Won**, at Sales Fulfillment (AU, UK) or Execute Fulfilment (US) — from Lost too, by decision ("PathQuote confirms", 2026-10-12) |
@@ -982,8 +982,11 @@ section 11).
    - **one** opportunity named `<quote number> <currency>`, at Proposal (AU,
      UK) or Engage (US), its record manager the author (or `Marketing`);
    - on it **one** product line, Item # the quote number, its amount the
-     quote's total;
-   - **one** History, type Quote, regarding `Quote <quote number> finalised in PathQuote`.
+     quote's total **before tax** (the PDF's total less its GST, VAT or Sales
+     Tax), its name saying so: `<quote number> — <currency> <amount> ex GST`;
+   - **one** History, type Quote, regarding `Quote <quote number> finalised in PathQuote`,
+     its details the same amount before tax and, on the next line, the total
+     with tax for reference.
 
 8. **Finalise it again, unchanged** (unfinalise, then finalise). Nothing new
    may appear in ACT!: still one opportunity, one line, one History.

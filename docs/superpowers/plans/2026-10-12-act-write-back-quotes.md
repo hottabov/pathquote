@@ -452,6 +452,15 @@ Requested by Vadym during execution: when a quote is won, the ACT! contact moves
 
 **Creating a contact.** `newContactBody` sends `idStatus: Prospect` — left blank, the contact would be skipped by the inbound sync and never promoted — plus the name, email, business phone, title, free-text company and, only when the author has one, Account Mgr.
 
+## Addendum 2026-10-13 — the amount in ACT! is before tax
+
+Decided by Vadym: the amount PathQuote writes to ACT! **excludes tax**. AU quotes carry GST and UK quotes VAT, while an export quote carries none, so tax-inclusive amounts make the ACT! pipeline incomparable from one region to the next; before tax is the usual pipeline base and means the same in every region. This supersedes "the total" wherever the tasks above put an amount into ACT! (the History `details`, the product line).
+
+- **The figure** is the revision's total less its tax: `QuoteRevision.total` minus the frozen snapshot's `totals.taxAmount` (`revisionAmount` in `src/lib/act/drain-rules.ts`). **Not** the snapshot's `totals.subtotal`, which the decision was first put in terms of: the pricing engine's `subtotal` is before the document-level discount (`taxableBase = subtotal - discountAmount`, `total = taxableBase + taxAmount`, `computeTotals` in `src/lib/pricing.ts`), so on a discounted quote it overstates what the client pays before tax. Never the live Document — the frozen revision only, as everything else in a body.
+- **Where it goes:** the product line's `price`, `discountPrice` and `total`, and its name, which now says what the number is: `Q-AU-2026-014-R2 — AUD 45,000.00 ex GST`, the tax named from the snapshot's `taxName` (GST, VAT, Sales Tax, or a Custom quote's own; "ex tax" if a snapshot had none). The History's `details` lead with `Amount: AUD 45,000.00 ex GST`, then `Total incl. GST: AUD 49,500.00` for reference — or, when no tax was charged, `Total: USD 30,000.00, no Sales Tax charged`. The opportunity's name is unchanged: number and currency code only.
+- **A revision whose snapshot has no readable `totals.taxAmount` is held** (`blockedBy = "revision"`), as one with no validity is — never written at its tax-inclusive total instead. Every snapshot finalise and `scripts/backfill-quote-revisions.ts` have written carries one, in version 1 and 2 alike, so this guards against a revision no finalise produced.
+- **The quote's ACT! card** shows the line's amount the same way, before tax and named so.
+
 ## Obligations carried into Tasks 6 and 7 from the Task 4 review
 
 - **Every row write by the drain is conditional:** `WHERE id = $1 AND "quoteRevisionId" = $planned AND "completedAt" IS NULL`. A take-over between planning and writing must not be clobbered — completing, storing `opportunityActId`, setting `blockedReason` or backing off would otherwise land on a row that now means a different revision. If that conditional update matches 0 rows after an opportunity **create**, `Document.actOpportunityId` must still be committed, or the next pass creates a second opportunity.
