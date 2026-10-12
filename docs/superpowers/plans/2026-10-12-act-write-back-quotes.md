@@ -421,6 +421,38 @@ Follow §4c's shape exactly. Cover: that writes are queued and drained rather th
 
 ---
 
+## Addendum 2026-10-12 — a won quote makes the contact a Customer
+
+Requested by Vadym during execution: when a quote is won, the ACT! contact moves from **Prospect** to **Customer**.
+
+**The field.** `idStatus`, display name "ID/Status", `Character`, not read-only, picklist "Contact ID/Status" with **`isLimitToList: true`**, single select (`RAW/ACT/meta/fields_contact.json`, a local capture). `Customer` and `Prospect` are both legal values — the inbound sync's `ACTIVE_STATUSES` filters on exactly those two.
+
+**The triggers.**
+
+- **Contact → Customer: when the client signs** (`signingStatus` reaches `SIGNED`, in `completeSigning`, `src/lib/actions/signing-client.ts`) **or** when the quote is accepted (`acceptQuote`), whichever comes first. The client's signature is the earliest evidence that this is a customer.
+- **Opportunity → Won: when the quote is accepted** (`acceptedAt`), as decided in spec §10 D3. `wonOpportunityBody` from Task 2 finally gets a caller here.
+- **Later:** the manual WON outcome from `docs/specs/2026-10-12-quote-outcomes-and-reporting-backlog.md` becomes a third trigger for both. Not in this plan.
+
+**Rules.**
+
+- **Forward only.** Customer never goes back to Prospect — not on `voidSignature`, not on unfinalise. Same reasoning as the stage rule: "this became a customer" stays true.
+- **Change only what we own.** Promote only when the contact's **current** ACT! value is exactly `Prospect`. Anything else — already `Customer`, a reseller or supplier status, blank — is left alone and the step counts as done. The drain reads the current value with a GET; a pure function decides. Overwriting a status somebody set deliberately is the harm this rule prevents.
+- **Echo suppression applies.** The promotion bumps the contact's `edited`, so the drain stores the returned record as the contact's `ActSnapshot`, exactly as for creates.
+
+**How it fits the outbox.** These are new events on a document whose finalise row may already be complete. `completeSigning` and `acceptQuote` enqueue the same way finalise does — insert, or take over the unfinished row via the z65 partial index. The planner gains two steps, `promote-contact` and `win-opportunity`, which come **after** `write-history` and are checked **before** returning `done`, so a row created by a signing event does not short-circuit to `done` just because its revision's history was already written.
+
+**Progress storage.** The planner is pure and cannot GET, so each step needs a stored fact that it has happened: `Document.actContactPromotedAt` and `Document.actOpportunityWonAt` — per document, because both are once per deal. These belong in z65, which has not been applied anywhere outside scratch databases; amend it rather than adding z66, and re-run the drift verification.
+
+## Obligations carried into Tasks 6 and 7 from the Task 4 review
+
+- **Every row write by the drain is conditional:** `WHERE id = $1 AND "quoteRevisionId" = $planned AND "completedAt" IS NULL`. A take-over between planning and writing must not be clobbered — completing, storing `opportunityActId`, setting `blockedReason` or backing off would otherwise land on a row that now means a different revision. If that conditional update matches 0 rows after an opportunity **create**, `Document.actOpportunityId` must still be committed, or the next pass creates a second opportunity.
+- **No row lock held across ACT! calls** — that would make finalise wait on the CRM.
+- **Blocked rows are re-planned on every pass.** The due index excludes them, and the fixes the blocked reasons tell a manager to make (name a contact, map a region) involve no re-finalise. If `nextStep` no longer returns `blocked`, clear `blockedReason` and make the row due. No ACT! calls needed; unfinished rows are few.
+- **Time zones.** `nextAttemptAt` is `timestamp(3)` without zone, filled with UTC by Prisma. Comparing it to SQL `now()` is only right if the session zone is UTC, which the repo does not pin. Pass a JS `Date` as a parameter instead.
+- **Take-over must also reset `attempts` and clear `lastError`**, or Task 9's UI shows a stale error beside a fresh row.
+- **A raw take-over `INSERT` must supply `id` and `updatedAt`** — neither has a database default — and Prisma's `upsert` cannot target a partial index, so Task 6 uses `$executeRaw`.
+- **Superseded revisions.** If revision N's row is taken over before N's History is written, ACT! never records N. Because finalise *is* the send for managers who email the PDF themselves, N may have reached the customer. Accepted for now — the alternative is one row per revision, which reintroduces two live rows per deal — but `actHistoryId` lives on the revision, so a later planner could journal every un-journaled revision of a document with no migration. Record this in the planner's comments.
+
 ## Verification that cannot be done from a laptop
 
 The API is IP-allowlisted to the VPS, so the first real write happens there. Before trusting it:
@@ -431,3 +463,5 @@ The API is IP-allowlisted to the VPS, so the first real write happens there. Bef
 - [ ] Finalise a quote whose contact exists only in PathQuote — confirm the contact is created, and that `actContactId` is stored.
 - [ ] Finalise a quote with no contact — confirm the quote shows the blocked reason rather than failing silently.
 - [ ] Stop the ACT! API (or point `ACT_BASE` at a closed port) and finalise — confirm the quote still finalises, the row queues, and the nightly drain picks it up.
+- [ ] Have a test client sign a quote whose contact is a Prospect — confirm the contact becomes Customer in ACT!, and that a contact with any other status is left untouched.
+- [ ] Accept that quote — confirm the opportunity goes to Won at the 100% stage, and that a second accept writes nothing.
