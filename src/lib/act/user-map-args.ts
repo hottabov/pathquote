@@ -10,6 +10,7 @@
 // same way. See npmSwallowedFlags.
 
 import type { DatabaseTarget } from "@/lib/act/cli-args";
+import { npmSwallowedApply, npmSwallowedFlag, type NpmEnv } from "@/lib/npm-swallowed-flags";
 
 export type UserMapArgs = {
   /** Write actUserId and actAccountMgr on the matched users. Default false:
@@ -24,53 +25,30 @@ export type UserMapParseResult = { ok: true; args: UserMapArgs } | { ok: false; 
 export const USER_MAP_ACCEPTED_ARGS =
   "--apply, --include-inactive (with no flag the run is report-only)";
 
-type Env = Readonly<Record<string, string | undefined>>;
-
 /**
  * Flags npm consumed as its own options instead of passing them on.
  *
- * npm hands the script only what follows a bare `--`. Written without it, the
- * flag never reaches process.argv and the script runs in report mode while the
- * operator believes they asked for a write. That mistake can only be caught
- * here, from the traces npm leaves in the environment -- and the two flags do
- * not leave the same trace, which is why this is not a one-liner:
- *
- *   --include-inactive  becomes npm_config_include_inactive=true. A flag with a
- *                       dash in it is not a word npm can do anything else with.
- *   --apply             does NOT become npm_config_apply, on npm 10.9.8 with
- *                       Node 22, which is what the tools image runs (measured
- *                       2026-10-12). npm's option parser cannot match the word,
- *                       falls back to reading it as a run of single-letter
- *                       shorthands, and a-p-p-l-y expands to --all,
- *                       --parseable, --parseable, --long, --yes. So all four of
- *                       npm_config_all, npm_config_parseable, npm_config_long
- *                       and npm_config_yes come out "true" together, and that
- *                       combination is the fingerprint. npm_config_apply is
- *                       checked as well because another npm version may yet set
- *                       it -- it is what scripts/normalise-websites.ts and
- *                       preflight-args.ts look for.
+ * The detection itself, and the measurements behind it, are in
+ * src/lib/npm-swallowed-flags.ts -- shared because three other guards need the
+ * same rule. What stays here is that this script has two flags and they do not
+ * leave the same trace: `--include-inactive` has a dash in it and lands in
+ * npm_config_include_inactive, while `--apply` is read as a run of
+ * single-letter shorthands and never sets npm_config_apply at all.
  *
  * A correct `npm run act:map-users -- --apply --include-inactive` sets none of
- * these, so neither check can fire on the invocation it is protecting.
+ * those keys, so neither check can fire on the invocation it is protecting.
  *
  * Returns the flag names as the operator typed them, for the message.
  */
-function npmSwallowedFlags(env: Env): string[] {
+function npmSwallowedFlags(env: NpmEnv): string[] {
   const swallowed: string[] = [];
-
-  const applyShorthands = ["npm_config_all", "npm_config_parseable", "npm_config_long", "npm_config_yes"];
-  if (env.npm_config_apply === "true" || applyShorthands.every((name) => env[name] === "true")) {
-    swallowed.push("--apply");
-  }
-  if (env.npm_config_include_inactive === "true") {
-    swallowed.push("--include-inactive");
-  }
-
+  if (npmSwallowedApply(env)) swallowed.push("--apply");
+  if (npmSwallowedFlag(env, "--include-inactive")) swallowed.push("--include-inactive");
   return swallowed;
 }
 
 /** `argv` is `process.argv.slice(2)`. `env` is `process.env`. */
-export function parseUserMapArgs(argv: readonly string[], env: Env = {}): UserMapParseResult {
+export function parseUserMapArgs(argv: readonly string[], env: NpmEnv = {}): UserMapParseResult {
   let apply = false;
   let includeInactive = false;
 

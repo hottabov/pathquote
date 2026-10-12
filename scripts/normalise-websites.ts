@@ -27,6 +27,7 @@
  *     npm run clients:normalise-websites -- --apply   # writes
  */
 import "dotenv/config";
+import { npmSwallowedApply } from "../src/lib/npm-swallowed-flags";
 import { normaliseWebsite } from "../src/lib/website";
 
 const APPLY = "--apply";
@@ -39,9 +40,15 @@ async function main() {
     process.exit(2);
   }
   // npm keeps a flag that is not after `--`, so the script would run in report
-  // mode while the operator believed they had asked for a write -- or worse,
-  // the other way round. Refuse rather than guess.
-  if (process.env.npm_config_apply) {
+  // mode while the operator believed they had asked for a write. Refuse rather
+  // than guess.
+  //
+  // npmSwallowedApply, not a direct read of npm_config_apply: npm 10.9.8 reads
+  // the word `apply` as a run of single-letter shorthands and never sets
+  // npm_config_apply, so the check this script shipped with never fired and
+  // `npm run clients:normalise-websites --apply` reported while the operator
+  // believed it had written. See src/lib/npm-swallowed-flags.ts.
+  if (npmSwallowedApply(process.env)) {
     console.error(`put ${APPLY} after a bare -- : npm run clients:normalise-websites -- ${APPLY}`);
     process.exit(2);
   }
