@@ -113,9 +113,11 @@ async function deleteSupersededClientImage(imageUrl: string): Promise<void> {
 /** Thrown inside a `$transaction` below when its status-guarded claim
  * matches nothing — another request (a second tab, a double-tap, a manager's
  * concurrent revoke) already moved the document out of the status this call
- * observed a moment earlier in `loadLiveRequest`. Caught outside the
- * transaction and mapped to `UNAVAILABLE`, exactly like
- * `AlreadyClaimedError`/`RevokeLostRaceError` in src/lib/actions/signing.ts. */
+ * observed a moment earlier in `loadLiveRequest` — or, for `completeSigning`,
+ * this signing request has been revoked since (by an unfinalise, a resend or
+ * a revoke). Caught outside the transaction and mapped to `UNAVAILABLE`,
+ * exactly like `AlreadyClaimedError`/`RevokeLostRaceError` in
+ * src/lib/actions/signing.ts. */
 class LostRaceError extends Error {}
 
 /** First `x-forwarded-for` hop, or `null` behind a proxy that strips it.
@@ -375,13 +377,33 @@ export async function completeSigning(token: string): Promise<ActionResult> {
   // to write until *after* the claim would mean holding the transaction open
   // across the Gotenberg call this function exists to keep out of it -- but
   // the orphan that ordering can produce is no longer left behind: the catch
-  // below deletes `filePath`, the exact local path just written above, the
-  // moment the claim comes back empty.
+  // below deletes `filePath`, the exact local path just written above,
+  // whenever the transaction rolls back -- the claim coming back empty, or
+  // anything after it failing (the enqueue included).
+  //
+  // `transaction.callbackFinished` is set by the callback as its last act. An
+  // error that arrives with it still false was thrown inside the callback,
+  // so the transaction rolled back and nothing points at `name`. One that
+  // arrives with it true came after the callback, from the COMMIT, which may
+  // have gone through before the answer was lost, so the file is kept: an
+  // orphan, rather than a SIGNED quote whose archived PDF is gone.
+  const transaction = { callbackFinished: false };
   try {
     await db.$transaction(async (tx) => {
       const now = new Date();
       const result = await tx.document.updateMany({
-        where: { id: request.documentId, signingStatus: { in: COMPLETABLE_SIGNING_STATUSES } },
+        where: {
+          id: request.documentId,
+          signingStatus: { in: COMPLETABLE_SIGNING_STATUSES },
+          // And THIS request still unrevoked. The status alone is not
+          // enough: a request that rendered its PDF before an unfinalise, a
+          // re-finalise and a resend (each of which revokes every earlier
+          // request) finds the quote SENT again and would sign the newer
+          // revision with the older one's PDF -- and the enqueue below would
+          // tell ACT! that newer revision was signed, at a figure the client
+          // never saw. A revoked request loses the race like any other.
+          signingRequests: { some: { id: request.requestId, revokedAt: null } },
+        },
         data: {
           signingStatus: "SIGNED",
           signedPdfName: name,
@@ -393,14 +415,16 @@ export async function completeSigning(token: string): Promise<ActionResult> {
       // The signature's write into ACT!, committed with the signature itself,
       // for the newest revision: the one being signed (src/lib/act/outbox.ts).
       await enqueueActWriteForNewestRevision(tx, { documentId: request.documentId, now });
+      transaction.callbackFinished = true;
     });
   } catch (error) {
-    if (error instanceof LostRaceError) {
-      // No row was ever updated to point at `name`, so the PDF this call
-      // just rendered and wrote is referenced by nothing -- best-effort
-      // delete it rather than leave a permanent orphan. Never lets a
-      // filesystem failure change what the client is told: logged and
-      // swallowed, exactly like `deleteSupersededClientImage` above.
+    if (!transaction.callbackFinished) {
+      // Rolled back: no row was ever updated to point at `name`, so the PDF
+      // this call just rendered and wrote is referenced by nothing --
+      // best-effort delete it rather than leave a permanent orphan. Never
+      // lets a filesystem failure change what the client is told, or replace
+      // the error that caused the rollback: logged and swallowed, exactly
+      // like `deleteSupersededClientImage` above.
       //
       // This closes the ordinary races this function was built to survive
       // (a stray double-tap, two open tabs) but not a determined holder of
@@ -411,10 +435,12 @@ export async function completeSigning(token: string): Promise<ActionResult> {
       try {
         await unlink(filePath);
       } catch (unlinkError) {
-        console.error("[signing] failed to delete orphaned PDF after lost completion race", filePath, unlinkError);
+        console.error("[signing] failed to delete orphaned PDF after a rolled-back completion", filePath, unlinkError);
       }
-      return { error: UNAVAILABLE };
+    } else {
+      console.error("[signing] completion's COMMIT failed, keeping the archived PDF it may point at", filePath);
     }
+    if (error instanceof LostRaceError) return { error: UNAVAILABLE };
     throw error;
   }
 
