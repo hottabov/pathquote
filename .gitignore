@@ -78,3 +78,10 @@ Claude outputs/
 # Rendered form previews (scripts/preview-form-html.ts, scripts/preview-production-forms.ts)
 .preview-forms/
 .preview-stage/
+
+# Scratch output from assistant sessions working in this folder. Never source,
+# never a deliverable of this repository -- they appeared here once by accident
+# and can carry personal documents, which is the reason they are named rather
+# than left to chance.
+deliverables/
+output/
