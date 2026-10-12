@@ -48,7 +48,13 @@ The id above was previously recorded here as `d90f208e-6468-4251-89d8-4937b0c701
 
 **`Marketing` carries no email address, and `marketing@pathfindercut.com` is not its address** — in Act! that mailbox belongs to `Eadaoin Wright` (`92fed6e6-6468-4251-89d8-4937b0c70182`), a dormant Standard account, last logon 2021-10-22, status Inactive. Worth stating because email is the join key between Act! users and PathQuote users (§9): the service account has no email, so it can never be matched to a person, which is the behaviour wanted. A PathQuote user carrying `marketing@pathfindercut.com` would join to Eadaoin Wright, not to the integration.
 
-`Marketing`'s role reads `Browse` in `RAW/ACT/meta/users.json`, which is read-only. That snapshot predates the promotion — its `lastLogOnDate` is 2026-10-02 and the promotion was 2026-10-05 — so the file is stale rather than the promotion having failed. **Confirm against a live `GET /api/users` before building write-back**, because `Browse` cannot write and the failure would arrive as a `403` deep inside the first queued write rather than at startup.
+`Marketing`'s role reads `Browse` in `RAW/ACT/meta/users.json`, which is read-only — but that snapshot predates the promotion (its `lastLogOnDate` is 2026-10-02, the promotion was 2026-10-05), so the file is stale rather than the promotion having failed. **Confirmed live on 2026-10-12** against `GET /api/users` from the VPS:
+
+```
+d90f208e-e1fd-4835-8811-541b0c4b81b9  Marketing  Manager  Active  (email null)
+```
+
+So write-back is not blocked on permissions. Worth re-checking the same way after any Act! upgrade or licence change, because `Browse` would surface as a `403` deep inside the first queued write rather than at startup.
 
 Error codes documented by the API: `401` unauthorized, `403` forbidden, `4030` Act! incompatibility, `4031` subscription required, `4032` API access permission required.
 
