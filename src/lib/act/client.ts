@@ -1,5 +1,6 @@
 import {
   classifyWriteFailure,
+  failureOf,
   isRetried,
   mergeForWrite,
   neverConnected,
@@ -10,6 +11,7 @@ import {
   type ActAnswer,
   type ActRecordJson,
   type HttpMethod,
+  type WriteFailure,
 } from "@/lib/act/record-write";
 import type {
   ActContact,
@@ -96,14 +98,30 @@ const HISTORY_PAGE_SIZE = 1000;
  */
 export const REP_PICKLIST_ID = "65898243-e8ef-4c0f-84d6-bbc93144eac0";
 
+/**
+ * ACT! answered, and the answer was not what was asked for: a status that is
+ * a failure, or a 2xx that does not give the record or the list (`status`
+ * then 200, and `failure` that of an `unreadable` answer).
+ *
+ * `failure` is classifyWriteFailure's verdict for `method` and that answer
+ * (src/lib/act/record-write.ts), set where the error is thrown, so what the
+ * error means is on the error: `refused` -- nothing written, and repeating it
+ * repeats the refusal -- or `failed`, safe to try again. (Never `untracked`:
+ * that is ActUntrackedCreateError.) Read it with writeFailureOf.
+ */
 export class ActApiError extends Error {
+  readonly failure: WriteFailure;
+
   constructor(
     message: string,
+    readonly method: HttpMethod,
     readonly status: number,
     readonly body: string,
+    failure: WriteFailure,
   ) {
     super(message);
     this.name = "ActApiError";
+    this.failure = failure;
   }
 }
 
@@ -115,7 +133,8 @@ const MAX_ATTEMPTS = 3;
 /** Wait before attempt n+1 is n times this: 1s, then 2s. */
 const RETRY_DELAY_MS = 1_000;
 
-type Reply = { status: number; ok: boolean; body: string };
+/** `location` is the Location header, for a redirect's message; null when there is none. */
+type Reply = { status: number; ok: boolean; body: string; location: string | null };
 
 /**
  * What a read-modify-write did. `written` is false when the decision was to
@@ -132,8 +151,9 @@ type Outgoing = { method: HttpMethod; body?: unknown };
  * A create that may have left a record in ACT! which PathQuote has not got:
  * classifyWriteFailure's `untracked` (src/lib/act/record-write.ts).
  *
- * Thrown for a POST that timed out, lost its connection or was answered 5xx
- * -- the server may have committed it before the failure -- and for a POST
+ * Thrown for a POST that timed out, lost its connection, or was answered 5xx
+ * or with a redirect -- the server may have committed it before the failure
+ * -- and for a POST
  * that succeeded but whose record could not be had from the answer: not
  * JSON, no id in it, or an id whose read-back failed. In that last case the
  * id IS known, and `createdId` carries it: ACT! said it made that record, so
@@ -147,14 +167,18 @@ type Outgoing = { method: HttpMethod; body?: unknown };
  * contrast, is a create ACT! refused, which made nothing.
  */
 export class ActUntrackedCreateError extends Error {
+  /** classifyWriteFailure's kind, on the error as on ActApiError. */
+  readonly failure = "untracked" as const;
+
   constructor(
     message: string,
     /** Method and path, e.g. "POST /api/History". */
     readonly request: string,
     /**
-     * The HTTP status when it is the reason: a 5xx, or a success whose body
-     * was not JSON. Null when no answer arrived, or when the failure came after
-     * a readable success -- no id in it, or the read-back by id failing.
+     * The HTTP status when it is the reason: a 5xx, a redirect that was not
+     * followed, or a success whose body was not JSON. Null when no answer
+     * arrived, or when the failure came after a readable success -- no id in
+     * it, or the read-back by id failing.
      */
     readonly status: number | null,
     readonly body: string,
@@ -220,6 +244,18 @@ export class ActUntrackedCreateError extends Error {
  * once the request may be on its way, and classifyWriteFailure
  * (src/lib/act/record-write.ts) says what each means.
  *
+ * REDIRECTS ARE NOT FOLLOWED (`redirect: "manual"`). fetch follows them by
+ * default, and following a 301, 302 or 303 re-sends a POST as a GET: tried,
+ * a POST answered 301 came back as the 200 of a GET to the new location --
+ * which `create` would read as a create that succeeded with an unreadable
+ * answer, and report as a record ACT! may have made, though nothing was. An
+ * http-to-https or trailing-slash rule on IIS in front of the API is enough
+ * to cause it. Unfollowed, the 3xx itself comes back as the reply, and
+ * classifyWriteFailure says what it means (untracked for a POST, refused for
+ * a GET or a PATCH). Node's fetch hands the 3xx back with its status and
+ * headers under "manual" -- tried, a 301 with its Location -- rather than the
+ * browser's opaque status 0.
+ *
  * Content-Type is set only when there is a body to describe.
  *
  * The timeout covers reading the body as well as receiving the headers, which
@@ -257,11 +293,18 @@ async function send(
         method: outgoing.method,
         headers: sentHeaders,
         ...(body === undefined ? {} : { body }),
+        // Never followed: see REDIRECTS above.
+        redirect: "manual",
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       const text = await response.text();
       if (response.status < 500 || attempt === attempts) {
-        return { status: response.status, ok: response.ok, body: text };
+        return {
+          status: response.status,
+          ok: response.ok,
+          body: text,
+          location: response.headers.get("location"),
+        };
       }
       failure = `HTTP ${response.status}`;
     } catch (error) {
@@ -298,6 +341,26 @@ async function send(
   }
 }
 
+/**
+ * What a failed request means, read off the error alone -- classifyWriteFailure's
+ * kind (src/lib/act/record-write.ts), as each error carries it:
+ *
+ *   ActUntrackedCreateError   `untracked`: a create that may have made a
+ *                             record PathQuote cannot name (unless its
+ *                             `createdId` names it).
+ *   ActApiError               its `failure`: `refused` or `failed`.
+ *   anything else             `failed`. Every other error the client throws
+ *                             is a request that was not sent, a connection
+ *                             never made, or a GET or PATCH that kept failing
+ *                             -- all safe to try again; and an error from
+ *                             outside the client says nothing about ACT!.
+ */
+export function writeFailureOf(error: unknown): WriteFailure {
+  if (error instanceof ActUntrackedCreateError) return error.failure;
+  if (error instanceof ActApiError) return error.failure;
+  return "failed";
+}
+
 /** What a payload looked like, without any of its values: they are contact
  * records, and an error message is not the place for them. */
 function describeShape(payload: unknown): string {
@@ -328,8 +391,10 @@ export function unwrapRows<T>(payload: unknown, path: string): T[] {
   }
   throw new ActApiError(
     `GET ${path} returned a payload that is neither an array nor an object with an array \`value\`: it was ${describeShape(payload)}`,
+    "GET",
     200,
     "",
+    failureOf("GET", "unreadable"),
   );
 }
 
@@ -367,8 +432,10 @@ export class ActClient {
     if (!ok) {
       throw new ActApiError(
         `authorize failed (${status}). Check the username is the Act! display name, the database name, and that the account has the "Web API Access" permission -- a missing permission is 4032.`,
+        "GET",
         status,
         body,
+        failureOf("GET", status),
       );
     }
 
@@ -400,14 +467,19 @@ export class ActClient {
    * A reply's body as JSON, or the error classifyWriteFailure says its status
    * is: `untracked` as ActUntrackedCreateError, `refused` and `failed` as
    * ActApiError with the status. A 2xx whose body is not JSON is the table's
-   * `unreadable`. A PATCH's body is not read at all (see `update`).
+   * `unreadable`. A PATCH's body is not read at all (see `update`). A 3xx is a
+   * redirect `send` did not follow, and its message names where it pointed.
    */
   private parse(path: string, method: HttpMethod, reply: Reply): unknown {
     const request = `${method} ${path}`;
     const failure = classifyWriteFailure(method, reply.status);
+    const redirect =
+      reply.status >= 300 && reply.status < 400
+        ? `, a redirect${reply.location ? ` to ${reply.location}` : ""} that was not followed -- check ACT_BASE (http or https, a trailing slash) against what the server expects`
+        : "";
     if (failure === "untracked") {
       throw new ActUntrackedCreateError(
-        `${request} failed (${reply.status}) and was not retried. ACT! may have created the record before failing -- check before creating it again.`,
+        `${request} failed (${reply.status}${redirect}) and was not retried. ACT! may have created the record before failing -- check before creating it again.`,
         request,
         reply.status,
         reply.body,
@@ -415,7 +487,7 @@ export class ActClient {
       );
     }
     if (failure) {
-      throw new ActApiError(`${request} failed (${reply.status})`, reply.status, reply.body);
+      throw new ActApiError(`${request} failed (${reply.status}${redirect})`, method, reply.status, reply.body, failure);
     }
     if (method === "PATCH") return null;
     if (!reply.body) return null;
@@ -434,8 +506,10 @@ export class ActClient {
       }
       throw new ActApiError(
         `${request} answered ${reply.status} with a body that is not JSON`,
+        method,
         reply.status,
         reply.body,
+        failureOf(method, "unreadable"),
       );
     }
   }
@@ -467,8 +541,10 @@ export class ActClient {
     if (second.status === 401) {
       throw new ActApiError(
         `${outgoing.method} ${path} failed: still 401 after re-authorising. The account may have lost its "Web API Access" permission, or the password was rotated.`,
+        outgoing.method,
         401,
         second.body,
+        failureOf(outgoing.method, 401),
       );
     }
     return this.parse(path, outgoing.method, second);
@@ -490,15 +566,19 @@ export class ActClient {
     if (answer.kind !== "record") {
       throw new ActApiError(
         `GET ${path} returned something other than a record with an id: it was ${describeShape(payload)}`,
+        "GET",
         200,
         "",
+        failureOf("GET", "unreadable"),
       );
     }
     if (!sameRecordId(answer.record.id, id)) {
       throw new ActApiError(
         `GET ${path} answered with record ${answer.record.id}, not ${id}`,
+        "GET",
         200,
         "",
+        failureOf("GET", "unreadable"),
       );
     }
     return answer.record;
@@ -507,7 +587,7 @@ export class ActClient {
   /**
    * POST a new record and return it as ACT! holds it.
    *
-   * Swagger declares a 201 with the created record for all three creates, and
+   * Swagger declares a 201 with the created record for all four creates, and
    * the design doc records the whole contact coming back from the live
    * `POST /api/contacts`. Should an answer be only the new id, the record is
    * read back by it (`readPath`), because throwing at that point would leave a
@@ -566,6 +646,15 @@ export class ActClient {
    * matters here. What is left is the window between this GET's answer and
    * the PATCH's arrival: an edit made in ACT! inside it is overwritten with
    * what was read. The two scripts below ran with the same window.
+   *
+   * ONE EXCEPTION, ACCEPTED: THE PRODUCT LINE. Whether the line is written at
+   * all is decided on the OPPORTUNITY's status (productLineWrite in
+   * src/lib/act/write-payloads.ts), which the drain reads before this method
+   * reads the line -- the line carries no status of its own to decide on. So
+   * a deal closed by hand between those two reads still gets its line
+   * rewritten to the revision's figure. Accepted: the window is as long as
+   * one request between the two reads, the figure written is the quote's
+   * current one, and it changes no status -- the deal stays as it was closed.
    *
    * NOTHING MEANS NO REQUEST. When the decision is null, or a patch that
    * changes nothing on the record as read (patchToSend), no PATCH is sent:
@@ -735,8 +824,10 @@ export class ActClient {
     if (rows.length >= LOOKUP_TOP) {
       throw new ActApiError(
         `GET ${paged} returned ${rows.length} rows, a full page, so there may be more -- refusing to decide a create on part of the answer`,
+        "GET",
         200,
         "",
+        failureOf("GET", "unreadable"),
       );
     }
     return rows;

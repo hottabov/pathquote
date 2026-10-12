@@ -3,6 +3,7 @@ import {
   NEVER_CONNECTED_CODES,
   OPPORTUNITY_COMPUTED_FIELDS,
   classifyWriteFailure,
+  failureOf,
   isRetried,
   mergeForWrite,
   neverConnected,
@@ -81,9 +82,19 @@ describe("classifyWriteFailure", () => {
     }
   });
 
-  it("calls any 4xx refused for a read or a PATCH too, and an unfollowed 1xx or 3xx with it", () => {
+  it("calls any 4xx refused for a read or a PATCH too, and a 1xx with it", () => {
     for (const method of ["GET", "PATCH", "POST"] as const) {
-      for (const status of [100, 304, 400, 404, 499]) expect(classifyWriteFailure(method, status)).toBe("refused");
+      for (const status of [100, 400, 404, 499]) expect(classifyWriteFailure(method, status)).toBe("refused");
+    }
+  });
+
+  it("calls a create answered with a redirect untracked: unfollowed, a 303 is how a server points at what it made", () => {
+    for (const status of [300, 301, 302, 303, 307, 308, 399]) expect(classifyWriteFailure("POST", status)).toBe("untracked");
+  });
+
+  it("calls a read or a PATCH answered with a redirect refused: repeating it gets the same redirect, a setup error", () => {
+    for (const method of ["GET", "PATCH"] as const) {
+      for (const status of [301, 302, 303, 304, 307, 308]) expect(classifyWriteFailure(method, status)).toBe("refused");
     }
   });
 
@@ -162,6 +173,21 @@ describe("neverConnected", () => {
     expect(neverConnected("ECONNREFUSED")).toBeNull();
     expect(neverConnected(null)).toBeNull();
     expect(neverConnected(fetchFailed({ code: 111 }))).toBeNull();
+  });
+});
+
+describe("failureOf", () => {
+  it("is classifyWriteFailure for every answer that is a failure", () => {
+    for (const method of ["GET", "POST", "PATCH"] as const) {
+      for (const answer of ["not-sent", "no-answer", "unreadable", 100, 301, 404, 500] as const) {
+        expect(failureOf(method, answer)).toBe(classifyWriteFailure(method, answer));
+      }
+    }
+  });
+
+  it("refuses to classify a 2xx: an error built on one would say it was no failure", () => {
+    expect(() => failureOf("GET", 200)).toThrow(/not a failure/);
+    expect(() => failureOf("POST", 201)).toThrow(/not a failure/);
   });
 });
 
@@ -317,6 +343,7 @@ function opportunity(): Record<string, unknown> {
     recordManager: "John Hollo",
     recordManagerID: "a0000000-0000-0000-0000-000000000001",
     reason: null,
+    importDate: "2026-10-01T00:00:00Z",
     customFields: { opportunity_field_1: "x" },
     created: "2026-10-01T00:00:00Z",
     edited: "2026-10-12T00:00:00Z",
@@ -325,9 +352,10 @@ function opportunity(): Record<string, unknown> {
 }
 
 describe("writableOpportunity", () => {
-  it("drops every field ACT! computes: the three fields_all.json protects, and the eight it derives on read", () => {
+  it("drops every field ACT! computes or sets: the three fields_all.json protects, the eight it derives on read, and importDate", () => {
     expect([...OPPORTUNITY_COMPUTED_FIELDS].sort()).toEqual(
       [
+        "importDate",
         "productTotal",
         "weightedTotal",
         "grossMargin",

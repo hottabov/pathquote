@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ActApiError, unwrapRows } from "../src/lib/act/client";
+import { ActApiError, ActUntrackedCreateError, unwrapRows, writeFailureOf } from "../src/lib/act/client";
 
 const PATH = "/api/contacts?$top=200";
 
@@ -68,5 +68,33 @@ describe("unwrapRows", () => {
     const message = thrown(wide).message;
     expect(message).toContain("30 more");
     expect(message).not.toContain("k39");
+  });
+});
+
+describe("what an error means, from the error alone", () => {
+  it("classifies a 200 that is not a list: a GET whose answer did not give what was asked, safe to try again", () => {
+    const error = thrown({ items: [] });
+    expect(error.method).toBe("GET");
+    expect(error.status).toBe(200);
+    expect(error.failure).toBe("failed");
+    expect(writeFailureOf(error)).toBe("failed");
+  });
+
+  it("reads `refused` and `failed` off an ActApiError, as it was thrown", () => {
+    expect(writeFailureOf(new ActApiError("POST /api/contacts failed (400)", "POST", 400, "", "refused"))).toBe("refused");
+    expect(writeFailureOf(new ActApiError("GET /api/contacts/x failed (503)", "GET", 503, "", "failed"))).toBe("failed");
+  });
+
+  it("calls an ActUntrackedCreateError untracked, with or without the id it made", () => {
+    const lost = new ActUntrackedCreateError("lost", "POST /api/History", null, "", null);
+    const known = new ActUntrackedCreateError("read-back failed", "POST /api/History", null, "", "c0000000-0000-0000-0000-000000000001");
+    expect(lost.failure).toBe("untracked");
+    expect(writeFailureOf(lost)).toBe("untracked");
+    expect(writeFailureOf(known)).toBe("untracked");
+  });
+
+  it("calls any other error failed: not sent, never connected, or a GET that kept failing", () => {
+    expect(writeFailureOf(new Error("POST /api/History was not sent, so nothing reached ACT!: no connection could be made (ECONNREFUSED)"))).toBe("failed");
+    expect(writeFailureOf("a string")).toBe("failed");
   });
 });

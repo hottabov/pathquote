@@ -126,9 +126,23 @@ function isObject(value: unknown): value is Record<string, unknown> {
  *   request that never reached ACT! did nothing at all -- so the drain tries
  *   the step again later.
  *
- *                 not sent   no answer   2xx unreadable   1xx, 3xx, 4xx   5xx
- *     POST        failed     untracked   untracked        refused         untracked
- *     GET, PATCH  failed     failed      failed           refused         failed
+ *                 not sent   no answer   2xx unreadable   1xx, 4xx   3xx         5xx
+ *     POST        failed     untracked   untracked        refused    untracked   untracked
+ *     GET, PATCH  failed     failed      failed           refused    refused     failed
+ *
+ * A 3xx is a redirect the client did not follow: ActClient's `send` fetches
+ * with `redirect: "manual"`, because fetch following one re-sends a POST
+ * answered 301, 302 or 303 as a GET -- tried: a POST answered 301 came back
+ * as the 200 of a GET to the new location, which reads as a create that
+ * succeeded with an unreadable answer, though nothing was created. Unfollowed,
+ * a 3xx to a POST is untracked: a 303 is how a server answers a POST it has
+ * acted on, pointing at what it made, and nothing in a 3xx says the request
+ * was turned away before the action ran. To a GET or a PATCH it is refused:
+ * the request is safe to repeat, but repeating it gets the same redirect --
+ * an http-to-https or trailing-slash rule on IIS in front of the API, which
+ * is a setup error in ACT_BASE or on the box, for a person to fix. (A 1xx
+ * never reaches the caller of fetch; it is refused with the 4xx so that a
+ * status nobody expects is never taken for success.)
  *
  * WHY 5xx IS UNTRACKED FOR A POST BUT 4xx IS REFUSED. ACT!'s Web API is
  * ASP.NET: authentication, routing and model binding all run before the
@@ -145,9 +159,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
  *
  * The client turns each kind into its error -- untracked into
  * ActUntrackedCreateError, the rest into ActApiError when there is a status
- * and a plain Error when there is none -- and the drain can ask this
- * function of an ActApiError's method and status to tell `refused` from
- * `failed`. isRetried agrees with the table: the methods it repeats are the
+ * and a plain Error when there is none -- and each error carries its kind as
+ * `failure` (writeFailureOf in src/lib/act/client.ts reads it off any error,
+ * a plain one being `failed`), so the drain never has to work it out again.
+ * isRetried agrees with the table: the methods it repeats are the
  * ones whose lost answer is `failed`, not `untracked`. (`not sent` is `failed`
  * for a POST too, but `send` does not repeat it on the spot: the outbox's
  * backoff does, long after whatever refused the connection has had time to
@@ -157,10 +172,26 @@ export type WriteFailure = "refused" | "untracked" | "failed";
 
 export function classifyWriteFailure(method: HttpMethod, answer: ActAnswer): WriteFailure | null {
   if (answer === "not-sent") return "failed";
-  if (typeof answer === "number" && answer >= 200 && answer < 300) return null;
-  const refused = typeof answer === "number" && answer < 500;
-  if (refused) return "refused";
+  if (typeof answer === "number") {
+    if (answer >= 200 && answer < 300) return null;
+    if (answer >= 300 && answer < 400) return method === "POST" ? "untracked" : "refused";
+    if (answer < 500) return "refused";
+  }
   return method === "POST" ? "untracked" : "failed";
+}
+
+/**
+ * classifyWriteFailure for an answer that is certainly a failure -- anything
+ * but a 2xx -- which is what every error the client throws stands for. Throws
+ * when handed a 2xx: an error built on one would say "no failure", which is
+ * how an error escapes being classified at all.
+ */
+export function failureOf(method: HttpMethod, answer: ActAnswer): WriteFailure {
+  const failure = classifyWriteFailure(method, answer);
+  if (failure === null) {
+    throw new Error(`${method} answered ${answer}, which is not a failure; an error for it would say nothing`);
+  }
+  return failure;
 }
 
 /**
@@ -245,8 +276,8 @@ export function mergeForWrite(
 }
 
 /**
- * The fields of an opportunity ACT! works out for itself, which a PATCH
- * therefore never sends back (writableOpportunity). Two sources:
+ * The fields of an opportunity ACT! works out or sets for itself, which a
+ * PATCH therefore never sends back (writableOpportunity). Three sources:
  *
  *   - `productTotal`, `weightedTotal`, `grossMargin`: `isReadOnly: true,
  *     isProtected: true` in RAW/ACT/meta/fields_all.json, the field metadata
@@ -261,14 +292,19 @@ export function mergeForWrite(
  *     "the name of the record manager"...). fields_all.json has no entry for
  *     any of them -- though it has none for `status` or `stage` either, so
  *     that absence alone proves nothing.
+ *   - `importDate`: swagger's own description calls it read-only -- "This
+ *     readonly property displays the date that the opportunity was imported
+ *     into the system" -- in words, not in a `readOnly` flag.
  *
- * Swagger marks none of these read-only. Sent back as read, they are stale
- * the moment the write changes what they are computed from: a deal moved to
- * Won could carry its old 50% weighted total back, and if ACT! enforces the
- * protection instead, the refusal may come back as a 5xx -- which a PATCH
- * retries, three times.
+ * Swagger flags none of these read-only. Sent back as read, the computed
+ * ones are stale the moment the write changes what they are computed from: a
+ * deal moved to Won could carry its old 50% weighted total back, and if ACT!
+ * enforces the protection instead, the refusal may come back as a 5xx --
+ * which a PATCH retries, three times. `importDate` is not computed but is
+ * ACT!'s to set, and is left out for the second of those reasons.
  */
 export const OPPORTUNITY_COMPUTED_FIELDS = [
+  "importDate",
   "productTotal",
   "weightedTotal",
   "grossMargin",
@@ -291,9 +327,17 @@ export const OPPORTUNITY_COMPUTED_FIELDS = [
  * included, because that exact body is what the two scripts that wrote
  * production contacts sent (scripts/act-fix-country-usa.py,
  * scripts/act-fix-country-spellings.py); nothing has been learned since that
- * says otherwise. A product line is sent back whole too: fields_all.json marks
- * none of its fields read-only, and the patch sets `total` itself
- * (summaryProductPatch in src/lib/act/write-payloads.ts).
+ * says otherwise. A product line is sent back whole too, and that is the
+ * weaker ground. fields_all.json lists nine product fields (`TBL_PRODUCTSERVICE`:
+ * name, itemNumber, type, quantity, price, discountPrice, discount, cost,
+ * total) and marks none of them read-only, and the patch sets `total` itself
+ * (summaryProductPatch in src/lib/act/write-payloads.ts). But the line read
+ * back carries some twenty -- `id`, `opportunityID`, `productID`,
+ * `createDate`, `editDate`, `isQuickbooksProduct`, `customFields`, `created`,
+ * `edited`, `editedBy`, `recordOwner`, `recordManager` besides those nine, by
+ * swagger's OpportunityProduct -- and of those fields_all.json says nothing,
+ * which, as for the opportunity's, proves nothing either way. None is known
+ * to be refused; the first live PATCH of a line is where that is learned.
  */
 export function writableOpportunity<T extends ActRecordJson>(record: T): T {
   const writable: ActRecordJson = { ...record };
