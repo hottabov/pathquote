@@ -77,14 +77,14 @@
 // body then claims a person: there is no second user field filled in to
 // suggest otherwise.
 //
-// THAT ID HAS NO SOURCE YET -- Task 7 must give it one. The service account
-// is the user `ACT_USER` logs in as, but `ACT_USER` is a login name, not a
-// user uuid (actClientFromEnv in src/lib/act/client.ts passes it as
-// `username`), and no setting holds the uuid. So the drain must either add a
-// setting for the uuid, or look it up from `GET /api/users` by matching
-// `username` against `ACT_USER` (docs/act-integration-reference.md lists the
-// fields; it returns every user, unpaged). It is a parameter here rather than
-// a constant so that changing the account stays a configuration change.
+// WHERE THAT ID COMES FROM. The service account is the user `ACT_USER` logs
+// in as, but `ACT_USER` is a login name, not a user uuid (actClientFromEnv in
+// src/lib/act/client.ts passes it as `username`), and no setting holds the
+// uuid. So the drain looks it up once a pass from `GET /api/users` (which
+// returns every user, unpaged), as the one user whose `username` matches
+// `ACT_USER` (serviceAccountUserId in src/lib/act/drain-rules.ts), and stops
+// its pass when there is none. It is a parameter here rather than a constant
+// so that changing the account stays a configuration change.
 
 import { revisionLabel } from "@/lib/documents/revision-plan";
 import { plural } from "@/lib/plural";
@@ -223,7 +223,7 @@ export type ActParties = {
   authorActUserId: string | null;
   /**
    * The service account's ACT! user uuid. Not `ACT_USER`, which is its login
-   * name; see WHO OWNS WHAT IS WRITTEN above for where Task 7 must get it.
+   * name; see WHERE THAT ID COMES FROM above.
    */
   serviceAccountUserId: string;
 };

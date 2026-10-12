@@ -9,6 +9,7 @@ import {
   nextAttemptAt,
   opportunityNow,
   refusedReason,
+  revisionForAct,
   serviceAccountUserId,
   stepAction,
   wonCloseDate,
@@ -226,5 +227,50 @@ describe("lastErrorText", () => {
 
   it("keeps it short enough to show on a quote", () => {
     expect(lastErrorText("write-history", new Error("x".repeat(5000))).length).toBeLessThanOrEqual(500);
+  });
+});
+
+describe("revisionForAct", () => {
+  const createdAt = new Date("2026-10-12T04:30:00.000Z");
+  const snapshot = { currency: "AUD", totals: { total: "1.00" }, terms: { validityDays: 30 } };
+  const input = (overrides: Partial<Parameters<typeof revisionForAct>[0]> = {}) => ({
+    number: "Q-AU-2026-014",
+    regionCode: "AU",
+    revision: 2,
+    total: { toString: () => "45000.50" },
+    snapshot,
+    createdAt,
+    ...overrides,
+  });
+
+  it("describes the revision from its own row and frozen snapshot", () => {
+    expect(revisionForAct(input())).toEqual({
+      kind: "quote",
+      quote: {
+        number: "Q-AU-2026-014",
+        revision: 2,
+        regionCode: "AU",
+        total: 45000.5,
+        currency: "AUD",
+        validityDays: 30,
+        finalizedAt: createdAt,
+      },
+    });
+  });
+
+  it("refuses a revision with no validity rather than default one", () => {
+    const result = revisionForAct(input({ snapshot: { ...snapshot, terms: { validityDays: null } } }));
+    expect(result.kind).toBe("unreadable");
+    if (result.kind === "unreadable") {
+      expect(result.reason).toMatch(/no validity on record/);
+      expect(result.reason).toContain("— ask your developer.");
+    }
+  });
+
+  it("refuses a revision with no currency, no number or no readable total", () => {
+    expect(revisionForAct(input({ snapshot: { terms: { validityDays: 30 } } })).kind).toBe("unreadable");
+    expect(revisionForAct(input({ snapshot: null })).kind).toBe("unreadable");
+    expect(revisionForAct(input({ number: null })).kind).toBe("unreadable");
+    expect(revisionForAct(input({ total: { toString: () => "n/a" } })).kind).toBe("unreadable");
   });
 });

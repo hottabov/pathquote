@@ -11,7 +11,7 @@ import {
   ActNotSentError,
   ActUntrackedCreateError,
 } from "@/lib/act/client";
-import type { OpportunityNow } from "@/lib/act/write-payloads";
+import type { OpportunityNow, QuoteForAct } from "@/lib/act/write-payloads";
 import type { OutboxStep } from "@/lib/act/outbox-plan";
 
 /** The steps that call ACT!: every OutboxStep but `done` and `blocked`. */
@@ -241,4 +241,75 @@ export function lastErrorText(kind: ActStepKind, error: unknown): string {
     text = `PathQuote could not ${stepAction(kind)}: something in PathQuote failed — ${message}`;
   }
   return clip(text, LAST_ERROR_MAX);
+}
+
+/**
+ * The revision a row writes, as the request bodies take it (QuoteForAct in
+ * src/lib/act/write-payloads.ts): the figures from the QuoteRevision the row
+ * points at and its frozen snapshot, never the live Document, which an
+ * unfinalise makes editable again after the row was queued. Only `number`
+ * and `regionCode` are read live, for the reasons QuoteForAct gives.
+ *
+ * `unreadable`, with the blocked reason, when the revision cannot be
+ * described without guessing: no quote number, no currency in the snapshot,
+ * a total that is not a number, or no validity -- a revision 0 written by
+ * scripts/backfill-quote-revisions.ts can hold a null one, and QuoteForAct
+ * says to refuse it rather than default it.
+ */
+export type RevisionForAct = { kind: "quote"; quote: QuoteForAct } | { kind: "unreadable"; reason: string };
+
+const ASK_DEVELOPER = "ask your developer.";
+
+export function revisionForAct(input: {
+  /** Document.number. */
+  number: string | null;
+  /** Region.code of Document.regionId. */
+  regionCode: string;
+  /** QuoteRevision.revision. */
+  revision: number;
+  /** QuoteRevision.total, a Decimal(12,2): anything whose string is the figure. */
+  total: { toString(): string };
+  /** QuoteRevision.snapshot, as stored. */
+  snapshot: unknown;
+  /** QuoteRevision.createdAt. */
+  createdAt: Date;
+}): RevisionForAct {
+  if (!input.number) {
+    return { kind: "unreadable", reason: `This quote has no number, so PathQuote has nothing to name it by in ACT! — ${ASK_DEVELOPER}` };
+  }
+  const snapshot = typeof input.snapshot === "object" && input.snapshot !== null ? (input.snapshot as Record<string, unknown>) : {};
+  const currency = snapshot.currency;
+  if (typeof currency !== "string" || currency.trim() === "") {
+    return {
+      kind: "unreadable",
+      reason: `The revision of this quote being written to ACT! has no currency on record, so PathQuote cannot say what its amount is in — ${ASK_DEVELOPER}`,
+    };
+  }
+  const terms = typeof snapshot.terms === "object" && snapshot.terms !== null ? (snapshot.terms as Record<string, unknown>) : {};
+  const validityDays = terms.validityDays;
+  if (typeof validityDays !== "number" || !Number.isFinite(validityDays)) {
+    return {
+      kind: "unreadable",
+      reason: `The revision of this quote being written to ACT! has no validity on record, and PathQuote will not write it with a guessed one — ${ASK_DEVELOPER}`,
+    };
+  }
+  const total = Number(input.total.toString());
+  if (!Number.isFinite(total)) {
+    return {
+      kind: "unreadable",
+      reason: `The revision of this quote being written to ACT! has no total PathQuote can read — ${ASK_DEVELOPER}`,
+    };
+  }
+  return {
+    kind: "quote",
+    quote: {
+      number: input.number,
+      revision: input.revision,
+      regionCode: input.regionCode,
+      total,
+      currency,
+      validityDays,
+      finalizedAt: input.createdAt,
+    },
+  };
 }

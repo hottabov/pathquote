@@ -351,8 +351,8 @@
 // CONTACT in ACT!, a repeated create-opportunity a SECOND OPPORTUNITY FOR THE
 // DEAL, a repeated line create a SECOND PRODUCT LINE, which DOUBLES THE
 // DEAL'S AMOUNT, a repeated write-history a second History for the revision.
-// So no create is repeated blind; see A CREATE IN FLIGHT. The drain (Task 7)
-// still stores each result the moment ACT! answers, before doing anything
+// So no create is repeated blind; see A CREATE IN FLIGHT. The drain
+// (src/lib/act/drain.ts) still stores each result the moment ACT! answers, before doing anything
 // else with it, which keeps the window as short as it can be.
 //
 // A CREATE IN FLIGHT. ActOutbox.createInFlight names the record a POST of this
@@ -420,10 +420,11 @@
 // pass makes it due again and the lookup runs again: blocked while the
 // duplicates stand, on its way once a person has dealt with them.
 //
-// A REQUIREMENT ON THE DRAIN (Task 7): after create-opportunity, the two
-// stores -- Document.actOpportunityId and the row's opportunityActId -- MUST be
-// one database transaction. If the row's is saved and the Document's is not,
-// this row moves on to write-history believing the deal has its opportunity,
+// A REQUIREMENT ON THE DRAIN (src/lib/act/drain.ts): after
+// create-opportunity, the two stores -- Document.actOpportunityId and the
+// row's opportunityActId -- MUST be one database transaction. If the row's
+// is saved and the Document's is not, this row moves on to write-history
+// believing the deal has its opportunity,
 // and the next revision's row finds Document.actOpportunityId null and creates
 // a second opportunity for the same deal. (The other way round only re-runs
 // this row's step as an update, which is harmless.) Likewise after

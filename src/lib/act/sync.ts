@@ -59,6 +59,9 @@ const CURSOR_KEY = "act.sync.cursor";
 // namespace shared with the whole database, carrying nothing that says what it
 // is for, and this line is the only record of it -- so a second feature wanting
 // a lock picks a different number and writes it down next to this one.
+//
+// Taken so far: 8_472_001, this one; 8_472_002, the ActOutbox drain's
+// (DRAIN_LOCK_KEY in src/lib/act/drain.ts).
 const SYNC_LOCK_KEY = 8_472_001;
 
 /** Thrown when another sync holds the lock. Not a failure of this run: the

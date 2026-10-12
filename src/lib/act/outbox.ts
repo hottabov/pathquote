@@ -13,8 +13,9 @@
 // What a row means, and what the drain does with it, is the outbox planner's
 // header in src/lib/act/outbox-plan.ts.
 //
-// REQUIREMENTS ON THE DRAIN (Task 7), which follow from how the enqueue
-// works. The drain does not exist yet; these are for whoever writes it.
+// REQUIREMENTS ON THE DRAIN, which follow from how the enqueue works. The
+// drain is drainActOutbox in src/lib/act/drain.ts, which marks where it meets
+// each one.
 //
 // 1. A TAKE-OVER CAN LAND WHILE THE DRAIN WORKS THE ROW, and the guard is
 //    ActOutbox.generation, not the revision. A take-over clears the row's

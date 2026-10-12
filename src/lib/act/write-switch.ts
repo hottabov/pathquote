@@ -15,10 +15,10 @@
 //
 // QUEUED REGARDLESS, SENT ONLY WHEN ON. Finalise, the client's signature and
 // acceptQuote queue their ActOutbox row whatever this switch says
-// (enqueueActWrite in src/lib/act/outbox.ts). A REQUIREMENT ON THE DRAIN
-// (Task 7, not written yet): it reads the switch before each call it makes
-// to ACT!, and sends nothing while it is off (requirement 2 in
-// src/lib/act/outbox.ts). So a quote finalised while the switch is off still
+// (enqueueActWrite in src/lib/act/outbox.ts). The drain (drainActOutbox in
+// src/lib/act/drain.ts) reads the switch at the start of a pass and again
+// before each call it makes to ACT!, and sends nothing while it is off
+// (requirement 2 in src/lib/act/outbox.ts). So a quote finalised while the switch is off still
 // reaches ACT! once it is turned on, instead of being lost.
 //
 // THE CONSEQUENCE, to know before turning it on: the first drain after that
@@ -41,7 +41,8 @@
 // quote's: a later finalise, signature or acceptance of the same quote
 // queues a new row, which the drain sends.
 //
-// Pure: the drain is to read the row and hand it to actWriteEnabled.
+// Pure: the drain reads the row (readActWriteSwitch in src/lib/act/drain.ts)
+// and hands it to actWriteEnabled.
 
 /** The `Setting` key the switch lives under. */
 export const ACT_WRITE_SWITCH_KEY = "act.write.enabled";
