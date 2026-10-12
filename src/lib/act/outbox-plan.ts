@@ -302,7 +302,8 @@
 // ACT! can refuse it over a value already on the record -- an Account Mgr or a
 // country off its limited picklist, which the inbound data has on old
 // contacts. The drain blocks a row on a refusal (a 4xx is the same answer
-// every time). Before the line and the win, a refused promotion would hold
+// every time), and holds it there until a take-over or a person sends it
+// again. Before the line and the win, a refused promotion would hold
 // back the deal's amount and its Won with it, over nothing but the contact's
 // status; last, it holds back nothing but itself. Nothing the promotion does
 // is needed by the steps before it: they read the contact's ACT! id, which
@@ -424,9 +425,10 @@
 // the drain's pass over blocked rows clears blockedReason only when nextStep
 // no longer blocks, which for a value nothing here knows needs the marker
 // gone. A row the drain blocked on a lookup's duplicates is not blocked by
-// nextStep, so that pass makes it due again and the lookup runs again:
-// blocked while the duplicates stand, on its way once a person has dealt
-// with them.
+// nextStep, so that pass works it again, ahead of the due rows, and the
+// lookup runs again: blocked while the duplicates stand, on its way once a
+// person has dealt with them. (A row ACT! REFUSED is different: the drain
+// holds it until a take-over or a person, ActOutbox.blockedBy.)
 //
 // A CONTACT CREATE IN FLIGHT is marked on the Contact, not the row, because
 // the record being created is the contact, and a contact belongs to every

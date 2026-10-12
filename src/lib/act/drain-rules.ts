@@ -200,27 +200,87 @@ export function answerDetail(body: string): string {
 }
 
 /**
+ * What happens next to a write ACT! refused, as the end of the sentence a
+ * manager reads: it is held (BLOCKED_BY.act), and sent again only by a
+ * take-over or a person. If what ACT! objects to is on its own record (an
+ * off-list value on an old contact, say), fixing that record is what lets
+ * the next attempt through.
+ */
+const HELD_UNTIL_RETRIED =
+  "PathQuote will not send it again on its own: check the record in ACT!, and it is tried again when this quote is next finalised, signed or accepted, or when your developer retries it.";
+
+/**
  * The blocked reason for a step ACT! refused: what was being done, ACT!'s
  * status and what it said, and what happens next. Read by a manager on the
  * quote (BLOCKED REASONS ARE READ BY A MANAGER in src/lib/act/outbox-plan.ts).
  *
- * "Tries again on its next pass" is what the drain does: its pass over
- * blocked rows makes due again any row nextStep does not block, and a
- * refusal is not one nextStep sees. A refusal is the same answer every time
- * the same thing is sent, so it is tried once a pass rather than on the
- * backoff -- and if what ACT! objects to is on its own record (an off-list
- * value on an old contact, say), fixing that record is what lets it through.
+ * A refusal is the same answer every time the same thing is sent, so the
+ * row is blocked BLOCKED_BY.act and the drain's pass over blocked rows
+ * leaves it alone (replanBlocked): sent every pass, a refused write would be
+ * refused every pass -- and a refused contact create that ACT! had in fact
+ * saved would put a new person in ACT! every pass.
  */
 export function refusedReason(kind: ActStepKind, status: number, body: string): string {
   const said = answerDetail(body);
-  return `ACT! refused to ${stepAction(kind)}, answering ${status}${said ? ` ("${said}")` : ""} — PathQuote will try again on its next pass; if this stays, check the record in ACT!, or ask your developer.`;
+  return `ACT! refused to ${stepAction(kind)}, answering ${status}${said ? ` ("${said}")` : ""} — ${HELD_UNTIL_RETRIED}`;
+}
+
+/**
+ * The values of ActOutbox.blockedBy, beside null for a row the planner
+ * blocked. See the column in prisma/schema.prisma.
+ *
+ *   act    ACT! refused a write: held until a take-over or a person.
+ *   drain  the drain's own check -- duplicates a lookup found, a revision it
+ *          cannot describe: worked again first thing each pass.
+ */
+export const BLOCKED_BY = {
+  act: "act",
+  drain: "drain",
+} as const;
+
+/**
+ * What the drain's pass over blocked rows does with one, from who blocked it
+ * and what nextStep says now. No ACT! call is made deciding it.
+ *
+ *   keep     leave it blocked as it is: ACT! refused it (or blockedBy holds a
+ *            value nothing here knows, which is left for a person), or the
+ *            planner blocks it still, for the reason stored.
+ *   reblock  the planner blocks it, for a reason other than the one stored:
+ *            store the planner's, as the planner's.
+ *   unblock  the planner blocked it and no longer does -- the cause was
+ *            fixed in PathQuote: clear the reason, which is no longer true,
+ *            and make the row due.
+ *   recheck  the drain's own check blocked it, and the planner does not:
+ *            work it again this pass, ahead of the due rows, keeping its
+ *            reason until the moment it is worked -- the duplicates it names
+ *            may still be in ACT!, and a pass that stops before reaching it
+ *            would otherwise leave the manager with no reason at all.
+ */
+export type Replan =
+  | { kind: "keep" }
+  | { kind: "reblock"; reason: string }
+  | { kind: "unblock" }
+  | { kind: "recheck" };
+
+export function replanBlocked(
+  row: { blockedReason: string; blockedBy: string | null },
+  step: OutboxStep,
+): Replan {
+  if (row.blockedBy !== null && row.blockedBy !== BLOCKED_BY.drain) return { kind: "keep" };
+  if (step.kind === "blocked") {
+    return step.reason === row.blockedReason && row.blockedBy === null
+      ? { kind: "keep" }
+      : { kind: "reblock", reason: step.reason };
+  }
+  return row.blockedBy === BLOCKED_BY.drain ? { kind: "recheck" } : { kind: "unblock" };
 }
 
 /**
  * What a failure means for the row that was being worked:
  *
  *   refused    ACT! answered no: an ActApiError `refused` with a 4xx other
- *              than 401 and 403. The row is blocked with refusedReason.
+ *              than 401 and 403. The row is blocked with refusedReason, and
+ *              held there (BLOCKED_BY.act).
  *   stop       not about this row: a 401 after re-authorising, a 403 (the
  *              service account's licence or permissions -- a `Browse`
  *              licence surfaces here), or a redirect not followed (ACT_BASE

@@ -59,11 +59,13 @@ import {
   type QuoteForAct,
 } from "@/lib/act/write-payloads";
 import {
+  BLOCKED_BY,
   drainFailure,
   lastErrorText,
   nextAttemptAt,
   opportunityNow,
   refusedReason,
+  replanBlocked,
   retryAfterMs,
   revisionForAct,
   serviceAccountUserId,
@@ -136,7 +138,10 @@ export type DrainResult = {
   failed: { documentId: string; error: string }[];
   /** Creates whose answer was lost, so PathQuote may not know a record it made. */
   untracked: number;
-  /** Blocked rows the re-plan found no longer blocked, and made due. */
+  /**
+   * Blocked rows made due again: the planner's, once it no longer blocks
+   * them, and the drain's own checks', reopened to be worked again.
+   */
   unblocked: number;
   /** Due rows not tried because the switch was off. */
   skippedSwitchOff: number;
@@ -173,9 +178,17 @@ class StopPass extends Error {
   }
 }
 
-/** Blocks the row being worked, with a sentence for its manager. Never about ACT! having done anything. */
+/**
+ * Blocks the row being worked, with a sentence for its manager, and who
+ * blocked it (ActOutbox.blockedBy): null when the planner will block it from
+ * now on too, BLOCKED_BY.drain for the drain's own checks. Never about ACT!
+ * having refused anything: that is handled where the failure is.
+ */
 class BlockRow extends Error {
-  constructor(readonly reason: string) {
+  constructor(
+    readonly reason: string,
+    readonly by: typeof BLOCKED_BY.drain | null,
+  ) {
     super(reason);
     this.name = "BlockRow";
   }
@@ -241,22 +254,25 @@ export async function drainActOutbox(client: ActClient, options: DrainOptions = 
     }
 
     const pass = new Pass(client, result, clock);
-    await pass.replanBlocked(options.onlyDocumentId);
-
+    // The rows the drain's own checks blocked go first, each reopened only
+    // as it is worked (Pass.recheck); then the due rows, up to BATCH in all.
+    const rechecks = (await pass.replanBlocked(options.onlyDocumentId)).slice(0, BATCH);
     const due = await db.actOutbox.findMany({
       where: dueWhere(clock(), options.onlyDocumentId),
       orderBy: [{ nextAttemptAt: "asc" }, { createdAt: "asc" }],
-      take: BATCH,
+      take: BATCH - rechecks.length,
       select: { id: true },
     });
-    for (let i = 0; i < due.length; i++) {
+    const work = [...rechecks.map((id) => ({ id, recheck: true })), ...due.map(({ id }) => ({ id, recheck: false }))];
+    for (let i = 0; i < work.length; i++) {
       try {
-        await pass.drainRow(due[i].id);
+        if (work[i].recheck && !(await pass.recheck(work[i].id))) continue;
+        await pass.drainRow(work[i].id);
       } catch (error) {
         if (!(error instanceof StopPass)) throw error;
         result.status = error.switchedOff ? "switched-off" : "stopped";
         result.stopReason = error.message;
-        if (error.switchedOff) result.skippedSwitchOff = due.length - i;
+        if (error.switchedOff) result.skippedSwitchOff = work.length - i;
         console.warn(`act: drain pass stopped: ${error.message}`);
         break;
       }
@@ -293,6 +309,7 @@ const ROW_SELECT = {
   attempts: true,
   completedAt: true,
   blockedReason: true,
+  blockedBy: true,
   quoteRevision: {
     select: { id: true, revision: true, total: true, snapshot: true, createdAt: true, actHistoryId: true },
   },
@@ -436,31 +453,61 @@ class Pass {
   }
 
   /**
-   * Re-plan every blocked row: a row nextStep no longer blocks has its
-   * blockedReason cleared and is made due. No ACT! calls. The fixes a blocked
-   * reason asks for -- name a contact, map a region -- take no re-finalise, so
-   * without this a fixed cause would leave the row stranded. A row the drain
-   * blocked itself (a lookup's duplicates, a refusal) is not one nextStep
-   * blocks, so it is made due again here, once a pass, and tried again: still
-   * blocked while the cause stands, on its way once a person has dealt with
-   * it in ACT!. A row nextStep blocks for a different reason now has that
-   * reason stored instead.
+   * Re-plan every blocked row, as replanBlocked in src/lib/act/drain-rules.ts
+   * decides from who blocked it. No ACT! calls. The fixes a planner's reason
+   * asks for -- name a contact, map a region -- take no re-finalise, so
+   * without this a fixed cause would leave the row stranded: such a row has
+   * its blockedReason cleared and is made due. A row ACT! refused is left
+   * alone: the same request would be refused again, and only a take-over or
+   * a person sends it again. A row the drain's own check blocked (a lookup's
+   * duplicates, a revision it cannot describe) is returned, to be worked
+   * again first this pass, its reason kept until then: still blocked while
+   * the cause stands, on its way once a person has dealt with it. A row
+   * nextStep blocks for a different reason now has that reason stored
+   * instead, as the planner's.
    */
-  async replanBlocked(onlyDocumentId: string | undefined): Promise<void> {
+  async replanBlocked(onlyDocumentId: string | undefined): Promise<string[]> {
     const blocked = await db.actOutbox.findMany({
       where: { completedAt: null, blockedReason: { not: null }, ...(onlyDocumentId ? { documentId: onlyDocumentId } : {}) },
+      orderBy: { createdAt: "asc" },
       select: { id: true },
     });
+    const rechecks: string[] = [];
     for (const { id } of blocked) {
       const row = await loadRow(id);
       if (!row || row.completedAt || !row.blockedReason) continue;
-      const step = plan(row);
-      if (step.kind === "blocked") {
-        if (step.reason !== row.blockedReason) await this.storeRow(row, { blockedReason: step.reason });
-        continue;
+      const decision = replanBlocked({ blockedReason: row.blockedReason, blockedBy: row.blockedBy }, plan(row));
+      switch (decision.kind) {
+        case "keep":
+          break;
+        case "reblock":
+          await this.storeRow(row, { blockedReason: decision.reason, blockedBy: null });
+          break;
+        case "unblock":
+          if (await this.storeRow(row, { blockedReason: null, blockedBy: null, nextAttemptAt: this.clock() })) {
+            this.result.unblocked += 1;
+          }
+          break;
+        case "recheck":
+          rechecks.push(id);
+          break;
       }
-      if (await this.storeRow(row, { blockedReason: null, nextAttemptAt: this.clock() })) this.result.unblocked += 1;
     }
+    return rechecks;
+  }
+
+  /**
+   * Reopen a row the drain's own check blocked, immediately before it is
+   * worked again: its reason cleared, guarded like every store. False when
+   * the row has changed since the re-plan (taken over, finished), and is not
+   * worked as a recheck.
+   */
+  async recheck(id: string): Promise<boolean> {
+    const row = await loadRow(id);
+    if (!row || row.completedAt || row.blockedBy !== BLOCKED_BY.drain) return false;
+    if (!(await this.storeRow(row, { blockedReason: null, blockedBy: null }))) return false;
+    this.result.unblocked += 1;
+    return true;
   }
 
   /** Plan, do, store, repeat, until the row is done, blocked or failing. */
@@ -482,7 +529,7 @@ class Pass {
         continue;
       }
       if (step.kind === "blocked") {
-        if (await this.block(row, step.reason)) return;
+        if (await this.block(row, step.reason, null)) return;
         continue;
       }
 
@@ -495,13 +542,15 @@ class Pass {
         // row is left as it is, still due, for the next pass.
         if (error instanceof StopPass) throw error;
         if (error instanceof BlockRow) {
-          if (await this.block(row, error.reason)) return;
+          if (await this.block(row, error.reason, error.by)) return;
           continue;
         }
         const failure = drainFailure(error);
         if (failure === "refused" && error instanceof ActApiError) {
+          // Held: the drain's pass over blocked rows leaves it for a
+          // take-over or a person (BLOCKED_BY.act).
           console.warn(`act: ACT! refused ${step.kind}`, { id: row.id, status: error.status, body: error.body.slice(0, 500) });
-          if (await this.block(row, refusedReason(step.kind, error.status, error.body))) return;
+          if (await this.block(row, refusedReason(step.kind, error.status, error.body), BLOCKED_BY.act)) return;
           continue;
         }
         if (failure === "untracked") this.result.untracked += 1;
@@ -518,8 +567,9 @@ class Pass {
     }
   }
 
-  private async block(row: Row, reason: string): Promise<boolean> {
-    if (!(await this.storeRow(row, { blockedReason: reason }))) return false;
+  /** Block the row: its reason, and who blocked it (ActOutbox.blockedBy; null for the planner). */
+  private async block(row: Row, reason: string, by: string | null): Promise<boolean> {
+    if (!(await this.storeRow(row, { blockedReason: reason, blockedBy: by }))) return false;
     this.result.blocked.push({ documentId: row.documentId, reason });
     console.warn("act: outbox row blocked", { id: row.id, documentId: row.documentId, reason });
     return true;
@@ -639,7 +689,7 @@ class Pass {
       snapshot: row.quoteRevision.snapshot,
       createdAt: row.quoteRevision.createdAt,
     });
-    if (described.kind === "unreadable") throw new BlockRow(described.reason);
+    if (described.kind === "unreadable") throw new BlockRow(described.reason, BLOCKED_BY.drain);
     return described.quote;
   }
 
@@ -757,7 +807,7 @@ class Pass {
         // The marker stays; a person has to look in ACT! before any quote on
         // this contact goes on.
         this.result.untracked += 1;
-        throw new BlockRow(UNTRACKED_CONTACT_REASON);
+        throw new BlockRow(UNTRACKED_CONTACT_REASON, null);
       }
       // Not from a request (writeFailureOf's `foreign`): it says nothing about
       // what ACT! did, so the marker stays, and the row's failure handling
@@ -776,7 +826,7 @@ class Pass {
         actContactId: created.id,
         error,
       });
-      throw new BlockRow(UNTRACKED_CONTACT_REASON);
+      throw new BlockRow(UNTRACKED_CONTACT_REASON, null);
     }
   }
 
@@ -867,7 +917,7 @@ class Pass {
 
     await this.beforeCall();
     const found = opportunityLookup(await this.client.opportunitiesNamed(name, parties.contactActId), quote);
-    if (found.kind === "block") throw new BlockRow(duplicateOpportunitiesReason(name, found.count));
+    if (found.kind === "block") throw new BlockRow(duplicateOpportunitiesReason(name, found.count), BLOCKED_BY.drain);
     if (found.kind === "adopt") {
       // Stored alone: the next plan is the update, on a fresh read.
       await db.$transaction([
@@ -970,7 +1020,7 @@ class Pass {
 
     await this.beforeCall();
     const found = productLineLookup(await this.client.listProductLines(opportunityId), quote);
-    if (found.kind === "block") throw new BlockRow(duplicateProductLinesReason(quote.number, found.count));
+    if (found.kind === "block") throw new BlockRow(duplicateProductLinesReason(quote.number, found.count), BLOCKED_BY.drain);
     if (found.kind === "adopt") {
       // The id alone, with no revision: the next plan PATCHes it to this one.
       await db.$transaction([

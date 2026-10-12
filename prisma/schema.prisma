@@ -1775,15 +1775,32 @@ model ActOutbox {
   /// When the planner reported the row done. Null is "unfinished", pending or
   /// blocked alike, and is what the one-unfinished-row index keys on.
   completedAt          DateTime?
-  /// Why the write cannot proceed: one of the sentences in
-  /// src/lib/act/outbox-plan.ts, read by a manager on the quote. A blocked row
-  /// is not due (the drain's index leaves it out) and is still unfinished.
-  /// Making the fix a sentence asks for does not by itself unblock the row:
-  /// naming the contact or mapping the region involves no re-finalise, so
-  /// nothing takes the row over. The drain must therefore re-plan every
-  /// blocked row on each pass and, once nextStep no longer returns `blocked`,
-  /// clear this and make the row due.
+  /// Why the write cannot proceed: a sentence read by a manager on the quote
+  /// -- one of src/lib/act/outbox-plan.ts's, or the drain's for ACT!'s answer
+  /// (src/lib/act/drain-rules.ts). A blocked row is not due (the drain's
+  /// index leaves it out) and is still unfinished. Making the fix a planner's
+  /// sentence asks for does not by itself unblock the row: naming the contact
+  /// or mapping the region involves no re-finalise, so nothing takes the row
+  /// over. The drain therefore re-plans every blocked row on each pass and,
+  /// once nextStep no longer returns `blocked`, clears this and makes the row
+  /// due -- unless blockedBy says ACT! refused the write.
   blockedReason        String?
+  /// Who blocked the row, which decides what the drain's pass over blocked
+  /// rows does with it (replanBlocked in src/lib/act/drain-rules.ts):
+  ///   null     the planner (nextStep): re-planned each pass, and unblocked
+  ///            once the cause is fixed in PathQuote.
+  ///   "act"    ACT! refused a write, or denied PathQuote access to a record:
+  ///            the same request would get the same answer, so the pass
+  ///            leaves the row blocked until a take-over (a new finalise,
+  ///            signature or acceptance) or a person clears blockedReason.
+  ///   "drain"  the drain's own check: duplicates a lookup found in ACT!, or
+  ///            a revision it cannot describe. Worked again first thing each
+  ///            pass, reason kept until then: no write is re-sent by it, only
+  ///            the check.
+  /// A column rather than a reading of blockedReason: that is a sentence for
+  /// a manager, and rewording one must never turn a held refusal into one
+  /// sent again every pass. A take-over clears it with blockedReason.
+  blockedBy            String?
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
 

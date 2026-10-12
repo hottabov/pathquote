@@ -33,7 +33,8 @@ export type EnqueueValues = {
  * what it had stored about its old revision is cleared --
  * opportunityActId and productLineSkippedAt, which say this row's
  * opportunity and line steps are done, and would otherwise mark them done
- * for a revision they were never run for -- along with blockedReason,
+ * for a revision they were never run for -- along with blockedReason and
+ * blockedBy (so a write ACT! refused is sent again for the new event),
  * lastError and attempts, and nextAttemptAt is set to `now`, so the row is
  * due at once and tried afresh. generation goes up by 1: that, not the
  * revision, is how a drain already working the row finds out it was taken
@@ -67,6 +68,7 @@ export function enqueueStatement(values: EnqueueValues): Prisma.Sql {
       "opportunityActId" = NULL,
       "productLineSkippedAt" = NULL,
       "blockedReason" = NULL,
+      "blockedBy" = NULL,
       "lastError" = NULL,
       "attempts" = 0,
       "nextAttemptAt" = EXCLUDED."nextAttemptAt",

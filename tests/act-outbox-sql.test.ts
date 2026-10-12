@@ -49,11 +49,20 @@ describe("enqueueStatement", () => {
       '"opportunityActId"': "NULL",
       '"productLineSkippedAt"': "NULL",
       '"blockedReason"': "NULL",
+      '"blockedBy"': "NULL",
       '"lastError"': "NULL",
       '"attempts"': "0",
       '"nextAttemptAt"': 'EXCLUDED."nextAttemptAt"',
       '"updatedAt"': 'EXCLUDED."updatedAt"',
     });
+  });
+
+  it("on a take-over, unblocks a row ACT! refused: blockedReason and blockedBy both cleared, and the row due", () => {
+    // The drain's pass over blocked rows never unblocks a refusal
+    // (replanBlocked); a new finalise, signature or acceptance does.
+    expect(assignments['"blockedReason"']).toBe("NULL");
+    expect(assignments['"blockedBy"']).toBe("NULL");
+    expect(assignments['"nextAttemptAt"']).toBe('EXCLUDED."nextAttemptAt"');
   });
 
   it("on a take-over, keeps createInFlight, completedAt, createdAt and the id", () => {

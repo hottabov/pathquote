@@ -15,8 +15,16 @@ import {
   serviceAccountUserId,
   stepAction,
   wonCloseDate,
+  BLOCKED_BY,
+  replanBlocked,
   type ActStepKind,
 } from "../src/lib/act/drain-rules";
+import {
+  NAMELESS_CONTACT_REASON,
+  NO_CONTACT_REASON,
+  duplicateOpportunitiesReason,
+  type OutboxStep,
+} from "../src/lib/act/outbox-plan";
 import {
   ActApiError,
   ActNoAnswerError,
@@ -191,7 +199,7 @@ describe("refusedReason", () => {
   it("says what was refused, what ACT! said, and what happens next, in a manager's sentence", () => {
     const reason = refusedReason("promote-contact", 400, '{"Message":"Account Mgr is not in the list"}');
     expect(reason).toBe(
-      'ACT! refused to make this quote\'s contact a Customer, answering 400 ("Account Mgr is not in the list") — PathQuote will try again on its next pass; if this stays, check the record in ACT!, or ask your developer.',
+      'ACT! refused to make this quote\'s contact a Customer, answering 400 ("Account Mgr is not in the list") — PathQuote will not send it again on its own: check the record in ACT!, and it is tried again when this quote is next finalised, signed or accepted, or when your developer retries it.',
     );
   });
 
@@ -211,6 +219,42 @@ describe("refusedReason", () => {
       "promote-contact",
     ];
     for (const kind of kinds) expect(stepAction(kind)).toMatch(/^[a-z]/);
+  });
+});
+
+describe("replanBlocked: what the drain's pass over blocked rows does with one", () => {
+  const fixed: OutboxStep = { kind: "create-opportunity" };
+  const noContact: OutboxStep = { kind: "blocked", reason: NO_CONTACT_REASON };
+
+  it("unblocks a row the planner blocked, once the cause is fixed in PathQuote", () => {
+    expect(replanBlocked({ blockedReason: NO_CONTACT_REASON, blockedBy: null }, fixed)).toEqual({ kind: "unblock" });
+  });
+
+  it("leaves a row the planner still blocks as it is, or stores its new reason as the planner's", () => {
+    expect(replanBlocked({ blockedReason: NO_CONTACT_REASON, blockedBy: null }, noContact)).toEqual({ kind: "keep" });
+    const nameless: OutboxStep = { kind: "blocked", reason: NAMELESS_CONTACT_REASON };
+    expect(replanBlocked({ blockedReason: NO_CONTACT_REASON, blockedBy: null }, nameless)).toEqual({
+      kind: "reblock",
+      reason: NAMELESS_CONTACT_REASON,
+    });
+  });
+
+  it("never unblocks a row ACT! refused, whatever the planner says: only a take-over or a person sends it again", () => {
+    const refused = { blockedReason: refusedReason("create-contact", 400, ""), blockedBy: BLOCKED_BY.act };
+    expect(replanBlocked(refused, fixed)).toEqual({ kind: "keep" });
+    expect(replanBlocked(refused, { kind: "create-contact" })).toEqual({ kind: "keep" });
+    expect(replanBlocked(refused, noContact)).toEqual({ kind: "keep" });
+  });
+
+  it("works a row the drain's own check blocked again, keeping its reason until then", () => {
+    const duplicates = { blockedReason: duplicateOpportunitiesReason("Q-AU-2026-014 AUD", 2), blockedBy: BLOCKED_BY.drain };
+    expect(replanBlocked(duplicates, fixed)).toEqual({ kind: "recheck" });
+    // Unless the planner blocks it now, which is then the reason, the planner's.
+    expect(replanBlocked(duplicates, noContact)).toEqual({ kind: "reblock", reason: NO_CONTACT_REASON });
+  });
+
+  it("leaves a row blocked by someone it does not know for a person", () => {
+    expect(replanBlocked({ blockedReason: "x", blockedBy: "someone" }, fixed)).toEqual({ kind: "keep" });
   });
 });
 

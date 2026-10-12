@@ -34,11 +34,14 @@
 --                                     alone on a closed deal, and
 --                                     createInFlight for a create of the
 --                                     deal's records that may have made one
---                                     whose id was never stored; and
---                                     generation, which the planner does not
---                                     read: the count of take-overs, which
---                                     the drain's stores on the row are
---                                     conditioned on
+--                                     whose id was never stored; blockedBy,
+--                                     who blocked it -- the planner, ACT!
+--                                     refusing a write (held until a
+--                                     take-over), or the drain's own check;
+--                                     and generation, which the planner does
+--                                     not read: the count of take-overs,
+--                                     which the drain's stores on the row
+--                                     are conditioned on
 --
 -- Why ACT!'s ids are kept here rather than a PathQuote id stamped into an ACT!
 -- custom field is on the ActOutbox model in schema.prisma: the `PQ ` fields
@@ -118,6 +121,7 @@ CREATE TABLE "ActOutbox" (
     "nextAttemptAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "completedAt" TIMESTAMP(3),
     "blockedReason" TEXT,
+    "blockedBy" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -159,10 +163,13 @@ ALTER TABLE "ActOutbox" ADD CONSTRAINT "ActOutbox_quoteRevisionId_fkey" FOREIGN 
 -- (blockedReason set) is unfinished too, and holds the slot. So an enqueue -- a
 -- re-finalise, or a signature or acceptance -- that finds an unfinished row,
 -- pending or blocked, does not insert: it takes that row over, pointing it at
--- the revision the enqueue is for, clearing blockedReason, opportunityActId,
--- productLineSkippedAt and lastError, resetting attempts, and adding 1 to
--- generation, which a drain already working the row checks before it
--- stores anything on it (ActOutbox.generation in schema.prisma). It keeps
+-- the revision the enqueue is for, clearing blockedReason, blockedBy,
+-- opportunityActId, productLineSkippedAt and lastError, resetting attempts,
+-- and adding 1 to generation, which a drain already working the row checks
+-- before it stores anything on it (ActOutbox.generation in schema.prisma).
+-- Clearing blockedBy is what sends a write ACT! refused again: the drain's
+-- pass over blocked rows leaves such a row alone, and a take-over is the
+-- event that is worth trying it again for. It keeps
 -- createInFlight: a record a create of the old revision's may have made is in
 -- ACT! whatever revision the row carries now, and the planner blocks on it,
 -- or the drain looks it up, from that alone. That is how "unfinalize, choose a contact,
@@ -186,6 +193,7 @@ ALTER TABLE "ActOutbox" ADD CONSTRAINT "ActOutbox_quoteRevisionId_fkey" FOREIGN 
 --     "opportunityActId" = NULL,
 --     "productLineSkippedAt" = NULL,
 --     "blockedReason" = NULL,
+--     "blockedBy" = NULL,
 --     "lastError" = NULL,
 --     "attempts" = 0,
 --     "nextAttemptAt" = EXCLUDED."nextAttemptAt",
@@ -219,5 +227,7 @@ CREATE UNIQUE INDEX "ActOutbox_documentId_unfinished_key" ON "ActOutbox"("docume
 -- fixing what a blocked reason asks (naming the contact, mapping the region)
 -- involves no re-finalise, so nothing takes the row over and nothing makes it
 -- due. The drain must re-plan every blocked row on each pass, outside this
--- index, and clear blockedReason once the planner no longer blocks it.
+-- index, and clear blockedReason once the planner no longer blocks it --
+-- every blocked row but one ACT! refused (blockedBy "act"), which waits for a
+-- take-over or a person, since the same request would only be refused again.
 CREATE INDEX "ActOutbox_due_idx" ON "ActOutbox"("nextAttemptAt") WHERE "completedAt" IS NULL AND "blockedReason" IS NULL;
