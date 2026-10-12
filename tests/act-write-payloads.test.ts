@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
+  CONTACT_STATUS,
   HISTORY_TYPE_QUOTE,
   OPPORTUNITY_STATUS,
+  contactPromotion,
   historyBody,
   lostOpportunityBody,
   moneyWithCode,
@@ -11,8 +13,10 @@ import {
   type QuoteForAct,
   type ActParties,
   type RevisionUpdate,
+  type WonUpdate,
 } from "../src/lib/act/write-payloads";
 import { sentStage, wonStage } from "../src/lib/act/opportunity-stages";
+import { ACTIVE_STATUSES } from "../src/lib/act/types";
 
 const SALES_CYCLE = "2380e83d-cef4-4b6d-ad15-dc9a558431ab";
 const US_PROCESS = "26ab3a1e-ff20-406d-a0b4-3b351955da45";
@@ -182,9 +186,17 @@ describe("revisedOpportunityBody", () => {
 });
 
 describe("wonOpportunityBody", () => {
-  it("closes the opportunity as won at the region's won stage", () => {
+  const open = (number: number, processId = SALES_CYCLE) => ({ processId, number, status: "Open" });
+
+  /** The patch, failing the test if the opportunity was not Open. */
+  function patchOf(update: WonUpdate) {
+    if (update.kind !== "patch") throw new Error(`expected a patch, got ${update.kind}`);
+    return update;
+  }
+
+  it("closes an open opportunity as won at the region's won stage", () => {
     const accepted = new Date("2026-11-02T01:00:00.000Z");
-    const { patch, stage } = wonOpportunityBody("AU", { processId: SALES_CYCLE, number: 4 }, accepted);
+    const { patch, stage } = patchOf(wonOpportunityBody("AU", open(4), accepted));
     expect(stage).toBe("move");
     expect(patch.status).toBe(OPPORTUNITY_STATUS.won);
     expect(patch.stage).toMatchObject({ id: wonStage("AU")!.id });
@@ -193,10 +205,70 @@ describe("wonOpportunityBody", () => {
   });
 
   it("still closes as won, without a stage, when the opportunity sits in another process, and says so", () => {
-    const { patch, stage } = wonOpportunityBody("AU", { processId: US_PROCESS, number: 2 }, FINALISED);
+    const { patch, stage } = patchOf(wonOpportunityBody("AU", open(2, US_PROCESS), FINALISED));
     expect(stage).toBe("different-process");
     expect(patch.status).toBe(OPPORTUNITY_STATUS.won);
     expect(patch).not.toHaveProperty("stage");
+  });
+
+  it("has nothing to do when the opportunity is already Won", () => {
+    // Won by hand in ACT! first, or a resumed step whose patch went through
+    // before its result was stored. Sending it again would only move the
+    // close date to this acceptance.
+    expect(wonOpportunityBody("AU", { processId: SALES_CYCLE, number: 6, status: "Won" }, FINALISED)).toEqual({
+      kind: "already-won",
+    });
+  });
+
+  it.each(["Lost", "Inactive"])("leaves a %s opportunity alone, and says what it found", (status) => {
+    // Somebody closed the deal by hand in ACT!. Overturning that is not this
+    // function's call -- see the doc comment -- so it reports the status
+    // rather than sending a patch.
+    expect(wonOpportunityBody("AU", { processId: SALES_CYCLE, number: 4, status }, FINALISED)).toEqual({
+      kind: "closed",
+      status,
+    });
+  });
+
+  it("treats a status it has never seen as closed, not open", () => {
+    expect(wonOpportunityBody("AU", { processId: SALES_CYCLE, number: 4, status: "won" }, FINALISED)).toEqual({
+      kind: "closed",
+      status: "won",
+    });
+  });
+});
+
+describe("contactPromotion", () => {
+  it("promotes a Prospect to Customer, and the patch sets idStatus and nothing else", () => {
+    expect(contactPromotion("Prospect")).toEqual({ kind: "promote", patch: { idStatus: "Customer" } });
+  });
+
+  it("leaves a contact that is already a Customer alone, and counts that as done", () => {
+    expect(contactPromotion("Customer")).toEqual({ kind: "leave", reason: "already-customer", current: "Customer" });
+  });
+
+  it.each(["Prospect-Distributor", "Supplier", "Personal", "Suspect"])(
+    "leaves a %s alone: a status somebody set deliberately is not ours to change",
+    (status) => {
+      expect(contactPromotion(status)).toEqual({ kind: "leave", reason: "not-prospect", current: status });
+    },
+  );
+
+  it.each([null, "", "   "])("leaves a blank status (%j) alone", (status) => {
+    expect(contactPromotion(status)).toEqual({ kind: "leave", reason: "not-prospect", current: status });
+  });
+
+  it("matches Prospect exactly, so a near miss errs towards leaving the contact alone", () => {
+    expect(contactPromotion("prospect").kind).toBe("leave");
+    expect(contactPromotion(" Prospect").kind).toBe("leave");
+  });
+
+  it("only ever writes statuses the inbound sync imports", () => {
+    // A promoted contact must stay in PathQuote on the next sync. Both values
+    // come from the "Contact ID/Status" picklist, and ACTIVE_STATUSES is the
+    // inbound filter; if either moves without the other, this fails.
+    expect(ACTIVE_STATUSES).toContain(CONTACT_STATUS.prospect);
+    expect(ACTIVE_STATUSES).toContain(CONTACT_STATUS.customer);
   });
 });
 

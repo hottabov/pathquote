@@ -1,5 +1,10 @@
 // The request bodies a finalised quote sends to ACT!: one History record per
-// revision, and the Opportunity that stands for the whole deal.
+// revision, the Opportunity that stands for the whole deal, and -- once the
+// client signs or the quote is accepted -- the contact's promotion from
+// Prospect to Customer. Where a body depends on what ACT! holds now (a later
+// revision's opportunity update, the win, the promotion), the function here
+// takes that state as read back by the drain and decides, including deciding
+// to send nothing.
 //
 // Pure, and deliberately free of Prisma types: every input is a plain value
 // the drain reads off the quote and hands in. That is what lets the suite test
@@ -77,9 +82,10 @@ export const HISTORY_TYPE_QUOTE = 62;
  * read back from the live API to see these strings on a real record, and a
  * schema can declare an enum the server serialises differently. Confirm
  * against a live `GET /api/opportunities` before the first write. Every status
- * this module sends comes from here, and so does the one it reads back
- * (`open`, in revisedOpportunityBody), so that check changes one place.
- * `Inactive` is absent only because nothing here sends it.
+ * this module sends comes from here, and so do the ones it reads back (`open`
+ * in revisedOpportunityBody and wonOpportunityBody, `won` in
+ * wonOpportunityBody), so that check changes one place. `Inactive` is absent
+ * only because nothing here sends it or tests for it.
  */
 export const OPPORTUNITY_STATUS = {
   open: "Open",
@@ -88,6 +94,26 @@ export const OPPORTUNITY_STATUS = {
 } as const;
 
 export type OpportunityStatus = (typeof OPPORTUNITY_STATUS)[keyof typeof OPPORTUNITY_STATUS];
+
+/**
+ * The two ACT! contact statuses (`idStatus`, "ID/Status") PathQuote reads or
+ * writes.
+ *
+ * Both are values of the field's picklist, "Contact ID/Status", which is
+ * `isLimitToList: true` and single select (RAW/ACT/meta/fields_contact.json,
+ * a local capture, not committed), so a value written here has to be spelled
+ * exactly as the list has it. (Whether the API itself refuses a value off the
+ * list has not been tried.) They are also the two statuses the inbound sync
+ * imports (ACTIVE_STATUSES in src/lib/act/types.ts), which is what keeps a
+ * contact PathQuote promotes in PathQuote on the next sync; a test ties the
+ * two lists together.
+ */
+export const CONTACT_STATUS = {
+  prospect: "Prospect",
+  customer: "Customer",
+} as const;
+
+export type ContactStatus = (typeof CONTACT_STATUS)[keyof typeof CONTACT_STATUS];
 
 /**
  * One finalised revision of a quote, as plain values.
@@ -409,28 +435,56 @@ export function revisedOpportunityBody(
   };
 }
 
-/** Closing the opportunity as won: the patch, and stageMove's verdict on the won stage for the drain to report. */
-export type WonUpdate = { patch: OpportunityPatch; stage: StageMove };
+/**
+ * What accepting the quote does to the deal's opportunity.
+ *
+ * - `patch`: the opportunity is Open. Close it as won; `stage` is stageMove's
+ *   verdict on the won stage, for the drain to report.
+ * - `already-won`: it is Won already -- closed by hand in ACT!, or a resumed
+ *   step whose patch went through before its result was stored. Nothing to
+ *   send; sending it again would only move the close date.
+ * - `closed`: any other status -- Lost, Inactive, or one never seen before.
+ *   Nothing is sent, and `status` is what ACT! said, for the drain to report.
+ */
+export type WonUpdate =
+  | { kind: "patch"; patch: OpportunityPatch; stage: StageMove }
+  | { kind: "already-won" }
+  | { kind: "closed"; status: string };
 
 /**
  * Closing the opportunity as won, when the quote is accepted.
  *
- * The status and close date always; the won stage only when `stageMove`
- * allows it, which in practice means unless the opportunity has been moved to
- * another process -- the won stage is the last in each process, so nothing in
- * the same process is past it. `stage` says which, so the drain can report a
- * "different-process" opportunity closed without its stage. `current` is
+ * For an Open opportunity: the status and close date always; the won stage
+ * only when `stageMove` allows it, which in practice means unless the
+ * opportunity has been moved to another process -- the won stage is the last
+ * in each process, so nothing in the same process is past it. `current` is
  * required for the same reason as in `revisedOpportunityBody`: an opportunity
- * being closed already exists.
+ * being closed already exists, and what it says now decides what is sent.
+ *
+ * A LOST (OR INACTIVE) OPPORTUNITY IS LEFT ALONE, and that is an OPEN
+ * QUESTION, not a settled rule. Accepting needs the client's signature, the
+ * manager's signature and acceptQuote, which is strong evidence the deal is
+ * won. But a status that is not Open was set by somebody in ACT!, and silently
+ * overturning it is the harm revisedOpportunityBody avoids for revisions. So
+ * this returns `closed` with the status, the same way revisedOpportunityBody
+ * does, and the choice between leaving it, overturning it, and asking a
+ * person is Vadym's to make. As for revisions, "not Open" is any status other
+ * than exactly OPPORTUNITY_STATUS.open, so a misspelling errs towards leaving
+ * a deal alone.
  */
 export function wonOpportunityBody(
   regionCode: string,
-  current: StagePosition,
+  current: OpportunityNow,
   acceptedAt: Date,
 ): WonUpdate {
+  if (current.status === OPPORTUNITY_STATUS.won) return { kind: "already-won" };
+  if (current.status !== OPPORTUNITY_STATUS.open) {
+    return { kind: "closed", status: current.status };
+  }
   const won = stagesFor(regionCode).won;
   const stage = stageMove(current, won);
   return {
+    kind: "patch",
     stage,
     patch: {
       status: OPPORTUNITY_STATUS.won,
@@ -452,4 +506,45 @@ export function lostOpportunityBody(reason: string, closedAt: Date): Opportunity
     reason,
     actualCloseDate: closedAt.toISOString(),
   };
+}
+
+/** A body for `PATCH /api/contacts/{id}`: the one field promotion changes. */
+export type ContactStatusPatch = { idStatus: ContactStatus };
+
+/**
+ * Whether winning the quote promotes its contact.
+ *
+ * - `promote`: the contact is a Prospect; `patch` makes it a Customer.
+ * - `leave`: anything else. `already-customer` needs nothing; `not-prospect`
+ *   is a status PathQuote does not own -- a reseller, a supplier, blank --
+ *   and `current` is what ACT! said, for the drain to report. Either way the
+ *   step is done: there is nothing for a retry to change.
+ */
+export type ContactPromotion =
+  | { kind: "promote"; patch: ContactStatusPatch }
+  | { kind: "leave"; reason: "already-customer" | "not-prospect"; current: string | null };
+
+/**
+ * A Prospect becomes a Customer when the client signs or the quote is
+ * accepted, whichever comes first (the plan's addendum of 2026-10-12).
+ *
+ * CHANGE ONLY WHAT WE OWN. `currentIdStatus` is the contact's `idStatus` as
+ * the drain reads it back from ACT! just before, and only exactly
+ * CONTACT_STATUS.prospect is promoted. Overwriting a status somebody set
+ * deliberately is the harm this prevents, so a status not quite spelled
+ * Prospect -- other case, stray spaces -- is left alone rather than
+ * normalised: a missed promotion is visible and harmless, a wrong one is not.
+ *
+ * FORWARD ONLY. A Customer never goes back to Prospect -- not on
+ * voidSignature, not on unfinalise. There is no demote body, and the planner
+ * (src/lib/act/outbox-plan.ts) has no step that would send one.
+ */
+export function contactPromotion(currentIdStatus: string | null): ContactPromotion {
+  if (currentIdStatus === CONTACT_STATUS.prospect) {
+    return { kind: "promote", patch: { idStatus: CONTACT_STATUS.customer } };
+  }
+  if (currentIdStatus === CONTACT_STATUS.customer) {
+    return { kind: "leave", reason: "already-customer", current: currentIdStatus };
+  }
+  return { kind: "leave", reason: "not-prospect", current: currentIdStatus };
 }

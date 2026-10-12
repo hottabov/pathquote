@@ -4,13 +4,18 @@
 // One finalise queues one outbox row, or takes over the unfinished one, for one
 // revision -- the revision that finalise created, or the one it kept when
 // nothing had changed (planRevision in src/lib/documents/revision-plan.ts
-// keeps the number for an unchanged snapshot). The row is a short sequence of
-// steps, each one a single request to ACT!:
+// keeps the number for an unchanged snapshot). The plan's addendum of
+// 2026-10-12 has the client's signature (completeSigning) and acceptQuote
+// queue a row the same way; see DEAL EVENTS below. The row is a short
+// sequence of steps, each one a single request to ACT!, in this order:
 //
 //   create-contact      only when the quote's contact exists only in PathQuote
 //   create-opportunity  only when the deal has no opportunity yet
 //   update-opportunity  instead, when an earlier revision already made one
 //   write-history       one History record for this revision
+//   promote-contact     once the client has signed or the quote is accepted:
+//                       the contact goes from Prospect to Customer
+//   win-opportunity     once the quote is accepted: the opportunity is Won
 //
 // THE STORED FIELDS THIS PLANNER READS, and the model each lives on. The
 // schema (Task 4) is built from this list: a result stored anywhere else is a
@@ -35,17 +40,27 @@
 //                                ActOutbox.quoteRevisionId, which the drain
 //                                follows to hand this planner that revision's
 //                                actHistoryId.
+//   Document.actContactPromotedAt
+//                                promote-contact. Once per deal, so on the
+//                                Document, not the row or the revision. Says
+//                                the step is done, not that ACT! changed (see
+//                                DEAL EVENTS).
+//   Document.actOpportunityWonAt
+//                                win-opportunity. Once per deal, likewise.
 //
 //   The quote -- existing columns, read as they stand now:
 //
 //   Document.contactId           null means no contact (blocked).
 //   Contact.firstName/lastName   whether a contact ACT! must create has a name.
 //   Region.code                  of Document.regionId: which sales process.
+//   Document.signingStatus       SIGNED: the client has signed.
+//   Document.acceptedAt          set: the quote is accepted.
 //
 // Of these, Contact.actContactId dates from z60_act_sync;
 // ActOutbox.opportunityActId, ActOutbox.quoteRevisionId,
 // Document.actOpportunityId and QuoteRevision.actHistoryId were added by
-// z65_act_outbox.
+// z65_act_outbox; Document.actContactPromotedAt and
+// Document.actOpportunityWonAt are the amended z65's to add.
 //
 // ONE HISTORY PER REVISION, so its progress is on the revision, not the row. A
 // manager can unfinalise a quote whose row has finished and re-finalise it
@@ -53,10 +68,19 @@
 // creates no new revision, but a new row is queued all the same (only one
 // UNFINISHED row per document is allowed -- the partial unique index
 // ActOutbox_documentId_unfinished_key in z65_act_outbox -- and the old one has
-// finished).
-// Held on the row, "history written" would start null on that new row and
-// journal the same revision twice. Held on QuoteRevision, the new row finds it
-// set and is done.
+// finished). Held on the row, "history written" would start null on that new
+// row and journal the same revision twice. Held on QuoteRevision, the new row
+// finds it set and skips every step up to write-history: it is done, unless a
+// deal event is still due.
+//
+// SUPERSEDED REVISIONS ARE NOT JOURNALED. A row taken over before it wrote its
+// History now points at the newer revision, so ACT! never records the older
+// one. Because finalise IS the send for a manager who emails the PDF
+// themselves, that older revision may have reached the customer. Accepted for
+// now -- the alternative is one row per revision, which puts two live rows on
+// one deal again -- and recoverable later without a migration: actHistoryId is
+// on the revision, so a future planner could journal every revision of a
+// document that has none.
 //
 // ONE OPPORTUNITY PER DEAL. Document.actOpportunityId is per quote, not per
 // revision, so a re-finalise after a revision finds it set and updates rather
@@ -69,6 +93,37 @@
 // (src/lib/act/write-payloads.ts); the drain still stores the row's
 // opportunityActId when it sends nothing, so the row moves on to
 // write-history and the revision is journaled.
+//
+// DEAL EVENTS: promote-contact and win-opportunity, from the plan's addendum
+// of 2026-10-12. They come after write-history and are checked before "done".
+// A row queued by a signature or an acceptance usually finds the finalise row
+// long finished: its revision is journaled, so it skips straight to them --
+// and is not done merely because that revision's History exists. A row that
+// has not got that far (ACT! down since the finalise, say, and the signature
+// took the unfinished row over) does the earlier steps first, in their usual
+// order, so the contact is in ACT! before it is promoted and the opportunity
+// exists before it is won.
+//
+// Both are read off the quote as it stands now. Promotion is due while the
+// client's signature stands (signingStatus SIGNED) or the quote is accepted,
+// until Document.actContactPromotedAt is set; the win while the quote is
+// accepted, until Document.actOpportunityWonAt is set. FORWARD ONLY: no step
+// undoes either, so a voidSignature or an unfinalise after the step ran
+// changes nothing in ACT!. A signature voided BEFORE the step ran leaves the
+// promotion no longer due -- unless the quote was accepted, since
+// voidSignature does not clear acceptedAt.
+//
+// Each fact records that the step is DONE, not that ACT! was changed. The
+// drain reads the contact's idStatus, or the opportunity's status, just
+// before, and contactPromotion or wonOpportunityBody
+// (src/lib/act/write-payloads.ts) may send nothing: a contact that is not a
+// Prospect is not PathQuote's to change, and an opportunity already Won needs
+// nothing. Whether an opportunity found Lost or Inactive should end the step
+// the same way is an open question; see wonOpportunityBody.
+//
+// Once per deal, so per Document: a quote whose contact is changed after the
+// promotion (a voided signature, a different contact, a new signature) does
+// not promote the new contact, because actContactPromotedAt is already set.
 //
 // STEPS RESUME, AND ONE WINDOW REPEATS. Every step stores its result before the
 // next step begins, and this planner looks at nothing but those stored
@@ -83,7 +138,9 @@
 // step -- a repeated create-contact is a DUPLICATE CONTACT in ACT!, a repeated
 // create-opportunity is a SECOND OPPORTUNITY FOR THE DEAL, a repeated
 // write-history is a second History for the revision; a repeated
-// update-opportunity sends the same patch again and is harmless. Nothing here
+// update-opportunity sends the same patch again and is harmless, and a
+// repeated promote-contact or win-opportunity reads back the Customer or Won
+// it already wrote and sends nothing (see DEAL EVENTS). Nothing here
 // can close that window; the drain (Task 7) can only keep it short, by storing
 // each result the moment ACT! answers, before doing anything else with it.
 //
@@ -142,6 +199,18 @@ export type QuoteState = {
   } | null;
   /** Document.actOpportunityId: the deal's opportunity, from this revision or an earlier one. */
   actOpportunityId: string | null;
+  /**
+   * Document.signingStatus, as its enum name. "SIGNED" is the client's
+   * signature standing; voidSignature puts it back to NOT_SENT. A string
+   * rather than Prisma's enum type, to keep this module free of Prisma.
+   */
+  signingStatus: string;
+  /** Document.acceptedAt: set once the quote is accepted (acceptQuote). */
+  acceptedAt: Date | null;
+  /** Document.actContactPromotedAt: set once promote-contact is done for this deal. */
+  actContactPromotedAt: Date | null;
+  /** Document.actOpportunityWonAt: set once win-opportunity is done for this deal. */
+  actOpportunityWonAt: Date | null;
 };
 
 export type OutboxStep =
@@ -149,6 +218,8 @@ export type OutboxStep =
   | { kind: "create-opportunity" }
   | { kind: "update-opportunity" }
   | { kind: "write-history" }
+  | { kind: "promote-contact" }
+  | { kind: "win-opportunity" }
   | { kind: "done" }
   | { kind: "blocked"; reason: string };
 
@@ -184,6 +255,16 @@ function hasName(contact: { firstName: string; lastName: string | null }): boole
   return `${contact.firstName} ${contact.lastName ?? ""}`.trim() !== "";
 }
 
+/** The client's signature or the acceptance makes a customer; see DEAL EVENTS. */
+function promotionDue(quote: QuoteState): boolean {
+  const won = quote.signingStatus === "SIGNED" || quote.acceptedAt !== null;
+  return won && quote.actContactPromotedAt === null;
+}
+
+function winDue(quote: QuoteState): boolean {
+  return quote.acceptedAt !== null && quote.actOpportunityWonAt === null;
+}
+
 export function nextStep(
   progress: OutboxProgress,
   revision: RevisionProgress,
@@ -191,8 +272,13 @@ export function nextStep(
 ): OutboxStep {
   // A revision already journaled is finished, whichever row journaled it.
   // Nothing that has happened to the quote since -- an unfinalize, a contact
-  // removed -- reaches back into a write that has already gone through.
-  if (revision.actHistoryId) return { kind: "done" };
+  // removed -- reaches back into a write that has already gone through. What
+  // can still be due is a deal event, which is new work rather than that
+  // revision's.
+  const journaled = revision.actHistoryId !== null;
+  const promote = promotionDue(quote);
+  const win = winDue(quote);
+  if (journaled && !promote && !win) return { kind: "done" };
 
   // Blocking checks, before every step: on a fresh row, before anything is
   // made in ACT!; on a row that has made something already, it keeps it (see
@@ -209,11 +295,21 @@ export function nextStep(
     return { kind: "create-contact" };
   }
 
-  if (!progress.opportunityActId) {
-    // Set means the deal has an opportunity, open or closed; either way it is
-    // updated, never replaced (see ONE OPPORTUNITY PER DEAL above).
-    return quote.actOpportunityId ? { kind: "update-opportunity" } : { kind: "create-opportunity" };
+  if (!journaled) {
+    if (!progress.opportunityActId) {
+      // Set means the deal has an opportunity, open or closed; either way it is
+      // updated, never replaced (see ONE OPPORTUNITY PER DEAL above).
+      return quote.actOpportunityId ? { kind: "update-opportunity" } : { kind: "create-opportunity" };
+    }
+    return { kind: "write-history" };
   }
 
-  return { kind: "write-history" };
+  if (promote) return { kind: "promote-contact" };
+
+  // Only a win is left. The row that journaled this revision did its
+  // opportunity step first, and nothing clears Document.actOpportunityId, so
+  // it is set here unless the database was edited by hand; if it is not, the
+  // opportunity is created before it is won rather than a win sent to nothing.
+  if (!quote.actOpportunityId) return { kind: "create-opportunity" };
+  return { kind: "win-opportunity" };
 }
