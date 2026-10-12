@@ -319,6 +319,7 @@ const ROW_SELECT = {
           phone: true,
           position: true,
           actContactId: true,
+          actCreateInFlightAt: true,
           company: { select: { name: true, country: true } },
         },
       },
@@ -337,7 +338,12 @@ function quoteStateOf(row: Row): QuoteState {
   return {
     regionCode: doc.region.code,
     contact: doc.contact
-      ? { actContactId: doc.contact.actContactId, firstName: doc.contact.firstName, lastName: doc.contact.lastName }
+      ? {
+          actContactId: doc.contact.actContactId,
+          actCreateInFlightAt: doc.contact.actCreateInFlightAt,
+          firstName: doc.contact.firstName,
+          lastName: doc.contact.lastName,
+        }
       : null,
     actOpportunityId: doc.actOpportunityId,
     actProductLineId: doc.actProductLineId,
@@ -361,8 +367,12 @@ function plan(row: Row): OutboxStep {
   );
 }
 
-/** The step stored its result, or found the row taken over and stored nothing on it. */
-type StepOutcome = "stored" | "taken-over";
+/**
+ * The step stored its result; or `stale`: what it was planned on had changed
+ * -- the row taken over, or the contact given an id or a marker since it was
+ * read -- so it stored nothing, and the row is planned again.
+ */
+type StepOutcome = "stored" | "stale";
 
 /** ACT!'s `edited` as a Date, or null when it is missing or unreadable. */
 function editedAt(record: { edited?: unknown }): Date | null {
@@ -392,13 +402,14 @@ class Pass {
    * the generation that was read and unfinished. False when no row was
    * updated -- the row was taken over, and the caller drops its plan and reads
    * the row again. Every store on the row goes through here but clearing
-   * createInFlight (clearMarker) and the opportunity create's, which is the
-   * same guard inside a transaction (storeOpportunityCreated).
+   * createInFlight (clearMarker), and two that are the same guard inside a
+   * transaction: the opportunity create's (storeOpportunityCreated) and the
+   * one before a contact POST (setContactMarker).
    *
    * Requirement 3: no store holds a lock on the row across a call into ACT!.
-   * Each is one statement, or one short batch transaction, made after ACT!
-   * has answered; no SELECT ... FOR UPDATE, no interactive transaction left
-   * open while ACT! works.
+   * Each is one statement or one short transaction, committed before the
+   * next call into ACT! is made; no SELECT ... FOR UPDATE, no transaction
+   * left open while ACT! works.
    */
   private async storeRow(row: Row, data: Prisma.ActOutboxUpdateManyMutationInput): Promise<boolean> {
     const { count } = await db.actOutbox.updateMany({
@@ -682,7 +693,21 @@ class Pass {
     throw error;
   }
 
-  /** create-contact: no lookup (A CREATE IN FLIGHT says why), a POST, and the contact's id and snapshot. */
+  /**
+   * create-contact: no lookup (A CREATE IN FLIGHT says why), a POST, and the
+   * contact's id and snapshot. The in-flight marker is the Contact's, not the
+   * row's (A CONTACT CREATE IN FLIGHT in src/lib/act/outbox-plan.ts):
+   *
+   *   - set before the POST by setContactMarker, which sends nothing when the
+   *     row was taken over or the contact has an id or a marker already;
+   *   - cleared in the update that stores actContactId -- an
+   *     ActUntrackedCreateError naming the record it made included -- or
+   *     when the POST made nothing (createMadeNothing);
+   *   - kept on anything else. The planner then blocks create-contact for
+   *     every quote on this contact until a person has looked in ACT!, and
+   *     this row is blocked now, with the same sentence, rather than when its
+   *     backoff runs out.
+   */
   private async createContact(row: Row): Promise<StepOutcome> {
     const contact = row.document.contact;
     if (!contact) throw new Error("the planner planned create-contact for a quote with no contact");
@@ -704,21 +729,89 @@ class Pass {
     );
 
     await this.beforeCall();
-    if (!(await this.setMarker(row, CREATE_IN_FLIGHT.contact))) return "taken-over";
+    const marker = this.clock();
+    if (!(await this.setContactMarker(row, contact.id, marker))) return "stale";
     let created: ActContact;
     try {
       created = await this.client.createContact(body);
     } catch (error) {
-      if (error instanceof ActUntrackedCreateError && !error.createdId) {
-        // The marker stays; a person has to look in ACT! before the row goes on.
+      if (error instanceof ActUntrackedCreateError && error.createdId) {
+        console.warn("act: a contact create's answer could not be read back; storing the id ACT! gave", {
+          id: row.id,
+          createdId: error.createdId,
+        });
+        return this.storeContactCreated(contact.id, error.createdId, null);
+      }
+      if (createMadeNothing(error)) {
+        await this.clearContactMarker(contact.id, marker);
+        throw error;
+      }
+      if (error instanceof ActUntrackedCreateError) {
+        // The marker stays; a person has to look in ACT! before any quote on
+        // this contact goes on.
         this.result.untracked += 1;
         throw new BlockRow(UNTRACKED_CONTACT_REASON);
       }
-      return this.afterCreateError(row, CREATE_IN_FLIGHT.contact, error, (id) =>
-        this.storeContactCreated(row, contact.id, id, null),
-      );
+      // Not from a request (writeFailureOf's `foreign`): it says nothing about
+      // what ACT! did, so the marker stays, and the row's failure handling
+      // backs it off; the planner blocks it from then on.
+      throw error;
     }
-    return this.storeContactCreated(row, contact.id, created.id, created);
+    try {
+      return await this.storeContactCreated(contact.id, created.id, created);
+    } catch (error) {
+      // ACT! made the person and PathQuote could not record it: the marker
+      // stays, so no quote creates them again. The id is logged for whoever
+      // looks.
+      console.error("act: ACT! created a contact whose id PathQuote could not store; the contact stays marked in flight", {
+        id: row.id,
+        contactId: contact.id,
+        actContactId: created.id,
+        error,
+      });
+      throw new BlockRow(UNTRACKED_CONTACT_REASON);
+    }
+  }
+
+  /**
+   * Mark the contact's create in flight, before its POST. One transaction:
+   * first a write to the row guarded as storeRow's (it sets generation to the
+   * value read, so it changes nothing but updatedAt) -- no row updated means
+   * taken over, and nothing is sent, as for every create (requirement 1);
+   * then the marker, set only while the contact has neither an ACT! id nor a
+   * marker. False, and no POST, when either finds otherwise: the next plan
+   * reads what changed.
+   */
+  private async setContactMarker(row: Row, contactId: string, at: Date): Promise<boolean> {
+    return db.$transaction(async (tx) => {
+      const own = await tx.actOutbox.updateMany({
+        where: { id: row.id, generation: row.generation, completedAt: null },
+        data: { generation: row.generation },
+      });
+      if (own.count === 0) {
+        console.info("act: outbox row taken over while the drain worked it; planning it again", { id: row.id });
+        return false;
+      }
+      const marked = await tx.contact.updateMany({
+        where: { id: contactId, actContactId: null, actCreateInFlightAt: null },
+        data: { actCreateInFlightAt: at },
+      });
+      if (marked.count === 0) {
+        console.info("act: the contact has an ACT! id or a create in flight since it was read; planning again", {
+          id: row.id,
+          contactId,
+        });
+      }
+      return marked.count === 1;
+    });
+  }
+
+  /** Clear the contact's marker after a POST that made nothing: only the one this step set. */
+  private clearContactMarker(contactId: string, at: Date) {
+    return db.contact.updateMany({
+      where: { id: contactId, actCreateInFlightAt: at },
+      data: { actCreateInFlightAt: null },
+    });
   }
 
   /**
@@ -731,10 +824,10 @@ class Pass {
    * of ours that looks like a change made in ACT!. (Nothing compares against
    * actSourceEditedAt yet; it is the baseline a conflict check would read.)
    * With no record -- only the id came back -- the snapshot waits for that
-   * sync to write it. The marker is cleared in the same transaction.
+   * sync to write it. The contact's in-flight marker is cleared in the same
+   * update. Nothing on the row: the step's result is the Contact's.
    */
   private async storeContactCreated(
-    row: Row,
     contactId: string,
     actContactId: string,
     record: ActContact | null,
@@ -746,6 +839,7 @@ class Pass {
         where: { id: contactId },
         data: {
           actContactId,
+          actCreateInFlightAt: null,
           actSyncState: "SYNCED",
           actSyncedAt: new Date(),
           ...(edited ? { actSourceEditedAt: edited } : {}),
@@ -754,7 +848,6 @@ class Pass {
       ...(record
         ? [db.actSnapshot.upsert({ where: { contactId }, create: { contactId, payload }, update: { payload } })]
         : []),
-      this.clearMarker(row, CREATE_IN_FLIGHT.contact),
     ]);
     return "stored";
   }
@@ -778,7 +871,7 @@ class Pass {
     }
 
     await this.beforeCall();
-    if (!(await this.setMarker(row, CREATE_IN_FLIGHT.opportunity))) return "taken-over";
+    if (!(await this.setMarker(row, CREATE_IN_FLIGHT.opportunity))) return "stale";
     let createdId: string;
     try {
       createdId = (await this.client.createOpportunity(newOpportunityBody(quote, parties))).id;
@@ -831,7 +924,7 @@ class Pass {
       }
       return update.patch;
     });
-    return (await this.storeRow(row, { opportunityActId: id })) ? "stored" : "taken-over";
+    return (await this.storeRow(row, { opportunityActId: id })) ? "stored" : "stale";
   }
 
   /**
@@ -853,7 +946,7 @@ class Pass {
       });
       if (decision.kind === "skip") {
         console.info("act: the deal is not open; its product line is left alone", { id: row.id, status: decision.status });
-        return (await this.storeRow(row, { productLineSkippedAt: this.clock() })) ? "stored" : "taken-over";
+        return (await this.storeRow(row, { productLineSkippedAt: this.clock() })) ? "stored" : "stale";
       }
     }
 
@@ -881,7 +974,7 @@ class Pass {
     }
 
     await this.beforeCall();
-    if (!(await this.setMarker(row, CREATE_IN_FLIGHT.productLine))) return "taken-over";
+    if (!(await this.setMarker(row, CREATE_IN_FLIGHT.productLine))) return "stale";
     let createdId: string;
     try {
       createdId = (await this.client.createProductLine(opportunityId, summaryProductBody(quote))).id;
@@ -923,7 +1016,7 @@ class Pass {
     }
 
     await this.beforeCall();
-    if (!(await this.setMarker(row, CREATE_IN_FLIGHT.history))) return "taken-over";
+    if (!(await this.setMarker(row, CREATE_IN_FLIGHT.history))) return "stale";
     let createdId: string;
     try {
       createdId = (await this.client.createHistory(historyBody(quote, parties, row.document.actOpportunityId))).id;

@@ -219,8 +219,8 @@ export class ActUntrackedCreateError extends Error {
  * its URL, its headers, or the authorisation it needed first (see
  * `fetchOnce`) -- and when no connection to ACT! was ever made
  * (neverConnected). For a create, it is one of the two errors that say
- * nothing was made (createMadeNothing), so the drain may clear the row's
- * createInFlight for it. That is why it has a class of its own: a plain
+ * nothing was made (createMadeNothing), so the drain may clear the create's
+ * in-flight marker for it. That is why it has a class of its own: a plain
  * Error says nothing about where it came from, and an error from the drain's
  * own code -- the transaction storing a created record's id, say -- must
  * never be read as "not sent" (src/lib/act/outbox-plan.ts, A CREATE IN
@@ -438,9 +438,10 @@ export function writeFailureOf(error: unknown): WriteFailure | "foreign" {
  * Whether an error thrown by a create says the create made nothing in ACT!:
  * ActNotSentError (the request never left) or an ActApiError whose `failure`
  * is `refused` (ACT! answered and turned it away). True for these two and
- * nothing else -- the only errors on which the drain may clear the row's
- * createInFlight without storing an id (src/lib/act/outbox-plan.ts, A CREATE
- * IN FLIGHT). An ActUntrackedCreateError with a `createdId` is not here: it
+ * nothing else -- the only errors on which the drain may clear a create's
+ * in-flight marker -- the row's createInFlight, or a contact's
+ * actCreateInFlightAt -- without storing an id (src/lib/act/outbox-plan.ts,
+ * A CREATE IN FLIGHT). An ActUntrackedCreateError with a `createdId` is not here: it
  * made something, and the drain stores that id, which clears the marker with
  * it.
  *

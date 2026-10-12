@@ -838,6 +838,18 @@ model Contact {
   /// day one so switching visibility on later is a filter, not a re-import.
   actAccountMgr     String?
   actSnapshot       ActSnapshot?
+  /// Set when the ActOutbox drain is about to ask ACT! to create this
+  /// contact, committed before the POST leaves; cleared in the update that
+  /// stores actContactId, or when the POST made nothing (refused, or never
+  /// sent). Left set when the answer was lost, or the store after it failed:
+  /// ACT! may then hold this person already, and creating them again would
+  /// put them in ACT! twice. While it is set and actContactId is null, the
+  /// outbox planner blocks create-contact for EVERY quote on this contact,
+  /// not only the one whose write sent the POST, until a person has looked
+  /// in ACT!. On the contact, not the outbox row, because the record being
+  /// created is the contact, and every quote that uses it would create it.
+  /// See A CONTACT CREATE IN FLIGHT in src/lib/act/outbox-plan.ts.
+  actCreateInFlightAt DateTime?
 
   @@index([companyId])
   // Trigram, for the builder's client search over contact names. See z62_client_search_trgm.
@@ -1736,17 +1748,19 @@ model ActOutbox {
   /// OPPORTUNITY'S LINE IS LEFT ALONE.
   productLineSkippedAt DateTime?
   /// The record a create of this row may have made in ACT! without its id
-  /// being stored: "contact", "opportunity", "product-line" or "history"
+  /// being stored: "opportunity", "product-line" or "history"
   /// (CREATE_IN_FLIGHT in src/lib/act/outbox-plan.ts), or null. Set by the
   /// drain, and committed, before each POST; cleared in the transaction that
-  /// stores the created id, or when the POST was refused or never sent. Left
-  /// set when the answer was lost, or the drain died before storing it -- so
-  /// a create that may have happened is never silently made again. A
-  /// "contact", or a value nothing there knows, blocks the row for a person
-  /// to check ACT!; an opportunity, a line or a History is found again by the
-  /// lookup the drain makes before every create of any of the three. NOT
-  /// cleared by a take-over: the record may be in ACT! whichever revision the
-  /// row now carries. See A CREATE IN FLIGHT in src/lib/act/outbox-plan.ts.
+  /// stores the created id, or when the POST made nothing (refused, or never
+  /// sent). Left set when the answer was lost, or the drain died before
+  /// storing it -- so a create that may have happened is never silently made
+  /// again. Each of the three is found again by the lookup the drain makes
+  /// before every create of any of them; a value nothing there knows blocks
+  /// the row for a person to check ACT!. NOT cleared by a take-over: the
+  /// record may be in ACT! whichever revision the row now carries. A contact
+  /// create's marker is not here but on the Contact
+  /// (Contact.actCreateInFlightAt), because every quote on that contact
+  /// would create it. See A CREATE IN FLIGHT in src/lib/act/outbox-plan.ts.
   createInFlight       String?
   /// Failed attempts at this row, for the drain's backoff to read -- and for a
   /// person reading this table to tell a row that is merely new from one ACT!

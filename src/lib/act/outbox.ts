@@ -42,9 +42,11 @@
 //    The one store on the row NOT guarded by generation is CLEARING
 //    createInFlight, in the transaction that stores the created record's id
 //    (WHERE "id" = <the row> AND "completedAt" IS NULL): a take-over keeps the
-//    marker, so it is still the one this drain set, and a "contact" marker
-//    left behind would block the row for a person over a contact whose id is
-//    stored.
+//    marker, so it is still the one this drain set, and a marker left behind
+//    would send the next attempt to look up a record whose id is stored.
+//    A contact create's marker is on the Contact (Contact.actCreateInFlightAt),
+//    and setting it shares a transaction with a write to the row guarded as
+//    above, so a row taken over sends no contact POST either.
 //    Nor are stores elsewhere guarded or rolled back over it -- Contact,
 //    Document and QuoteRevision: each records what ACT! now holds (an id it
 //    minted, the revision the line shows, a promotion or a win made), which
@@ -65,8 +67,8 @@
 //    UPDATE waits on the row's lock -- holding the Document's lock, inside a
 //    Prisma interactive transaction that gives up after its timeout (5 s by
 //    default). A slow ACT! would then fail a finalise, or a client's
-//    signature. The stores are short transactions made after ACT! answers;
-//    keeping two drains apart is the drain's advisory lock's job (see
+//    signature. The stores are short transactions, each committed before
+//    the next call into ACT!; keeping two drains apart is the drain's advisory lock's job (see
 //    z65_act_outbox), not a row lock's.
 //
 // 4. THE DOCUMENT FIRST. A drain transaction that writes both the Document

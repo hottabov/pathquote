@@ -24,16 +24,21 @@
 --   Document.actOpportunityWonAt      win-opportunity done, once per deal
 --   QuoteRevision.actHistoryId        the revision's History, one per
 --                                     revision
+--   Contact.actCreateInFlightAt       a create of this contact whose answer
+--                                     is unaccounted for: on the contact,
+--                                     because every quote on it would create
+--                                     it, and blocks them all
 --   ActOutbox                         the queue itself, with opportunityActId
 --                                     for the row's own opportunity step,
 --                                     productLineSkippedAt for a line it left
 --                                     alone on a closed deal, and
---                                     createInFlight for a create that may
---                                     have made a record whose id was never
---                                     stored; and generation, which the
---                                     planner does not read: the count of
---                                     take-overs, which the drain's stores
---                                     on the row are conditioned on
+--                                     createInFlight for a create of the
+--                                     deal's records that may have made one
+--                                     whose id was never stored; and
+--                                     generation, which the planner does not
+--                                     read: the count of take-overs, which
+--                                     the drain's stores on the row are
+--                                     conditioned on
 --
 -- Why ACT!'s ids are kept here rather than a PathQuote id stamped into an ACT!
 -- custom field is on the ActOutbox model in schema.prisma: the `PQ ` fields
@@ -70,10 +75,11 @@
 -- second statement fails leaves the first applied, and txid_current()
 -- differs from statement to statement), so each lock is released when its
 -- statement ends:
---   - ADD COLUMN takes ACCESS EXCLUSIVE on Document (one statement for its
---     five columns) and on QuoteRevision. The columns are nullable with no
---     default, so it changes the catalog only and rewrites nothing, but while
---     it waits for the lock every later query on that table queues behind it.
+--   - ADD COLUMN takes ACCESS EXCLUSIVE on Contact, on Document (one
+--     statement for its five columns) and on QuoteRevision. The columns are
+--     nullable with no default, so it changes the catalog only and rewrites
+--     nothing, but while it waits for the lock every later query on that
+--     table queues behind it -- on Contact, the inbound sync's included.
 --   - The three unique indexes, on Document.actOpportunityId,
 --     Document.actProductLineId and QuoteRevision.actHistoryId, take SHARE on
 --     those tables (writes wait, reads do not) and read every row to build,
@@ -84,6 +90,9 @@
 -- Brief on tables the size of these. The flip side of no single transaction:
 -- a statement that fails leaves the ones before it applied, and the
 -- migration recorded as failed for `prisma migrate resolve`.
+
+-- AlterTable
+ALTER TABLE "Contact" ADD COLUMN     "actCreateInFlightAt" TIMESTAMP(3);
 
 -- AlterTable
 ALTER TABLE "Document" ADD COLUMN     "actContactPromotedForId" TEXT,

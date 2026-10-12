@@ -95,6 +95,10 @@
 //
 //   Document.contactId           null means no contact (blocked).
 //   Contact.firstName/lastName   whether a contact ACT! must create has a name.
+//   Contact.actCreateInFlightAt  set while a contact create's answer is
+//                                unaccounted for: create-contact blocks, for
+//                                every quote on the contact (A CONTACT CREATE
+//                                IN FLIGHT).
 //   Region.code                  of Document.regionId: which sales process.
 //   Document.signingStatus       SIGNED: the client has signed.
 //   Document.acceptedAt          set: the quote is accepted.
@@ -103,7 +107,8 @@
 //
 // Of these, Contact.actContactId dates from z60_act_sync;
 // ActOutbox.opportunityActId, ActOutbox.productLineSkippedAt,
-// ActOutbox.quoteRevisionId, Document.actOpportunityId,
+// ActOutbox.quoteRevisionId, ActOutbox.createInFlight,
+// Contact.actCreateInFlightAt, Document.actOpportunityId,
 // Document.actProductLineId, Document.actProductLineRevision,
 // QuoteRevision.actHistoryId, Document.actContactPromotedForId and
 // Document.actOpportunityWonAt were added by z65_act_outbox.
@@ -355,12 +360,14 @@
 // (src/lib/act/drain.ts) still stores each result the moment ACT! answers, before doing anything
 // else with it, which keeps the window as short as it can be.
 //
-// A CREATE IN FLIGHT. ActOutbox.createInFlight names the record a POST of this
-// row may have made: one of CREATE_IN_FLIGHT -- "contact", "opportunity",
+// A CREATE IN FLIGHT. A marker says a POST may have made a record whose id
+// was never stored. For the deal's records it is on the row:
+// ActOutbox.createInFlight, one of CREATE_IN_FLIGHT -- "opportunity",
 // "product-line" (from write-product-line or write-accepted-line) or
-// "history". A REQUIREMENT ON THE DRAIN: it sets the marker in a write of its
-// own, committed before the POST leaves, and clears it in these cases and no
-// others:
+// "history". For a contact it is on the Contact: Contact.actCreateInFlightAt
+// (A CONTACT CREATE IN FLIGHT, below). A REQUIREMENT ON THE DRAIN, for both:
+// it sets the marker in a write of its own, committed before the POST leaves,
+// and clears it in these cases and no others:
 //
 //   - in the same transaction that stores the record's id, created or adopted
 //     -- an ActUntrackedCreateError whose `createdId` is set included, since
@@ -382,10 +389,10 @@
 // itself died between ACT!'s answer and the store -- the case no error
 // reports at all. What happens next depends on the record:
 //
-//   contact            nextStep blocks, before anything else (`done`
-//                      included): a person must look in ACT! before the row
-//                      goes on (UNTRACKED_CONTACT_REASON). The contact is NOT
-//                      looked up by email: among ACT!'s 17.5k contacts an
+//   contact            nextStep blocks create-contact, for whichever row asks
+//                      (A CONTACT CREATE IN FLIGHT): a person must look in
+//                      ACT! first (UNTRACKED_CONTACT_REASON). The contact is
+//                      NOT looked up by email: among ACT!'s 17.5k contacts an
 //                      email is no identity -- shared inboxes, duplicates
 //                      already there, contacts with none -- and adopting a
 //                      match could take over another manager's Customer.
@@ -410,15 +417,33 @@
 //                      it, which carry the deal's amount and status. The
 //                      lookup is what resolves the marker.
 //
-// Anything else in the column blocks as well (untrackedCreateReason): a
-// record nobody here can name may exist. A take-over does NOT clear the
-// marker -- a record an earlier revision's step may have made is in ACT!
-// whatever revision the row carries now -- and the drain's pass over blocked
-// rows clears blockedReason only when nextStep no longer blocks, which for a
-// contact, or a value nothing here knows, needs the marker gone. A row the
-// drain blocked on a lookup's duplicates is not blocked by nextStep, so that
-// pass makes it due again and the lookup runs again: blocked while the
-// duplicates stand, on its way once a person has dealt with them.
+// Anything else in ActOutbox.createInFlight blocks the row, before anything
+// else (untrackedCreateReason): a record nobody here can name may exist. A
+// take-over does NOT clear the row's marker -- a record an earlier revision's
+// step may have made is in ACT! whatever revision the row carries now -- and
+// the drain's pass over blocked rows clears blockedReason only when nextStep
+// no longer blocks, which for a value nothing here knows needs the marker
+// gone. A row the drain blocked on a lookup's duplicates is not blocked by
+// nextStep, so that pass makes it due again and the lookup runs again:
+// blocked while the duplicates stand, on its way once a person has dealt
+// with them.
+//
+// A CONTACT CREATE IN FLIGHT is marked on the Contact, not the row, because
+// the record being created is the contact, and a contact belongs to every
+// quote that uses it. Marked on the row, a contact POST whose answer was lost
+// blocked only that quote's row: the next quote on the same PathQuote contact
+// found actContactId null and its own row clean, planned create-contact, and
+// POSTed again -- a second person in ACT!. So the drain sets
+// Contact.actCreateInFlightAt -- only while it and actContactId are both null,
+// and in the same transaction as a guarded write to the row, so a taken-over
+// row sends nothing -- and clears it in the update that stores actContactId,
+// or when the POST made nothing (createMadeNothing). While it is set and
+// actContactId is null, nextStep blocks wherever it would plan create-contact,
+// whichever row is asking, with UNTRACKED_CONTACT_REASON. A row with nothing
+// left that needs the contact -- its revision journaled, no deal event due --
+// is still `done`: the marker is a fact about the contact, not about that
+// row. The block lifts when a person has looked: actContactId set to the
+// contact ACT! holds, or the marker cleared because ACT! holds nobody.
 //
 // A REQUIREMENT ON THE DRAIN (src/lib/act/drain.ts): after
 // create-opportunity, the two stores -- Document.actOpportunityId and the
@@ -470,10 +495,10 @@ import { processForRegion } from "@/lib/act/opportunity-stages";
 
 /**
  * The values of ActOutbox.createInFlight: the record a POST of this row may
- * have made. See A CREATE IN FLIGHT.
+ * have made. No contact: a contact create's marker is on the Contact. See A
+ * CREATE IN FLIGHT.
  */
 export const CREATE_IN_FLIGHT = {
-  contact: "contact",
   opportunity: "opportunity",
   productLine: "product-line",
   history: "history",
@@ -526,6 +551,12 @@ export type QuoteState = {
   contact: {
     /** Contact.actContactId: null when the contact exists only in PathQuote. */
     actContactId: string | null;
+    /**
+     * Contact.actCreateInFlightAt: set while a create of this contact may
+     * have made a person in ACT! whose id was never stored, by any quote's
+     * row. See A CONTACT CREATE IN FLIGHT.
+     */
+    actCreateInFlightAt: Date | null;
     firstName: string;
     lastName: string | null;
   } | null;
@@ -613,20 +644,23 @@ export function unmappedRegionReason(regionCode: string): string {
 }
 
 /**
- * A contact create whose answer never reached the store (A CREATE IN FLIGHT).
- * Nothing in PathQuote can tell whether ACT! made the contact, and creating
- * it again could put the same person in ACT! twice, so a person has to look.
+ * A contact create whose answer never reached the store (A CONTACT CREATE IN
+ * FLIGHT) -- made for this quote or for another quote on the same contact:
+ * the answer was lost, or it came back and storing it failed. PathQuote holds
+ * no record of whether ACT! made the contact, and creating it again could put
+ * the same person in ACT! twice, so a person has to look.
  */
 export const UNTRACKED_CONTACT_REASON =
-  "PathQuote asked ACT! to create this quote's contact but never learned whether it did, so they may be in ACT! already — check ACT! for them before this is tried again, or ACT! could end up with the same person twice.";
+  "PathQuote asked ACT! to create this quote's contact and has no record of whether it did, so they may be in ACT! already — check ACT! for them before this is tried again, or ACT! could end up with the same person twice.";
 
 /**
- * The sentence for a createInFlight value nextStep blocks on: the contact's
- * above, or one for a value nothing here knows. (An opportunity, a line or a
- * History in flight does not block: the drain's lookup resolves it.)
+ * The sentence for a value in ActOutbox.createInFlight that nothing here
+ * knows: the only value nextStep blocks on. (An opportunity, a line or a
+ * History in flight does not block: the drain's lookup resolves it. A
+ * contact's marker is on the Contact, and blocks with
+ * UNTRACKED_CONTACT_REASON.)
  */
 export function untrackedCreateReason(createInFlight: string): string {
-  if (createInFlight === CREATE_IN_FLIGHT.contact) return UNTRACKED_CONTACT_REASON;
   return `PathQuote asked ACT! to create a record for this quote ("${createInFlight}") but never learned whether it did, and does not know how to look for it — ask your developer to check ACT! before this is tried again.`;
 }
 
@@ -719,11 +753,10 @@ export function nextStep(
   revision: RevisionProgress,
   quote: QuoteState,
 ): OutboxStep {
-  // A create that may have made a contact PathQuote cannot name -- or a
-  // record of a kind nothing here knows -- stops everything, `done`
-  // included, until a person has looked (A CREATE IN FLIGHT). An opportunity,
-  // a line or a History resolves itself: the drain looks it up before
-  // creating it.
+  // A create that may have made a record of a kind nothing here knows stops
+  // everything, `done` included, until a person has looked (A CREATE IN
+  // FLIGHT). An opportunity, a line or a History resolves itself: the drain
+  // looks it up before creating it. A contact's is on the Contact, below.
   const inFlight = progress.createInFlight;
   if (
     inFlight !== null &&
@@ -755,6 +788,10 @@ export function nextStep(
   }
 
   if (!quote.contact.actContactId) {
+    // A create of this contact may already have made them in ACT! -- for
+    // this quote or another on the same contact (A CONTACT CREATE IN
+    // FLIGHT). First, because it is the one a second POST makes worse.
+    if (quote.contact.actCreateInFlightAt) return { kind: "blocked", reason: UNTRACKED_CONTACT_REASON };
     // The name only matters when ACT! is about to be asked to create one.
     if (!hasName(quote.contact)) return { kind: "blocked", reason: NAMELESS_CONTACT_REASON };
     return { kind: "create-contact" };

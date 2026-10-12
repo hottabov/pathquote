@@ -37,7 +37,7 @@ const ACCEPTED_AT = new Date("2026-11-02T01:00:00.000Z");
 
 const quoteState = (overrides: Partial<QuoteState> = {}): QuoteState => ({
   regionCode: "AU",
-  contact: { actContactId: ACT_CONTACT, firstName: "Ross", lastName: "Fielding" },
+  contact: { actContactId: ACT_CONTACT, actCreateInFlightAt: null, firstName: "Ross", lastName: "Fielding" },
   actOpportunityId: null,
   actProductLineId: null,
   actProductLineRevision: null,
@@ -52,7 +52,7 @@ const quoteState = (overrides: Partial<QuoteState> = {}): QuoteState => ({
 const finishedDeal = (overrides: Partial<QuoteState> = {}) =>
   quoteState({ actOpportunityId: ACT_OPPORTUNITY, actProductLineId: ACT_PRODUCT_LINE, actProductLineRevision: 0, ...overrides });
 
-const pathQuoteOnlyContact = { actContactId: null, firstName: "Ross", lastName: "Fielding" };
+const pathQuoteOnlyContact = { actContactId: null, actCreateInFlightAt: null, firstName: "Ross", lastName: "Fielding" };
 
 function reasonOf(step: OutboxStep): string {
   if (step.kind !== "blocked") throw new Error(`expected blocked, got ${step.kind}`);
@@ -200,13 +200,13 @@ describe("nextStep", () => {
   });
 
   it("is blocked when a contact that has to be created in ACT! has no name", () => {
-    const nameless = { actContactId: null, firstName: "  ", lastName: null };
+    const nameless = { actContactId: null, actCreateInFlightAt: null, firstName: "  ", lastName: null };
     expect(reasonOf(nextStep(nothingDone, noHistory, quoteState({ contact: nameless })))).toMatch(/no name/);
   });
 
   it("does not mind a nameless contact that ACT! already knows", () => {
     // The name is only needed to create one.
-    const namelessButLinked = { actContactId: ACT_CONTACT, firstName: "", lastName: null };
+    const namelessButLinked = { actContactId: ACT_CONTACT, actCreateInFlightAt: null, firstName: "", lastName: null };
     expect(nextStep(nothingDone, noHistory, quoteState({ contact: namelessButLinked }))).toEqual({
       kind: "create-opportunity",
     });
@@ -488,7 +488,7 @@ describe("nextStep: a won quote promotes its contact and wins its opportunity", 
     // contact corrected to B. B has signed nothing yet, so B is no customer.
     const corrected = {
       ...quote,
-      contact: { actContactId: ACT_OTHER_CONTACT, firstName: "Dana", lastName: "Okafor" },
+      contact: { actContactId: ACT_OTHER_CONTACT, actCreateInFlightAt: null, firstName: "Dana", lastName: "Okafor" },
       actContactPromotedForId: ACT_CONTACT,
     };
     expect(nextStep(nothingDone, journaled, corrected)).toEqual({ kind: "done" });
@@ -511,7 +511,7 @@ describe("nextStep: a won quote promotes its contact and wins its opportunity", 
     // and it was finalised and signed again. B is the customer now, and has
     // not been promoted.
     const quote = finishedDeal({
-      contact: { actContactId: ACT_OTHER_CONTACT, firstName: "Dana", lastName: "Okafor" },
+      contact: { actContactId: ACT_OTHER_CONTACT, actCreateInFlightAt: null, firstName: "Dana", lastName: "Okafor" },
       signingStatus: "SIGNED",
       actContactPromotedForId: ACT_CONTACT,
     });
@@ -878,10 +878,42 @@ describe("nextStep: a create in flight", () => {
     // planned again -- a second person in ACT!.
     const quote = quoteState({ contact: pathQuoteOnlyContact });
     expect(nextStep(nothingDone, noHistory, quote)).toEqual({ kind: "create-contact" });
-    expect(nextStep(inFlight(CREATE_IN_FLIGHT.contact), noHistory, quote)).toEqual({
+    const marked = quoteState({ contact: { ...pathQuoteOnlyContact, actCreateInFlightAt: ACCEPTED_AT } });
+    expect(nextStep(nothingDone, noHistory, marked)).toEqual({ kind: "blocked", reason: UNTRACKED_CONTACT_REASON });
+  });
+
+  it("blocks every quote on a contact whose create is in flight, not only the one that sent it", () => {
+    // Quote 1's contact POST lost its answer; the marker is on the Contact.
+    // Quote 2's row is fresh -- nothing of its own in flight -- and uses the
+    // same PathQuote contact: it must not POST the person again.
+    const contact = { ...pathQuoteOnlyContact, actCreateInFlightAt: ACCEPTED_AT };
+    const secondQuotesRow: OutboxProgress = { ...nothingDone };
+    expect(nextStep(secondQuotesRow, noHistory, quoteState({ contact }))).toEqual({
       kind: "blocked",
       reason: UNTRACKED_CONTACT_REASON,
     });
+    // Ahead of a missing name: the person may be in ACT! whatever they are called.
+    const nameless = { ...contact, firstName: "", lastName: null };
+    expect(nextStep(secondQuotesRow, noHistory, quoteState({ contact: nameless }))).toEqual({
+      kind: "blocked",
+      reason: UNTRACKED_CONTACT_REASON,
+    });
+    // Wherever the contact would be created: a signature's promotion too.
+    const signed = finishedDeal({ contact, signingStatus: "SIGNED" });
+    expect(nextStep(nothingDone, journaled, signed)).toEqual({ kind: "blocked", reason: UNTRACKED_CONTACT_REASON });
+  });
+
+  it("lifts the block once a person has looked: the contact's ACT! id stored, or the marker cleared", () => {
+    const found = { ...pathQuoteOnlyContact, actContactId: ACT_CONTACT, actCreateInFlightAt: ACCEPTED_AT };
+    expect(nextStep(nothingDone, noHistory, quoteState({ contact: found }))).toEqual({ kind: "create-opportunity" });
+    expect(nextStep(nothingDone, noHistory, quoteState({ contact: pathQuoteOnlyContact }))).toEqual({
+      kind: "create-contact",
+    });
+  });
+
+  it("finishes a row with nothing left that needs the contact: the marker is the contact's, not the row's", () => {
+    const contact = { ...pathQuoteOnlyContact, actCreateInFlightAt: ACCEPTED_AT };
+    expect(nextStep(nothingDone, journaled, finishedDeal({ contact }))).toEqual({ kind: "done" });
   });
 
   it("does not block on a History create in flight: the drain's lookup finds it, and the deal's status is not held back", () => {
@@ -899,9 +931,12 @@ describe("nextStep: a create in flight", () => {
     expect(taken).toEqual(["write-history", "win-opportunity", "promote-contact"]);
   });
 
-  it("blocks before anything else, done included: the row is not finished while a contact may be unaccounted for", () => {
-    expect(nextStep(inFlight(CREATE_IN_FLIGHT.contact), journaled, finishedDeal()).kind).toBe("blocked");
+  it("blocks on a value it does not know before anything else, done included", () => {
+    expect(nextStep(inFlight("company"), journaled, finishedDeal()).kind).toBe("blocked");
     expect(nextStep(inFlight("company"), journaled, finishedDeal({ contact: null })).kind).toBe("blocked");
+    // A row written before the contact's marker moved to the Contact: no
+    // longer a value the row carries, so it blocks for a person, not a lookup.
+    expect(nextStep(inFlight("contact"), journaled, finishedDeal()).kind).toBe("blocked");
     // A History in flight on a journaled revision is finished like any other.
     expect(nextStep(inFlight(CREATE_IN_FLIGHT.history), journaled, finishedDeal())).toEqual({ kind: "done" });
   });
@@ -938,10 +973,9 @@ describe("nextStep: a create in flight", () => {
   });
 
   it("says what happened and that ACT! must be checked first, in the manager's sentences", () => {
-    expect(UNTRACKED_CONTACT_REASON).toMatch(/never learned whether/);
+    expect(UNTRACKED_CONTACT_REASON).toMatch(/has no record of whether it did/);
     expect(UNTRACKED_CONTACT_REASON).toMatch(/check .*ACT! .*before this is tried again/);
     expect(UNTRACKED_CONTACT_REASON).toContain("—");
-    expect(untrackedCreateReason(CREATE_IN_FLIGHT.contact)).toBe(UNTRACKED_CONTACT_REASON);
   });
 
   it("names the duplicates a lookup found, and what a person does about them", () => {
