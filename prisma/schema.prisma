@@ -889,51 +889,51 @@ model IndustryAlias {
 }
 
 model Document {
-  id                String              @id @default(cuid())
-  status            DocumentStatus      @default(DRAFT)
-  number            String?             @unique // Q-AU-2026-001, assigned on finalize
-  companyId         String? // set once the client step of the builder is completed
-  company           Company?            @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  contactId         String?
-  contact           Contact?            @relation(fields: [contactId], references: [id])
-  authorId          String
-  author            User                @relation(fields: [authorId], references: [id])
-  regionId          String
-  region            Region              @relation(fields: [regionId], references: [id])
-  issueDate         DateTime            @default(now())
-  validityDays      Int?
-  currency          String
+  id                   String              @id @default(cuid())
+  status               DocumentStatus      @default(DRAFT)
+  number               String?             @unique // Q-AU-2026-001, assigned on finalize
+  companyId            String? // set once the client step of the builder is completed
+  company              Company?            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  contactId            String?
+  contact              Contact?            @relation(fields: [contactId], references: [id])
+  authorId             String
+  author               User                @relation(fields: [authorId], references: [id])
+  regionId             String
+  region               Region              @relation(fields: [regionId], references: [id])
+  issueDate            DateTime            @default(now())
+  validityDays         Int?
+  currency             String
   /// Snapshotted from Region.currencySymbol at createDraft, exactly like
   /// currency/taxName/taxRate beside it: a quote prints the same amounts on
   /// the day it is signed as on the day it was drafted, and an admin fixing
   /// a region's symbol later must not silently reprint quotes already out
   /// with a customer. Null means "whatever Intl derives from `currency`".
-  currencySymbol    String?
-  taxName           String
-  taxRate           Decimal             @db.Decimal(5, 2)
+  currencySymbol       String?
+  taxName              String
+  taxRate              Decimal             @db.Decimal(5, 2)
   // taxName/taxRate above are the tax actually CHARGED (0 on an export), not
   // the region's nominal rate. recalcDocument keeps an Auto draft's figures
   // equal to the suggestion; taxOverridden = true means the salesperson's
   // CUSTOM figures, which are never overwritten; FINAL freezes everything
   // (src/lib/documents/tax.ts).
-  incoterm          Incoterm            @default(DAP)
-  taxTreatment      TaxTreatment        @default(STANDARD)
-  taxOverridden     Boolean             @default(false)
+  incoterm             Incoterm            @default(DAP)
+  taxTreatment         TaxTreatment        @default(STANDARD)
+  taxOverridden        Boolean             @default(false)
   /// Why the salesperson chose a custom tax. Internal, never printed.
-  taxNote           String?
-  entitySnapshot    Json? // frozen on finalize
+  taxNote              String?
+  entitySnapshot       Json? // frozen on finalize
   // A discount is a mode + value (see the DiscountMode enum comment above) —
   // discountValue is a plain percentage (0..100) when discountMode is
   // PERCENT, or a cash amount in the document's own currency when AMOUNT;
   // null means no discount is set, regardless of mode. Enforced against
   // Region.maxDiscountPct — see setDocumentDiscount in
   // src/lib/actions/documents.ts.
-  discountMode      DiscountMode        @default(PERCENT)
-  discountValue     Decimal?            @db.Decimal(12, 2)
-  subtotal          Decimal             @default(0) @db.Decimal(12, 2)
-  taxAmount         Decimal             @default(0) @db.Decimal(12, 2)
-  total             Decimal             @default(0) @db.Decimal(12, 2)
-  notes             String?
+  discountMode         DiscountMode        @default(PERCENT)
+  discountValue        Decimal?            @db.Decimal(12, 2)
+  subtotal             Decimal             @default(0) @db.Decimal(12, 2)
+  taxAmount            Decimal             @default(0) @db.Decimal(12, 2)
+  total                Decimal             @default(0) @db.Decimal(12, 2)
+  notes                String?
   // Quotation-first pricing display (owner spec): a quote's total is always
   // shown up top regardless of these, but the per-item/per-option detail in
   // the investment summary only renders when the corresponding toggle is on
@@ -945,8 +945,8 @@ model Document {
   // remembered two tickboxes on the Quote terms tab. Changed by migration
   // z50; existing quotes keep whatever they were saved with, because an
   // issued quote must print the same thing tomorrow as it did today.
-  showItemPrices    Boolean             @default(true)
-  showOptionPrices  Boolean             @default(true)
+  showItemPrices       Boolean             @default(true)
+  showOptionPrices     Boolean             @default(true)
   // Salesperson commission, frozen on finalize -- see finalizeDocument
   // (src/lib/actions/finalize.ts), alongside entitySnapshot above. Before
   // FINAL, the builder always computes commission live (see
@@ -963,20 +963,20 @@ model Document {
   // misleading 0. Re-finalizing (after `unfinalizeDocument`) overwrites all
   // three with a fresh computation, exactly like entitySnapshot above --
   // there is no way to "keep the old commission" across a re-finalize.
-  commissionAmount  Decimal?            @db.Decimal(12, 2)
-  commissionRatePct Decimal?            @db.Decimal(5, 2)
-  commissionBase    Decimal?            @db.Decimal(12, 2)
-  signingStatus     SigningStatus       @default(NOT_SENT)
+  commissionAmount     Decimal?            @db.Decimal(12, 2)
+  commissionRatePct    Decimal?            @db.Decimal(5, 2)
+  commissionBase       Decimal?            @db.Decimal(12, 2)
+  signingStatus        SigningStatus       @default(NOT_SENT)
   // The archived signed PDF: the exact bytes the client saw when they
   // confirmed, plus their digest. Generated once at completion rather than
   // re-rendered on demand, so a later template change cannot rewrite what a
   // signed quote looks like. Cannot be orphaned: deletion is DRAFT-only,
   // SIGNED implies FINAL, and unfinalize is blocked at SIGNED.
-  signedPdfName     String?
-  signedPdfSha256   String?
-  completedAt       DateTime?
-  signatures        Signature[]
-  signingRequests   SigningRequest[]
+  signedPdfName        String?
+  signedPdfSha256      String?
+  completedAt          DateTime?
+  signatures           Signature[]
+  signingRequests      SigningRequest[]
   // The setup image: one photo/render of the whole configuration (cutter +
   // table + spreader together), usually already produced in SketchUp and
   // shown to the customer before the quote is drawn up -- owner: "the most
@@ -988,15 +988,15 @@ model Document {
   // like the logo and the author's avatar. `null` renders nothing at all on
   // the printed quote -- no frame, no placeholder -- see the `heroImage`
   // block in quotation-sheet.tsx.
-  heroImageUrl      String?
+  heroImageUrl         String?
   // Per-quote overrides of the region's standard-terms figures — null
   // means inherit. Delivery and warranty are negotiated per deal, and a
   // signed quote promising 14 weeks when the salesperson agreed 10 is a
   // commitment nobody made.
-  deliveryWeeks     Int?
-  installationDays  Int?
-  trainingDays      Int?
-  warrantyMonths    Int?
+  deliveryWeeks        Int?
+  installationDays     Int?
+  trainingDays         Int?
+  warrantyMonths       Int?
   // Every rendered document body and every item's category copy, frozen
   // when the quote went FINAL, with placeholders already substituted.
   // Fixing a typo in General Conditions must not rewrite a quote signed
@@ -1005,7 +1005,7 @@ model Document {
   // unfinalizeDocument, exactly like entitySnapshot and the commission
   // columns. Null on a DRAFT and on any quote finalised before this
   // column existed — buildQuotationData falls back to live text then.
-  documentsSnapshot Json?
+  documentsSnapshot    Json?
   // --- Revisions & send lifecycle (spec: pathquote-revisions-send) ---------
   // The spec models a linear QuoteStatus; this repo keeps its deliberate
   // two-axis model (DocumentStatus DRAFT/FINAL × SigningStatus) and layers the
@@ -1022,32 +1022,32 @@ model Document {
   // subsequent finalize that actually changed the content bumps it (label
   // gains -R1, -R2, ...). Held on the row for a cheap read; the authoritative
   // per-revision history is the QuoteRevision rows.
-  revision          Int?
-  finalizedAt       DateTime?
+  revision             Int?
+  finalizedAt          DateTime?
   // Who finalized, as a bare user id (no FK) — the same shape the audit-ish
   // QuoteEvent/QuoteEmail rows use for actorId/sentById, deliberately not a
   // relation so a user row can never be blocked from deletion by a historical
   // reference and this column never needs a back-relation on User.
-  finalizedById     String?
+  finalizedById        String?
   // Denormalised "last sent" stamp for the unsent-changes banner; the full
   // send history is in QuoteEmail. Null until the quote is first sent.
-  sentAt            DateTime?
+  sentAt               DateTime?
   // True after the quote was unfinalized (or a signature voided) while a
   // version was already out with the client — drives the "changes not yet
   // sent" banner. Cleared on a successful (re)send.
-  hasUnsentChanges  Boolean             @default(false)
+  hasUnsentChanges     Boolean             @default(false)
   // Which revision the client actually signed. A soft reference (bare id, no
   // FK): the signed revision's snapshot is a permanent legal record and must
   // survive an admin voiding the signature, so voidSignature clears the
   // CLIENT Signature row but never this id and never the QuoteRevision it
   // points at. QuoteRevision rows only ever disappear when the whole Document
   // is deleted (cascade), which SIGNED quotes are protected from anyway.
-  signedRevisionId  String?
+  signedRevisionId     String?
   // ACCEPTED — the quote is in production. Set only from CLIENT_SIGNED, and
   // only once the manager (AUTHOR Signature) has signed. acceptedById is a
   // bare user id for the same reason as finalizedById above.
-  acceptedAt        DateTime?
-  acceptedById      String?
+  acceptedAt           DateTime?
+  acceptedById         String?
   /// The ACT! opportunity for this deal. One per quote, not per revision: the
   /// first outbox row to reach its opportunity step creates it -- not
   /// necessarily the first revision's, since a re-finalise can take an
@@ -1061,16 +1061,39 @@ model Document {
   ///
   /// Kept here, rather than as a PathQuote id stamped into an ACT! custom
   /// field, for the reason given on ActOutbox.
-  actOpportunityId  String?             @unique
-  revisions         QuoteRevision[]
-  actOutbox         ActOutbox[]
-  events            QuoteEvent[]
-  emails            QuoteEmail[]
-  exclusions        DocumentExclusion[]
-  items             DocumentItem[]
-  lines             DocumentLine[]
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  actOpportunityId     String?             @unique
+  /// When the outbox's promote-contact step was done for this deal: the
+  /// quote's contact moved from Prospect to Customer in ACT!, or was found
+  /// not to be a Prospect and left alone (a status PathQuote does not own is
+  /// not changed; see contactPromotion in src/lib/act/write-payloads.ts). So
+  /// it says the step is done, not that ACT! was changed. Null until then.
+  ///
+  /// Progress for src/lib/act/outbox-plan.ts, which cannot ask ACT! and
+  /// skips a step only when a stored fact says it ran. On the Document
+  /// because promotion happens once per deal, triggered by the client's
+  /// signature or the acceptance, whichever comes first: on an outbox row it
+  /// would start null on the next row and run again, and on a revision it
+  /// would run again for every revision signed. Never cleared -- a Customer
+  /// never goes back to Prospect -- so a contact changed after it is set is
+  /// not promoted.
+  actContactPromotedAt DateTime?
+  /// When the outbox's win-opportunity step was done for this deal, after the
+  /// quote was accepted: the opportunity closed as Won, or found Won already.
+  /// What the step does with an opportunity found Lost or Inactive is an open
+  /// question (see wonOpportunityBody in src/lib/act/write-payloads.ts).
+  /// Null until then. On the Document, and never cleared, for the same
+  /// reasons as actContactPromotedAt: there is one opportunity per deal
+  /// (actOpportunityId above), and it is won once.
+  actOpportunityWonAt  DateTime?
+  revisions            QuoteRevision[]
+  actOutbox            ActOutbox[]
+  events               QuoteEvent[]
+  emails               QuoteEmail[]
+  exclusions           DocumentExclusion[]
+  items                DocumentItem[]
+  lines                DocumentLine[]
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
 
   @@index([companyId])
   @@index([authorId])
@@ -1571,15 +1594,20 @@ model ActSnapshot {
 
 /// A finalised revision's write into ACT!. Finalising a quote queues one row,
 /// or takes over the unfinished one (see A BLOCKED ROW IS UNFINISHED below),
-/// so that finalising never waits on, or fails because of, the CRM.
+/// so that finalising never waits on, or fails because of, the CRM. The
+/// plan's addendum of 2026-10-12 has the client's signature and acceptQuote
+/// queue a row the same way.
 ///
 /// A row is a short sequence of steps -- create the contact if ACT! does not
 /// have it, create or update the deal's opportunity, write this revision's
-/// History -- and src/lib/act/outbox-plan.ts decides which comes next from
-/// what has already been stored. Each step's result is stored before the next
-/// begins, so a row that fails halfway resumes where it stopped rather than
-/// repeating what ACT! already has. The results live where they belong, not
-/// all on the row: Contact.actContactId, Document.actOpportunityId and
+/// History, then, once the client has signed or the quote is accepted,
+/// promote the contact to Customer and win the opportunity -- and
+/// src/lib/act/outbox-plan.ts decides which comes next from what has already
+/// been stored. Each step's result is stored before the next begins, so a row
+/// that fails halfway resumes where it stopped rather than repeating what
+/// ACT! already has. The results live where they belong, not all on the row:
+/// Contact.actContactId, Document.actOpportunityId,
+/// Document.actContactPromotedAt, Document.actOpportunityWonAt and
 /// QuoteRevision.actHistoryId, plus this row's own opportunityActId.
 ///
 /// WHY PATHQUOTE KEEPS ACT!'S IDS, rather than stamping a PathQuote id into an
@@ -1607,20 +1635,21 @@ model ActSnapshot {
 /// notice the index missing either; and enabling that preview feature would
 /// bring all of them into the comparison at once. A plain
 /// @@unique([documentId]) would be wrong: a document collects finished rows
-/// over its life, up to one per finalise.
+/// over its life, up to one per enqueue.
 ///
 /// A BLOCKED ROW IS UNFINISHED, and holds the document's slot. Re-finalising
-/// while a row is unfinished -- pending or blocked -- therefore cannot add a
-/// second row; the enqueue has to take that row over: point quoteRevisionId at
-/// the revision just finalised, clear blockedReason and opportunityActId,
-/// reset attempts to 0 and clear lastError, and make it due. That is the
-/// same move whether the row was waiting on ACT! or on the manager, and it is
-/// what lets "unfinalize, choose a contact, finalize again"
-/// (NO_CONTACT_REASON) work. Clearing opportunityActId is what makes the new
-/// revision's figures reach the opportunity; the opportunity itself is never
-/// lost, because Document.actOpportunityId still has it. Resetting attempts
-/// and lastError is what keeps the quote from showing the old revision's
-/// failure beside a row that has not been tried yet.
+/// (or a signature or acceptance) while a row is unfinished -- pending or
+/// blocked -- therefore cannot add a second row; the enqueue has to take that
+/// row over: point quoteRevisionId at the revision the enqueue is for (for a
+/// re-finalise, the one just finalised), clear blockedReason and
+/// opportunityActId, reset attempts to 0 and clear lastError, and make it
+/// due. That is the same move whether the row was waiting on ACT! or on the
+/// manager, and it is what lets "unfinalize, choose a contact, finalize
+/// again" (NO_CONTACT_REASON) work. Clearing opportunityActId is what makes
+/// the new revision's figures reach the opportunity; the opportunity itself
+/// is never lost, because Document.actOpportunityId still has it. Resetting
+/// attempts and lastError is what keeps the quote from showing the old
+/// revision's failure beside a row that has not been tried yet.
 model ActOutbox {
   id               String        @id @default(cuid())
   /// Cascade: a quote can be deleted while its row is unfinished (unfinalise,
@@ -1630,8 +1659,8 @@ model ActOutbox {
   /// than those deletes: FINISHED rows reference the document too, and
   /// nothing but this cascade removes them, so every quote ever written to
   /// ACT! would become undeletable -- surfacing as a raw foreign-key error
-  /// from two actions with no handling for one. Whatever ACT! already holds for the quote
-  /// stays in ACT!.
+  /// from two actions with no handling for one. Whatever ACT! already holds
+  /// for the quote stays in ACT!.
   documentId       String
   document         Document      @relation(fields: [documentId], references: [id], onDelete: Cascade)
   /// The revision this row writes, and where its History progress is kept
@@ -1681,7 +1710,7 @@ model ActOutbox {
   // "blockedReason" IS NULL: every row it could ask for (unfinished, not
   // blocked), ordered by nextAttemptAt, so "due, longest overdue first" is a
   // range scan with no sort. Finished rows accumulate, up to one per
-  // finalise, forever; this index holds only the queue.
+  // enqueue, forever; this index holds only the queue.
   // Not declared here for the same reason as the unique.
   @@index([documentId])
   @@index([quoteRevisionId])

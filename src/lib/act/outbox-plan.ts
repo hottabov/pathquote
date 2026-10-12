@@ -58,9 +58,9 @@
 //
 // Of these, Contact.actContactId dates from z60_act_sync;
 // ActOutbox.opportunityActId, ActOutbox.quoteRevisionId,
-// Document.actOpportunityId and QuoteRevision.actHistoryId were added by
-// z65_act_outbox; Document.actContactPromotedAt and
-// Document.actOpportunityWonAt are the amended z65's to add.
+// Document.actOpportunityId, QuoteRevision.actHistoryId,
+// Document.actContactPromotedAt and Document.actOpportunityWonAt were added by
+// z65_act_outbox.
 //
 // ONE HISTORY PER REVISION, so its progress is on the revision, not the row. A
 // manager can unfinalise a quote whose row has finished and re-finalise it

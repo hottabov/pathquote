@@ -1,38 +1,43 @@
 -- The outbox for writing finalised quotes into ACT!, and the ids it stores.
 --
 -- Finalising a quote queues one ActOutbox row, or takes over the unfinished
--- one (see ONE UNFINISHED ROW PER DOCUMENT below). A drain then runs that
--- row's steps against ACT! -- create the contact if ACT! does not have it,
--- create or update the deal's opportunity, write the revision's History --
--- storing each result before the next step, so a row that fails halfway
--- resumes rather than repeating. What comes next is decided by
--- src/lib/act/outbox-plan.ts, whose header lists the stored fields it reads;
--- this migration adds the ones that did not exist:
+-- one (see ONE UNFINISHED ROW PER DOCUMENT below); the plan's addendum of
+-- 2026-10-12 has the client's signature and acceptQuote queue one the same
+-- way. A drain then runs that row's steps against ACT! -- create the contact
+-- if ACT! does not have it, create or update the deal's opportunity, write
+-- the revision's History, and once the quote is signed or accepted, promote
+-- the contact to Customer and win the opportunity -- storing each result
+-- before the next step, so a row that fails halfway resumes rather than
+-- repeating. What comes next is decided by src/lib/act/outbox-plan.ts, whose
+-- header lists the stored fields it reads; this migration adds the ones that
+-- did not exist:
 --
---   Document.actOpportunityId     the deal's opportunity, one per quote
---   QuoteRevision.actHistoryId    the revision's History, one per revision
---   ActOutbox                     the queue itself, with opportunityActId for
---                                 the row's own opportunity step
+--   Document.actOpportunityId      the deal's opportunity, one per quote
+--   Document.actContactPromotedAt  promote-contact done, once per deal
+--   Document.actOpportunityWonAt   win-opportunity done, once per deal
+--   QuoteRevision.actHistoryId     the revision's History, one per revision
+--   ActOutbox                      the queue itself, with opportunityActId
+--                                  for the row's own opportunity step
 --
 -- Why ACT!'s ids are kept here rather than a PathQuote id stamped into an ACT!
 -- custom field is on the ActOutbox model in schema.prisma: the `PQ ` fields
 -- need `Define Fields`, which the service account does not have.
 --
 -- WHAT PRISMA SEES, AND WHAT IT DOES NOT. Everything down to the end of the
--- foreign keys is character for character what
--- `prisma migrate diff --from-schema <before> --to-schema <after> --script`
--- prints for the declarations in prisma/schema.prisma. The two indexes after
--- that are written by hand, because both are PARTIAL (they have a WHERE), and
--- Prisma declares a partial index only under the `partialIndexes` preview
--- feature, which this project does not enable. Without it `migrate diff`
--- leaves partial indexes out of the comparison altogether, so the CI step
--- "Migrations reproduce schema.prisma" (`prisma migrate diff
--- --from-config-datasource --to-schema prisma/schema.prisma --exit-code`)
--- neither expects them nor reports them as drift. That is not a new trick: the
--- two partial uniques on OptionCompatibility have lived in 0_init the same way
--- since the first migration, through every CI run since. Verified for these two
--- by applying every migration to an empty PostgreSQL and running that exact
--- command: "No difference detected", exit 0.
+-- foreign keys is character for character what `prisma migrate diff
+-- --from-schema <main's schema.prisma> --to-schema prisma/schema.prisma
+-- --script` prints for these declarations. The two indexes after that are
+-- written by hand, because both are PARTIAL (they have a WHERE), and Prisma
+-- declares a partial index only under the `partialIndexes` preview feature,
+-- which this project does not enable. Without it `migrate diff` leaves partial
+-- indexes out of the comparison altogether, so the CI step "Migrations
+-- reproduce schema.prisma" (`prisma migrate diff --from-config-datasource
+-- --to-schema prisma/schema.prisma --exit-code`) neither expects them nor
+-- reports them as drift. That is not a new trick: the two partial uniques on
+-- OptionCompatibility have lived in 0_init the same way since the first
+-- migration, through every CI run since. Verified for these two by applying
+-- every migration to an empty PostgreSQL and running that exact command: "No
+-- difference detected", exit 0.
 --
 -- The cost cuts both ways. The schema file cannot show them, so the ActOutbox
 -- model's comment names both. And the drift check cannot see them in EITHER
@@ -47,14 +52,15 @@
 -- statement -- `prisma migrate deploy` runs each statement in a transaction
 -- of its own, not the file as one (tried with Prisma 7.10: a migration whose
 -- second statement fails leaves the first applied, and txid_current()
--- differs from statement to statement), so each lock is released when its statement ends:
---   - ADD COLUMN takes ACCESS EXCLUSIVE on Document and on QuoteRevision. The
---     columns are nullable with no default, so it changes the catalog only and
---     rewrites nothing, but while it waits for the lock every later query on
---     that table queues behind it.
---   - The two unique indexes on the new columns take SHARE on Document and
---     QuoteRevision (writes wait, reads do not) and read every row to build,
---     though every value is NULL.
+-- differs from statement to statement), so each lock is released when its
+-- statement ends:
+--   - ADD COLUMN takes ACCESS EXCLUSIVE on Document (one statement for its
+--     three columns) and on QuoteRevision. The columns are nullable with no
+--     default, so it changes the catalog only and rewrites nothing, but while
+--     it waits for the lock every later query on that table queues behind it.
+--   - The two unique indexes, on Document.actOpportunityId and
+--     QuoteRevision.actHistoryId, take SHARE on those tables (writes wait,
+--     reads do not) and read every row to build, though every value is NULL.
 --   - The two foreign keys take SHARE ROW EXCLUSIVE on Document and
 --     QuoteRevision, the referenced tables, and validate against ActOutbox,
 --     which is empty.
@@ -63,7 +69,9 @@
 -- migration recorded as failed for `prisma migrate resolve`.
 
 -- AlterTable
-ALTER TABLE "Document" ADD COLUMN     "actOpportunityId" TEXT;
+ALTER TABLE "Document" ADD COLUMN     "actContactPromotedAt" TIMESTAMP(3),
+ADD COLUMN     "actOpportunityId" TEXT,
+ADD COLUMN     "actOpportunityWonAt" TIMESTAMP(3);
 
 -- AlterTable
 ALTER TABLE "QuoteRevision" ADD COLUMN     "actHistoryId" TEXT;
@@ -110,17 +118,18 @@ ALTER TABLE "ActOutbox" ADD CONSTRAINT "ActOutbox_quoteRevisionId_fkey" FOREIGN 
 -- once could also both find Document.actOpportunityId empty and both create
 -- an opportunity, but the drain's advisory lock, Task 7, is to rule that out
 -- on its own.) A plain unique on documentId would be wrong: a document
--- collects FINISHED rows over its life, up to one per finalise, and those
+-- collects FINISHED rows over its life, up to one per enqueue, and those
 -- must coexist.
 --
 -- "Unfinished" is "completedAt IS NULL", and nothing else -- a BLOCKED row
--- (blockedReason set) is unfinished too, and holds the slot. So a re-finalise
--- that finds an unfinished row, pending or blocked, does not insert: it takes
--- that row over, pointing it at the new revision, clearing blockedReason,
--- opportunityActId and lastError, and resetting attempts. That is how "unfinalize, choose a contact, finalize
--- again" un-blocks a quote that had no contact. Leaving blocked rows out of
--- this predicate instead was considered and rejected: a stale blocked row
--- would sit beside its replacement forever, and anything that later cleared
+-- (blockedReason set) is unfinished too, and holds the slot. So an enqueue -- a
+-- re-finalise, or a signature or acceptance -- that finds an unfinished row,
+-- pending or blocked, does not insert: it takes that row over, pointing it at
+-- the revision the enqueue is for, clearing blockedReason, opportunityActId and
+-- lastError, and resetting attempts. That is how "unfinalize, choose a contact,
+-- finalize again" un-blocks a quote that had no contact. Leaving blocked rows
+-- out of this predicate instead was considered and rejected: a stale blocked
+-- row would sit beside its replacement forever, and anything that later cleared
 -- its blockedReason -- the fix for a nameless contact or an unmapped region
 -- needs no re-finalise -- would put two live rows on one deal.
 --
@@ -147,12 +156,13 @@ CREATE UNIQUE INDEX "ActOutbox_documentId_unfinished_key" ON "ActOutbox"("docume
 -- compared with it in the session's zone, which this repo does not pin. Under
 -- Australia/Sydney a row due in an hour already passes "<= now()" (tried:
 -- rows come due 10 or 11 hours early, with daylight saving), while Prisma
--- sends a Date as UTC and compares correctly (tried, same zone). Likewise the column's DEFAULT CURRENT_TIMESTAMP is the
--- session's local time, so a raw INSERT supplies nextAttemptAt itself.
+-- sends a Date as UTC and compares correctly (tried, same zone). Likewise
+-- the column's DEFAULT CURRENT_TIMESTAMP is the session's local time, so a
+-- raw INSERT supplies nextAttemptAt itself.
 -- This index holds every unfinished, unblocked row, in nextAttemptAt order, so
 -- "due" is a range scan from its start and needs no sort (EXPLAIN on the
 -- migrated database: Index Scan using "ActOutbox_due_idx", no Sort node).
--- Finished rows pile up, up to one per finalise, for as long as the table
+-- Finished rows pile up, up to one per enqueue, for as long as the table
 -- exists, and neither they nor blocked rows are in here, so the index stays
 -- the size of the queue. Blocked rows are NOT simply waiting for a person:
 -- fixing what a blocked reason asks (naming the contact, mapping the region)
