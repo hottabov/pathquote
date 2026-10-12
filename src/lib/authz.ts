@@ -3,7 +3,7 @@ import type { Session } from "next-auth";
 import { auth } from "@/auth";
 import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { isAdminRole } from "@/lib/roles";
+import { canSeeActSync, isAdminRole } from "@/lib/roles";
 import { priceRegionIdForUser } from "@/lib/scope";
 
 /**
@@ -61,6 +61,53 @@ export async function requireAdmin(): Promise<Session & { user: NonNullable<Sess
 export async function requireAdminPage(): Promise<Session & { user: NonNullable<Session["user"]> }> {
   const session = await requireSession();
   if (!isAdminRole(session.user.role)) {
+    notFound();
+  }
+  return session;
+}
+
+/**
+ * Require a session allowed to reach the ACT! sync section, for a SERVER
+ * ACTION — `runActSyncNow` and nothing else today.
+ *
+ * Throws rather than rendering anything, for the reason `requireAdmin` gives:
+ * the caller is a form post and the failure belongs in the action's own error
+ * handling. Deliberately NOT `requireAdmin`: a manager an admin has granted
+ * the section to may press Sync now, which is the decision the section exists
+ * for (see `runActSyncNow`'s own comment for why pressing it is harmless).
+ * Deliberately not `requireSession` either, which is what this was between
+ * 2026-10-10 and this change: hiding the nav row from a distributor while
+ * leaving the action's id callable would be hiding, not refusing.
+ */
+export async function requireActSync(): Promise<Session & { user: NonNullable<Session["user"]> }> {
+  const session = await requireSession();
+  if (!canSeeActSync(session.user)) {
+    throw new Error("Forbidden: the ACT! sync section is not available to this account");
+  }
+  return session;
+}
+
+/**
+ * Require a session allowed to reach the ACT! sync section, for a PAGE,
+ * rendering the 404 page for anyone else.
+ *
+ * Separate from `requireActSync` above for exactly the reason
+ * `requireAdminPage` is separate from `requireAdmin` — see that comment for
+ * the full argument. The short of it: not-found over forbidden, so a route a
+ * viewer may not have is indistinguishable from one that does not exist, and
+ * an action result is not a 404 page.
+ *
+ * One of three gates that have to agree, and they agree by calling the same
+ * `canSeeActSync`: the nav row (`visibleSettingsNavItems`,
+ * src/lib/settings-nav.ts), this page guard, and `requireActSync` on the
+ * button's action. The nav is a courtesy; this is the lock, and it is what
+ * answers someone who types `/settings/act-sync` having never been offered it.
+ */
+export async function requireActSyncPage(): Promise<
+  Session & { user: NonNullable<Session["user"]> }
+> {
+  const session = await requireSession();
+  if (!canSeeActSync(session.user)) {
     notFound();
   }
   return session;

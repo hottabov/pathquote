@@ -180,6 +180,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.role = dbUser.role;
         token.regionId = dbUser.regionId;
         token.visibleCountries = dbUser.visibleCountries ?? [];
+        token.actSyncVisible = dbUser.actSyncVisible;
         token.revalidatedAt = Date.now();
         return token;
       }
@@ -189,7 +190,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // valid session for up to `maxAge` (7 days), since the JWT is
       // self-contained and normally never touches the database again. Re-hit
       // the DB at most once per REVALIDATE_INTERVAL_MS to catch that case
-      // and to keep role/regionId/visibleCountries in sync with the source of truth, while
+      // and to keep role/regionId/visibleCountries/actSyncVisible in sync with
+      // the source of truth, while
       // keeping the common case (a request within the interval) DB-free.
       const revalidatedAt = token.revalidatedAt ?? 0;
       if (Date.now() - revalidatedAt < REVALIDATE_INTERVAL_MS) {
@@ -220,6 +222,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       token.role = dbUser.role;
       token.regionId = dbUser.regionId;
       token.visibleCountries = dbUser.visibleCountries ?? [];
+      token.actSyncVisible = dbUser.actSyncVisible;
       token.revalidatedAt = Date.now();
       return token;
     },
@@ -232,6 +235,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // empty grant, which fails closed (see `companyWhereForUser`). It
         // fills in at the next revalidation.
         session.user.visibleCountries = token.visibleCountries ?? [];
+        // `?? false` for the same reason, and with the same consequence: a
+        // token minted before this field existed hides the ACT! sync section
+        // from a manager who had it, for up to REVALIDATE_INTERVAL_MS after
+        // this release and no longer. Failing the other way would show the
+        // section to every distributor for the same window, which is the thing
+        // the column exists to prevent. An ADMIN or DEVELOPER is unaffected
+        // either way -- `canSeeActSync` never reads this for them.
+        session.user.actSyncVisible = token.actSyncVisible ?? false;
       }
       return session;
     },

@@ -1,0 +1,57 @@
+-- Per-user control over the ACT! sync section in Settings.
+--
+-- `/settings/act-sync` reports on the nightly ACT! pull and offers a Sync now
+-- button. It was ADMIN-only until 2026-10-10, when it was opened to every
+-- signed-in user so that a manager who notices an ACT! edit has not arrived can
+-- run the sync themselves instead of asking the developer. That is right for
+-- the company's own managers and wrong for distributors -- outside resellers
+-- who will use PathQuote with no ACT! licence and no ACT! access at all. Their
+-- contacts still reach ACT! when they finalise a quote; a page about the state
+-- of a CRM they cannot open means nothing to them, and a button to sync it is
+-- worse than useless. So an admin now decides per user, and
+-- `User.actSyncVisible` is where that decision is stored. It gates the nav row,
+-- the page and the `runActSyncNow` action alike -- see `canSeeActSync` in
+-- src/lib/roles.ts. An ADMIN or DEVELOPER sees the section by role and this
+-- column is never consulted for them, so they cannot lock themselves out of it.
+--
+-- THE DEFAULT IS FALSE, AND THE BACKFILL IS TRUE. Both directions cost
+-- something, and this is the cheaper pair:
+--
+--   * `DEFAULT false` means a newly created distributor is hidden from the
+--     section without anybody having to remember to untick anything. The price
+--     is that a newly created real manager needs one tick before they can see
+--     it.
+--   * The UPDATE then grants it to every user that exists today, so nothing
+--     changes for anyone already using the system -- as of this migration that
+--     is the whole company, who have had the section since 2026-10-10.
+--
+-- Put the other way round -- `DEFAULT true` with no backfill -- every new
+-- distributor would see the section until an admin noticed and took it away.
+-- The failure direction chosen here is "a manager cannot see sync status",
+-- which an admin fixes in one click, rather than "a distributor is looking at a
+-- page about a CRM they have never heard of" plus whatever they ask next.
+--
+-- The ADD COLUMN below is character for character what
+-- `prisma migrate diff --from-schema <before> --to-schema <after> --script`
+-- prints for the `actSyncVisible Boolean @default(false)` declaration in
+-- prisma/schema.prisma, which is what keeps the CI step "Migrations reproduce
+-- schema.prisma" quiet. The UPDATE is invisible to that check: it writes data,
+-- not structure.
+--
+-- Additive, and no existing value is overwritten -- the column does not exist
+-- before this runs, so there is nothing to overwrite. ADD COLUMN with a
+-- non-volatile DEFAULT does not rewrite the table (PostgreSQL 11+), and the
+-- UPDATE touches every User row once; there are fewer than twenty of them.
+--
+-- NOT idempotent in the sense that matters for a second run on a live
+-- database: re-running the UPDATE alone would re-grant the section to anyone an
+-- admin had since unticked. It never gets a second run -- Prisma records
+-- applied migrations in `_prisma_migrations` and `migrate deploy` skips them --
+-- and that is the reason the backfill belongs here, in the same file as the
+-- column, rather than in a script somebody could run twice.
+
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN     "actSyncVisible" BOOLEAN NOT NULL DEFAULT false;
+
+-- Everyone who already has the section keeps it.
+UPDATE "User" SET "actSyncVisible" = true;

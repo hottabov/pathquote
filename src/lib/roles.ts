@@ -113,6 +113,41 @@ export function canSeeSalesperson(role: string | null | undefined): boolean {
   return role != null && SALESPERSON_COLUMN_ROLES.has(role);
 }
 
+/**
+ * Whether this viewer gets the ACT! sync section at all -- the nav row, the
+ * page at /settings/act-sync, and the Sync now button's action. True for an
+ * ADMIN or DEVELOPER whatever their own flag says, and for anybody else
+ * exactly when an admin has ticked `User.actSyncVisible` for them.
+ *
+ * Why the role short-circuits rather than being another thing to tick: an
+ * admin whose own flag was off would have hidden from themselves the page
+ * where the flag is set -- not literally (the control is on a Users page,
+ * which is admin-only anyway) but in the way that matters, by making the
+ * checkbox look like something that could lock an administrator out. It
+ * cannot. This is also what makes the checkbox meaningless on an ADMIN's or
+ * DEVELOPER's own page, which is why that page explains itself there instead
+ * of offering a control that would do nothing (see
+ * src/app/(app)/settings/users/[userId]/page.tsx).
+ *
+ * Why the flag defaults to false is the column's own story -- see
+ * `actSyncVisible` in prisma/schema.prisma. The short version: the users this
+ * app is growing into are distributors with no ACT! access, and hiding them by
+ * default costs a real new manager one tick.
+ *
+ * Takes an object rather than two positional arguments because the two are a
+ * role string and a boolean, which is exactly the pair a call site can swap
+ * without the compiler noticing. Same dependency-free style as its siblings
+ * above, so `settings-nav.ts` (pure, unit-tested without a database) and
+ * `authz.ts` (which has one) can both reach the one decision rather than
+ * writing it twice and drifting.
+ */
+export function canSeeActSync(viewer: {
+  role: string | null | undefined;
+  actSyncVisible: boolean;
+}): boolean {
+  return isAdminRole(viewer.role) || viewer.actSyncVisible;
+}
+
 /** Role names as a person should read them, for the badges in the app shell
  * and the users list. Raw enum values leaked into the UI acceptably while
  * every one of them was a single word; `REGIONAL_MANAGER` is where that

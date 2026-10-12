@@ -2,9 +2,9 @@
 // immediately on click rather than behind an intermediate card (see the
 // commit that introduced this file: "feat: settings gets its own
 // navigation"). Kept as a plain, dependency-light data module (only
-// `lucide-react` icon components and the equally pure `isAdminRole`) so the
-// visibility rule below — which section a given role gets to see — is
-// unit-testable without a database or a rendered component.
+// `lucide-react` icon components and the equally pure `isAdminRole` and
+// `canSeeActSync`) so the visibility rule below — which section a given viewer
+// gets to see — is unit-testable without a database or a rendered component.
 import type { LucideIcon } from "lucide-react";
 import {
   User,
@@ -17,14 +17,35 @@ import {
   ArrowLeftRight,
   RefreshCw,
 } from "lucide-react";
-import { isAdminRole } from "./roles";
+import { canSeeActSync, isAdminRole } from "./roles";
+
+/**
+ * Who the nav is being drawn for. More than a role since ACT! sync became a
+ * per-user grant: `actSyncVisible` is `User.actSyncVisible`, which reaches a
+ * request through the session (see src/auth.ts and `visibleCountries`, the
+ * app's other per-user grant, which travels the same way).
+ *
+ * One required object parameter rather than `(role, actSyncVisible?)`, and the
+ * optionality is the whole reason. A second optional argument makes forgetting
+ * it compile, and forgetting it here silently decides a permission for every
+ * caller that did — the one failure mode this shape has to refuse. An object
+ * also means the next per-user section adds a field and the compiler then
+ * names every call site that has to supply it.
+ */
+export type SettingsNavViewer = {
+  role: string | null | undefined;
+  /** `User.actSyncVisible` — see `canSeeActSync` in ./roles. */
+  actSyncVisible: boolean;
+};
 
 export type SettingsNavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
-  /** Account, PathQuote Support and ACT! sync are open to every signed-in
-   * user; every other section is ADMIN-or-DEVELOPER only (see isAdminRole).
+  /** Account and PathQuote Support are open to every signed-in user; ACT! sync
+   * is open to a signed-in user an admin has granted it to (see `visibleTo`
+   * below and the entry's own comment); every other section is
+   * ADMIN-or-DEVELOPER only (see isAdminRole).
    *
    * Preferences went the other way -- out of the open set and into the admin
    * one -- and the contrast with ACT! sync is what the rule actually is, so
@@ -32,9 +53,21 @@ export type SettingsNavItem = {
    * defaults a manager cannot change, so showing them read-only advertised
    * settings that were none of their concern. ACT! sync holds no settings at
    * all: it reports the state of a job and offers one button, and both are
-   * things a manager acts on. See the ACT! sync entry below for why the
-   * button is open to them too, not just the reading of it. */
+   * things a manager acts on -- which is why it is not admin-only, and why
+   * who exactly gets it is then a per-user question rather than a role one. */
   adminOnly: boolean;
+  /** For a section that is not `adminOnly` but is still not open to everyone:
+   * the predicate deciding whether this viewer gets it. Absent means open to
+   * every signed-in user, which is what Account and PathQuote Support are.
+   *
+   * A function rather than, say, the name of a `User` column, so the nav and
+   * the section's own guards share one decision instead of two copies of it:
+   * ACT! sync below holds `canSeeActSync`, and that is the same function
+   * `requireActSyncPage` and `requireActSync` call (src/lib/authz.ts). The nav
+   * therefore cannot offer a section the page then refuses, or hide one the
+   * page would have allowed. Still pure, so this module stays testable with
+   * no database and no rendered component. */
+  visibleTo?: (viewer: SettingsNavViewer) => boolean;
   /** Extra path prefixes (besides `href`) that should also mark this item
    * active. Catalogue bundles independent list pages — option conflict
    * groups and spec diagrams — under one nav entry (see the section's own
@@ -75,32 +108,64 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
   // to look after; this one reports on a job that runs on its own at 03:00
   // and gives you one way to interrupt it.
   //
-  // Open to every signed-in user, and that includes pressing Sync now rather
-  // than only reading the page. Pressing it is harmless: the sync is
-  // read-only against ACT!, what it writes into PathQuote fills blanks and
-  // never overwrites (`fillOnlyEmpty`, src/lib/act/merge.ts), the session
-  // advisory lock means a second press cannot start a second run, and a
-  // delta is seconds. The value is exactly what the restriction was costing
-  // -- a manager who can see that an edit they made in ACT! has not reached
-  // PathQuote can fix it themselves instead of waiting for the developer to
-  // be asked.
-  { href: "/settings/act-sync", label: "ACT! sync", icon: RefreshCw, adminOnly: false },
-  // Open to every signed-in user, same as Account and ACT! sync above (it
-  // said "Account/Preferences" until Preferences moved into the admin set) —
-  // a MANAGER is exactly who most needs to reach the developer about a
-  // pricing or technical problem (see src/app/(app)/settings/support/page.tsx).
+  // Not admin-only, but not open to everyone either: a non-admin gets this
+  // section when an admin has ticked it for them (`canSeeActSync`,
+  // src/lib/roles.ts, reading `User.actSyncVisible`). What a granted user gets
+  // includes pressing Sync now rather than only reading the page. Pressing it
+  // is harmless: the sync is read-only against ACT!, what it writes into
+  // PathQuote fills blanks and never overwrites (`fillOnlyEmpty`,
+  // src/lib/act/merge.ts), the session advisory lock means a second press
+  // cannot start a second run, and a delta is seconds. The value is exactly
+  // what an admin-only section was costing -- a manager who can see that an
+  // edit they made in ACT! has not reached PathQuote can fix it themselves
+  // instead of waiting for the developer to be asked.
+  //
+  // Per user rather than per role because the two kinds of non-admin who will
+  // hold MANAGER want opposite things. The company's own managers use ACT!
+  // daily and this page answers a question they really ask. A distributor --
+  // an outside reseller, no ACT! licence, no ACT! access at all -- has their
+  // contacts pushed into ACT! when they finalise a quote and can never look at
+  // it; for them this page reports on a system they have never seen. No role
+  // tells those two apart, so an admin does, one user at a time.
+  {
+    href: "/settings/act-sync",
+    label: "ACT! sync",
+    icon: RefreshCw,
+    adminOnly: false,
+    visibleTo: canSeeActSync,
+  },
+  // Open to every signed-in user, same as Account above (it said
+  // "Account/Preferences" until Preferences moved into the admin set, and
+  // named ACT! sync too until that became a per-user grant) — a MANAGER is
+  // exactly who most needs to reach the developer about a pricing or technical
+  // problem (see src/app/(app)/settings/support/page.tsx).
   { href: "/settings/support", label: "PathQuote Support", icon: LifeBuoy, adminOnly: false },
 ];
 
 /**
- * The nav items a user with `role` should actually see — a MANAGER never
- * gets handed an admin-only href to begin with, rather than being routed to
- * a page that then 404s on them (see each section's own page guard for that
+ * The nav items `viewer` should actually see — a MANAGER never gets handed an
+ * href they may not have to begin with, rather than being routed to a page
+ * that then 404s on them (see each section's own page guard for that
  * defense-in-depth check).
+ *
+ * Two gates: `adminOnly` is the role question, and `visibleTo` is the per-user
+ * one for a section that has it. Both must pass, which is not the same as "an
+ * admin sees everything" being written here — it is `canSeeActSync` that lets
+ * an admin through its own gate, deliberately, so that an admin cannot be
+ * locked out of the section whose grant they administer. A future `visibleTo`
+ * that should behave that way has to say so itself.
+ *
+ * Hiding a row is never the security boundary here — it is the ACT! sync page's own
+ * `requireActSyncPage` and the Sync now action's `requireActSync` that refuse
+ * a request, because an href is not a lock and anybody can type a URL. What
+ * this function buys is that nobody is shown a door that will not open.
  */
-export function visibleSettingsNavItems(role: string | null | undefined): SettingsNavItem[] {
-  const admin = isAdminRole(role);
-  return SETTINGS_NAV_ITEMS.filter((item) => admin || !item.adminOnly);
+export function visibleSettingsNavItems(viewer: SettingsNavViewer): SettingsNavItem[] {
+  const admin = isAdminRole(viewer.role);
+  return SETTINGS_NAV_ITEMS.filter((item) => {
+    if (item.adminOnly) return admin;
+    return item.visibleTo === undefined || item.visibleTo(viewer);
+  });
 }
 
 /**

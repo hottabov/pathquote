@@ -318,6 +318,26 @@ model User {
   /// client they do not own -- see src/lib/scope.ts. Set it with
   /// `npm run user:countries`.
   visibleCountries  String[]            @default([])
+  /// Whether Settings shows this user the ACT! sync section
+  /// (/settings/act-sync -- the nightly pull's status and its Sync now
+  /// button). An ADMIN or DEVELOPER gets that section from their role and this
+  /// column is not consulted for them (`canSeeActSync`, src/lib/roles.ts); for
+  /// everyone else it is the whole answer, and it gates the page and the
+  /// `runActSyncNow` action as well as the nav row.
+  ///
+  /// Defaults to FALSE because the users this app is growing into are
+  /// distributors -- outside resellers with no ACT! licence and no way to open
+  /// ACT! at all. Their contacts still reach ACT! when they finalise a quote,
+  /// but a page reporting on a CRM they cannot see is noise and a button that
+  /// syncs it is worse. A default of true would hand the section to every new
+  /// distributor until an admin remembered to take it away; false costs a real
+  /// new manager one tick instead, and the failure direction is "a manager
+  /// cannot see sync status", which is one click to fix.
+  ///
+  /// Every user that existed when the column arrived was set true by
+  /// z64_act_sync_visible, so nothing changed for anybody already using the
+  /// system. Set it in Settings -> Users -> <user>.
+  actSyncVisible    Boolean             @default(false)
   documents         Document[]
   accounts          Account[]
   sessions          Session[]

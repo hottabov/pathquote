@@ -426,7 +426,7 @@ export function describeRun(
       // Was "The cursor did not move, so nothing was skipped". Accurate, and
       // the mechanism rather than the consequence -- "cursor" is this
       // repository's word, not a word on a page read by the director and by
-      // the managers the section was later opened to. What it means to either
+      // the managers an admin has granted the section to. What it means to either
       // of them is that the contacts that failed are still waiting rather
       // than lost, which is what the first half now says.
       //
@@ -439,8 +439,9 @@ export function describeRun(
       // "fix the cause" on its own is advice no reader can act on. The
       // per-contact message is in the service log, but only the nightly run
       // prints it there, so this does not promise anybody will find it -- it
-      // names the person who can. Kept when managers gained the page: a
-      // manager has no readier way to the developer than being told to go to
+      // names the person who can. Kept when managers gained the page, and
+      // again when which managers became an admin's choice: a manager who has
+      // the page has no readier way to the developer than being told to go to
       // them, and one is a nav row below this (PathQuote Support).
       detail: FAILED_CONTACTS_DETAIL,
       trigger,
