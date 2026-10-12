@@ -18,25 +18,38 @@ import type { OutboxStep } from "@/lib/act/outbox-plan";
 /** The steps that call ACT!: every OutboxStep but `done` and `blocked`. */
 export type ActStepKind = Exclude<OutboxStep["kind"], "done" | "blocked">;
 
-/** The wait before a failed row's first retry. */
+/** How long the backoff holds a row back after its first failure. */
 export const BACKOFF_FIRST_MS = 5 * 60 * 1000;
-/** The longest wait between two tries of a row. */
+/**
+ * The most the backoff alone holds a row back. A Retry-After can ask for
+ * longer, up to RETRY_AFTER_CAP_MS (nextAttemptAt).
+ */
 export const BACKOFF_CAP_MS = 6 * 60 * 60 * 1000;
 
 /**
- * How long a row waits after its `attempts`-th failure (1 for the first):
- * 5 minutes, doubling -- 10, 20, 40, 80, 160, 320 -- to a cap of 6 hours from
- * the eighth failure on.
+ * How long a row is held back after its `attempts`-th failure (1 for the
+ * first): 5 minutes, doubling -- 10, 20, 40, 80, 160, 320 -- to a cap of 6
+ * hours from the eighth failure on.
+ *
+ * This says when a row MAY next be tried, not when it is: nothing retries a
+ * row on a clock of its own. A pass of the drain does, and today the only
+ * passes are the fast paths after a finalise, a signature or an acceptance
+ * (drainAfterResponse in src/lib/act/drain-after.ts), each for that one
+ * quote -- so until Task 8 lands, a failed row is tried again only when its
+ * own quote is next finalised, signed or accepted. Task 8 adds the drains
+ * that make this schedule real: a periodic drain every 15 minutes (a systemd
+ * timer in the `tools` container) beside the nightly one, each over every due
+ * row. From then on a row is tried at the first pass after it falls due, so
+ * each wait below is rounded up to that timer.
  *
  * Five minutes first because the usual failure is a blip -- a dropped
- * connection, ACT!'s IIS recycling -- and the manager who just finalised is
- * likely still looking at the quote. Doubling, so a real outage costs a
- * handful of requests rather than one every five minutes. Capped at six
- * hours, so a row that has been failing all night is still tried a few times
- * the next working day without waiting for the nightly drain. A row is never
- * given up on: a take-over (a new finalise, signature or acceptance) resets
- * attempts and makes it due at once, and a person can read attempts and
- * lastError off the row.
+ * connection, ACT!'s IIS recycling -- which is over by the next periodic
+ * pass. Doubling, so a real outage costs a handful of requests rather than
+ * one every pass. Capped at six hours, so that once the periodic drain runs, a
+ * row that has been failing all night is tried a few times the next working
+ * day, not only by the nightly drain. A row is never given up on: a take-over
+ * (a new finalise, signature or acceptance) resets attempts and makes it due
+ * at once, and a person can read attempts and lastError off the row.
  */
 export function backoffMs(attempts: number): number {
   const exponent = Math.max(0, Math.floor(attempts) - 1);
@@ -243,7 +256,8 @@ export function deniedReason(kind: ActStepKind, method: string, body: string): s
  * The values of ActOutbox.blockedBy, beside null for a row the planner
  * blocked. See the column in prisma/schema.prisma.
  *
- *   act    ACT! refused a write: held until a take-over or a person.
+ *   act    ACT! refused a write, or denied PathQuote access to a record:
+ *          held until a take-over or a person.
  *   drain  the drain's own check -- duplicates a lookup found, a revision it
  *          cannot describe: worked again first thing each pass.
  */
@@ -307,7 +321,12 @@ export function replanBlocked(
  *              box's setup). Every row would get the same answer, so the row
  *              backs off and the pass stops. (A 403 to the users lookup is
  *              the account's too; the drain stops for that where it makes
- *              the lookup.)
+ *              the lookup.) A redirect to a CREATE stops the pass as well:
+ *              it is still untracked for its marker -- a 303 is how a
+ *              server answers a POST it acted on, so the marker stays, and
+ *              a contact is held for a person -- but it almost certainly
+ *              means the same setup error, which would leave every further
+ *              create as unaccounted for.
  *   try-later  ACT! said "not now": a 429 or a 408 (tryLaterStatus in
  *              src/lib/act/record-write.ts), on any request. The row backs
  *              off -- for at least as long as its Retry-After asks
@@ -348,7 +367,10 @@ export function stopsPass(failure: DrainFailure): boolean {
 }
 
 export function drainFailure(error: unknown): DrainFailure {
-  if (error instanceof ActUntrackedCreateError) return error.noAnswer ? "unreachable" : "untracked";
+  if (error instanceof ActUntrackedCreateError) {
+    if (error.noAnswer) return "unreachable";
+    return error.status !== null && error.status >= 300 && error.status < 400 ? "stop" : "untracked";
+  }
   if (error instanceof ActApiError) {
     if (tryLaterStatus(error.status)) return "try-later";
     if (error.failure === "failed") return "failed";
@@ -380,6 +402,8 @@ export function lastErrorText(kind: ActStepKind, error: unknown): string {
         ? "it is not tried again until a person has checked ACT! for the contact"
         : "the next attempt looks for it in ACT! before creating anything";
     text = `PathQuote asked ACT! to ${stepAction(kind)} and ${error.noAnswer ? "got no answer, so " : ""}did not learn whether it did — ${next}.`;
+    // A redirect's message names where it pointed, and what to check.
+    if (error.status !== null && error.status >= 300 && error.status < 400) text += ` ${message}`;
   } else if (error instanceof ActApiError && tryLaterStatus(error.status)) {
     const wait = error.retryAfter ? ` (Retry-After: ${error.retryAfter.trim()})` : "";
     text = `PathQuote could not ${stepAction(kind)}: ACT! answered ${error.status}, not now, try later${wait} — ${message}`;

@@ -550,10 +550,11 @@ export type RevisionUpdate =
  * STAGE START DATE. Swagger's Opportunity has `stageStartDate`, "the date the
  * opportunity stage started", and does not mark it read-only. It is sent when,
  * and only when, the patch moves the stage, set to the time of the event that
- * moved it: this revision's finalizedAt here, the acceptance's time in
- * wonOpportunityBody, the first revision's finalizedAt beside `openDate` on
- * create. Every one of those is a frozen input, so a repeated step sends the
- * same body. When the stage stays, or sits in another process, the date is
+ * moved it: this revision's finalizedAt here, the deal's close date in
+ * wonOpportunityBody -- the later of the acceptance and the client's
+ * signature (wonCloseDate in src/lib/act/drain-rules.ts) -- the first
+ * revision's finalizedAt beside `openDate` on create. Every one of those is a
+ * frozen input, so a repeated step sends the same body. When the stage stays, or sits in another process, the date is
  * left as read: the stage it describes has not changed.
  */
 export function revisedOpportunityBody(
@@ -597,8 +598,11 @@ export type WonUpdate =
 /**
  * Closing the opportunity as won, when the quote is accepted.
  *
- * The status and close date always; the won stage, with its probability and
- * a stageStartDate of `acceptedAt` (STAGE START DATE on
+ * `closedAt` is the deal's close date: the drain passes the later of the
+ * acceptance and the client's signature (wonCloseDate in
+ * src/lib/act/drain-rules.ts), since the win needs both standing. The
+ * status and `actualCloseDate` of `closedAt` always; the won stage, with its
+ * probability and a stageStartDate of `closedAt` (STAGE START DATE on
  * revisedOpportunityBody), only when `stageMove` allows it. `current` is
  * required for the same reason as in
  * `revisedOpportunityBody`: an opportunity being closed already exists, and
@@ -652,7 +656,7 @@ export type WonUpdate =
 export function wonOpportunityBody(
   regionCode: string,
   current: OpportunityNow,
-  acceptedAt: Date,
+  closedAt: Date,
 ): WonUpdate {
   if (current.status === OPPORTUNITY_STATUS.won) return { kind: "already-won" };
   const won = stagesFor(regionCode).won;
@@ -663,9 +667,9 @@ export function wonOpportunityBody(
     found: current.status,
     patch: {
       status: OPPORTUNITY_STATUS.won,
-      actualCloseDate: acceptedAt.toISOString(),
+      actualCloseDate: closedAt.toISOString(),
       ...(stage === "move"
-        ? { stage: stageBody(won), probability: won.probability, stageStartDate: acceptedAt.toISOString() }
+        ? { stage: stageBody(won), probability: won.probability, stageStartDate: closedAt.toISOString() }
         : {}),
     },
   };

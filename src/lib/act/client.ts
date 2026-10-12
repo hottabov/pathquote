@@ -862,15 +862,14 @@ export class ActClient {
    *
    * WHAT COMES BACK is the record as ACT! holds it after the write, because
    * for a contact the drain stores it as the ActSnapshot and its `edited` as
-   * the sync's baseline -- echo suppression needs ACT!'s `edited`, not ours.
-   * (The inbound sync reads contacts only, so an opportunity's or a line's
-   * record is not stored.) So it is
-   * ALWAYS READ AGAIN after the PATCH, and the PATCH's own answer is not read
-   * at all. Swagger declares a 200 with the record, but an answer that merely
-   * echoed the body sent would carry the `edited` from before the write, and
-   * nothing in a single answer tells the two apart; the next inbound sync
-   * would then take PathQuote's own write for a change made in ACT!. At a few
-   * writes a day the second GET costs nothing, and it is certain. Should that
+   * actSourceEditedAt -- a baseline of what ACT! holds, which has to carry
+   * ACT!'s `edited` after the write, not one from before it. (The inbound
+   * sync reads contacts only, so an opportunity's or a line's record is not
+   * stored.) So it is ALWAYS READ AGAIN after the PATCH, and the PATCH's own
+   * answer is not read at all. Swagger declares a 200 with the record, but an
+   * answer that merely echoed the body sent would carry the `edited` from
+   * before the write, and nothing in a single answer tells the two apart. At
+   * a few writes a day the second GET costs nothing, and it is certain. Should that
    * GET fail, the PATCH has still landed and the error says only that the
    * record could not be read; the drain runs the step again, which decides
    * again on a fresh read -- sending nothing for a promotion or win already

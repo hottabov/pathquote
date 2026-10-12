@@ -22,8 +22,24 @@
 //
 // Called after a finalise, a client's signature or an acceptance for that
 // one quote (`onlyDocumentId`, drainAfterResponse in
-// src/lib/act/drain-after.ts), and -- once Task 8 lands -- by the nightly
-// sync before it reads ACT!, for every row.
+// src/lib/act/drain-after.ts) -- today, the only caller. Task 8 adds the
+// drains over every row: a periodic one every 15 minutes (a systemd timer in
+// the `tools` container), and the nightly sync's, before it reads ACT!.
+// Until then the backoff only says when a row may be tried again; what tries
+// it is its quote's next event.
+//
+// A REQUIREMENT ON TASK 8: THE NIGHTLY SYNC HOLDS THE DRAIN'S LOCK TOO, for
+// the whole run. Today the inbound sync holds only its own key (8_472_001),
+// not DRAIN_LOCK_KEY, so a fast-path contact create near 03:00 can race it:
+// ACT! answers the POST, the sync reads the new contact (its `edited` is
+// newer than the sync's cursor) and imports it as a new PathQuote Contact
+// before the drain has stored the id, and the drain's store then hits
+// Contact.actContactId's unique key. Nothing is created twice -- the contact
+// keeps its in-flight marker, and every quote on it is blocked with
+// UNTRACKED_CONTACT_REASON -- but PathQuote ends up with two contacts for one
+// person, for somebody to merge. Not fixed here: Task 8 takes DRAIN_LOCK_KEY
+// (as well as its own) for the whole of the nightly run, drain and read
+// together, so no fast path can write between them.
 
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { createPrismaClient, db } from "@/lib/db";
@@ -110,8 +126,8 @@ const BATCH = 50;
  * connection, every fast path after a finalise, signature or acceptance finds
  * the lock busy and leaves its row for the next pass, and -- once Task 8
  * drains before the nightly inbound read -- that read waits for it. Task 8's
- * periodic drain runs every 15 minutes, so 5 is a third of that: a pass is
- * over long before the next one is due, and a backlog drains 5 minutes in
+ * periodic drain is to run every 15 minutes, so 5 is a third of that: a pass
+ * is over long before the next one is due, and a backlog drains 5 minutes in
  * every 15 rather than in one sitting. A healthy step is a few requests of
  * well under a second each, so 5 minutes is dozens of rows; a hung ACT! stops
  * the pass at its first unanswered request (`unreachable` in
@@ -177,7 +193,11 @@ export type DrainResult = {
    * them, and the drain's own checks', reopened to be worked again.
    */
   unblocked: number;
-  /** Due rows not tried because the switch was off. */
+  /**
+   * Due rows not tried because the switch was off: all of them when it was
+   * off at the start; when it was turned off part way, the rows the pass had
+   * not yet begun -- not the one it was working, which may be partly written.
+   */
   skippedSwitchOff: number;
   stopReason: string | null;
 };
@@ -316,7 +336,8 @@ export async function drainActOutbox(client: ActClient, options: DrainOptions = 
         if (!(error instanceof StopPass)) throw error;
         result.status = error.status;
         result.stopReason = error.message;
-        if (error.status === "switched-off") result.skippedSwitchOff = work.length - i;
+        // Row i was begun when the switch went off, so it is not "not tried".
+        if (error.status === "switched-off") result.skippedSwitchOff = work.length - i - 1;
         console.warn(`act: drain pass stopped: ${error.message}`);
         break;
       }
@@ -970,15 +991,18 @@ class Pass {
   /**
    * The created contact's id on the Contact, with the record ACT! returned as
    * its ActSnapshot and its `edited` as actSourceEditedAt -- the two the
-   * inbound sync writes for a contact it reads (src/lib/act/sync.ts). This is
-   * the echo suppression: the create bumps `edited`, the sync's cursor, so the
-   * next sync reads this contact again (its filter is `edited ge`), and finds
-   * PathQuote already holding the record and the `edited` it reads -- nothing
-   * of ours that looks like a change made in ACT!. (Nothing compares against
-   * actSourceEditedAt yet; it is the baseline a conflict check would read.)
-   * With no record -- only the id came back -- the snapshot waits for that
-   * sync to write it. The contact's in-flight marker is cleared in the same
-   * update. Nothing on the row: the step's result is the Contact's.
+   * inbound sync writes for a contact it reads (src/lib/act/sync.ts). A
+   * BASELINE, not echo suppression: the create bumps `edited`, the sync's
+   * cursor, so the next sync reads this contact again (its filter is `edited
+   * ge`), and for a contact PathQuote already holds it rewrites
+   * actSourceEditedAt, the snapshot and actAccountMgr and fills empty fields
+   * without comparing anything with what is stored -- harmless here, because
+   * what it reads back is what the drain sent. What is stored here is what
+   * ACT! holds until then, and what a conflict check would compare against;
+   * nothing compares against it yet. With no record -- only the id came back
+   * -- the snapshot waits for that sync to write it. The contact's in-flight
+   * marker is cleared in the same update. Nothing on the row: the step's
+   * result is the Contact's.
    */
   private async storeContactCreated(
     contactId: string,
@@ -1060,7 +1084,7 @@ class Pass {
    * (revisedOpportunityBody), which sends nothing to a closed deal. The row's
    * opportunityActId is stored either way, so the row moves on. No snapshot:
    * the inbound sync reads contacts only, never an opportunity, a product
-   * line or a History, so nothing of ours can come back to it as an echo.
+   * line or a History, so PathQuote keeps no baseline of one.
    */
   private async updateOpportunity(row: Row): Promise<StepOutcome> {
     const quote = this.quote(row);
@@ -1215,7 +1239,7 @@ class Pass {
    * overwritten (contactPromotion leaves any other status alone). Then
    * Document.actContactPromotedForId -- the ACT! id read and patched -- and,
    * when a PATCH went out, the record read back after it as the contact's
-   * ActSnapshot and its `edited` as actSourceEditedAt, the echo suppression
+   * ActSnapshot and its `edited` as actSourceEditedAt, the baseline
    * storeContactCreated describes. The Document first, then the Contact.
    */
   private async promoteContact(row: Row): Promise<StepOutcome> {

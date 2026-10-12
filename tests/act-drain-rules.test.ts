@@ -319,6 +319,13 @@ describe("drainFailure", () => {
     expect(drainFailure(new ActApiError("x", "PATCH", 408, "", "failed"))).toBe("try-later");
   });
 
+  it("stops the pass for a create answered with a redirect, which stays untracked for its marker", () => {
+    const redirected = new ActUntrackedCreateError("POST /api/contacts failed (301, a redirect)", "POST /api/contacts", 301, "", null);
+    expect(drainFailure(redirected)).toBe("stop");
+    expect(createMadeNothing(redirected)).toBe(false);
+    expect(lastErrorText("create-contact", redirected)).toMatch(/checked ACT! for the contact\. POST \/api\/contacts failed \(301, a redirect\)$/);
+  });
+
   it("knows a create that may have made a record though ACT! answered", () => {
     expect(drainFailure(new ActUntrackedCreateError("x", "POST /api/opportunities", null, "", null))).toBe("untracked");
     expect(drainFailure(new ActUntrackedCreateError("x", "POST /api/opportunities", 502, "", null))).toBe("untracked");
