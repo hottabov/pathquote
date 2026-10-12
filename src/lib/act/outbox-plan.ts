@@ -12,6 +12,9 @@
 //   create-contact      only when the quote's contact exists only in PathQuote
 //   create-opportunity  only when the deal has no opportunity yet
 //   update-opportunity  instead, when an earlier revision already made one
+//   write-product-line  the deal's one product line, which carries its amount:
+//                       created the first time, PATCHed in place for a newer
+//                       revision (see THE PRODUCT LINE)
 //   write-history       one History record for this revision
 //   promote-contact     once the client has signed or the quote is accepted:
 //                       the contact goes from Prospect to Customer
@@ -35,6 +38,12 @@
 //                                update mints no new id, so the row records
 //                                which opportunity it updated; that is what
 //                                stops a resumed row updating it twice.
+//   Document.actProductLineId    write-product-line, when it creates the line.
+//                                The deal's one product line, for every later
+//                                revision to PATCH.
+//   Document.actProductLineRevision
+//                                write-product-line, every time it runs: the
+//                                QuoteRevision.revision the line now shows.
 //   QuoteRevision.actHistoryId   write-history, on the revision the row was
 //                                queued for. So the row has to say which:
 //                                ActOutbox.quoteRevisionId, which the drain
@@ -58,10 +67,13 @@
 //   Region.code                  of Document.regionId: which sales process.
 //   Document.signingStatus       SIGNED: the client has signed.
 //   Document.acceptedAt          set: the quote is accepted.
+//   QuoteRevision.revision       of the row's revision: whether the product
+//                                line already shows it.
 //
 // Of these, Contact.actContactId dates from z60_act_sync;
 // ActOutbox.opportunityActId, ActOutbox.quoteRevisionId,
-// Document.actOpportunityId, QuoteRevision.actHistoryId,
+// Document.actOpportunityId, Document.actProductLineId,
+// Document.actProductLineRevision, QuoteRevision.actHistoryId,
 // Document.actContactPromotedForId and Document.actOpportunityWonAt were added
 // by z65_act_outbox.
 //
@@ -96,6 +108,36 @@
 // (src/lib/act/write-payloads.ts); the drain still stores the row's
 // opportunityActId when it sends nothing, so the row moves on to
 // write-history and the revision is journaled.
+//
+// THE PRODUCT LINE. ACT! computes an opportunity's amount from its products
+// and will not take one directly, so the deal's amount is one product line,
+// created once and PATCHed in place by every later revision -- never deleted
+// and re-created (THE DEAL AMOUNT IS ONE PRODUCT LINE in
+// src/lib/act/write-payloads.ts). The step comes after the opportunity step,
+// because the line belongs to the opportunity, and before write-history, so a
+// journaled revision has its amount in ACT! too.
+//
+// Its progress is ONE NUMBER ON THE DOCUMENT: actProductLineRevision, the
+// revision the line shows, beside actProductLineId, the line. The step is due
+// while that number is null or older than the row's revision; it creates the
+// line when actProductLineId is null and updates it otherwise. A number
+// rather than a fact per row or per revision because the question is about
+// the line, of which the deal has one, and "which revision does it show"
+// answers it for whichever row asks. So a new row for a revision the line
+// already shows does not patch it again; a row taken over for a newer
+// revision -- which clears the row's opportunityActId, not this -- does; and
+// should a row ever carry an older revision than the line shows, the newer
+// figure stands rather than an older one being written over it.
+//
+// A CLOSED OPPORTUNITY'S LINE IS LEFT ALONE, by the rule that leaves the
+// opportunity alone (revisedOpportunityBody): its amount is part of the record
+// of how the deal ended. The planner never sees the status, as above. The
+// drain reads the opportunity first and asks opportunityIsOpen
+// (src/lib/act/write-payloads.ts); for any status but Open it sends nothing
+// and still stores actProductLineRevision -- the fact records that the step
+// is done, not that ACT! changed -- so the row moves on to write-history. A
+// deal that is reopened in ACT! gets the next revision's figure as usual,
+// creating the line then if it never had one.
 //
 // DEAL EVENTS: promote-contact and win-opportunity, from the plan's addendum
 // of 2026-10-12. They come after write-history and are checked before "done".
@@ -156,10 +198,12 @@
 // stored runs again, and only that step. What a repeat costs depends on the
 // step -- a repeated create-contact is a DUPLICATE CONTACT in ACT!, a repeated
 // create-opportunity is a SECOND OPPORTUNITY FOR THE DEAL, a repeated
-// write-history is a second History for the revision; a repeated
-// update-opportunity sends the same patch again and is harmless, and a
-// repeated promote-contact or win-opportunity reads back the Customer or Won
-// it already wrote and sends nothing (see DEAL EVENTS). Nothing here
+// write-product-line that created the line is a SECOND PRODUCT LINE, which
+// DOUBLES THE DEAL'S AMOUNT in ACT!, a repeated write-history is a second
+// History for the revision; a repeated update-opportunity, or
+// write-product-line that updated the line, sends the same patch again and is
+// harmless, and a repeated promote-contact or win-opportunity reads back the
+// Customer or Won it already wrote and sends nothing (see DEAL EVENTS). Nothing here
 // can close that window; the drain (Task 7) can only keep it short, by storing
 // each result the moment ACT! answers, before doing anything else with it.
 //
@@ -169,7 +213,11 @@
 // this row moves on to write-history believing the deal has its opportunity,
 // and the next revision's row finds Document.actOpportunityId null and creates
 // a second opportunity for the same deal. (The other way round only re-runs
-// this row's step as an update, which is harmless.)
+// this row's step as an update, which is harmless.) Likewise after
+// write-product-line creates the line: Document.actProductLineId and
+// Document.actProductLineRevision are stored by one UPDATE of the Document.
+// The revision without the id would create a second line on the next
+// revision; the id without the revision only re-runs this step as an update.
 //
 // BLOCKED REASONS ARE READ BY A MANAGER on the quote, so they are sentences
 // that say what to do, in the voice of src/lib/act/sync-view.ts: a fault the
@@ -199,6 +247,11 @@ export type OutboxProgress = {
 /** What the revision this row was queued for (ActOutbox.quoteRevisionId) has stored. */
 export type RevisionProgress = {
   /**
+   * QuoteRevision.revision: 0, 1, 2... Not progress but which revision this
+   * is, compared with Document.actProductLineRevision (THE PRODUCT LINE).
+   */
+  revision: number;
+  /**
    * QuoteRevision.actHistoryId: this revision's History record in ACT!. Null
    * until some row has written it and stored it -- not necessarily this row.
    */
@@ -218,6 +271,14 @@ export type QuoteState = {
   } | null;
   /** Document.actOpportunityId: the deal's opportunity, from this revision or an earlier one. */
   actOpportunityId: string | null;
+  /** Document.actProductLineId: the deal's product line, or null until it is created. */
+  actProductLineId: string | null;
+  /**
+   * Document.actProductLineRevision: the QuoteRevision.revision the product
+   * line was last written for -- or found closed and left alone for -- or
+   * null when the step has never run.
+   */
+  actProductLineRevision: number | null;
   /**
    * Document.signingStatus, as its enum name. "SIGNED" is the client's
    * signature standing; voidSignature puts it back to NOT_SENT. A string
@@ -239,6 +300,8 @@ export type OutboxStep =
   | { kind: "create-contact" }
   | { kind: "create-opportunity" }
   | { kind: "update-opportunity" }
+  /** `create` when the deal has no line yet (Document.actProductLineId null), `update` otherwise. */
+  | { kind: "write-product-line"; line: "create" | "update" }
   | { kind: "write-history" }
   | { kind: "promote-contact" }
   | { kind: "win-opportunity" }
@@ -293,6 +356,11 @@ function promotionDue(quote: QuoteState): boolean {
   return actContactId === null || actContactId !== quote.actContactPromotedForId;
 }
 
+/** The line does not show this revision yet; see THE PRODUCT LINE. */
+function productLineDue(revision: RevisionProgress, quote: QuoteState): boolean {
+  return quote.actProductLineRevision === null || quote.actProductLineRevision < revision.revision;
+}
+
 function winDue(quote: QuoteState): boolean {
   return quote.acceptedAt !== null && quote.actOpportunityWonAt === null;
 }
@@ -332,6 +400,9 @@ export function nextStep(
       // Set means the deal has an opportunity, open or closed; either way it is
       // updated, never replaced (see ONE OPPORTUNITY PER DEAL above).
       return quote.actOpportunityId ? { kind: "update-opportunity" } : { kind: "create-opportunity" };
+    }
+    if (productLineDue(revision, quote)) {
+      return { kind: "write-product-line", line: quote.actProductLineId ? "update" : "create" };
     }
     return { kind: "write-history" };
   }

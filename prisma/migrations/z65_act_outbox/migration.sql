@@ -4,8 +4,9 @@
 -- one (see ONE UNFINISHED ROW PER DOCUMENT below); the plan's addendum of
 -- 2026-10-12 has the client's signature and acceptQuote queue one the same
 -- way. A drain then runs that row's steps against ACT! -- create the contact
--- if ACT! does not have it, create or update the deal's opportunity, write
--- the revision's History, and once the quote is signed or accepted, promote
+-- if ACT! does not have it, create or update the deal's opportunity and the
+-- one product line that carries its amount, write the revision's History,
+-- and once the quote is signed or accepted, promote
 -- the contact to Customer and win the opportunity -- storing each result
 -- before the next step, so a row that fails halfway resumes rather than
 -- repeating. What comes next is decided by src/lib/act/outbox-plan.ts, whose
@@ -13,6 +14,9 @@
 -- did not exist:
 --
 --   Document.actOpportunityId         the deal's opportunity, one per quote
+--   Document.actProductLineId         its one product line, which carries
+--                                     the amount ACT! will not take directly
+--   Document.actProductLineRevision   the revision that line shows
 --   Document.actContactPromotedForId  the ACT! contact promote-contact was
 --                                     done for: once per contact per deal
 --   Document.actOpportunityWonAt      win-opportunity done, once per deal
@@ -57,12 +61,13 @@
 -- differs from statement to statement), so each lock is released when its
 -- statement ends:
 --   - ADD COLUMN takes ACCESS EXCLUSIVE on Document (one statement for its
---     three columns) and on QuoteRevision. The columns are nullable with no
+--     five columns) and on QuoteRevision. The columns are nullable with no
 --     default, so it changes the catalog only and rewrites nothing, but while
 --     it waits for the lock every later query on that table queues behind it.
---   - The two unique indexes, on Document.actOpportunityId and
---     QuoteRevision.actHistoryId, take SHARE on those tables (writes wait,
---     reads do not) and read every row to build, though every value is NULL.
+--   - The three unique indexes, on Document.actOpportunityId,
+--     Document.actProductLineId and QuoteRevision.actHistoryId, take SHARE on
+--     those tables (writes wait, reads do not) and read every row to build,
+--     though every value is NULL.
 --   - The two foreign keys take SHARE ROW EXCLUSIVE on Document and
 --     QuoteRevision, the referenced tables, and validate against ActOutbox,
 --     which is empty.
@@ -73,7 +78,9 @@
 -- AlterTable
 ALTER TABLE "Document" ADD COLUMN     "actContactPromotedForId" TEXT,
 ADD COLUMN     "actOpportunityId" TEXT,
-ADD COLUMN     "actOpportunityWonAt" TIMESTAMP(3);
+ADD COLUMN     "actOpportunityWonAt" TIMESTAMP(3),
+ADD COLUMN     "actProductLineId" TEXT,
+ADD COLUMN     "actProductLineRevision" INTEGER;
 
 -- AlterTable
 ALTER TABLE "QuoteRevision" ADD COLUMN     "actHistoryId" TEXT;
@@ -103,6 +110,9 @@ CREATE INDEX "ActOutbox_quoteRevisionId_idx" ON "ActOutbox"("quoteRevisionId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Document_actOpportunityId_key" ON "Document"("actOpportunityId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Document_actProductLineId_key" ON "Document"("actProductLineId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "QuoteRevision_actHistoryId_key" ON "QuoteRevision"("actHistoryId");

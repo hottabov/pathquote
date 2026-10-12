@@ -1,28 +1,54 @@
 // The request bodies a finalised quote sends to ACT!: the contact, when ACT!
 // does not have it yet; one History record per revision; the Opportunity that
-// stands for the whole deal; and -- once the client signs or the quote is
-// accepted -- the contact's promotion from Prospect to Customer and the
-// opportunity's win. Where a body depends on what ACT! holds now (a later
-// revision's opportunity update, the win, the promotion), the function here
-// takes that state as read back by the drain and decides, including deciding
-// to send nothing.
+// stands for the whole deal, and the one product line that carries its amount;
+// and -- once the client signs or the quote is accepted -- the contact's
+// promotion from Prospect to Customer and the opportunity's win. Where a body
+// depends on what ACT! holds now (a later revision's opportunity update, the
+// win, the promotion), the function here takes that state as read back by the
+// drain and decides, including deciding to send nothing.
 //
 // Pure, and deliberately free of Prisma types: every input is a plain value
 // the drain reads off the quote and hands in. That is what lets the suite test
 // these under `isolate: false` (see vitest.config.ts), and it keeps the one
 // part of the write that decides what ACT! is told out of the I/O shell.
 //
+// THE DEAL AMOUNT IS ONE PRODUCT LINE. ACT! computes an opportunity's amount
+// rather than taking it: `productTotal` (shown as "Total"), `weightedTotal`
+// and `grossMargin` are all `isReadOnly: true, isProtected: true` in
+// RAW/ACT/meta/fields_all.json (the field metadata captured off the production
+// box; a local capture, not committed), and `productTotal` is the sum of the
+// opportunity's products. Swagger marks none of them read-only, which is how an
+// earlier version of this module came to send `productTotal` on every create
+// and revision. Nothing here sends any of the three now. The amount is carried
+// by ONE SUMMARY PRODUCT LINE per deal instead -- summaryProductBody, posted to
+// `/api/opportunities/{opportunityId}/products`: quantity 1, priced at the
+// revision's total, named with the revision and the amount in its currency. A
+// later revision PATCHes that same line in place (summaryProductPatch); it is
+// never deleted and re-created.
+//
+// Why one line and not the quote's lines. The design spec
+// (docs/superpowers/specs/2026-09-08-act-integration-design.md, "Quote line
+// items go to /api/opportunities/{id}/products as free-form entries") wanted
+// every line item. But a revision can add, drop and reprice lines, and keeping
+// a set of products in step with that means deleting the ones that went --
+// while the same spec's guardrail is that PathQuote never calls DELETE in
+// ACT!. One line, patched in place, keeps the opportunity's amount right with
+// no deletes. What was quoted, line by line, is in the quote PDF.
+//
 // THE CURRENCY PROBLEM. An ACT! opportunity has no currency field anywhere --
 // `productTotal`, `weightedTotal`, `grossMargin` and the rest are bare numbers
 // (act.web.api.models.Opportunities.Opportunity in RAW/ACT/swagger.json, a
-// local capture, not committed).
+// local capture, not committed) -- and neither has its product
+// (act.web.api.models.Opportunities.OpportunityProduct: a name, prices, a
+// quantity, a discount, no currency).
 // PathQuote quotes exist in AUD, USD and GBP, and nothing in the schema
 // converts between them. So the currency travels as text where people read it:
 // in the opportunity's `name` ("Q-AU-2026-014 — AUD 45,000.00"), which every
-// ACT! list and lookup shows, and again in the History `details`. The amount
-// still goes into `productTotal`, in the quote's own currency, because it is
-// the opportunity's amount field and an opportunity without one is a deal with
-// no value anywhere ACT! reads it.
+// ACT! list and lookup shows, in the product line's `name`, and again in the
+// History `details`. The amount still reaches `productTotal`, through the
+// product line and in the quote's own currency, because it is the
+// opportunity's amount field and an opportunity without one is a deal with no
+// value anywhere ACT! reads it.
 //
 // WHAT THAT DOES NOT FIX. ACT!'s own pipeline analytics sum `productTotal`
 // across every opportunity they cover, whatever currency each one was quoted
@@ -227,14 +253,16 @@ export type HistoryBody = {
   opportunities?: ActRef[];
 };
 
-/** The body of `POST /api/opportunities`. */
+/**
+ * The body of `POST /api/opportunities`. No amount: ACT! computes
+ * `productTotal` from the products (THE DEAL AMOUNT IS ONE PRODUCT LINE).
+ */
 export type NewOpportunityBody = {
   name: string;
   stage: StageBody;
   probability: number;
   status: OpportunityStatus;
   openDate: string;
-  productTotal: number;
   recordManagerID: string;
   contacts: ActRef[];
   companies?: ActRef[];
@@ -251,10 +279,14 @@ export type OpportunityNow = StagePosition & {
   status: string;
 };
 
-/** A body for `PATCH /api/opportunities/{id}`, which takes a partial opportunity. */
+/**
+ * What a write changes on an opportunity, laid over the record as read
+ * (mergeForWrite in src/lib/act/record-write.ts) before
+ * `PATCH /api/opportunities/{id}`. No amount, for the reason NewOpportunityBody
+ * has none.
+ */
 export type OpportunityPatch = {
   name?: string;
-  productTotal?: number;
   stage?: StageBody;
   probability?: number;
   status?: OpportunityStatus;
@@ -364,7 +396,6 @@ export function newOpportunityBody(quote: QuoteForAct, parties: ActParties): New
     probability: sent.probability,
     status: OPPORTUNITY_STATUS.open,
     openDate: quote.finalizedAt.toISOString(),
-    productTotal: quote.total,
     recordManagerID: recordManager(parties),
     contacts: [{ id: parties.contactActId }],
     ...companiesOf(parties),
@@ -372,13 +403,27 @@ export function newOpportunityBody(quote: QuoteForAct, parties: ActParties): New
 }
 
 /**
+ * Whether ACT! says this opportunity is Open: exactly OPPORTUNITY_STATUS.open,
+ * and nothing else -- not a different case, not a status never seen before,
+ * not a missing one. Everything that writes a revision's figures into an
+ * existing deal asks this first: revisedOpportunityBody for the opportunity,
+ * and the drain, before summaryProductPatch or summaryProductBody, for its
+ * product line. A deal that is not Open is left alone by both.
+ */
+export function opportunityIsOpen(status: string | null): boolean {
+  return status === OPPORTUNITY_STATUS.open;
+}
+
+/**
  * What a later revision does to the deal's existing opportunity.
  *
- * - `patch`: the opportunity is Open. `patch` always carries the name and
- *   total, since a revision can change the price, and the stage (with its
- *   probability) only when `stage` -- stageMove's verdict, handed back so the
- *   drain can report a "different-process" opportunity it did not move -- is
- *   `move`. Never backwards, never across processes, and never a status.
+ * - `patch`: the opportunity is Open. `patch` always carries the name, which
+ *   carries the total, since a revision can change the price, and the stage
+ *   (with its probability) only when `stage` -- stageMove's verdict, handed
+ *   back so the drain can report a "different-process" opportunity it did not
+ *   move -- is `move`. Never backwards, never across processes, never a
+ *   status, and never an amount: the amount is the product line's
+ *   (summaryProductPatch).
  * - `closed`: the opportunity is not Open. Send nothing at all; the revision
  *   is recorded by its History alone. `status` is what ACT! said, for the
  *   drain to report.
@@ -398,7 +443,8 @@ export type RevisionUpdate =
  * A later revision's effect on the deal's existing opportunity.
  *
  * AN OPPORTUNITY THAT IS NOT OPEN IS LEFT ENTIRELY ALONE: no stage, no
- * probability, no name, no total. Won, Lost or Inactive, it is the record of
+ * probability, no name -- and no product line either, which is what keeps its
+ * total (see opportunityIsOpen). Won, Lost or Inactive, it is the record of
  * how the deal ended and at what figure, and silently rewriting a closed
  * record in somebody else's CRM is the worse harm. The
  * History is the journal: it still records that a new revision went out and
@@ -421,7 +467,7 @@ export function revisedOpportunityBody(
   quote: QuoteForAct,
   current: OpportunityNow,
 ): RevisionUpdate {
-  if (current.status !== OPPORTUNITY_STATUS.open) {
+  if (!opportunityIsOpen(current.status)) {
     return { kind: "closed", status: current.status };
   }
   const sent = stagesFor(quote.regionCode).sent;
@@ -431,7 +477,6 @@ export function revisedOpportunityBody(
     stage,
     patch: {
       name: opportunityName(quote),
-      productTotal: quote.total,
       ...(stage === "move" ? { stage: stageBody(sent), probability: sent.probability } : {}),
     },
   };
@@ -527,6 +572,76 @@ export function lostOpportunityBody(reason: string, closedAt: Date): Opportunity
     reason,
     actualCloseDate: closedAt.toISOString(),
   };
+}
+
+/**
+ * What a revision changes on the deal's summary product line, laid over the
+ * line as read before `PATCH /api/opportunities/{opportunityId}/products/{productId}`.
+ * Field names are swagger's (act.web.api.models.Opportunities.OpportunityProduct);
+ * the labels in brackets are ACT!'s, from the `TBL_PRODUCTSERVICE` entries of
+ * RAW/ACT/meta/fields_all.json, which mark none of these read-only.
+ *
+ *   name           ("Name") the revision label and the amount with its
+ *                  currency code. The product has no currency field, so this
+ *                  is where the line says what its number means.
+ *   quantity       ("Quantity") always 1: one line for the whole deal.
+ *   price          ("Price") the revision's total.
+ *   discountPrice  ("Adjusted Price") the same: no discount.
+ *   total          ("Subtotal") the same. Swagger describes it as adjusted
+ *                  price times quantity; it is sent anyway, agreeing with the
+ *                  rest, so the line comes to the revision's total whichever of
+ *                  these ACT! computes from the others -- which has not been
+ *                  seen on a live record.
+ *
+ * Not sent: `discount` (swagger: "ignore on updates"; the create sends 0);
+ * `productID`, the ACT! catalogue product, because the line is free-form by
+ * the design spec's rule that the catalogue lives in PathQuote (whether ACT!
+ * accepts a product with none has not been tried); `cost`, which PathQuote
+ * has no figure for, so ACT!'s Gross Margin for the deal means nothing; and
+ * `type`.
+ */
+export type SummaryProductPatch = {
+  name: string;
+  quantity: 1;
+  price: number;
+  discountPrice: number;
+  total: number;
+};
+
+/**
+ * The body of `POST /api/opportunities/{opportunityId}/products`: the patch's
+ * fields, and `discount` 0, which is ignored on an update but not on a create.
+ */
+export type SummaryProductBody = SummaryProductPatch & { discount: 0 };
+
+/**
+ * The deal's one product line, as this revision has it -- what a later
+ * revision PATCHes in place (THE DEAL AMOUNT IS ONE PRODUCT LINE).
+ *
+ * The name is the revision's label -- "Q-AU-2026-014" for the first,
+ * "Q-AU-2026-014-R2" after that, as the History's `regarding` has it -- then
+ * the amount with its currency code: "Q-AU-2026-014-R2 — AUD 47,500.00". The
+ * label rather than the bare number because the line, unlike the
+ * opportunity, says which revision's figure it is.
+ *
+ * Only for an Open deal. The drain asks opportunityIsOpen of the opportunity
+ * first and, for any other status, leaves the line alone, as
+ * revisedOpportunityBody leaves the opportunity.
+ */
+export function summaryProductPatch(quote: QuoteForAct): SummaryProductPatch {
+  const label = revisionLabel(quote.number, quote.revision) ?? quote.number;
+  return {
+    name: `${label} — ${moneyWithCode(quote.total, quote.currency)}`,
+    quantity: 1,
+    price: quote.total,
+    discountPrice: quote.total,
+    total: quote.total,
+  };
+}
+
+/** The deal's product line as first created: summaryProductPatch, and no discount. */
+export function summaryProductBody(quote: QuoteForAct): SummaryProductBody {
+  return { ...summaryProductPatch(quote), discount: 0 };
 }
 
 /** A body for `PATCH /api/contacts/{id}`: the one field promotion changes. */

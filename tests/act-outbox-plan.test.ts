@@ -13,10 +13,12 @@ const ACT_OTHER_CONTACT = "c0000000-0000-0000-0000-000000000002";
 const ACT_CREATED_CONTACT = "c0000000-0000-0000-0000-000000000003";
 const ACT_OPPORTUNITY = "c0000000-0000-0000-0000-0000000000a0";
 const ACT_HISTORY = "c0000000-0000-0000-0000-0000000000b0";
+const ACT_PRODUCT_LINE = "c0000000-0000-0000-0000-0000000000d0";
 
 const nothingDone: OutboxProgress = { opportunityActId: null };
-const noHistory: RevisionProgress = { actHistoryId: null };
-const journaled: RevisionProgress = { actHistoryId: ACT_HISTORY };
+/** The first revision, 0, not yet journaled. */
+const noHistory: RevisionProgress = { revision: 0, actHistoryId: null };
+const journaled: RevisionProgress = { revision: 0, actHistoryId: ACT_HISTORY };
 
 const ACCEPTED_AT = new Date("2026-11-02T01:00:00.000Z");
 
@@ -24,6 +26,8 @@ const quoteState = (overrides: Partial<QuoteState> = {}): QuoteState => ({
   regionCode: "AU",
   contact: { actContactId: ACT_CONTACT, firstName: "Ross", lastName: "Fielding" },
   actOpportunityId: null,
+  actProductLineId: null,
+  actProductLineRevision: null,
   signingStatus: "NOT_SENT",
   acceptedAt: null,
   actContactPromotedForId: null,
@@ -31,8 +35,9 @@ const quoteState = (overrides: Partial<QuoteState> = {}): QuoteState => ({
   ...overrides,
 });
 
-/** A deal whose finalise row has finished: contact in ACT!, opportunity made, revision journaled. */
-const finishedDeal = (overrides: Partial<QuoteState> = {}) => quoteState({ actOpportunityId: ACT_OPPORTUNITY, ...overrides });
+/** A deal whose finalise row has finished: contact in ACT!, opportunity and its line made for revision 0, revision journaled. */
+const finishedDeal = (overrides: Partial<QuoteState> = {}) =>
+  quoteState({ actOpportunityId: ACT_OPPORTUNITY, actProductLineId: ACT_PRODUCT_LINE, actProductLineRevision: 0, ...overrides });
 
 const pathQuoteOnlyContact = { actContactId: null, firstName: "Ross", lastName: "Fielding" };
 
@@ -56,9 +61,20 @@ function apply(world: World, step: OutboxStep): World {
       };
     case "update-opportunity":
       return { ...world, progress: { ...world.progress, opportunityActId: world.quote.actOpportunityId } };
+    case "write-product-line":
+      // On the Document, in one UPDATE: the line's id when it was created,
+      // and in any case the revision it now shows.
+      return {
+        ...world,
+        quote: {
+          ...world.quote,
+          actProductLineId: step.line === "create" ? ACT_PRODUCT_LINE : world.quote.actProductLineId,
+          actProductLineRevision: world.revision.revision,
+        },
+      };
     case "write-history":
       // Stored on the revision, not the row.
-      return { ...world, revision: { actHistoryId: ACT_HISTORY } };
+      return { ...world, revision: { ...world.revision, actHistoryId: ACT_HISTORY } };
     case "promote-contact":
       // The ACT! id of the contact it promoted, not a time.
       return { ...world, quote: { ...world.quote, actContactPromotedForId: world.quote.contact!.actContactId } };
@@ -114,11 +130,18 @@ describe("nextStep", () => {
     });
   });
 
-  it("writes this revision's history once the opportunity step is done", () => {
+  it("creates the deal's product line once the opportunity step is done", () => {
     const opportunityDone = { opportunityActId: ACT_OPPORTUNITY };
     expect(nextStep(opportunityDone, noHistory, quoteState({ actOpportunityId: ACT_OPPORTUNITY }))).toEqual({
-      kind: "write-history",
+      kind: "write-product-line",
+      line: "create",
     });
+  });
+
+  it("writes this revision's history once the product line shows it", () => {
+    const opportunityDone = { opportunityActId: ACT_OPPORTUNITY };
+    const quote = quoteState({ actOpportunityId: ACT_OPPORTUNITY, actProductLineId: ACT_PRODUCT_LINE, actProductLineRevision: 0 });
+    expect(nextStep(opportunityDone, noHistory, quote)).toEqual({ kind: "write-history" });
   });
 
   it("is done when this revision's history has been written", () => {
@@ -205,22 +228,81 @@ describe("nextStep", () => {
       revision: noHistory,
       quote: quoteState({ contact: pathQuoteOnlyContact }),
     });
-    expect(taken).toEqual(["create-contact", "create-opportunity", "write-history"]);
+    expect(taken).toEqual(["create-contact", "create-opportunity", "write-product-line", "write-history"]);
     expect(nextStep(world.progress, world.revision, world.quote)).toEqual({ kind: "done" });
+    expect(world.quote.actProductLineId).toBe(ACT_PRODUCT_LINE);
+    expect(world.quote.actProductLineRevision).toBe(0);
   });
 
-  it("resumes a re-finalised revision at its history, after updating the opportunity once", () => {
-    // Second revision of a deal: the opportunity already exists on the
-    // Document. The row updates it, records that it did, then writes history.
-    // The same plan whether that opportunity is open or closed -- the planner
-    // is never told its status, so a closed deal cannot lead it to create a
-    // second one. For a closed deal the drain sends nothing in the update
-    // step (revisedOpportunityBody) and still stores opportunityActId.
-    const quote = quoteState({ actOpportunityId: ACT_OPPORTUNITY });
-    expect(nextStep(nothingDone, noHistory, quote)).toEqual({ kind: "update-opportunity" });
+  it("resumes a re-finalised revision at its history, after updating the opportunity and its line once", () => {
+    // Second revision of a deal: the opportunity and its product line already
+    // exist on the Document. The row updates the opportunity, records that it
+    // did, updates the line, records which revision it shows, then writes
+    // history. The same plan whether that opportunity is open or closed -- the
+    // planner is never told its status, so a closed deal cannot lead it to
+    // create a second one. For a closed deal the drain sends nothing in either
+    // update step (revisedOpportunityBody, opportunityIsOpen) and still stores
+    // opportunityActId and actProductLineRevision.
+    const quote = finishedDeal();
+    const revision1: RevisionProgress = { revision: 1, actHistoryId: null };
+    expect(nextStep(nothingDone, revision1, quote)).toEqual({ kind: "update-opportunity" });
     const updated = { opportunityActId: ACT_OPPORTUNITY };
-    expect(nextStep(updated, noHistory, quote)).toEqual({ kind: "write-history" });
-    expect(nextStep(updated, journaled, quote)).toEqual({ kind: "done" });
+    // The line shows revision 0: patched in place, never a second line.
+    expect(nextStep(updated, revision1, quote)).toEqual({ kind: "write-product-line", line: "update" });
+    const lineUpdated = { ...quote, actProductLineRevision: 1 };
+    expect(nextStep(updated, revision1, lineUpdated)).toEqual({ kind: "write-history" });
+    expect(nextStep(updated, { ...revision1, actHistoryId: ACT_HISTORY }, lineUpdated)).toEqual({ kind: "done" });
+  });
+});
+
+describe("nextStep: the deal's one product line", () => {
+  const revision = (n: number): RevisionProgress => ({ revision: n, actHistoryId: null });
+
+  it("runs a later revision's row through the opportunity, the line, then the History, updating the line it already has", () => {
+    const { taken, world } = drive({ progress: nothingDone, revision: revision(3), quote: finishedDeal() });
+    expect(taken).toEqual(["update-opportunity", "write-product-line", "write-history"]);
+    expect(world.quote.actProductLineId).toBe(ACT_PRODUCT_LINE);
+    expect(world.quote.actProductLineRevision).toBe(3);
+  });
+
+  it("does not patch the line again for a revision it already shows", () => {
+    // A row taken over before its History, for the same revision (an
+    // unchanged re-finalise): the line was written; the History was not.
+    const quote = finishedDeal({ actProductLineRevision: 2 });
+    expect(nextStep({ opportunityActId: ACT_OPPORTUNITY }, revision(2), quote)).toEqual({ kind: "write-history" });
+  });
+
+  it("never writes an older revision's figure over a newer one", () => {
+    const quote = finishedDeal({ actProductLineRevision: 4 });
+    expect(nextStep({ opportunityActId: ACT_OPPORTUNITY }, revision(3), quote)).toEqual({ kind: "write-history" });
+  });
+
+  it("moves on when the drain found the deal closed and left the line alone, and creates the line later if it reopens", () => {
+    // Closed: nothing sent, the revision stored, no line id. The planner is
+    // never told the status; it sees only that the step is done.
+    const closedAtRevision1 = quoteState({ actOpportunityId: ACT_OPPORTUNITY, actProductLineRevision: 1 });
+    expect(nextStep({ opportunityActId: ACT_OPPORTUNITY }, revision(1), closedAtRevision1)).toEqual({ kind: "write-history" });
+    // Revision 2, the deal reopened by hand in ACT!: still no line, so create one.
+    expect(nextStep({ opportunityActId: ACT_OPPORTUNITY }, revision(2), closedAtRevision1)).toEqual({
+      kind: "write-product-line",
+      line: "create",
+    });
+  });
+
+  it("updates rather than creates whenever a line id is stored, even with no revision beside it", () => {
+    // Not reachable when the drain stores both in one UPDATE; if the database
+    // says otherwise, a patch is the harmless repeat and a create is a second line.
+    const quote = finishedDeal({ actProductLineRevision: null });
+    expect(nextStep({ opportunityActId: ACT_OPPORTUNITY }, revision(0), quote)).toEqual({
+      kind: "write-product-line",
+      line: "update",
+    });
+  });
+
+  it("is not reached once the revision is journaled, whatever the line shows", () => {
+    // The line step comes before write-history; a journaled revision had it.
+    const quote = finishedDeal({ actProductLineRevision: null, actProductLineId: null });
+    expect(nextStep(nothingDone, { revision: 0, actHistoryId: ACT_HISTORY }, quote)).toEqual({ kind: "done" });
   });
 });
 
@@ -278,7 +360,14 @@ describe("nextStep: a won quote promotes its contact and wins its opportunity", 
       revision: noHistory,
       quote: quoteState({ contact: pathQuoteOnlyContact, signingStatus: "SIGNED", acceptedAt: ACCEPTED_AT }),
     });
-    expect(taken).toEqual(["create-contact", "create-opportunity", "write-history", "promote-contact", "win-opportunity"]);
+    expect(taken).toEqual([
+      "create-contact",
+      "create-opportunity",
+      "write-product-line",
+      "write-history",
+      "promote-contact",
+      "win-opportunity",
+    ]);
   });
 
   it("reverses nothing when the signature is voided after the promotion", () => {

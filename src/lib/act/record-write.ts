@@ -16,10 +16,11 @@ export type HttpMethod = "GET" | "POST" | "PATCH";
  * the first did.
  *
  * POST is never repeated. Every POST this client sends creates a record -- a
- * History, an opportunity, a contact -- and a request that timed out or came
- * back 5xx may still have been committed, with only the answer lost. Sending
- * it again would then put a second History on the contact, a second
- * opportunity in the pipeline, or a duplicate person in ACT!.
+ * History, an opportunity, a contact, an opportunity's product line -- and a
+ * request that timed out or came back 5xx may still have been committed, with
+ * only the answer lost. Sending it again would then put a second History on
+ * the contact, a second opportunity in the pipeline, a duplicate person in
+ * ACT!, or a second product line on the deal, doubling its amount.
  */
 export function isRetried(method: HttpMethod): boolean {
   return method !== "POST";

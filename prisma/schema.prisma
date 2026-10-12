@@ -1062,6 +1062,21 @@ model Document {
   /// Kept here, rather than as a PathQuote id stamped into an ACT! custom
   /// field, for the reason given on ActOutbox.
   actOpportunityId        String?             @unique
+  /// The deal's one product line on that opportunity in ACT!, which carries
+  /// its amount: ACT! computes an opportunity's total from its products and
+  /// will not take one directly (THE DEAL AMOUNT IS ONE PRODUCT LINE in
+  /// src/lib/act/write-payloads.ts). Created once by the outbox's
+  /// write-product-line step and PATCHed in place by every later revision --
+  /// never deleted and re-created, because PathQuote never calls DELETE in
+  /// ACT!. Null until created. Unique for the reason actOpportunityId is.
+  actProductLineId        String?             @unique
+  /// The QuoteRevision.revision that product line was last written for, or
+  /// found on a closed deal and left alone for; null until the step has run.
+  /// The planner's progress for write-product-line (src/lib/act/outbox-plan.ts,
+  /// THE PRODUCT LINE): due while this is null or older than the outbox row's
+  /// revision. Stored in the same UPDATE as actProductLineId when the line is
+  /// created.
+  actProductLineRevision  Int?
   /// The ACT! contact (its Contact.actContactId) the outbox's promote-contact
   /// step was last done for on this deal: moved from Prospect to Customer in
   /// ACT!, or found not to be a Prospect and left alone (a status PathQuote
@@ -1609,14 +1624,16 @@ model ActSnapshot {
 /// queue a row the same way.
 ///
 /// A row is a short sequence of steps -- create the contact if ACT! does not
-/// have it, create or update the deal's opportunity, write this revision's
-/// History, then, once the client has signed or the quote is accepted,
+/// have it, create or update the deal's opportunity and the product line that
+/// carries its amount, write this revision's History, then, once the client
+/// has signed or the quote is accepted,
 /// promote the contact to Customer and win the opportunity -- and
 /// src/lib/act/outbox-plan.ts decides which comes next from what has already
 /// been stored. Each step's result is stored before the next begins, so a row
 /// that fails halfway resumes where it stopped rather than repeating what
 /// ACT! already has. The results live where they belong, not all on the row:
 /// Contact.actContactId, Document.actOpportunityId,
+/// Document.actProductLineId and actProductLineRevision,
 /// Document.actContactPromotedForId, Document.actOpportunityWonAt and
 /// QuoteRevision.actHistoryId, plus this row's own opportunityActId.
 ///

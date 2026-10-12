@@ -9,7 +9,10 @@ import {
   moneyWithCode,
   newContactBody,
   newOpportunityBody,
+  opportunityIsOpen,
   revisedOpportunityBody,
+  summaryProductBody,
+  summaryProductPatch,
   wonOpportunityBody,
   type QuoteForAct,
   type ActParties,
@@ -108,8 +111,17 @@ describe("newOpportunityBody", () => {
     expect(body.status).toBe(OPPORTUNITY_STATUS.open);
     expect(body.openDate).toBe("2026-10-12T04:30:00.000Z");
     expect(body.contacts).toEqual([{ id: CONTACT }]);
-    expect(body.productTotal).toBe(45000);
     expect(body.recordManagerID).toBe(AUTHOR);
+  });
+
+  it("sends no amount: ACT! computes the opportunity's totals from its products", () => {
+    // productTotal, weightedTotal and grossMargin are isReadOnly and
+    // isProtected in RAW/ACT/meta/fields_all.json. The amount is the summary
+    // product line's (summaryProductBody).
+    const body = newOpportunityBody(quote(), parties({ companyActId: COMPANY }));
+    for (const computed of ["productTotal", "weightedTotal", "grossMargin"]) {
+      expect(body).not.toHaveProperty(computed);
+    }
   });
 
   it("puts a US quote on the US process with its own currency", () => {
@@ -151,7 +163,10 @@ describe("revisedOpportunityBody", () => {
     const { patch, stage } = patchOf(revisedOpportunityBody(quote({ total: 47500 }), open(3)));
     expect(stage).toBe("move");
     expect(patch.name).toBe("Q-AU-2026-014 — AUD 47,500.00");
-    expect(patch.productTotal).toBe(47500);
+    // The new total reaches the amount through the product line, not here.
+    expect(patch).not.toHaveProperty("productTotal");
+    expect(patch).not.toHaveProperty("weightedTotal");
+    expect(patch).not.toHaveProperty("grossMargin");
     expect(patch.stage).toMatchObject({ id: sentStage("AU")!.id });
     expect(patch.probability).toBe(40);
   });
@@ -262,6 +277,57 @@ describe("wonOpportunityBody", () => {
     // close date, once per deal: the planner never plans the win again.
     const update = wonOpportunityBody("AU", { processId: SALES_CYCLE, number: 4, status: "won" }, FINALISED);
     expect(update).toMatchObject({ kind: "patch", found: "won", patch: { status: OPPORTUNITY_STATUS.won } });
+  });
+});
+
+describe("opportunityIsOpen", () => {
+  it("is true for exactly Open, and false for every closed status, a different case, a stranger and none", () => {
+    expect(opportunityIsOpen("Open")).toBe(true);
+    for (const status of ["Won", "Lost", "Inactive", "open", " Open", "Pending", "", null]) {
+      expect(opportunityIsOpen(status)).toBe(false);
+    }
+  });
+
+  it("is the rule revisedOpportunityBody leaves a deal alone by", () => {
+    for (const status of ["Open", "Won", "Lost", "Inactive", "open"]) {
+      const kind = revisedOpportunityBody(quote(), { processId: SALES_CYCLE, number: 3, status }).kind;
+      expect(kind === "patch").toBe(opportunityIsOpen(status));
+    }
+  });
+});
+
+describe("summaryProductBody and summaryProductPatch", () => {
+  it("prices one line, quantity 1, at the revision's total, named with the revision and the currency", () => {
+    expect(summaryProductPatch(quote({ revision: 2, total: 47500 }))).toEqual({
+      name: "Q-AU-2026-014-R2 — AUD 47,500.00",
+      quantity: 1,
+      price: 47500,
+      discountPrice: 47500,
+      total: 47500,
+    });
+  });
+
+  it("names the first revision by the bare quote number, as the History does", () => {
+    expect(summaryProductPatch(quote({ revision: 0 })).name).toBe("Q-AU-2026-014 — AUD 45,000.00");
+  });
+
+  it("keeps the currency code in the name, the product having no currency field", () => {
+    const line = summaryProductPatch(quote({ number: "Q-US-2026-003", regionCode: "US", currency: "USD", total: 12345.6 }));
+    expect(line.name).toBe("Q-US-2026-003-R1 — USD 12,345.60");
+    expect(line).not.toHaveProperty("currency");
+  });
+
+  it("creates the line with a zero discount, which a patch leaves out (swagger: ignored on updates)", () => {
+    const q = quote({ total: 47500 });
+    expect(summaryProductBody(q)).toEqual({ ...summaryProductPatch(q), discount: 0 });
+    expect(summaryProductPatch(q)).not.toHaveProperty("discount");
+  });
+
+  it("is free-form: no catalogue product, no cost, no id of its own", () => {
+    const body = summaryProductBody(quote());
+    for (const field of ["productID", "cost", "id", "opportunityID", "type"]) {
+      expect(body).not.toHaveProperty(field);
+    }
   });
 });
 

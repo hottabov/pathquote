@@ -135,6 +135,28 @@ export type ActOpportunity = {
 };
 
 /**
+ * One product line of an opportunity
+ * (`act.web.api.models.Opportunities.OpportunityProduct` in swagger), trimmed
+ * to the fields the write-back sends or reads. PathQuote keeps exactly one per
+ * deal, carrying its amount (summaryProductBody in
+ * src/lib/act/write-payloads.ts). `id` is the line's own id -- what
+ * Document.actProductLineId holds and the path of a PATCH names -- not
+ * `productID`, which would be an ACT! catalogue product and is not set.
+ * Nullable for the reason ActUser's fields are.
+ */
+export type ActProductLine = {
+  id: string;
+  opportunityID: string | null;
+  name: string | null;
+  quantity: number | null;
+  price: number | null;
+  discountPrice: number | null;
+  total: number | null;
+  created: string | null;
+  edited: string | null;
+};
+
+/**
  * The fields of a contact an update may change: any of ActContact's own
  * except `id`, `created` and `edited`, which ACT! sets, with `customFields`
  * naming only the custom fields to change. How it is laid over the record is mergeForWrite in

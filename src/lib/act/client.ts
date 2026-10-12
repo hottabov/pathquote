@@ -12,6 +12,7 @@ import type {
   ActHistoryRecord,
   ActOpportunity,
   ActPicklistItem,
+  ActProductLine,
   ActUser,
 } from "@/lib/act/types";
 import type {
@@ -19,6 +20,8 @@ import type {
   NewContactBody,
   NewOpportunityBody,
   OpportunityPatch,
+  SummaryProductBody,
+  SummaryProductPatch,
 } from "@/lib/act/write-payloads";
 
 // HTTP against the Act! Web API. Every judgement this integration makes lives
@@ -108,7 +111,7 @@ type Outgoing = { method: HttpMethod; body?: unknown };
  * JSON, no id in it, or an id whose read-back failed.
  * Not retried here (see `send`), and not an ordinary failure for the caller
  * either: running the same create again is what turns this into a duplicate
- * History, opportunity or contact. A plain ActApiError, by contrast, is a
+ * History, opportunity, contact or product line. A plain ActApiError, by contrast, is a
  * create ACT! refused, which made nothing.
  */
 export class ActUntrackedCreateError extends Error {
@@ -144,7 +147,8 @@ export class ActUntrackedCreateError extends Error {
  *               failures says the record was not created -- the server may
  *               have committed it and only the answer been lost. Sending it
  *               again would create a second History, a second opportunity for
- *               the deal, or a duplicate contact. A timeout or network failure
+ *               the deal, a duplicate contact, or a second product line --
+ *               which doubles the deal's amount. A timeout or network failure
  *               throws ActUntrackedCreateError; a 5xx comes back as a reply,
  *               which `parse` turns into the same error.
  *
@@ -246,6 +250,14 @@ function opportunityPath(id: string): string {
 
 function contactPath(id: string): string {
   return `/api/contacts/${encodeURIComponent(id)}`;
+}
+
+function productLinesPath(opportunityId: string): string {
+  return `${opportunityPath(opportunityId)}/products`;
+}
+
+function productLinePath(opportunityId: string, productId: string): string {
+  return `${productLinesPath(opportunityId)}/${encodeURIComponent(productId)}`;
 }
 
 export class ActClient {
@@ -488,6 +500,37 @@ export class ActClient {
   }
 
   /**
+   * Create the deal's product line: `POST /api/opportunities/{opportunityId}/products`
+   * (`Opportunities_PostOpportunityProductAndOpportunityId`). Sent once, like
+   * every create; an answer of only the new line's id is read back from
+   * `/api/opportunities/{opportunityId}/products/{productId}`.
+   */
+  async createProductLine(opportunityId: string, body: SummaryProductBody): Promise<ActProductLine> {
+    return (await this.create(productLinesPath(opportunityId), body, (id) =>
+      productLinePath(opportunityId, id),
+    )) as unknown as ActProductLine;
+  }
+
+  /**
+   * Change the deal's product line: read it, lay `patch` over it, and
+   * `PATCH /api/opportunities/{opportunityId}/products/{productId}`
+   * (`Opportunities_PatchOpportunityProductAndOpportunityIdAndProductId`) the
+   * whole line back. See `update`. Never a DELETE and a new line: see THE DEAL
+   * AMOUNT IS ONE PRODUCT LINE in src/lib/act/write-payloads.ts.
+   */
+  async updateProductLine(
+    opportunityId: string,
+    productId: string,
+    patch: SummaryProductPatch,
+  ): Promise<ActProductLine> {
+    return (await this.update(
+      productLinePath(opportunityId, productId),
+      productId,
+      patch,
+    )) as unknown as ActProductLine;
+  }
+
+  /**
    * Create one contact: `POST /api/contacts` (`Contacts_PostContact`). The
    * answer is the whole contact (design doc, verified 2026-10-07), every
    * field ACT! filled in included -- the drain's first ActSnapshot of it.
@@ -530,7 +573,8 @@ export class ActClient {
    * `GET /api/users` -- the path is in the reference's endpoint table
    * (docs/act-integration-reference.md section 3) and in swagger.json as
    * `Users_Get`, returning `act.web.api.models.Users.UserInfo`. A GET: the
-   * client writes only Histories, opportunities and contacts, and the users
+   * client writes only Histories, opportunities, their product lines and
+   * contacts, and the users
    * endpoint's POST is not reachable from here.
    *
    * Not paged, because the endpoint takes no parameters at all -- swagger lists
