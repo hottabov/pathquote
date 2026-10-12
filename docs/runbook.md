@@ -835,9 +835,11 @@ TAG=$(git rev-parse HEAD) docker compose run --rm -T tools npm run act:weekly-re
 TAG=$(git rev-parse HEAD) docker compose run --rm -T tools npm run act:weekly-report -- --send-to you@pathfindercut.com
 ```
 
-`--dry-run` sends nothing and prints, per manager, the four numbers and every
-history type they have in the window, so a count can be checked against ACT!'s
-History tab. `--send-to` sends every report to one address with no CC.
+`--dry-run` sends nothing and prints, per manager, the four numbers, every
+history type they have in the window (so a count can be checked against ACT!'s
+History tab) and the email exactly as it would go: From, To, Cc, Reply-To,
+Subject and the text body. Nothing is stored anywhere; the sent emails are the
+only record. `--send-to` sends every report to one address with no CC.
 `--from`/`--to` are inclusive Melbourne days. The `--` is required; without it
 the script refuses rather than sending for real.
 

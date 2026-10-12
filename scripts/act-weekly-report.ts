@@ -116,6 +116,18 @@ async function main(): Promise<number> {
       console.log(
         `    all history in the window: ${breakdown.length ? breakdown.map((t) => `${t.name} ${t.count}`).join(", ") : "none"}`,
       );
+      // The email exactly as it would go: headers, then the plain-text body.
+      // The HTML part carries the same words with the numbers in a table;
+      // --send-to shows it rendered.
+      console.log("    ---------------- would send ----------------");
+      console.log(`    From:     ${from}`);
+      console.log(`    To:       ${to}`);
+      console.log(`    Cc:       ${cc.length ? cc.join(", ") : "(none)"}`);
+      console.log(`    Reply-To: ${WEEKLY_REPORT_REPLY_TO}`);
+      console.log(`    Subject:  ${email.subject}`);
+      console.log("");
+      for (const line of email.text.split("\n")) console.log(`    ${line}`);
+      console.log("    --------------------------------------------");
       continue;
     }
 

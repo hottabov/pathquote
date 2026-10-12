@@ -15,8 +15,11 @@ export const WEEKLY_REPORT_SENDER_NAME = "Pathfinder Marketing";
 /** Where a manager's reply lands: the From address receives nothing. */
 export const WEEKLY_REPORT_REPLY_TO = "marketing@pathfindercut.com";
 
+const MONTE_KIMBALL = "monte@pathfindercut.com";
+const JOHN_HOLLO = "john@pathfindercut.com";
+
 export const WEEKLY_REPORT_MANAGERS: readonly ManagerConfig[] = [
-  { actUser: "Brandon Clark", cc: [] },
-  { actUser: "Chris Gilmartin", cc: [] },
-  { actUser: "John Kyprianou", cc: [] },
+  { actUser: "Brandon Clark", cc: [MONTE_KIMBALL, JOHN_HOLLO] },
+  { actUser: "Chris Gilmartin", cc: [MONTE_KIMBALL, JOHN_HOLLO] },
+  { actUser: "John Kyprianou", cc: [JOHN_HOLLO] },
 ];
