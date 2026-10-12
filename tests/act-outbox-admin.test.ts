@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  ACT_CONTACT_CHECK_LIMITS,
   ACT_LOOKUP_FAILED_ERROR,
   ACT_UNREACHABLE_ERROR,
   BAD_ACT_ID_ERROR,
@@ -26,7 +27,15 @@ import {
   UNTRACKED_CONTACT_REASON,
   unmappedRegionReason,
 } from "../src/lib/act/outbox-plan";
-import { ActApiError, ActNoAnswerError, ActNotSentError } from "../src/lib/act/client";
+import {
+  ActApiError,
+  ActNoAnswerError,
+  ActNotSentError,
+  DEFAULT_REQUEST_LIMITS,
+  attemptsFor,
+  requestBudgetMs,
+  singleReadBudgetMs,
+} from "../src/lib/act/client";
 
 const NOW = new Date("2026-10-13T03:00:00.000Z");
 const ACT_ID = "2f6c1a9e-4b7d-4c2e-9a51-0d3e8f7b6a10";
@@ -298,6 +307,53 @@ describe("actLookupFailure: what an error asking ACT! for the contact means", ()
     ]) {
       expect(actLookupFailure(error)).toEqual({ kind: "failed" });
     }
+  });
+});
+
+describe("ACT_CONTACT_CHECK_LIMITS: the check answers inside nginx's 60 seconds", () => {
+  /** nginx's proxy_read_timeout on the VPS (measured; see runActSyncNow). */
+  const NGINX_MS = 60_000;
+
+  it("is one attempt of 10 seconds a request", () => {
+    expect(ACT_CONTACT_CHECK_LIMITS).toEqual({ timeoutMs: 10_000, attempts: 1 });
+    expect(attemptsFor("GET", ACT_CONTACT_CHECK_LIMITS)).toBe(1);
+    expect(requestBudgetMs(ACT_CONTACT_CHECK_LIMITS)).toBe(10_000);
+  });
+
+  it("gives up within 40 seconds even after a 401 -- two logins and two GETs -- where the usual limits run past nginx", () => {
+    expect(singleReadBudgetMs(ACT_CONTACT_CHECK_LIMITS)).toBe(40_000);
+    expect(singleReadBudgetMs(ACT_CONTACT_CHECK_LIMITS)).toBeLessThan(NGINX_MS);
+    // What it was: one GET alone outlasts nginx.
+    expect(requestBudgetMs(DEFAULT_REQUEST_LIMITS)).toBeGreaterThan(NGINX_MS);
+  });
+
+  it("leaves every other client as it was: 30 seconds, three tries of a GET or a PATCH, 93 seconds a GET", () => {
+    expect(DEFAULT_REQUEST_LIMITS).toEqual({ timeoutMs: 30_000, attempts: 3 });
+    expect(attemptsFor("GET", DEFAULT_REQUEST_LIMITS)).toBe(3);
+    expect(attemptsFor("PATCH", DEFAULT_REQUEST_LIMITS)).toBe(3);
+    expect(requestBudgetMs(DEFAULT_REQUEST_LIMITS)).toBe(93_000);
+  });
+
+  it("never sends a POST twice, whatever the limits say", () => {
+    expect(attemptsFor("POST", DEFAULT_REQUEST_LIMITS)).toBe(1);
+    expect(attemptsFor("POST", { timeoutMs: 1_000, attempts: 5 })).toBe(1);
+  });
+
+  it("makes at least one attempt, whatever the limits say", () => {
+    expect(attemptsFor("GET", { timeoutMs: 1_000, attempts: 0 })).toBe(1);
+  });
+
+  it("refuses with 'try again in a few minutes' when its one try times out", () => {
+    const timedOut = new ActNoAnswerError("GET /api/contacts/x", 1, "The operation was aborted due to timeout");
+    expect(timedOut.message).toBe("GET /api/contacts/x failed after 1 attempt: The operation was aborted due to timeout");
+    const lookup = actLookupFailure(timedOut);
+    expect(actContactCheck({ actContactId: ACT_ID, lookup, held: { firstName: "Nora", lastName: "Quinn", email: null } })).toBe(
+      ACT_UNREACHABLE_ERROR,
+    );
+    // The login timing out first: the client reports the GET as not sent.
+    const loginTimedOut = new ActNotSentError("GET /api/contacts/x", "authorising failed first: timeout");
+    expect(actLookupFailure(loginTimedOut)).toEqual({ kind: "unreachable" });
+    expect(ACT_UNREACHABLE_ERROR).toMatch(/could not reach ACT!.*Try again in a few minutes\.$/);
   });
 });
 

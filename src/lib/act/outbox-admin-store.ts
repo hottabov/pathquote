@@ -10,9 +10,11 @@
 // drain, without a session.
 //
 // One call into ACT! is made here: "ACT! has this person" reads the typed id
-// back from ACT! (lookUpActContact) before it writes anything. It is made
-// between the reads and the write, never inside a transaction, so no row or
-// contact is locked while ACT! answers (requirement 3 in
+// back from ACT! (lookUpActContact) before it writes anything, on a client
+// with short limits (ACT_CONTACT_CHECK_LIMITS in src/lib/act/outbox-admin.ts)
+// so that it gives up within nginx's 60 seconds rather than after them. It
+// is made between the reads and the write, never inside a transaction, so no
+// row or contact is locked while ACT! answers (requirement 3 in
 // src/lib/act/outbox.ts): each write is one statement or one short
 // transaction, and the contact's write is guarded on the hold the action read
 // -- so a hold the drain or another administrator changed during the call is
@@ -22,6 +24,7 @@ import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { actClientFromEnv } from "@/lib/act/client";
 import {
+  ACT_CONTACT_CHECK_LIMITS,
   CONTACT_NOT_HELD_ERROR,
   ROW_CHANGED_ERROR,
   BAD_ACT_ID_ERROR,
@@ -149,10 +152,16 @@ async function settleContact(
  * (actLookupFailure). A failure is logged for the developer, whom
  * ACT_LOOKUP_FAILED_ERROR sends the administrator to; a 404 is ACT!'s
  * answer, not a failure, and is not logged.
+ *
+ * On a client of its own with ACT_CONTACT_CHECK_LIMITS -- one attempt of 10
+ * seconds a request, so at most 40 seconds in all -- not the usual limits,
+ * under which a hung ACT! keeps the button spinning past nginx's 60. A request
+ * that times out is ActNoAnswerError (a login that does, ActNotSentError):
+ * `unreachable`, refused with ACT_UNREACHABLE_ERROR, and nothing written.
  */
 async function lookUpActContact(actContactId: string): Promise<ActContactLookup> {
   try {
-    const contact = await actClientFromEnv().getContact(actContactId);
+    const contact = await actClientFromEnv(ACT_CONTACT_CHECK_LIMITS).getContact(actContactId);
     return { kind: "found", firstName: contact.firstName, lastName: contact.lastName, email: contact.emailAddress };
   } catch (error) {
     const lookup = actLookupFailure(error);

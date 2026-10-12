@@ -578,7 +578,8 @@
 //   -- each guarded the same way, and also on the contact having no ACT! id
 //   yet and the marker being the one the action read. "ACT! has this
 //   person" first reads the id back from ACT! (GET /api/contacts/{id}),
-//   outside any transaction, and links nothing when ACT! has no such
+//   outside any transaction and within 40 seconds (ACT_CONTACT_CHECK_LIMITS,
+//   one try of 10 seconds a request), and links nothing when ACT! has no such
 //   contact, cannot be asked, or holds somebody whose name and email both
 //   differ from the PathQuote contact's (actContactCheck). Each also makes
 //   due, at once, every quote on the contact still held for it (blockedBy

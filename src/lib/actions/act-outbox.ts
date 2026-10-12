@@ -80,8 +80,10 @@ export async function retryActWrite(documentId: string): Promise<ActOutboxAction
 /**
  * "ACT! has this person": the held contact is given the ACT! id typed in,
  * once ACT! has confirmed a contact with that id whose name or email matches
- * (actContactCheck in src/lib/act/outbox-admin.ts). Waits on ACT!'s answer,
- * which the client retries for a while when ACT! does not answer.
+ * (actContactCheck in src/lib/act/outbox-admin.ts). Waits on ACT!'s answer
+ * for 40 seconds at most -- one try of 10 seconds a request
+ * (ACT_CONTACT_CHECK_LIMITS, same file) -- so that an ACT! that does not
+ * answer is refused before nginx gives up on the request at 60.
  */
 export async function linkHeldContact(documentId: string, actContactId: string): Promise<ActOutboxActionResult> {
   await requireAdmin();

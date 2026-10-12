@@ -168,6 +168,55 @@ const MAX_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 1_000;
 
 /**
+ * How long one attempt at a request waits for its whole answer (`timeoutMs`),
+ * and how many attempts a GET or a PATCH gets before the client gives up
+ * (`attempts`; a POST is sent once whatever this says -- see `send`). A
+ * client keeps the limits it was built with for every request it makes, its
+ * logins included.
+ *
+ * Every client is built with DEFAULT_REQUEST_LIMITS -- 30 seconds, three
+ * attempts -- but one: the check behind "ACT! has this person"
+ * (ACT_CONTACT_CHECK_LIMITS in src/lib/act/outbox-admin.ts), which has a
+ * person waiting on it behind nginx.
+ */
+export type ActRequestLimits = { timeoutMs: number; attempts: number };
+
+/** REQUEST_TIMEOUT_MS and MAX_ATTEMPTS: what every client but one is built with. */
+export const DEFAULT_REQUEST_LIMITS: ActRequestLimits = { timeoutMs: REQUEST_TIMEOUT_MS, attempts: MAX_ATTEMPTS };
+
+/**
+ * How many times `send` makes a request with `method`: `limits.attempts`
+ * (at least one) for a GET or a PATCH, once for a POST (isRetried in
+ * src/lib/act/record-write.ts).
+ */
+export function attemptsFor(method: HttpMethod, limits: ActRequestLimits): number {
+  return isRetried(method) ? Math.max(1, Math.floor(limits.attempts)) : 1;
+}
+
+/**
+ * The longest one GET can take under `limits` before `send` gives up: every
+ * attempt timing out, and the waits between them (RETRY_DELAY_MS times the
+ * attempt that failed). 93 seconds under DEFAULT_REQUEST_LIMITS: 30 + 1 + 30
+ * + 2 + 30.
+ */
+export function requestBudgetMs(limits: ActRequestLimits): number {
+  const attempts = attemptsFor("GET", limits);
+  let waits = 0;
+  for (let attempt = 1; attempt < attempts; attempt++) waits += RETRY_DELAY_MS * attempt;
+  return attempts * limits.timeoutMs + waits;
+}
+
+/**
+ * The longest one call of a client just built can take that reads a single
+ * record (getContact, say): four requests at most -- the login (a new client
+ * has no token), the GET, and on a 401 a second login and the GET again
+ * (`request`) -- each within requestBudgetMs.
+ */
+export function singleReadBudgetMs(limits: ActRequestLimits): number {
+  return 4 * requestBudgetMs(limits);
+}
+
+/**
  * `location` is the Location header, for a redirect's message, and
  * `retryAfter` the Retry-After header, for a 429 or a 408; each null when
  * there is none.
@@ -287,7 +336,7 @@ export class ActNoAnswerError extends Error {
     reason: string,
     options?: { cause?: unknown },
   ) {
-    super(`${request} failed after ${attempts} attempts: ${reason}`, options);
+    super(`${request} failed after ${attempts === 1 ? "1 attempt" : `${attempts} attempts`}: ${reason}`, options);
     this.name = "ActNoAnswerError";
   }
 }
@@ -297,7 +346,8 @@ export class ActNoAnswerError extends Error {
  * isRetried in src/lib/act/record-write.ts, which this follows exactly:
  *
  *   GET, PATCH  sent again when the network fails, the request times out or
- *               the server answers 5xx, up to MAX_ATTEMPTS attempts in all.
+ *               the server answers 5xx, up to the client's attempts in all
+ *               (ActRequestLimits: MAX_ATTEMPTS, for every client but one).
  *               A GET changes nothing, and every PATCH this client sends
  *               carries the whole record, so a second copy writes what the
  *               first did.
@@ -363,9 +413,10 @@ async function send(
   label: string,
   url: string,
   headers: Record<string, string>,
-  outgoing: Outgoing = { method: "GET" },
+  outgoing: Outgoing,
+  limits: ActRequestLimits,
 ): Promise<Reply> {
-  const attempts = isRetried(outgoing.method) ? MAX_ATTEMPTS : 1;
+  const attempts = attemptsFor(outgoing.method, limits);
 
   let target: URL;
   let sentHeaders: Headers;
@@ -393,7 +444,7 @@ async function send(
         ...(body === undefined ? {} : { body }),
         // Never followed: see REDIRECTS above.
         redirect: "manual",
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: AbortSignal.timeout(limits.timeoutMs),
       });
       const text = await response.text();
       if (response.status < 500 || attempt === attempts) {
@@ -587,7 +638,14 @@ export class ActClient {
   private token: string | null = null;
   private tokenExpiresAt = 0;
 
-  constructor(private readonly config: ActClientConfig) {}
+  /**
+   * `limits` is how long each request waits and how often a GET or PATCH is
+   * tried, for every request this client makes (ActRequestLimits).
+   */
+  constructor(
+    private readonly config: ActClientConfig,
+    private readonly limits: ActRequestLimits = DEFAULT_REQUEST_LIMITS,
+  ) {}
 
   /**
    * The login this client authorises as -- ACT_USER, for a client from
@@ -603,10 +661,16 @@ export class ActClient {
       `${this.config.username}:${this.config.password}`,
     ).toString("base64");
 
-    const { ok, status, body, retryAfter } = await send("authorize", `${this.config.baseUrl}/authorize`, {
-      Authorization: `Basic ${credentials}`,
-      "Act-Database-Name": this.config.database,
-    });
+    const { ok, status, body, retryAfter } = await send(
+      "authorize",
+      `${this.config.baseUrl}/authorize`,
+      {
+        Authorization: `Basic ${credentials}`,
+        "Act-Database-Name": this.config.database,
+      },
+      { method: "GET" },
+      this.limits,
+    );
     if (!ok) {
       throw new ActApiError(
         `authorize failed (${status}). Check the username is the Act! display name, the database name, and that the account has the "Web API Access" permission -- a missing permission is 4032.`,
@@ -662,6 +726,7 @@ export class ActClient {
         "Act-Database-Name": this.config.database,
       },
       outgoing,
+      this.limits,
     );
   }
 
@@ -1307,17 +1372,21 @@ export class ActClient {
 }
 
 /** Build a client from the environment. Throws with the missing names rather
- * than failing later with an unhelpful 401. */
-export function actClientFromEnv(): ActClient {
+ * than failing later with an unhelpful 401. `limits` is DEFAULT_REQUEST_LIMITS
+ * unless a caller has a reason of its own (ActRequestLimits). */
+export function actClientFromEnv(limits: ActRequestLimits = DEFAULT_REQUEST_LIMITS): ActClient {
   const required = ["ACT_BASE", "ACT_DB", "ACT_USER", "ACT_PASS"] as const;
   const missing = required.filter((name) => !process.env[name]);
   if (missing.length > 0) {
     throw new Error(`missing environment: ${missing.join(", ")}`);
   }
-  return new ActClient({
-    baseUrl: process.env.ACT_BASE!.replace(/\/$/, ""),
-    database: process.env.ACT_DB!,
-    username: process.env.ACT_USER!,
-    password: process.env.ACT_PASS!,
-  });
+  return new ActClient(
+    {
+      baseUrl: process.env.ACT_BASE!.replace(/\/$/, ""),
+      database: process.env.ACT_DB!,
+      username: process.env.ACT_USER!,
+      password: process.env.ACT_PASS!,
+    },
+    limits,
+  );
 }

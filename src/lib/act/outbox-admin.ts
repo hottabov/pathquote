@@ -58,7 +58,7 @@
 
 import type { Prisma } from "@prisma/client";
 import { BLOCKED_BY } from "@/lib/act/drain-rules";
-import { ActApiError, ActNoAnswerError, ActNotSentError } from "@/lib/act/client";
+import { ActApiError, ActNoAnswerError, ActNotSentError, type ActRequestLimits } from "@/lib/act/client";
 import { tryLaterStatus } from "@/lib/act/record-write";
 
 /** The ActOutbox row, as an action reads it. */
@@ -303,6 +303,35 @@ export function contactFoundDecision(input: {
   };
 }
 
+/**
+ * The ACT! client's limits for the check behind "ACT! has this person": one
+ * attempt per request, of 10 seconds.
+ *
+ * The administrator's browser waits on the server action behind nginx, which
+ * on the VPS stops waiting after 60 seconds (its proxy_read_timeout default,
+ * measured 2026-10-10; the HOW LONG THIS BLOCKS note on runActSyncNow in
+ * src/lib/actions/act-sync.ts). Under the client's
+ * usual limits (DEFAULT_REQUEST_LIMITS in src/lib/act/client.ts: three
+ * attempts of 30 seconds, with 1s and 2s between them) a single GET to a hung
+ * ACT! takes 93 seconds to give up, and the login before it as long again:
+ * the button would spin past nginx's limit and show a gateway error, while
+ * the action might still link the contact behind it. Under these, the check's
+ * four requests at most -- the login, the GET, and after a 401 the login and
+ * the GET again (singleReadBudgetMs) -- give up within 40 seconds, which
+ * leaves the action's database reads and its write the rest of nginx's 60.
+ *
+ * 10 seconds because what is asked for is one contact by its id, a single
+ * small record, where the usual 30 seconds and three attempts were set for
+ * the inbound sync -- ~88 pages of 200 contacts, which one hung connection
+ * must not end (the note on REQUEST_TIMEOUT_MS in client.ts); an ACT! that
+ * has not answered one record in 10 seconds will not answer in time for
+ * this. One attempt because a
+ * second would double the wait for an ACT! that is not answering, and the
+ * refusal (ACT_UNREACHABLE_ERROR) already says to try again in a few minutes:
+ * the administrator's next press is the retry.
+ */
+export const ACT_CONTACT_CHECK_LIMITS: ActRequestLimits = { timeoutMs: 10_000, attempts: 1 };
+
 /** What ACT! said when asked for the contact behind a typed id. */
 export type ActContactLookup =
   | { kind: "found"; firstName: string | null; lastName: string | null; email: string | null }
@@ -316,9 +345,11 @@ export type ActContactLookup =
 /**
  * The lookup's verdict for an error the ACT! client threw asking for one
  * contact (ActClient.getContact). Unreachable is what retrying can mend:
- * nothing sent or no answer (ActNotSentError, ActNoAnswerError -- the
- * client has already retried those itself), a 408 or 429, or a 5xx.
- * Everything else, a missing ACT_* variable included, is `failed`.
+ * nothing sent or no answer (ActNotSentError, ActNoAnswerError -- which,
+ * under ACT_CONTACT_CHECK_LIMITS, is a request that timed out once, or a
+ * login that did, which the client reports as ActNotSentError), a 408 or
+ * 429, or a 5xx. Everything else, a missing ACT_* variable included, is
+ * `failed`.
  */
 export function actLookupFailure(error: unknown): ActContactLookup {
   if (error instanceof ActApiError) {
