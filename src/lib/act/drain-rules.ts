@@ -395,7 +395,7 @@ export function passWork(
  * contact has that marker and no actContactId, nextStep returns one of three
  * things for the row: this same block, wherever the row would need the
  * contact -- `keep` (or `reblock` with the same `by`, should the sentence
- * have been reworded since); a block it checks first, an unmapped region say
+ * have been reworded since); a block it checks first, a quote with no contact say
  * -- `reblock`, as the planner's; or `done`, for a row that needs the
  * contact no more -- `unblock`, and the next pass finishes it. Never a step
  * that calls ACT!: nextStep plans create-contact only once the marker is

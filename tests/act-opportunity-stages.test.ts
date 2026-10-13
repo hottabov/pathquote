@@ -22,9 +22,16 @@ describe("processForRegion", () => {
     expect(processForRegion("US")?.processId).toBe("26ab3a1e-ff20-406d-a0b4-3b351955da45");
   });
 
-  it("returns null for a region nobody has mapped", () => {
-    // A fourth region would otherwise land in AU's pipeline silently.
-    expect(processForRegion("NZ")).toBeNull();
+  it("puts DCS, the US dealer, on the US process", () => {
+    // Decided 2026-10-13.
+    expect(processForRegion("DCS").processId).toBe(US_PROCESS);
+  });
+
+  it("puts any region nobody listed on the Pathfinder Sales Cycle, so no quote is held back for its region", () => {
+    // Decided 2026-10-13: contacts from every region go into ACT!.
+    for (const code of ["IN", "MX", "NZ"]) expect(processForRegion(code).processId).toBe(SALES_CYCLE);
+    // Not Object.prototype's.
+    expect(processForRegion("constructor").processId).toBe(SALES_CYCLE);
   });
 });
 

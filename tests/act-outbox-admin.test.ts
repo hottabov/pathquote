@@ -25,7 +25,6 @@ import { BLOCKED_BY, refusedReason } from "../src/lib/act/drain-rules";
 import {
   NO_CONTACT_REASON,
   UNTRACKED_CONTACT_REASON,
-  unmappedRegionReason,
 } from "../src/lib/act/outbox-plan";
 import {
   ActApiError,
@@ -100,9 +99,9 @@ describe("adminActionsFor: what the page offers", () => {
     expect(adminActionsFor(row({ blockedReason: refused, blockedBy: BLOCKED_BY.act }), heldContact()).contactAbsent).toBe(false);
   });
 
-  it("only for a quote held for exactly that: not one the planner holds for its region first", () => {
+  it("only for a quote held for exactly that: not one the planner holds for something else", () => {
     expect(heldForContact(heldRow, heldContact())).toBe(true);
-    expect(heldForContact(row({ blockedReason: unmappedRegionReason("ZZ") }), heldContact())).toBe(false);
+    expect(heldForContact(row({ blockedReason: NO_CONTACT_REASON }), heldContact())).toBe(false);
   });
 
   it("knows the hold by its blocker, never by its sentence", () => {
@@ -271,7 +270,7 @@ describe("heldForContactRelease", () => {
 
   it("leaves rows held for anything else, rows ACT! refused, waiting rows and finished ones", () => {
     const rows = [
-      row({ id: "region", blockedReason: unmappedRegionReason("ZZ") }),
+      row({ id: "no-contact", blockedReason: NO_CONTACT_REASON }),
       row({ id: "act", blockedReason: UNTRACKED_CONTACT_REASON, blockedBy: BLOCKED_BY.act }),
       // The sentence alone, stored as the planner's: not held for the contact.
       row({ id: "sentence", blockedReason: UNTRACKED_CONTACT_REASON, blockedBy: null }),

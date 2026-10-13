@@ -196,8 +196,18 @@ describe("newOpportunityBody", () => {
     expect(newOpportunityBody(quote(), parties({ authorActUserId: null })).recordManagerID).toBe(SERVICE);
   });
 
-  it("refuses a region with no ACT! process rather than guessing one", () => {
-    expect(() => newOpportunityBody(quote({ regionCode: "NZ" }), parties())).toThrow(/NZ/);
+  it("puts a region with no process of its own on the Pathfinder Sales Cycle", () => {
+    expect(newOpportunityBody(quote({ regionCode: "IN", currency: "USD" }), parties()).stage).toMatchObject({
+      id: sentStage("AU").id,
+      process: { id: SALES_CYCLE },
+    });
+  });
+
+  it("puts DCS on the US process", () => {
+    expect(newOpportunityBody(quote({ regionCode: "DCS", currency: "USD" }), parties()).stage).toMatchObject({
+      id: sentStage("US").id,
+      process: { id: US_PROCESS },
+    });
   });
 });
 
