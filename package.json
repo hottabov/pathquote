@@ -28,6 +28,7 @@
     "import:act-industries": "tsx scripts/import-act-industries.ts",
     "act:sync": "tsx scripts/act-sync.ts",
     "act:drain": "tsx scripts/act-drain.ts",
+    "act:show-quote": "tsx scripts/act-show-quote.ts",
     "clients:normalise-websites": "tsx scripts/normalise-websites.ts",
     "clients:normalise-place-names": "tsx scripts/normalise-place-names.ts",
     "act:sync-preflight": "tsx scripts/act-sync-preflight.ts",
