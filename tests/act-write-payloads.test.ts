@@ -50,7 +50,10 @@ const quote = (overrides: Partial<QuoteForAct> = {}): QuoteForAct => ({
   number: "Q-AU-2026-014",
   revision: 1,
   regionCode: "AU",
-  total: 45000,
+  // A 10% GST quote: 45,000 before tax, 4,500 GST.
+  amountExTax: 45000,
+  total: 49500,
+  taxName: "GST",
   currency: "AUD",
   validityDays: 30,
   finalizedAt: FINALISED,
@@ -71,12 +74,37 @@ describe("historyBody", () => {
     expect(body.historyTypeID).toBe(62);
     expect(HISTORY_TYPE_QUOTE).toBe(62);
     expect(body.regarding).toContain("Q-AU-2026-014");
-    expect(body.details).toContain("AUD 45,000.00");
+    expect(body.details).toContain("AUD 45,000.00 ex GST");
     expect(body.details).toContain("30 days");
     expect(body.details).toContain("Revision 1");
     expect(body.startTime).toBe("2026-10-12T04:30:00.000Z");
     expect(body.contacts).toEqual([{ id: CONTACT }]);
     expect(body.recordManagerID).toBe(AUTHOR);
+  });
+
+  it("leads with the amount before tax, the tax-inclusive total beside it for reference", () => {
+    expect(historyBody(quote({ revision: 2 }), parties(), null).details).toBe(
+      ["Amount: AUD 45,000.00 ex GST", "Total incl. GST: AUD 49,500.00", "Valid for 30 days", "Revision 2"].join("\n"),
+    );
+    expect(
+      historyBody(quote({ currency: "GBP", amountExTax: 10000, total: 12000, taxName: "VAT" }), parties(), null).details.split("\n").slice(0, 2),
+    ).toEqual(["Amount: GBP 10,000.00 ex VAT", "Total incl. VAT: GBP 12,000.00"]);
+  });
+
+  it("says no tax was charged on a quote with none, rather than a total 'incl.' a tax it does not carry", () => {
+    // The US region's Sales Tax is 0%, and an export from AU keeps the name GST at 0%.
+    const us = quote({ number: "Q-US-2026-003", regionCode: "US", currency: "USD", amountExTax: 30000, total: 30000, taxName: "Sales Tax" });
+    expect(historyBody(us, parties(), null).details.split("\n").slice(0, 2)).toEqual([
+      "Amount: USD 30,000.00 ex Sales Tax",
+      "Total: USD 30,000.00, no Sales Tax charged",
+    ]);
+    const exported = quote({ amountExTax: 45000, total: 45000 });
+    expect(historyBody(exported, parties(), null).details).toContain("Total: AUD 45,000.00, no GST charged");
+  });
+
+  it("says 'tax' when the revision names none", () => {
+    const details = historyBody(quote({ taxName: null }), parties(), null).details.split("\n");
+    expect(details.slice(0, 2)).toEqual(["Amount: AUD 45,000.00 ex tax", "Total incl. tax: AUD 49,500.00"]);
   });
 
   it("says a one-day validity in the singular", () => {
@@ -372,9 +400,9 @@ describe("productLineWrite", () => {
 });
 
 describe("summaryProductBody and summaryProductPatch", () => {
-  it("prices one line, quantity 1, at the revision's total, named with the revision and the currency", () => {
-    expect(summaryProductPatch(quote({ revision: 2, total: 47500 }))).toEqual({
-      name: "Q-AU-2026-014-R2 — AUD 47,500.00",
+  it("prices one line, quantity 1, at the revision's amount before tax, named with the revision, the currency and the tax", () => {
+    expect(summaryProductPatch(quote({ revision: 2, amountExTax: 47500, total: 52250 }))).toEqual({
+      name: "Q-AU-2026-014-R2 — AUD 47,500.00 ex GST",
       itemNumber: "Q-AU-2026-014",
       quantity: 1,
       price: 47500,
@@ -383,18 +411,37 @@ describe("summaryProductBody and summaryProductPatch", () => {
     });
   });
 
+  it("never carries the tax-inclusive total, in a figure or in the name", () => {
+    const line = summaryProductPatch(quote());
+    expect([line.price, line.discountPrice, line.total]).toEqual([45000, 45000, 45000]);
+    expect(line.name).not.toContain("49,500");
+  });
+
+  it("is the same figure as the total on a quote that charges no tax, still marked as before tax", () => {
+    const line = summaryProductPatch(
+      quote({ number: "Q-US-2026-003", regionCode: "US", currency: "USD", amountExTax: 30000, total: 30000, taxName: "Sales Tax" }),
+    );
+    expect(line).toMatchObject({ name: "Q-US-2026-003-R1 — USD 30,000.00 ex Sales Tax", price: 30000, total: 30000 });
+  });
+
+  it("says 'ex tax' when the revision names no tax", () => {
+    expect(summaryProductPatch(quote({ taxName: null })).name).toBe("Q-AU-2026-014-R1 — AUD 45,000.00 ex tax");
+  });
+
   it("names the first revision by the bare quote number, as the History does", () => {
-    expect(summaryProductPatch(quote({ revision: 0 })).name).toBe("Q-AU-2026-014 — AUD 45,000.00");
+    expect(summaryProductPatch(quote({ revision: 0 })).name).toBe("Q-AU-2026-014 — AUD 45,000.00 ex GST");
   });
 
   it("keeps the currency code in the name, the product having no currency field", () => {
-    const line = summaryProductPatch(quote({ number: "Q-US-2026-003", regionCode: "US", currency: "USD", total: 12345.6 }));
-    expect(line.name).toBe("Q-US-2026-003-R1 — USD 12,345.60");
+    const line = summaryProductPatch(
+      quote({ number: "Q-US-2026-003", regionCode: "US", currency: "USD", amountExTax: 12345.6, total: 12345.6, taxName: "Sales Tax" }),
+    );
+    expect(line.name).toBe("Q-US-2026-003-R1 — USD 12,345.60 ex Sales Tax");
     expect(line).not.toHaveProperty("currency");
   });
 
   it("creates the line with a zero discount, which a patch leaves out (swagger: ignored on updates)", () => {
-    const q = quote({ total: 47500 });
+    const q = quote({ amountExTax: 47500, total: 52250 });
     expect(summaryProductBody(q)).toEqual({ ...summaryProductPatch(q), discount: 0 });
     expect(summaryProductPatch(q)).not.toHaveProperty("discount");
   });
@@ -663,6 +710,7 @@ describe("what fits in ACT!'s fields", () => {
     number: formatDocNumber(region.code, 2099, 99999),
     currency: region.currency,
     regionCode: region.code,
+    taxName: region.taxName,
   }));
 
   it("names every opportunity within its 32 characters, a five-digit counter in any region included", () => {
@@ -676,15 +724,27 @@ describe("what fits in ACT!'s fields", () => {
     expect(opportunityName({ number: "Q-AU-2099-99999", currency: "AUD" })).toBe("Q-AU-2099-99999 AUD");
   });
 
-  it("names the product line within its 256 characters at the largest total a quote can hold", () => {
-    // QuoteRevision.total is Decimal(12,2): at most 9,999,999,999.99.
+  it("names the product line within its 256 characters at the largest amount a quote can hold", () => {
+    // QuoteRevision.total is Decimal(12,2): at most 9,999,999,999.99, and the
+    // amount before tax is no more than that.
     for (const q of longest) {
-      const line = summaryProductPatch(quote({ ...q, revision: 99, total: 9_999_999_999.99 }));
-      expect(line.name).toBe(`${q.number}-R99 — ${q.currency} 9,999,999,999.99`);
+      const line = summaryProductPatch(quote({ ...q, revision: 99, amountExTax: 9_999_999_999.99, total: 9_999_999_999.99 }));
+      expect(line.name).toBe(`${q.number}-R99 — ${q.currency} 9,999,999,999.99 ex ${q.taxName}`);
       expect(line.name.length).toBeLessThanOrEqual(256);
       // "Item #" is Character 64.
       expect(line.itemNumber.length).toBeLessThanOrEqual(64);
     }
+    // A Custom tax's own name is at most 40 characters (taxNameSchema).
+    const custom = summaryProductPatch(quote({ ...longest[0], revision: 99, amountExTax: 9_999_999_999.99, taxName: "T".repeat(40) }));
+    expect(custom.name.length).toBeLessThanOrEqual(256);
+  });
+
+  it("leaves the opportunity's name as number and currency code, whatever the amount and the tax", () => {
+    const q = quote({ ...longest[0], amountExTax: 9_999_999_999.99, total: 9_999_999_999.99 });
+    const body = newOpportunityBody(q, parties());
+    expect(body.name).toBe(`${q.number} ${q.currency}`);
+    expect(body.name.length).toBeLessThanOrEqual(OPPORTUNITY_NAME_MAX);
+    expect(body.name).not.toMatch(/ex |GST|\d,\d/);
   });
 });
 

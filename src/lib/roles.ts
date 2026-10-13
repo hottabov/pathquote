@@ -185,3 +185,23 @@ export function scopeDescription(
   return copy.own;
 }
 
+/**
+ * Whether this viewer is shown "Your commission" in the quote builder. True
+ * for an ADMIN or DEVELOPER whatever their own flag says, and for anybody else
+ * exactly when an admin has ticked `User.commissionVisible` for them -- the
+ * same shape as `canSeeActSync` above, for the same reasons: a role that
+ * overrides the flag cannot be locked out by it, and the object parameter keeps
+ * a role and a boolean from being swapped at a call site.
+ *
+ * Applied where the figure is produced, not where it is drawn:
+ * `getDocumentForBuilder` (src/lib/queries/documents-builder.ts) returns
+ * `commission: null` for a viewer this refuses, and the builder already shows
+ * nothing for a null commission. Why the flag defaults to false is the column's
+ * own story -- see `commissionVisible` in prisma/schema.prisma.
+ */
+export function canSeeCommission(viewer: {
+  role: string | null | undefined;
+  commissionVisible: boolean;
+}): boolean {
+  return isAdminRole(viewer.role) || viewer.commissionVisible;
+}

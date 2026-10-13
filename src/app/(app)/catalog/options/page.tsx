@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Plus } from "lucide-react";
 import { auth } from "@/auth";
+import { listPriceRegionIdForSessionUser } from "@/lib/authz";
 import { isAdminRole } from "@/lib/roles";
 import { listOptions, listSeriesWithCounts } from "@/lib/queries/catalog";
 import { catalogVisibilityUserId, filterHiddenSeries } from "@/lib/catalog-visibility";
@@ -22,10 +23,12 @@ export default async function OptionsPage({
   searchParams: Promise<SearchParams>;
 }) {
   const { series: seriesFilter } = await searchParams;
-  const [options, series, session] = await Promise.all([
-    listOptions({ seriesCode: seriesFilter }),
+  // The session first: the price column is the viewer's region
+  // (`listPriceRegionIdForSessionUser`), never a default one.
+  const session = await auth();
+  const [options, series] = await Promise.all([
+    listOptions({ seriesCode: seriesFilter, priceRegionId: listPriceRegionIdForSessionUser(session?.user) }),
     listSeriesWithCounts(),
-    auth(),
   ]);
 
   const isAdmin = isAdminRole(session?.user?.role);

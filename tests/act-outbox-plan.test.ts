@@ -574,7 +574,11 @@ describe("a won deal shows the accepted figure (the drain and ACT! together)", (
     number: "Q-AU-2026-014",
     revision,
     regionCode: "AU",
+    // The sim's figures are what the line carries: before tax. No tax here,
+    // so the total with it is the same.
+    amountExTax: totals[revision],
     total: totals[revision],
+    taxName: "GST",
     currency: "AUD",
     validityDays: 30,
     finalizedAt: new Date("2026-10-12T04:30:00.000Z"),

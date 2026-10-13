@@ -3,7 +3,18 @@ import { db } from "@/lib/db";
 import { toPlainTextPreview } from "@/lib/rich-text";
 import { categorySpecPresence, type CategorySpecPresence } from "@/lib/quote-variables";
 
-const DEFAULT_REGION_CODE = "AU";
+/** The region a catalogue list prices in for an admin with no region of their
+ * own — see `listPriceRegionIdForUser` (src/lib/scope.ts), which decides the
+ * region for everyone else. Never a fallback for a manager or distributor. */
+const ADMIN_LIST_REGION_CODE = "AU";
+
+/** The Price filter for a catalogue list's single price column, from the id
+ * `listPriceRegionIdForUser` returns: that region, or AU for `null` (an admin
+ * with no region). `""` matches no row, so a viewer with no region sees no
+ * prices at all. */
+function listPriceWhere(priceRegionId: string | null) {
+  return priceRegionId === null ? { region: { code: ADMIN_LIST_REGION_CODE } } : { regionId: priceRegionId };
+}
 
 export type RegionSummary = {
   id: string;
@@ -141,7 +152,7 @@ async function seriesProductsResult(
     imageUrl: string | null;
     quoteDescription: string | null;
   },
-  regionCode: string
+  priceRegionId: string | null
 ): Promise<SeriesProductsResult> {
   // `sortOrder` first (drag-to-reorder — see `reorderProducts` in
   // src/lib/actions/catalog.ts), `code` as the tiebreak. Every product
@@ -159,7 +170,7 @@ async function seriesProductsResult(
     orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
     include: {
       prices: {
-        where: { region: { code: regionCode } },
+        where: listPriceWhere(priceRegionId),
         include: { region: true },
       },
     },
@@ -199,7 +210,9 @@ async function seriesProductsResult(
 
 /**
  * A series (by id) plus its products ordered for display, each carrying its
- * price in the given region (default AU) if one exists. A product with no
+ * price in the viewer's region if one exists — `priceRegionId` is
+ * `listPriceRegionIdForUser`'s answer (src/lib/scope.ts), required so no page
+ * can forget it and fall back to another region's prices. A product with no
  * Price row for the region, or whose Price row has needsReview=true, is
  * returned with `price` reflecting that (or omitted entirely when there's no
  * row at all) so the UI can render a "price required" badge.
@@ -220,11 +233,11 @@ async function seriesProductsResult(
  */
 export const listProductsBySeriesById = cache(async function listProductsBySeriesById(
   seriesId: string,
-  regionCode: string = DEFAULT_REGION_CODE
+  priceRegionId: string | null
 ): Promise<SeriesProductsResult | null> {
   const series = await db.series.findUnique({ where: { id: seriesId } });
   if (!series) return null;
-  return seriesProductsResult(series, regionCode);
+  return seriesProductsResult(series, priceRegionId);
 });
 
 /** The product photo a series falls back to on /catalog when it has no
@@ -270,9 +283,11 @@ export type OptionListItem = {
  */
 export async function listOptions(params: {
   seriesCode?: string;
-  regionCode?: string;
-} = {}): Promise<OptionListItem[]> {
-  const { seriesCode, regionCode = DEFAULT_REGION_CODE } = params;
+  /** `listPriceRegionIdForUser`'s answer (src/lib/scope.ts) — required, for
+   * the reason `listProductsBySeriesById`'s doc comment gives. */
+  priceRegionId: string | null;
+}): Promise<OptionListItem[]> {
+  const { seriesCode, priceRegionId } = params;
 
   const where: NonNullable<Parameters<typeof db.option.findMany>[0]>["where"] = {};
 
@@ -291,7 +306,7 @@ export async function listOptions(params: {
     orderBy: { code: "asc" },
     include: {
       prices: {
-        where: { region: { code: regionCode } },
+        where: listPriceWhere(priceRegionId),
         include: { region: true },
       },
       compat: { include: { series: true } },

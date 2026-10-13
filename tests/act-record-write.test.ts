@@ -416,7 +416,9 @@ describe("patchToSend", () => {
     number: "Q-AU-2026-014",
     revision: 1,
     regionCode: "AU",
-    total: 47500,
+    amountExTax: 47500,
+    total: 52250,
+    taxName: "GST",
     currency: "AUD",
     validityDays: 30,
     finalizedAt: new Date("2026-10-12T00:00:00Z"),
@@ -483,7 +485,7 @@ describe("patchToSend", () => {
     expect(patchToSend(patch, line)).toBeNull();
     // ACT! hands a whole number back without its ".0"; JSON makes them one number.
     expect(patchToSend(patch, JSON.parse(JSON.stringify({ ...line, price: 47500.0 })))).toBeNull();
-    const older = { ...line, ...summaryProductPatch({ ...REVISION, revision: 0, total: 45000 }) };
+    const older = { ...line, ...summaryProductPatch({ ...REVISION, revision: 0, amountExTax: 45000, total: 49500 }) };
     expect(patchToSend(patch, older)).toBe(patch);
   });
 

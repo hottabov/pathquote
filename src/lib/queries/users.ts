@@ -68,6 +68,10 @@ export type UserDetail = {
    * the viewer's own value reaches a request through the session (see
    * src/auth.ts), so no guard reads this. */
   actSyncVisible: boolean;
+  /** `User.commissionVisible` — whether the quote builder shows this user
+   * "Your commission". Read here for the admin's checkbox on the user-edit
+   * screen only, exactly like `actSyncVisible` above. */
+  commissionVisible: boolean;
 };
 
 /** A single user by id, or `null` if it doesn't exist — feeds the
@@ -98,6 +102,7 @@ export const getUser = cache(async function getUser(userId: string): Promise<Use
     image: user.image,
     signatureUrl: user.signatureUrl,
     actSyncVisible: user.actSyncVisible,
+    commissionVisible: user.commissionVisible,
   };
 });
 

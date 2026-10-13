@@ -10,6 +10,7 @@ import type {
 } from "@prisma/client";
 import { db } from "@/lib/db";
 import { documentWhereForUser, type ScopeUser } from "@/lib/scope";
+import { canSeeCommission } from "@/lib/roles";
 import { computeTotals, type CommissionResult, type DocumentConcession, type EngineInput } from "@/lib/pricing";
 import { getQuoteValidityDays, getCommissionTiers } from "@/lib/queries/settings";
 import { destinationCountry, suggestTax, type Incoterm, type TaxSuggestion, type TaxTreatment } from "@/lib/documents/tax-rules";
@@ -329,7 +330,9 @@ export type DocumentForBuilder = {
    * misleading $0.00 (see `CommissionResult`'s doc comment). Internal-only:
    * this must never be threaded into `buildQuotationData`/`QuotationSheet`
    * or any other customer-facing render — see the doc comment on those
-   * modules for why the two pipelines stay entirely separate. */
+   * modules for why the two pipelines stay entirely separate. Also `null`
+   * for a viewer `canSeeCommission` refuses (see `getDocumentForBuilder`),
+   * whatever the document itself holds. */
   commission: CommissionResult | null;
   taxAmount: string;
   total: string;
@@ -600,15 +603,25 @@ function toBuilderContact(contact: {
  * queries/settings.ts): a transaction's reads must stay that transaction's.
  * Everything else omits it and keeps the memo.
  */
-export function getDocumentForBuilder(
-  user: ScopeUser,
+export async function getDocumentForBuilder(
+  user: ScopeUser & { commissionVisible: boolean },
   id: string,
   tx?: Prisma.TransactionClient
 ): Promise<DocumentForBuilder | null> {
   const regionId = user.regionId ?? null;
-  return tx
+  const document = await (tx
     ? loadDocumentForBuilder(user.id, user.role, regionId, id, tx)
-    : getDocumentForBuilderInScope(user.id, user.role, regionId, id);
+    : getDocumentForBuilderInScope(user.id, user.role, regionId, id));
+  // A viewer who is not shown "Your commission" (`canSeeCommission` --
+  // distributors, by default) gets no commission at all, rather than one the
+  // footer then declines to draw: the builder page hands this whole object to
+  // client components (DocumentActions, SigningPanel), so anything left on it
+  // is in the browser. `null` is the shape the footer already renders as
+  // nothing. Applied after the memo, not inside it, so the memo key stays the
+  // three scope primitives; and copied, not mutated, because the memo hands
+  // the same object to every caller in the request.
+  if (document && !canSeeCommission(user)) return { ...document, commission: null };
+  return document;
 }
 
 /** Memoization boundary for `getDocumentForBuilder` above, taking the scope

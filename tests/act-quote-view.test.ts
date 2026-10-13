@@ -43,6 +43,11 @@ function asAdmin(f: QuoteActFacts, now: Date) {
   return describeQuoteAct(f, now, ADMIN);
 }
 
+/** A revision's frozen snapshot, as far as the card reads it: the tax it charged. */
+function frozen(taxAmount: string, taxName = "GST") {
+  return { taxName, totals: { taxAmount } };
+}
+
 /** A FINAL quote, sending on, its contact in ACT!, no row yet. */
 function facts(overrides: Partial<QuoteActFacts> = {}): QuoteActFacts {
   return {
@@ -220,7 +225,7 @@ describe("describeQuoteAct: in ACT!", () => {
     const view = asAdmin(
       facts({
         actOpportunityId: "opp",
-        line: { revision: 1, label: "Q-AU-2026-014-R1", total: "125000.50" },
+        line: { revision: 1, label: "Q-AU-2026-014-R1", total: "137500.55", snapshot: frozen("12500.05") },
         row: row({ completedAt: NOW, revision: { revision: 1, label: "Q-AU-2026-014-R1", actHistoryId: "h" } }),
       }),
       NOW,
@@ -233,7 +238,7 @@ describe("describeQuoteAct: in ACT!", () => {
       facts: [
         { label: "Contact", value: "Nora Quinn" },
         { label: "Opportunity", value: '"Q-AU-2026-014 AUD"' },
-        { label: "Amount", value: "$125,000.50, from Q-AU-2026-014-R1" },
+        { label: "Amount", value: "$125,000.50 ex GST, from Q-AU-2026-014-R1" },
         { label: "History", value: "Q-AU-2026-014-R1 is recorded in the contact's history" },
       ],
       lastError: null,
@@ -250,7 +255,7 @@ describe("describeQuoteAct: in ACT!", () => {
         // Midday UTC: formatDateAU reads the host's zone, as the Signing card's dates do.
         actOpportunityWonAt: new Date("2026-10-12T12:00:00.000Z"),
         actContactPromotedForId: actContactId,
-        line: { revision: 2, label: "Q-AU-2026-014-R2", total: "9000" },
+        line: { revision: 2, label: "Q-AU-2026-014-R2", total: "9900", snapshot: frozen("900") },
         row: row({ completedAt: NOW, revision: { revision: 2, label: "Q-AU-2026-014-R2", actHistoryId: "h" } }),
       }),
       NOW,
@@ -258,7 +263,7 @@ describe("describeQuoteAct: in ACT!", () => {
     expect(view?.facts).toEqual([
       { label: "Contact", value: "Nora Quinn — made a Customer when the client signed, if they were a Prospect" },
       { label: "Opportunity", value: '"Q-AU-2026-014 AUD" — marked Won by PathQuote on 12/10/2026' },
-      { label: "Amount", value: "A$9,000, from Q-AU-2026-014-R2" },
+      { label: "Amount", value: "A$9,000 ex GST, from Q-AU-2026-014-R2" },
       { label: "History", value: "Q-AU-2026-014-R2 is recorded in the contact's history" },
     ]);
   });
@@ -270,16 +275,44 @@ describe("describeQuoteAct: in ACT!", () => {
       revision: { revision: 2, label: "Q-AU-2026-014-R2", actHistoryId: "h" },
     });
     expect(
-      asAdmin(facts({ actOpportunityId: "opp", line: { revision: 1, label: "Q-AU-2026-014-R1", total: "100" }, row: skipped }), NOW)
+      asAdmin(
+        facts({ actOpportunityId: "opp", line: { revision: 1, label: "Q-AU-2026-014-R1", total: "110", snapshot: frozen("10") }, row: skipped }),
+        NOW,
+      )
         ?.facts.find((fact) => fact.label === "Amount"),
     ).toEqual({
       label: "Amount",
-      value: "$100, from Q-AU-2026-014-R1 — left as it was for Q-AU-2026-014-R2, because the deal in ACT! is closed",
+      value: "$100 ex GST, from Q-AU-2026-014-R1 — left as it was for Q-AU-2026-014-R2, because the deal in ACT! is closed",
     });
     expect(asAdmin(facts({ actOpportunityId: "opp", row: skipped }), NOW)?.facts.find((fact) => fact.label === "Amount")).toEqual({
       label: "Amount",
       value: "Not written — the deal in ACT! is closed, so PathQuote left its amount alone",
     });
+  });
+
+  it("shows the line's amount before tax, as ACT! has it: the total itself where no tax was charged", () => {
+    const amount = (line: QuoteActFacts["line"], currency = "AUD") =>
+      asAdmin(
+        facts({
+          currency,
+          actOpportunityId: "opp",
+          line,
+          row: row({ completedAt: NOW, revision: { revision: 1, label: line!.label, actHistoryId: "h" } }),
+        }),
+        NOW,
+      )?.facts.find((fact) => fact.label === "Amount")?.value;
+    expect(amount({ revision: 1, label: "Q-AU-2026-014-R1", total: "49500", snapshot: frozen("4500") })).toBe(
+      "$45,000 ex GST, from Q-AU-2026-014-R1",
+    );
+    expect(amount({ revision: 1, label: "Q-US-2026-003-R1", total: "30000", snapshot: frozen("0", "Sales Tax") }, "USD")).toBe(
+      // Intl puts a no-break space after the code.
+      "USD\u00a030,000 ex Sales Tax, from Q-US-2026-003-R1",
+    );
+    // Never the tax-inclusive total in its place: a revision the drain could
+    // not have written a line from is named without a figure.
+    expect(amount({ revision: 1, label: "Q-AU-2026-014-R1", total: "49500", snapshot: {} })).toBe(
+      "Q-AU-2026-014-R1's amount before tax",
+    );
   });
 
   it("names nothing it has no record of: a contact without an ACT! id, an unjournaled revision", () => {
