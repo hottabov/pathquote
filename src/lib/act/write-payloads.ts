@@ -287,6 +287,12 @@ export type NewOpportunityBody = {
   probability: number;
   status: OpportunityStatus;
   openDate: string;
+  /**
+   * REQUIRED BY ACT!, though swagger does not say so: a create without it is
+   * refused 400, `"opportunity.EstimatedCloseDate": ["The EstimatedCloseDate
+   * field is required."]` (production, 2026-10-13). See estimatedCloseDate.
+   */
+  estimatedCloseDate: string;
   /** See STAGE START DATE on revisedOpportunityBody. */
   stageStartDate: string;
   recordManagerID: string;
@@ -461,10 +467,26 @@ export function historyBody(
   };
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The opportunity's estimated close date: the day the quote stops being
+ * valid, its finalizedAt plus validityDays. The quote's own deadline is the
+ * one date PathQuote knows that a deal is expected to close by; a person who
+ * knows better changes it in ACT!. Set on create only, like the name: a later
+ * PATCH lays its changes over the record as read (mergeForWrite), so a date
+ * edited in ACT! stays as it was left. Derived from frozen inputs, so a
+ * repeated create sends the same body.
+ */
+export function estimatedCloseDate(quote: Pick<QuoteForAct, "finalizedAt" | "validityDays">): string {
+  return new Date(quote.finalizedAt.getTime() + quote.validityDays * DAY_MS).toISOString();
+}
+
 /**
  * The opportunity a quote's first finalise opens, at its region's sent stage.
  * Opened, and in that stage, from the revision's finalise: `openDate` and
- * `stageStartDate` are both its finalizedAt.
+ * `stageStartDate` are both its finalizedAt; expected to close when the quote
+ * expires (estimatedCloseDate).
  */
 export function newOpportunityBody(quote: QuoteForAct, parties: ActParties): NewOpportunityBody {
   const sent = stagesFor(quote.regionCode).sent;
@@ -475,6 +497,7 @@ export function newOpportunityBody(quote: QuoteForAct, parties: ActParties): New
     probability: sent.probability,
     status: OPPORTUNITY_STATUS.open,
     openDate: finalised,
+    estimatedCloseDate: estimatedCloseDate(quote),
     stageStartDate: finalised,
     recordManagerID: recordManager(parties),
     contacts: [{ id: parties.contactActId }],
