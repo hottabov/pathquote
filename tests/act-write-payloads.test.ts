@@ -156,6 +156,15 @@ describe("newOpportunityBody", () => {
     expect(body.stageStartDate).toBe(body.openDate);
   });
 
+  it("always sends estimatedCloseDate, which ACT! requires: the day the quote expires", () => {
+    // Production refused a create without it, 2026-10-13:
+    // "opportunity.EstimatedCloseDate": ["The EstimatedCloseDate field is required."]
+    expect(newOpportunityBody(quote(), parties()).estimatedCloseDate).toBe("2026-11-11T04:30:00.000Z");
+    expect(newOpportunityBody(quote({ validityDays: 1 }), parties()).estimatedCloseDate).toBe(
+      "2026-10-13T04:30:00.000Z",
+    );
+  });
+
   it("sends no amount: ACT! computes the opportunity's totals from its products", () => {
     // productTotal, weightedTotal and grossMargin are isReadOnly and
     // isProtected in RAW/ACT/meta/fields_all.json. The amount is the summary
