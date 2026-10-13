@@ -181,6 +181,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.regionId = dbUser.regionId;
         token.visibleCountries = dbUser.visibleCountries ?? [];
         token.actSyncVisible = dbUser.actSyncVisible;
+        token.commissionVisible = dbUser.commissionVisible;
         token.revalidatedAt = Date.now();
         return token;
       }
@@ -190,8 +191,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // valid session for up to `maxAge` (7 days), since the JWT is
       // self-contained and normally never touches the database again. Re-hit
       // the DB at most once per REVALIDATE_INTERVAL_MS to catch that case
-      // and to keep role/regionId/visibleCountries/actSyncVisible in sync with
-      // the source of truth, while
+      // and to keep role/regionId/visibleCountries/actSyncVisible/
+      // commissionVisible in sync with the source of truth, while
       // keeping the common case (a request within the interval) DB-free.
       const revalidatedAt = token.revalidatedAt ?? 0;
       if (Date.now() - revalidatedAt < REVALIDATE_INTERVAL_MS) {
@@ -223,6 +224,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       token.regionId = dbUser.regionId;
       token.visibleCountries = dbUser.visibleCountries ?? [];
       token.actSyncVisible = dbUser.actSyncVisible;
+      token.commissionVisible = dbUser.commissionVisible;
       token.revalidatedAt = Date.now();
       return token;
     },
@@ -243,6 +245,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // the column exists to prevent. An ADMIN or DEVELOPER is unaffected
         // either way -- `canSeeActSync` never reads this for them.
         session.user.actSyncVisible = token.actSyncVisible ?? false;
+        // `?? false` again, same trade: a token minted before this field
+        // existed hides "Your commission" from a manager for up to
+        // REVALIDATE_INTERVAL_MS, rather than showing Pathfinder's staff
+        // commission to a distributor for that window. `canSeeCommission`
+        // never reads this for an ADMIN or DEVELOPER.
+        session.user.commissionVisible = token.commissionVisible ?? false;
       }
       return session;
     },

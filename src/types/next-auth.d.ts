@@ -23,6 +23,10 @@ declare module "next-auth" {
        * ADMIN or DEVELOPER, who get the section by role — see `canSeeActSync`
        * in src/lib/roles.ts. */
       actSyncVisible: boolean;
+      /** Whether the quote builder shows this user "Your commission". Not
+       * consulted for an ADMIN or DEVELOPER, who see it by role — see
+       * `canSeeCommission` in src/lib/roles.ts. */
+      commissionVisible: boolean;
     } & DefaultSession["user"];
   }
 
@@ -31,6 +35,7 @@ declare module "next-auth" {
     regionId?: string | null;
     visibleCountries?: string[];
     actSyncVisible?: boolean;
+    commissionVisible?: boolean;
   }
 }
 
@@ -41,6 +46,7 @@ declare module "next-auth/jwt" {
     regionId: string | null;
     visibleCountries: string[];
     actSyncVisible: boolean;
+    commissionVisible: boolean;
     /** Epoch ms of the last DB revalidation of this token (see src/auth.ts jwt callback). */
     revalidatedAt: number;
   }
@@ -60,6 +66,10 @@ declare module "@auth/core/types" {
        * ADMIN or DEVELOPER, who get the section by role — see `canSeeActSync`
        * in src/lib/roles.ts. */
       actSyncVisible: boolean;
+      /** Whether the quote builder shows this user "Your commission". Not
+       * consulted for an ADMIN or DEVELOPER, who see it by role — see
+       * `canSeeCommission` in src/lib/roles.ts. */
+      commissionVisible: boolean;
     } & DefaultSession["user"];
   }
 
@@ -68,6 +78,7 @@ declare module "@auth/core/types" {
     regionId?: string | null;
     visibleCountries?: string[];
     actSyncVisible?: boolean;
+    commissionVisible?: boolean;
   }
 }
 
@@ -78,6 +89,7 @@ declare module "@auth/core/jwt" {
     regionId: string | null;
     visibleCountries: string[];
     actSyncVisible: boolean;
+    commissionVisible: boolean;
     /** Epoch ms of the last DB revalidation of this token (see src/auth.ts jwt callback). */
     revalidatedAt: number;
   }

@@ -245,6 +245,33 @@ export async function setUserActSyncVisible(
 }
 
 /**
+ * Shows or hides "Your commission" in the quote builder for one user —
+ * `User.commissionVisible` (`canSeeCommission`, src/lib/roles.ts).
+ *
+ * Its own boolean action, not a field of `updateUser`, and with no
+ * `canModifyUser` guard, for exactly the reasons `setUserActSyncVisible`
+ * above gives: an absent checkbox must never read as "untick", and an ADMIN
+ * or DEVELOPER sees the figure by role whatever this column says.
+ */
+export async function setUserCommissionVisible(
+  userId: string,
+  visible: boolean
+): Promise<ActionResult> {
+  await requireAdmin();
+
+  const idParsed = idSchema.safeParse(userId);
+  if (!idParsed.success) return { error: NOT_FOUND_ERROR };
+
+  const target = await db.user.findUnique({ where: { id: userId } });
+  if (!target) return { error: NOT_FOUND_ERROR };
+
+  await db.user.update({ where: { id: userId }, data: { commissionVisible: visible } });
+
+  revalidateUserPaths(userId);
+  return {};
+}
+
+/**
  * Hands every client company owned by `fromUserId` to `toUserId`.
  *
  * The problem this solves: a company is visible to a manager only if they own
