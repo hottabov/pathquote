@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { Package, Plus } from "lucide-react";
 import { auth } from "@/auth";
+import { listPriceRegionIdForSessionUser } from "@/lib/authz";
 import { isAdminRole } from "@/lib/roles";
 import {
   listProductsBySeriesById,
@@ -51,7 +52,11 @@ export async function generateMetadata({
   // (same reasoning the document builder's own generateMetadata gives) so a
   // manager browsing to a hidden series' URL never even sees its name in
   // the tab title.
-  const [result, session] = await Promise.all([listProductsBySeriesById(seriesId), auth()]);
+  // The session first: the list's price column is the viewer's region
+  // (`listPriceRegionIdForSessionUser`), and both this and the page body must
+  // pass the same value so the request memo answers the second call.
+  const session = await auth();
+  const result = await listProductsBySeriesById(seriesId, listPriceRegionIdForSessionUser(session?.user));
   if (!result) return { title: "Series" };
   const hiddenCatalogIds = await getHiddenCatalogIds(catalogVisibilityUserId(session?.user));
   if (isSeriesHidden(result.series.id, hiddenCatalogIds)) return { title: "Series" };
@@ -60,7 +65,11 @@ export async function generateMetadata({
 
 export default async function SeriesProductsPage({ params }: { params: Promise<Params> }) {
   const { seriesId } = await params;
-  const [result, session] = await Promise.all([listProductsBySeriesById(seriesId), auth()]);
+  // The session first: the list's price column is the viewer's region
+  // (`listPriceRegionIdForSessionUser`), and both this and the page body must
+  // pass the same value so the request memo answers the second call.
+  const session = await auth();
+  const result = await listProductsBySeriesById(seriesId, listPriceRegionIdForSessionUser(session?.user));
 
   if (!result) notFound();
 

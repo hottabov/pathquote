@@ -3,6 +3,7 @@ import {
   regionIdForUser,
   priceWhereForUser,
   priceRegionIdForUser,
+  listPriceRegionIdForUser,
   assertRegionWritable,
   REGION_REQUIRED_ERROR,
   FOREIGN_REGION_ERROR,
@@ -116,5 +117,32 @@ describe("assertRegionWritable", () => {
   it("reports a missing region as missing even when it arrives as undefined", () => {
     const undefinedRegion = { id: "u6", role: "MANAGER", regionId: undefined as unknown as null };
     expect(() => assertRegionWritable(undefinedRegion, "r-au")).toThrow(REGION_REQUIRED_ERROR);
+  });
+});
+
+// The single price column on /catalog/[seriesId] and /catalog/options. It
+// used to default to AU for everyone, so a DCS distributor browsing the
+// catalogue saw Australia's prices. A non-admin must only ever get their own
+// region, or nothing.
+describe("listPriceRegionIdForUser", () => {
+  const distributor = { id: "u5", role: "MANAGER", regionId: "r-dcs" };
+  const regionalNoRegion = { id: "u6", role: "REGIONAL_MANAGER", regionId: null };
+
+  it("prices a manager's or distributor's list in their own region", () => {
+    expect(listPriceRegionIdForUser(manager)).toBe("r-au");
+    expect(listPriceRegionIdForUser(distributor)).toBe("r-dcs");
+  });
+
+  it("gives a non-admin with no region the unmatchable empty id, never null (null means AU)", () => {
+    expect(listPriceRegionIdForUser(managerNoRegion)).toBe("");
+    expect(listPriceRegionIdForUser(regionalNoRegion)).toBe("");
+  });
+
+  it("prices an admin's list in their own region when they have one", () => {
+    expect(listPriceRegionIdForUser(admin)).toBe("r-au");
+  });
+
+  it("gives an admin with no region null, which the queries read as the AU list", () => {
+    expect(listPriceRegionIdForUser(developer)).toBeNull();
   });
 });

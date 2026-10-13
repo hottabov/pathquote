@@ -245,6 +245,30 @@ export function priceRegionIdForUser(user: RegionScopeUser): string | null {
   return priceWhereForUser(user).regionId ?? null;
 }
 
+/** The one region whose price a catalogue LIST shows this viewer — the
+ * products of a series (/catalog/[seriesId]) and the options list
+ * (/catalog/options), which show one price per row rather than the per-region
+ * table a product or option page shows.
+ *
+ * - A manager, regional manager or distributor: their own region, and only
+ *   theirs. With no region they get `""`, an id no Price row holds, so the
+ *   list shows no prices rather than somebody else's — the same fail-closed
+ *   choice `priceWhereForUser` makes.
+ * - An admin or developer: their own region when they have one, and `null`
+ *   when they do not, which the catalogue queries read as the default (AU)
+ *   list. An admin may see every region's prices anyway; this only picks
+ *   which one fills the single price column.
+ *
+ * These lists used to take a region code that defaulted to "AU", and their
+ * pages never passed one — so every viewer, a DCS distributor included, saw
+ * Australia's prices in the list while their own quotes priced in their own
+ * region. Returned as a bare string so the request memo on
+ * `listProductsBySeriesById` (keyed by argument identity) still hits. */
+export function listPriceRegionIdForUser(user: RegionScopeUser): string | null {
+  if (isAdminRole(user.role)) return user.regionId ?? null;
+  return user.regionId ?? "";
+}
+
 /** Throws unless `user` may write a row belonging to `regionId`. An admin
  * may write anywhere; a manager may write only their own region, and a
  * manager with no region may write nowhere.

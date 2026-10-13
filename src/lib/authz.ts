@@ -4,7 +4,7 @@ import { auth } from "@/auth";
 import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { canSeeActSync, isAdminRole } from "@/lib/roles";
-import { priceRegionIdForUser } from "@/lib/scope";
+import { listPriceRegionIdForUser, priceRegionIdForUser } from "@/lib/scope";
 
 /**
  * Require an authenticated session for a server component/action. Redirects
@@ -218,6 +218,23 @@ export function priceRegionIdForSessionUser(
   // it. Nothing here may branch — a rule written here is a rule with no
   // test, because the no-database suite cannot import this module.
   return priceRegionIdForUser({
+    id: user?.id ?? "",
+    role: user?.role ?? "MANAGER",
+    regionId: user?.regionId ?? null,
+  });
+}
+
+/**
+ * The session-shaped adapter over `listPriceRegionIdForUser`
+ * (src/lib/scope.ts): which region's price a catalogue list shows this viewer.
+ * Same shape and the same fail-closed `MANAGER` fallback as
+ * `priceRegionIdForSessionUser` above, for the same `generateMetadata` reason —
+ * and, as there, no rule may be written here, only passed through.
+ */
+export function listPriceRegionIdForSessionUser(
+  user: Session["user"] | null | undefined
+): string | null {
+  return listPriceRegionIdForUser({
     id: user?.id ?? "",
     role: user?.role ?? "MANAGER",
     regionId: user?.regionId ?? null,
