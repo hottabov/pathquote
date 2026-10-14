@@ -193,10 +193,8 @@ describe("nextStep", () => {
     expect(reason).not.toMatch(/^[A-Z_]+$/);
   });
 
-  it("is blocked when the region has no ACT! process, and names the region", () => {
-    const reason = reasonOf(nextStep(nothingDone, noHistory, quoteState({ regionCode: "NZ" })));
-    expect(reason).toContain("NZ");
-    expect(reason).toMatch(/developer/);
+  it("is never blocked for its region: a region with no process of its own goes on the default one", () => {
+    expect(nextStep(nothingDone, noHistory, quoteState({ regionCode: "IN" }))).toEqual({ kind: "create-opportunity" });
   });
 
   it("is blocked when a contact that has to be created in ACT! has no name", () => {
@@ -210,11 +208,6 @@ describe("nextStep", () => {
     expect(nextStep(nothingDone, noHistory, quoteState({ contact: namelessButLinked }))).toEqual({
       kind: "create-opportunity",
     });
-  });
-
-  it("checks the region before a fresh row creates anything, so it leaves nothing behind in ACT!", () => {
-    const step = nextStep(nothingDone, noHistory, quoteState({ regionCode: "NZ", contact: pathQuoteOnlyContact }));
-    expect(step.kind).toBe("blocked");
   });
 
   it("blocks a row partway when the quote loses its contact, and does not call it done", () => {
@@ -496,13 +489,6 @@ describe("nextStep: a won quote promotes its contact and wins its opportunity", 
     expect(nextStep(nothingDone, journaled, { ...corrected, signingStatus: "SIGNED" })).toEqual({
       kind: "promote-contact",
     });
-  });
-
-  it("is blocked, not done, when a deal event is due in a region with no ACT! process", () => {
-    // A row queued by a signature runs the same checks as a finalise row.
-    const step = nextStep(nothingDone, journaled, finishedDeal({ regionCode: "NZ", signingStatus: "SIGNED" }));
-    expect(reasonOf(step)).toContain("NZ");
-    expect(reasonOf(step)).toMatch(/developer/);
   });
 
   it("promotes a corrected contact: promotion is recorded per contact, not per deal", () => {
@@ -921,7 +907,6 @@ describe("nextStep: a create in flight", () => {
     // `by` is what the drain stores as ActOutbox.blockedBy; the sentence is not a key.
     const others: OutboxStep[] = [
       nextStep(nothingDone, noHistory, quoteState({ contact: null })),
-      nextStep(nothingDone, noHistory, quoteState({ regionCode: "ZZ" })),
       nextStep(nothingDone, noHistory, quoteState({ contact: { ...pathQuoteOnlyContact, firstName: "", lastName: null } })),
       nextStep(inFlight("company"), noHistory, quoteState()),
     ];
@@ -929,9 +914,6 @@ describe("nextStep: a create in flight", () => {
       expect(step.kind).toBe("blocked");
       expect(step).not.toHaveProperty("by");
     }
-    // A region it checks first wins over the contact's marker, and is the planner's.
-    const marked = { ...pathQuoteOnlyContact, actCreateInFlightAt: ACCEPTED_AT };
-    expect(nextStep(nothingDone, noHistory, quoteState({ regionCode: "ZZ", contact: marked }))).not.toHaveProperty("by");
   });
 
   it("finishes a row with nothing left that needs the contact: the marker is the contact's, not the row's", () => {

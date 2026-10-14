@@ -245,6 +245,8 @@ This is the preferred mechanism. It only holds while the integration has a dedic
 
 Two live processes. Stage mapping is therefore **per region**, which lines up with PathQuote's own `Region` model.
 
+Region → process (`src/lib/act/opportunity-stages.ts`): **US and DCS** → Pathfinder US Sales Process; **every other region** (AU, UK, IN, MX, and any added later) → Pathfinder Sales Cycle. Decided 2026-10-13, so a new region never holds its quotes back from ACT!.
+
 **Pathfinder Sales Cycle** — `2380e83d-cef4-4b6d-ad15-dc9a558431ab`
 
 Initial Communication 5% · Needs Assessment 10% · Presentation 20% · Proposal 40% · Negotiation 65% · Verbal Commitment 90% · Sales Fulfillment 100%

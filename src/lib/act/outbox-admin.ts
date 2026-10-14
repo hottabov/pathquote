@@ -127,7 +127,7 @@ export const NO_ROW_ERROR = "This quote is not queued for ACT!, so there is noth
  * pressed in that second would clear the mark of a POST still in flight. A
  * row is held for its contact only once the drain has seen a create go
  * unaccounted for, or the planner has found the mark it left. A row the
- * planner holds for something it checks first -- an unmapped region -- is not
+ * planner holds for something it checks first -- a quote with no contact -- is not
  * offered them, though its contact may be held: the reason it shows is not
  * about the contact.
  *
@@ -475,8 +475,8 @@ export function contactAbsentDecision(row: AdminRow | null, contact: AdminContac
  *
  * Only rows still held for exactly that: unfinished, and held for their
  * contact (blockedBy BLOCKED_BY.contact), whatever their blockedReason says.
- * A row on the same contact the planner holds for something else -- an
- * unmapped region, which nextStep checks first -- is left to the drain, which
+ * A row on the same contact the planner holds for something else -- a
+ * quote with no contact, which nextStep checks first -- is left to the drain, which
  * would only block it again. attempts and lastError
  * are left as they are: the row was not refused, and its history of failures
  * before the hold, if any, still stands.

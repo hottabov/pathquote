@@ -33,7 +33,6 @@ import {
   UNTRACKED_CONTACT_REASON,
   duplicateOpportunitiesReason,
   nextStep,
-  unmappedRegionReason,
   type OutboxProgress,
   type OutboxStep,
   type QuoteState,
@@ -398,11 +397,6 @@ describe("a quote held for its contact (BLOCKED_BY.contact), re-planned", () => 
   });
 
   it("stores a block the planner checks first as the planner's, no longer the contact's", () => {
-    expect(replanBlocked(row, nextStep(nothingDone, fresh, quote({ regionCode: "ZZ" })))).toEqual({
-      kind: "reblock",
-      reason: unmappedRegionReason("ZZ"),
-      by: null,
-    });
     expect(replanBlocked(row, nextStep(nothingDone, fresh, quote({ contact: null })))).toEqual({
       kind: "reblock",
       reason: NO_CONTACT_REASON,

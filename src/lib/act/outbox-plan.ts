@@ -99,7 +99,10 @@
 //                                unaccounted for: create-contact blocks, for
 //                                every quote on the contact (A CONTACT CREATE
 //                                IN FLIGHT).
-//   Region.code                  of Document.regionId: which sales process.
+//   Region.code                  of Document.regionId: not read here since
+//                                2026-10-13 -- every region has a sales
+//                                process (processForRegion); the payloads
+//                                read it to choose one.
 //   Document.signingStatus       SIGNED: the client has signed.
 //   Document.acceptedAt          set: the quote is accepted.
 //   QuoteRevision.revision       of the row's revision: whether the product
@@ -658,7 +661,6 @@
 // Pure: no I/O. The drain reads the row, its revision and the quote, calls
 // nextStep, performs the one step it names, stores its result, and asks again.
 
-import { processForRegion } from "@/lib/act/opportunity-stages";
 
 /**
  * The values of ActOutbox.createInFlight: the record a POST of this row may
@@ -810,14 +812,6 @@ export const NO_CONTACT_REASON =
 /** ACT! is asked to create the contact, and a contact with no name is nothing to create. */
 export const NAMELESS_CONTACT_REASON =
   "This quote's contact has no name, so ACT! has nothing to create them under — give the contact a name in Clients.";
-
-/**
- * A region processForRegion has no entry for. Not something a manager can
- * fix: the mapping is in src/lib/act/opportunity-stages.ts.
- */
-export function unmappedRegionReason(regionCode: string): string {
-  return `This quote is in the ${regionCode} region, and PathQuote has no ACT! sales process for ${regionCode}, so there is no pipeline to put it in — ask your developer to map ${regionCode} to one.`;
-}
 
 /**
  * A contact create whose outcome never reached the store (A CONTACT CREATE IN
@@ -977,10 +971,8 @@ export function nextStep(
   // made in ACT!; on a row that has made something already, it keeps it (see
   // the header). The contact first: it is the common case, and the one the
   // reader can fix.
+  // No region check: every region has a process (processForRegion's default).
   if (!quote.contact) return { kind: "blocked", reason: NO_CONTACT_REASON };
-  if (!processForRegion(quote.regionCode)) {
-    return { kind: "blocked", reason: unmappedRegionReason(quote.regionCode) };
-  }
 
   if (!quote.contact.actContactId) {
     // A create of this contact may already have made them in ACT! -- for

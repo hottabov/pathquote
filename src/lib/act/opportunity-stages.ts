@@ -24,10 +24,17 @@
 // Sales Cycle rather than having nowhere to go. It is written out as its own
 // row so that it reads as a choice and can be changed as one.
 //
-// AN UNKNOWN REGION RETURNS NULL. There is no default process. A fourth region
-// added to PathQuote should surface as a blocked write that names itself, not
-// as its deals quietly joining the Australian pipeline. The caller turns null
-// into that blocked reason (src/lib/act/outbox-plan.ts).
+// DCS GOES TO THE US PROCESS BY DECISION. DCS is Pathfinder's US dealer, with
+// its own territory inside the US; Vadym chose the US Sales Process for its
+// quotes on 2026-10-13.
+//
+// ANY OTHER REGION GOES TO THE PATHFINDER SALES CYCLE. Also Vadym's decision,
+// 2026-10-13, replacing the first design, where an unmapped region blocked the
+// write: "the idea was to collect contacts in ACT! from everyone", and a
+// region added in Settings (IN and MX were) held every quote in it back from
+// ACT! until a developer mapped it. So a region is listed below only when it
+// goes somewhere other than the default, and processForRegion never returns
+// nothing.
 //
 // STAGES ARE ORDERED BY `number`, NEVER BY `probability`. `number` is ACT!'s
 // own position of a stage within its process. Probability looks like an order
@@ -120,19 +127,28 @@ const US_SALES_PROCESS: RegionProcess = {
   },
 };
 
-/** Region.code -> process. Codes are exactly those in prisma/seed-lib.ts. */
+/** Where a region not listed in BY_REGION goes. See the header. */
+const DEFAULT_PROCESS = SALES_CYCLE;
+
+/**
+ * Region.code -> process. AU, UK and US are seeded (prisma/seed-lib.ts); DCS,
+ * IN and MX were added in Settings. AU and UK are written out although they
+ * are the default, so that they read as choices and can be changed as ones.
+ */
 const BY_REGION: Record<string, RegionProcess> = {
   AU: SALES_CYCLE,
-  // By decision, 2026-10-12: ACT! has no UK process. See the header.
+  // By decision, 2026-10-12: ACT! has no UK process.
   UK: SALES_CYCLE,
   US: US_SALES_PROCESS,
+  // By decision, 2026-10-13: DCS is the US dealer. See the header.
+  DCS: US_SALES_PROCESS,
 };
 
-/** The process a region's quotes go into, or null when nobody has mapped it. */
-export function processForRegion(code: string): RegionProcess | null {
-  // `Object.hasOwn`, not `BY_REGION[code] ?? null`: a code such as
+/** The process a region's quotes go into: its own row, else DEFAULT_PROCESS. */
+export function processForRegion(code: string): RegionProcess {
+  // `Object.hasOwn`, not `BY_REGION[code] ?? ...`: a code such as
   // "constructor" or "toString" would otherwise find Object.prototype.
-  return Object.hasOwn(BY_REGION, code) ? BY_REGION[code] : null;
+  return Object.hasOwn(BY_REGION, code) ? BY_REGION[code] : DEFAULT_PROCESS;
 }
 
 /**
@@ -149,14 +165,14 @@ export function transcribedStages(): StageDef[] {
   return [...byId.values()];
 }
 
-/** The stage a finalised quote puts its opportunity at, or null for an unmapped region. */
-export function sentStage(code: string): StageDef | null {
-  return processForRegion(code)?.sent ?? null;
+/** The stage a finalised quote puts its opportunity at. */
+export function sentStage(code: string): StageDef {
+  return processForRegion(code).sent;
 }
 
-/** The stage an accepted quote closes its opportunity at, or null for an unmapped region. */
-export function wonStage(code: string): StageDef | null {
-  return processForRegion(code)?.won ?? null;
+/** The stage an accepted quote closes its opportunity at. */
+export function wonStage(code: string): StageDef {
+  return processForRegion(code).won;
 }
 
 /**

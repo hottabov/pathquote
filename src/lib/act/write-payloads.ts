@@ -393,20 +393,9 @@ export function opportunityName(quote: Pick<QuoteForAct, "number" | "currency">)
   return `${quote.number} ${quote.currency}`;
 }
 
-/**
- * The region's process, or a thrown error.
- *
- * The planner (src/lib/act/outbox-plan.ts) blocks a row whose region is
- * unmapped before any body is built, so reaching the throw means a caller
- * skipped it. Throwing rather than defaulting keeps a mistake there from
- * writing a deal into another region's pipeline.
- */
+/** The region's process: its own, or the default (src/lib/act/opportunity-stages.ts). */
 function stagesFor(regionCode: string) {
-  const process = processForRegion(regionCode);
-  if (!process) {
-    throw new Error(`No ACT! sales process is mapped for region ${regionCode}.`);
-  }
-  return process;
+  return processForRegion(regionCode);
 }
 
 /**
