@@ -20,7 +20,10 @@
  * 403 even with correct credentials, so this cannot be run from a laptop.
  *
  * WHY IT EXISTS. User.actUserId is the join between an Act! Record Manager and
- * a PathQuote user, and this script is the only thing that populates it.
+ * a PathQuote user. This script populates it by email; an admin can also set
+ * it by hand in Settings -> Users -> <user> -> ACT! (how distributors, whose
+ * Act! users have no email, are linked -- src/lib/act/user-link.ts), and this
+ * script never overwrites a value already stored.
  * Without it, every record PathQuote writes into Act! is owned by the
  * integration account (`Marketing`), so twelve managers' quotes would all
  * appear as one person's pipeline.

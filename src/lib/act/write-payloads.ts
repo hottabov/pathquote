@@ -78,7 +78,8 @@
 // `moneyWithCode`.
 //
 // WHO OWNS WHAT IS WRITTEN. The record manager is the quote author's mapped
-// ACT! user (User.actUserId, filled by `npm run act:map-users`). An author with
+// ACT! user (User.actUserId, filled by `npm run act:map-users` or by hand on
+// the user page, src/lib/act/user-link.ts). An author with
 // no mapping -- a distributor with no ACT! login, say -- falls back to the
 // service account's own ACT! user id, passed in by the caller. Nothing in a
 // body then claims a person: there is no second user field filled in to

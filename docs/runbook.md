@@ -927,6 +927,20 @@ section 11).
    Read the report before `--apply`; what it maps, and what it will not, is in
    `docs/act-integration-reference.md` section 9.
 
+   Users can also be linked **by hand**, in Settings → Users → *user* → ACT!
+   (admins and developers only): pick the ACT! user and the Acc Mgr (Rep list
+   item) from lists read live from ACT!, and Save. That is how distributors are
+   linked — their ACT! users have no email and are Inactive, so the email join
+   above cannot reach them — and a distributor must be on ACT!'s Rep list
+   before they can be given an Acc Mgr. `act:map-users` never overwrites a
+   stored link: it writes each column only where it is still empty. A hand link
+   to an ACT! user with no email (or another person's email) shows in its
+   report under DRIFT, saying it was made by hand; leave it. A hand link to the
+   ACT! user with the person's own email is "already mapped", and `--apply`
+   fills an empty Acc Mgr from that user's exact Rep item as for anyone mapped.
+   The section only works on the VPS; anywhere else it says ACT! could not be
+   reached and shows the stored values read-only.
+
 4. **Run the preflight, and resolve every FAIL.**
 
    ```bash
