@@ -13,7 +13,7 @@ import {
   createMadeNothing,
 } from "@/lib/act/client";
 import { tryLaterStatus } from "@/lib/act/record-write";
-import type { OpportunityNow, QuoteForAct } from "@/lib/act/write-payloads";
+import { readOpportunityStatus, type OpportunityNow, type QuoteForAct } from "@/lib/act/write-payloads";
 import type { OutboxStep } from "@/lib/act/outbox-plan";
 
 /** The steps that call ACT!: every OutboxStep but `done` and `blocked`. */
@@ -150,7 +150,7 @@ export function opportunityNow(record: {
   return {
     processId: readable ? processId : "",
     number: readable ? number : 0,
-    status: typeof record.status === "string" ? record.status : "",
+    status: readOpportunityStatus(record.status),
   };
 }
 
