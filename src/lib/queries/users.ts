@@ -73,6 +73,11 @@ export type UserDetail = {
    * user's own commission table, for the admin's editor on the user-edit
    * screen. `[]` is no commission. */
   commissionTiers: CommissionTier[];
+  /** `User.actUserId` and `User.actAccountMgr` -- who this user is in ACT!,
+   * and their Acc Mgr value there -- for the admin's ACT! section on the
+   * user-edit screen (src/lib/act/user-link.ts). */
+  actUserId: string | null;
+  actAccountMgr: string | null;
 };
 
 /** A single user by id, or `null` if it doesn't exist — feeds the
@@ -104,6 +109,8 @@ export const getUser = cache(async function getUser(userId: string): Promise<Use
     signatureUrl: user.signatureUrl,
     actSyncVisible: user.actSyncVisible,
     commissionTiers: parseCommissionTiers(user.commissionTiers),
+    actUserId: user.actUserId,
+    actAccountMgr: user.actAccountMgr,
   };
 });
 
