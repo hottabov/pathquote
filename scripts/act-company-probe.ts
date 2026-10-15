@@ -166,7 +166,9 @@ async function write(db: typeof import("../src/lib/db").db, key: string): Promis
     where: { OR: [{ id: key }, { number: key }] },
     include: { company: true, contact: true },
   });
-  if (!doc?.company) throw new Error(`no quote ${key}, or it has no company`);
+  if (!doc) throw new Error(`no quote with id or number ${key} (an unfinalised quote may have no number: use its id, from its address)`);
+  if (!doc.company) throw new Error(`quote ${key} has no company`);
+  console.log(`\nQuote ${doc.number ?? "(no number)"} ${doc.id}, ${doc.status}`);
   const pq = doc.company;
   const items = await actClientFromEnv().picklistItems(COUNTRIES_PICKLIST_ID);
   const address = (street: string | null, city: string | null, state: string | null, postcode: string | null, country: string | null) => {
