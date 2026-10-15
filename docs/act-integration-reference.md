@@ -362,7 +362,7 @@ Read from the environment (`.env` is loaded by `dotenv/config`, and `docker comp
 |---|---|
 | `ACT_BASE` | `https://actapi.pathfindercut.com/act.web.api` |
 | `ACT_DB` | `Pathfinder` |
-| `ACT_USER` | the Act! **display name** as it appears in Manage Users, e.g. `John Hollo`, not `john`. The integration account is `Marketing` (section 2) |
+| `ACT_USER` | the Act! **display name** as it appears in Manage Users, e.g. `John Hollo`, not `john`. Was `Marketing` (section 2) until its licence was withdrawn on 2026-10-16; since then the integration logs in as `John Hollo`, who also owns what is written for a PathQuote user not yet mapped to an Act! user. Mapped users own their own records |
 | `ACT_PASS` | that account's password |
 
 A missing variable is reported by name. A wrong `ACT_USER` or `ACT_DB` is not: both return a bare `401` (section 2). The sync also reads and writes `DATABASE_URL`, like the rest of PathQuote.
