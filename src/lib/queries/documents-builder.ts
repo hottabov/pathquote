@@ -10,9 +10,8 @@ import type {
 } from "@prisma/client";
 import { db } from "@/lib/db";
 import { documentWhereForUser, type ScopeUser } from "@/lib/scope";
-import { canSeeCommission } from "@/lib/roles";
-import { computeTotals, type CommissionResult, type DocumentConcession, type EngineInput } from "@/lib/pricing";
-import { getQuoteValidityDays, getCommissionTiers } from "@/lib/queries/settings";
+import { computeTotals, parseCommissionTiers, type CommissionResult, type DocumentConcession, type EngineInput } from "@/lib/pricing";
+import { getQuoteValidityDays } from "@/lib/queries/settings";
 import { destinationCountry, suggestTax, type Incoterm, type TaxSuggestion, type TaxTreatment } from "@/lib/documents/tax-rules";
 import { resolveDocumentTax } from "@/lib/documents/tax";
 
@@ -321,18 +320,17 @@ export type DocumentForBuilder = {
    * engine call as everything else here); for a FINAL document, read back
    * from the frozen `Document.commissionAmount`/`commissionRatePct`/
    * `commissionBase` columns instead (see `finalizeDocument`,
-   * src/lib/actions/finalize.ts) so a later edit to the commission-tier
+   * src/lib/actions/finalize.ts) so a later edit to the author's commission
    * table never rewrites what an already-issued quote is recorded as
-   * having paid out. `null` either when no commission tier table is
-   * configured (`getCommissionTiers`, src/lib/queries/settings.ts) or,
-   * for a FINAL document, when none was configured *at finalize time* —
+   * having paid out. Always the AUTHOR's commission, by the author's own
+   * table (`User.commissionTiers`), whoever is viewing. `null` either when
+   * the author's table is empty (no commission — a distributor) or,
+   * for a FINAL document, when it was empty *at finalize time* —
    * the builder must show nothing at all in either case, never a
    * misleading $0.00 (see `CommissionResult`'s doc comment). Internal-only:
    * this must never be threaded into `buildQuotationData`/`QuotationSheet`
    * or any other customer-facing render — see the doc comment on those
-   * modules for why the two pipelines stay entirely separate. Also `null`
-   * for a viewer `canSeeCommission` refuses (see `getDocumentForBuilder`),
-   * whatever the document itself holds. */
+   * modules for why the two pipelines stay entirely separate. */
   commission: CommissionResult | null;
   taxAmount: string;
   total: string;
@@ -598,30 +596,19 @@ function toBuilderContact(contact: {
  * over exactly this shape, and it must see the totals `recalcDocument` wrote
  * moments earlier *inside* that transaction — which the `db` singleton
  * cannot, and which the memo would answer with the copy loaded before the
- * transaction opened. Passing `tx` bypasses the memo for the same reason
- * `getCommissionTiers(client)` does (see its doc comment in
- * queries/settings.ts): a transaction's reads must stay that transaction's.
+ * transaction opened. Passing `tx` bypasses the memo: a transaction's reads
+ * must stay that transaction's.
  * Everything else omits it and keeps the memo.
  */
-export async function getDocumentForBuilder(
-  user: ScopeUser & { commissionVisible: boolean },
+export function getDocumentForBuilder(
+  user: ScopeUser,
   id: string,
   tx?: Prisma.TransactionClient
 ): Promise<DocumentForBuilder | null> {
   const regionId = user.regionId ?? null;
-  const document = await (tx
+  return tx
     ? loadDocumentForBuilder(user.id, user.role, regionId, id, tx)
-    : getDocumentForBuilderInScope(user.id, user.role, regionId, id));
-  // A viewer who is not shown "Your commission" (`canSeeCommission` --
-  // distributors, by default) gets no commission at all, rather than one the
-  // footer then declines to draw: the builder page hands this whole object to
-  // client components (DocumentActions, SigningPanel), so anything left on it
-  // is in the browser. `null` is the shape the footer already renders as
-  // nothing. Applied after the memo, not inside it, so the memo key stays the
-  // three scope primitives; and copied, not mutated, because the memo hands
-  // the same object to every caller in the request.
-  if (document && !canSeeCommission(user)) return { ...document, commission: null };
-  return document;
+    : getDocumentForBuilderInScope(user.id, user.role, regionId, id);
 }
 
 /** Memoization boundary for `getDocumentForBuilder` above, taking the scope
@@ -661,7 +648,10 @@ async function loadDocumentForBuilder(
       region: true,
       // `image` here is `User.image` reused as the avatar — see the
       // `author` field's doc comment above.
-      author: { select: { name: true, email: true, phone: true, image: true } },
+      // `commissionTiers`: the commission is the author's, by their own
+      // table. Read here only to feed the engine; never put on the returned
+      // object (see the explicit `author` mapping below).
+      author: { select: { name: true, email: true, phone: true, image: true, commissionTiers: true } },
       company: {
         include: {
           contacts: { orderBy: [{ isPrimary: "desc" }, { firstName: "asc" }] },
@@ -712,21 +702,11 @@ async function loadDocumentForBuilder(
   if (!document) return null;
 
   // Resolved once here (not written back onto `document.validityDays`) —
-  // see `defaultValidityDays`'s doc comment above. `commissionTiers` is
-  // fetched alongside it for the same reason — a read-time default, never
-  // persisted onto the document itself (see `CommissionResult`'s doc
-  // comment on `DocumentForBuilder` for the null-vs-configured distinction).
-  //
-  // `getCommissionTiers` takes `tx` so a transactional caller's settings read
-  // stays inside that transaction (its own doc comment explains the split);
-  // `getQuoteValidityDays` has no such parameter and needs none — it is a
-  // memoized read of an org-wide setting no transaction in this app writes,
-  // and finalize, the only transactional caller, has already resolved it
-  // before opening its transaction, so this call is answered from the memo.
-  const [defaultValidityDays, commissionTiers] = await Promise.all([
-    getQuoteValidityDays(),
-    getCommissionTiers(tx),
-  ]);
+  // see `defaultValidityDays`'s doc comment above. A memoized read of an
+  // org-wide setting no transaction in this app writes, so finalize (the
+  // only transactional caller) is answered from the memo.
+  const defaultValidityDays = await getQuoteValidityDays();
+  const commissionTiers = parseCommissionTiers(document.author.commissionTiers);
 
   // Every OPTION line's icon in the quotation's unified options table (see
   // src/lib/quotation-data.ts's QuotationOptionRow) comes from the option's

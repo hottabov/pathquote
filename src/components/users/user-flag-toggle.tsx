@@ -5,10 +5,9 @@ import { useToast } from "@/components/ui-kit/client";
 import { cn } from "@/lib/utils";
 
 /**
- * One checkbox for one per-user yes/no an admin sets on the user-edit screen:
- * whether this user is shown the ACT! sync section (`User.actSyncVisible`),
- * and whether the quote builder shows them "Your commission"
- * (`User.commissionVisible`).
+ * One checkbox for a per-user yes/no an admin sets on the user-edit screen —
+ * today, whether this user is shown the ACT! sync section
+ * (`User.actSyncVisible`).
  *
  * It saves on change, with no Save button beside it. A single boolean has no
  * half-made state worth holding in the browser, and a Save button next to one

@@ -101,9 +101,10 @@ export type EngineExtraLine = {
 // ---------------------------------------------------------------------------
 
 /**
- * One row of the admin-editable commission-rate table (Setting key
- * "commission.tiers" — see `getCommissionTiers`, src/lib/queries/settings.ts,
- * and `CommissionTiersForm`, the Settings → Preferences editor for it).
+ * One row of a salesperson's commission-rate table (`User.commissionTiers`
+ * — see `parseCommissionTiers` below, and `CommissionTiersForm`, the editor
+ * for it in Settings → Users → <user>). Each user has their own table; the
+ * engine is handed the quote AUTHOR's.
  *
  * A row covers the inclusive range `minPct..maxPct` of the document's own
  * discount percentage (`documentConcession.effectivePct`, clamped to 0 —
@@ -124,11 +125,11 @@ export type CommissionTier = {
 };
 
 /**
- * The commission table PathQuote ships with — admin-editable from then on,
- * never re-applied automatically (see `getCommissionTiers`'s "ships
- * pre-filled, until someone clears it" contract). Boundaries are inclusive
- * at the top: exactly 5% earns 4.75%, 5.01% earns 4.5% — matching the
- * owner's own table exactly.
+ * The owner's standard discount-banded table, offered as the "Standard
+ * tiers" preset in the per-user editor (`CommissionTiersForm`). Never applied
+ * to anybody automatically — a new user's table is empty (no commission)
+ * until an admin fills it. Boundaries are inclusive at the top: exactly 5%
+ * earns 4.75%, 5.01% earns 4.5% — matching the owner's own table exactly.
  */
 export const DEFAULT_COMMISSION_TIERS: CommissionTier[] = [
   { minPct: 0, maxPct: 0, ratePct: 5 },
@@ -140,12 +141,12 @@ export const DEFAULT_COMMISSION_TIERS: CommissionTier[] = [
 
 /**
  * Validates an admin-edited commission-rate table before it's saved (see
- * `updateSetting`'s "commission.tiers" case, src/lib/actions/settings.ts).
+ * `setUserCommissionTiers`, src/lib/actions/users.ts).
  * Returns a message naming the specific problem, or `null` when the table
  * is fine to save.
  *
  * An empty table is deliberately valid — it's how an admin clears the table
- * back to "no commission tiers configured", which `computeTotals` reports
+ * back to "no commission", which `computeTotals` reports
  * as `commission: null` and the builder shows as nothing at all (never a
  * misleading $0.00 — see that field's doc comment). A *non-empty* table,
  * though, must fully and exactly cover every possible discount percentage
@@ -156,7 +157,8 @@ export const DEFAULT_COMMISSION_TIERS: CommissionTier[] = [
  * Ranges are read from the array in the order given (each tier's `minPct`
  * must pick up exactly one hundredth of a percent past the previous tier's
  * `maxPct`) rather than sorted here first — `CommissionTiersForm` always
- * submits them in order with `minPct` derived from the row before, so an
+ * submits them in order, each row's `maxPct` derived from the next row's
+ * start (see src/lib/commission-tiers-editor.ts), so an
  * out-of-order table can only reach this function via a hand-crafted
  * payload, and it fails the same contiguity check a genuine gap or overlap
  * would; there's no need for a separate "not sorted" message.
@@ -227,6 +229,28 @@ function commissionRateForPct(tiers: readonly CommissionTier[], pct: number): nu
   return tiers[tiers.length - 1].ratePct;
 }
 
+/**
+ * Reads a stored `User.commissionTiers` value back as a table the engine can
+ * trust. The column is a bare Json with nothing enforcing its shape at rest,
+ * so this checks the shape row by row and then the cross-row rules
+ * (`validateCommissionTiers`). Anything that fails reads as `[]` — no
+ * commission, no line in the builder — never as a table that could silently
+ * pay the wrong rate. The only writer (`setUserCommissionTiers`) validates
+ * the same way before saving, so this should only ever see good tables.
+ */
+export function parseCommissionTiers(value: unknown): CommissionTier[] {
+  if (!Array.isArray(value)) return [];
+  const tiers: CommissionTier[] = [];
+  for (const row of value) {
+    if (typeof row !== "object" || row === null) return [];
+    const r = row as Record<string, unknown>;
+    if (typeof r.minPct !== "number" || typeof r.ratePct !== "number") return [];
+    if (r.maxPct !== null && typeof r.maxPct !== "number") return [];
+    tiers.push({ minPct: r.minPct, maxPct: r.maxPct as number | null, ratePct: r.ratePct });
+  }
+  return validateCommissionTiers(tiers) === null ? tiers : [];
+}
+
 export type EngineInput = {
   items: EngineItem[];
   extraLines: EngineExtraLine[];
@@ -249,13 +273,12 @@ export type EngineInput = {
    * "no ceiling" has to be its own state rather than a large number). */
   regionMaxMarkupPct?: number | null;
   taxRate: number;
-  /** The admin-edited commission-rate table (`getCommissionTiers`,
-   * src/lib/queries/settings.ts) — `null`/omitted/empty all mean the same
-   * thing, "no tiers configured", and `PricingTotals.commission` is `null`
-   * in every one of those cases (see that field's doc comment for why that
-   * matters). Not validated here — see `validateCommissionTiers`, run once
-   * when the table is saved (and again defensively by `getCommissionTiers`
-   * itself) rather than on every `computeTotals` call. */
+  /** The quote author's commission-rate table (`User.commissionTiers`, read
+   * through `parseCommissionTiers`) — `null`/omitted/empty all mean the same
+   * thing, "no commission", and `PricingTotals.commission` is `null` in every
+   * one of those cases (see that field's doc comment for why that matters).
+   * Not validated here — see `validateCommissionTiers`, run when the table is
+   * saved and again by `parseCommissionTiers` when it is read back. */
   commissionTiers?: CommissionTier[] | null;
 };
 
@@ -431,14 +454,11 @@ export type PricingTotals = {
   /** See `DocumentConcession`'s doc comment — always present. */
   documentConcession: DocumentConcession;
   /** The salesperson's commission on this document — see `CommissionResult`.
-   * `null` when `EngineInput.commissionTiers` is null/omitted/empty (no
-   * tier table configured), deliberately distinct from a `CommissionResult`
-   * with `amount: "0.00"` — a caller (the builder's Summary card) must show
-   * NOTHING in the unconfigured case, never a $0.00 that reads as "this
-   * quote earns no commission" when the real answer is "nobody has set up
-   * the rate table yet". See `getCommissionTiers`'s doc comment
-   * (src/lib/queries/settings.ts) for how that distinction is preserved
-   * all the way from the `Setting` row. */
+   * `null` when `EngineInput.commissionTiers` is null/omitted/empty — the
+   * author earns no commission (a distributor, or a user whose table an admin
+   * has not filled) — deliberately distinct from a `CommissionResult` with
+   * `amount: "0.00"`: the builder shows NOTHING for `null`, never a $0.00
+   * line. */
   commission: CommissionResult | null;
 };
 

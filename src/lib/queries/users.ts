@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { db } from "@/lib/db";
+import { parseCommissionTiers, type CommissionTier } from "@/lib/pricing";
 
 export type UserListItem = {
   id: string;
@@ -68,10 +69,10 @@ export type UserDetail = {
    * the viewer's own value reaches a request through the session (see
    * src/auth.ts), so no guard reads this. */
   actSyncVisible: boolean;
-  /** `User.commissionVisible` — whether the quote builder shows this user
-   * "Your commission". Read here for the admin's checkbox on the user-edit
-   * screen only, exactly like `actSyncVisible` above. */
-  commissionVisible: boolean;
+  /** `User.commissionTiers`, read through `parseCommissionTiers` — this
+   * user's own commission table, for the admin's editor on the user-edit
+   * screen. `[]` is no commission. */
+  commissionTiers: CommissionTier[];
 };
 
 /** A single user by id, or `null` if it doesn't exist — feeds the
@@ -102,7 +103,7 @@ export const getUser = cache(async function getUser(userId: string): Promise<Use
     image: user.image,
     signatureUrl: user.signatureUrl,
     actSyncVisible: user.actSyncVisible,
-    commissionVisible: user.commissionVisible,
+    commissionTiers: parseCommissionTiers(user.commissionTiers),
   };
 });
 

@@ -7,7 +7,6 @@ import {
   isAllowedSettingKey,
   quoteValidityDaysSchema,
   showOptionIconsSchema,
-  commissionTiersSchema,
   signingLinkValidityDaysSchema,
 } from "@/lib/validation/settings";
 import type { ActionResult } from "./_shared";
@@ -62,21 +61,6 @@ export async function updateSetting(key: string, formData: FormData): Promise<Ac
       if (!parsed.success) {
         return { error: parsed.error.issues[0]?.message ?? "Invalid value" };
       }
-      await db.setting.upsert({
-        where: { key },
-        create: { key, value: parsed.data },
-        update: { value: parsed.data },
-      });
-      break;
-    }
-    case "commission.tiers": {
-      const parsed = commissionTiersSchema.safeParse(formData.get("value"));
-      if (!parsed.success) {
-        return { error: parsed.error.issues[0]?.message ?? "Invalid value" };
-      }
-      // `parsed.data` is a plain `CommissionTier[]` (possibly empty — see
-      // `commissionTiersSchema`'s doc comment); Prisma's Json column takes
-      // it as-is.
       await db.setting.upsert({
         where: { key },
         create: { key, value: parsed.data },

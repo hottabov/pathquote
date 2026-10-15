@@ -157,7 +157,7 @@ export const getQuoteDocument = cache(async function getQuoteDocument(
  * `tx` exists for `finalizeDocument`, which resolves these rows inside the
  * transaction that flips the quote to FINAL so the text it freezes and the
  * totals it freezes come from one consistent read — the same reason
- * `getDocumentForBuilder` and `getCommissionTiers` take one. Every other
+ * `getDocumentForBuilder` takes one. Every other
  * caller omits it and goes through the `db` singleton.
  */
 export async function getQuoteDocumentsForRegion(

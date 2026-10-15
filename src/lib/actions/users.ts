@@ -13,6 +13,7 @@ import { hash } from "@node-rs/argon2";
 import { db } from "@/lib/db";
 import { requireAdmin, requireSession } from "@/lib/authz";
 import { idSchema } from "@/lib/validation/documents";
+import { commissionTiersSchema } from "@/lib/validation/commission";
 import {
   createUserSchema,
   updateUserSchema,
@@ -245,27 +246,30 @@ export async function setUserActSyncVisible(
 }
 
 /**
- * Shows or hides "Your commission" in the quote builder for one user —
- * `User.commissionVisible` (`canSeeCommission`, src/lib/roles.ts).
+ * Saves one user's commission table — `User.commissionTiers`, the rate they
+ * earn on their own quotes by the quote's discount (see that column's doc
+ * comment). ADMIN/DEVELOPER only; the user-edit page is too.
  *
- * Its own boolean action, not a field of `updateUser`, and with no
- * `canModifyUser` guard, for exactly the reasons `setUserActSyncVisible`
- * above gives: an absent checkbox must never read as "untick", and an ADMIN
- * or DEVELOPER sees the figure by role whatever this column says.
+ * `value` is the table as JSON from `CommissionTiersForm`, checked by
+ * `commissionTiersSchema` — row shape, then `validateCommissionTiers` for
+ * "starts at 0%, no gap, no overlap". An empty table is valid and means no
+ * commission. Drafts pick the new table up the next time they are opened
+ * (the builder computes a draft's commission live); FINAL quotes keep the
+ * commission frozen on them at finalize.
  */
-export async function setUserCommissionVisible(
-  userId: string,
-  visible: boolean
-): Promise<ActionResult> {
+export async function setUserCommissionTiers(userId: string, formData: FormData): Promise<ActionResult> {
   await requireAdmin();
 
   const idParsed = idSchema.safeParse(userId);
   if (!idParsed.success) return { error: NOT_FOUND_ERROR };
 
-  const target = await db.user.findUnique({ where: { id: userId } });
+  const parsed = commissionTiersSchema.safeParse(formData.get("value"));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid commission table" };
+
+  const target = await db.user.findUnique({ where: { id: userId }, select: { id: true } });
   if (!target) return { error: NOT_FOUND_ERROR };
 
-  await db.user.update({ where: { id: userId }, data: { commissionVisible: visible } });
+  await db.user.update({ where: { id: userId }, data: { commissionTiers: parsed.data } });
 
   revalidateUserPaths(userId);
   return {};

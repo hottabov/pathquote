@@ -2,12 +2,12 @@ import { describe, it, expect } from "vitest";
 import {
   quoteValidityDaysSchema,
   showOptionIconsSchema,
-  commissionTiersSchema,
   signingLinkValidityDaysSchema,
   isAllowedSettingKey,
   ALLOWED_SETTING_KEYS,
 } from "../src/lib/validation/settings";
 import { DEFAULT_COMMISSION_TIERS } from "../src/lib/pricing";
+import { commissionTiersSchema } from "../src/lib/validation/commission";
 import { accepts, rejects } from "./helpers/schema";
 
 describe("quoteValidityDaysSchema", () => {

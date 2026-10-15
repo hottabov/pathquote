@@ -338,28 +338,27 @@ model User {
   /// z64_act_sync_visible, so nothing changed for anybody already using the
   /// system. Set it in Settings -> Users -> <user>.
   actSyncVisible    Boolean             @default(false)
-  /// Whether the quote builder shows this user "Your commission" -- the
-  /// salesperson commission Pathfinder pays its own staff, worked out from the
-  /// commission-tier table in Settings -> Preferences. An ADMIN or DEVELOPER
-  /// sees it by role and this column is not consulted for them
-  /// (`canSeeCommission`, src/lib/roles.ts); for everyone else it is the whole
-  /// answer.
+  /// This salesperson's own commission table -- `CommissionTier[]`
+  /// (src/lib/pricing.ts): the rate they earn, by the quote's own discount
+  /// percentage. Read off the quote's AUTHOR, never the viewer, by
+  /// `recalcDocument` and `getDocumentForBuilder`, so a manager's quote shows
+  /// that manager's commission to whoever opens it.
   ///
-  /// Distributors quote their own clients in PathQuote, and how they pay their
-  /// own salespeople is their business, not a figure Pathfinder's table can
-  /// produce. Showing them Pathfinder's staff commission would be both wrong
-  /// and a look inside Pathfinder's pay. Defaults to FALSE for the same reason
-  /// `actSyncVisible` does: a new distributor is hidden without anybody having
-  /// to remember to untick anything, and a real new manager costs one tick.
+  /// Personal, not global: some managers earn less as the discount grows
+  /// (several rows), others a flat rate whatever the discount (one row, "0%
+  /// and above"). A non-empty table always covers every discount from 0% up
+  /// with no gap -- `validateCommissionTiers` refuses anything else -- so a
+  /// quote at list price never falls through to "no commission".
   ///
-  /// Hidden at the source, not in the footer: `getDocumentForBuilder`
-  /// (src/lib/queries/documents-builder.ts) returns `commission: null` for a
-  /// viewer without it, so the figure never reaches the browser at all.
-  /// Finalize still freezes it on the document either way.
+  /// `[]` means no commission at all, and the builder shows no commission
+  /// line. That is the default, so a new account -- a distributor's, above
+  /// all, whose people Pathfinder does not pay -- earns and shows nothing
+  /// until an admin fills the table in Settings -> Users -> <user>.
   ///
-  /// Every user that existed when the column arrived was set true by
-  /// z66_commission_visible. Set it in Settings -> Users -> <user>.
-  commissionVisible Boolean             @default(false)
+  /// z67_user_commission_tiers copied the old global table (Setting
+  /// "commission.tiers") onto every user who was then shown the commission,
+  /// and removed both that setting and the `commissionVisible` column.
+  commissionTiers   Json                @default("[]")
   documents         Document[]
   accounts          Account[]
   sessions          Session[]

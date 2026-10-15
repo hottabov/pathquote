@@ -11,11 +11,12 @@ import {
   setUserPassword,
   setUserAvatar,
   setUserActSyncVisible,
-  setUserCommissionVisible,
+  setUserCommissionTiers,
 } from "@/lib/actions/users";
 import { setCatalogVisibility } from "@/lib/actions/catalog-visibility";
 import { setContactsVisibility } from "@/lib/actions/contacts-visibility";
 import { UserFlagToggle } from "@/components/users/user-flag-toggle";
+import { CommissionTiersForm } from "@/components/users/commission-tiers-form";
 import { EditUserForm } from "@/components/users/edit-user-form";
 import { UserAccessSection } from "@/components/users/user-access-section";
 import { SetPasswordForm } from "@/components/users/set-password-form";
@@ -197,31 +198,18 @@ export default async function EditUserPage({ params }: { params: Promise<Params>
         )}
       </SectionCard>
 
-      {/* Same shape as the ACT! sync card above, for the same reasons: an
-          admin or developer sees the commission by role (`canSeeCommission`,
-          src/lib/roles.ts), so their page says so instead of offering a
-          checkbox that would do nothing. */}
+      {/* Every user's own table, admins included: commission is read off a
+          quote's author, so an admin who writes quotes needs one too. Empty
+          is a real answer -- no commission, no line in the builder -- and
+          the right one for a distributor. */}
       <SectionCard
         title="Commission"
-        description="Whether the quote builder shows this user “Your commission” — the staff commission worked out from the commission table in Preferences."
+        description="The commission this user earns on their own quotes, by the quote's discount. Only admins and developers can change it."
       >
-        {userIsAdmin ? (
-          <p className="text-sm text-slate-500">
-            This user&rsquo;s role ({roleLabel(user.role)}) always sees the commission. There is
-            nothing to set here.
-          </p>
-        ) : (
-          <UserFlagToggle
-            id="commission-visible"
-            userId={user.id}
-            visible={user.commissionVisible}
-            action={setUserCommissionVisible}
-            label="Show “Your commission” to this user"
-            hint="Leave it off for distributors — Pathfinder’s staff commission is not how they pay their own people. When off, the line is gone from the quote builder and the figure is never sent to their browser."
-            shownToast="Commission shown."
-            hiddenToast="Commission hidden."
-          />
-        )}
+        <CommissionTiersForm
+          action={setUserCommissionTiers.bind(null, user.id)}
+          defaultValue={user.commissionTiers}
+        />
       </SectionCard>
 
       <SectionCard

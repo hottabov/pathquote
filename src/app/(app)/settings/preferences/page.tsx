@@ -2,14 +2,12 @@ import type { Metadata } from "next";
 import {
   getQuoteValidityDays,
   getShowOptionIcons,
-  getCommissionTiers,
   getSigningLinkValidityDays,
 } from "@/lib/queries/settings";
 import { updateSetting } from "@/lib/actions/settings";
 import { QuoteValidityForm } from "@/components/settings/quote-validity-form";
 import { SigningLinkValidityForm } from "@/components/settings/signing-link-validity-form";
 import { ShowOptionIconsForm } from "@/components/settings/show-option-icons-form";
-import { CommissionTiersForm } from "@/components/settings/commission-tiers-form";
 import { PageHeader, SectionCard } from "@/components/ui-kit";
 
 export const metadata: Metadata = { title: "Preferences" };
@@ -17,17 +15,16 @@ export const dynamic = "force-dynamic";
 
 /**
  * The Preferences section — defaults applied across the app (quote
- * validity, whether option icons show, the commission tier table). Where
+ * validity, signing links, whether option icons show). Where
  * small settings collect as the app grows. Admin-only: the segment layout
  * (src/app/(app)/settings/preferences/layout.tsx) calls requireAdmin, so a
  * MANAGER never reaches this page at all.
  */
 export default async function PreferencesSettingsPage() {
-  const [quoteValidityDays, signingLinkValidityDays, showOptionIcons, commissionTiers] = await Promise.all([
+  const [quoteValidityDays, signingLinkValidityDays, showOptionIcons] = await Promise.all([
     getQuoteValidityDays(),
     getSigningLinkValidityDays(),
     getShowOptionIcons(),
-    getCommissionTiers(),
   ]);
 
   return (
@@ -50,12 +47,6 @@ export default async function PreferencesSettingsPage() {
             <ShowOptionIconsForm
               action={updateSetting.bind(null, "ui.showOptionIcons")}
               defaultValue={showOptionIcons}
-            />
-          </div>
-          <div className="border-t border-slate-100 pt-4">
-            <CommissionTiersForm
-              action={updateSetting.bind(null, "commission.tiers")}
-              defaultValue={commissionTiers}
             />
           </div>
         </div>

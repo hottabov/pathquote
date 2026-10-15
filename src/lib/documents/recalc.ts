@@ -1,10 +1,10 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { getCommissionTiers } from "@/lib/queries/settings";
 import {
   computeTotals,
   concessionCapMessage,
   markupCapMessage,
+  parseCommissionTiers,
   type CommissionResult,
   type DocumentConcession,
   type EngineInput,
@@ -39,7 +39,6 @@ import { destinationCountry, suggestTax } from "./tax-rules";
 export type RecalcClient = {
   document: Prisma.TransactionClient["document"];
   option: Prisma.TransactionClient["option"];
-  setting: Prisma.TransactionClient["setting"];
 };
 
 /** Thrown inside a `db.$transaction(async (tx) => ...)` callback to abort
@@ -143,6 +142,10 @@ export async function recalcDocument(documentId: string, client: RecalcClient = 
       // The destination side of the tax suggestion, and the VAT ID reverse
       // charge needs (./tax-rules.ts).
       company: { select: { country: true, deliverySameAsMain: true, deliveryCountry: true, taxId: true } },
+      // Commission is the AUTHOR's, by their own table -- whoever happens to
+      // be editing (a regional manager, an admin) never changes whose rates
+      // a quote earns at. See `User.commissionTiers` in schema.prisma.
+      author: { select: { commissionTiers: true } },
     },
   });
   if (!document) {
@@ -176,19 +179,14 @@ export async function recalcDocument(documentId: string, client: RecalcClient = 
         .map((line) => line.refId)
     )
   );
-  // The option flags, then the admin-editable commission-rate table needed to
-  // resolve `totals.commission` below. One after the other, not in a
-  // `Promise.all`: `client` is usually a transaction, which is a single
-  // Postgres connection, so the two could never run in parallel anyway --
-  // pg only queued them, and logged "Calling client.query() when the client
-  // is already executing a query is deprecated" in production (it becomes an
-  // error in pg@9). Read through `client`, not the `db` singleton
-  // `getCommissionTiers` defaults to, for the reason `RecalcClient` gives.
+  // The option flags. The author's commission table came with the document
+  // above. Read through `client`, never the `db` singleton, for the reason
+  // `RecalcClient` gives.
   const optionRows =
     optionRefIds.length > 0
       ? await client.option.findMany({ where: { id: { in: optionRefIds } }, select: { id: true, noCommission: true } })
       : [];
-  const commissionTiers = await getCommissionTiers(client);
+  const commissionTiers = parseCommissionTiers(document.author.commissionTiers);
   const optionNoCommissionMap = new Map(optionRows.map((o) => [o.id, o.noCommission]));
 
   const regionMaxDiscountPct = document.region.maxDiscountPct ? Number(document.region.maxDiscountPct) : null;

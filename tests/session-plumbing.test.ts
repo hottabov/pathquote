@@ -101,46 +101,6 @@ describe("actSyncVisible is declared wherever regionId is in src/types/next-auth
   });
 });
 
-/**
- * `commissionVisible` takes the same four hops again. Miss one and it arrives
- * undefined, `?? false` reads that as no grant, and a manager loses "Your
- * commission" with no error anywhere -- the safe failure, but still a failure.
- */
-describe("commissionVisible follows regionId through src/auth.ts", () => {
-  const auth = readFileSync("src/auth.ts", "utf8");
-
-  it("is written to the token wherever regionId is", () => {
-    const regionWrites = count(auth, /token\.regionId\s*=/g);
-    expect(regionWrites).toBe(2);
-    expect(count(auth, /token\.commissionVisible\s*=/g)).toBe(regionWrites);
-  });
-
-  it("is copied onto the session wherever regionId is", () => {
-    const regionCopies = count(auth, /session\.user\.regionId\s*=/g);
-    expect(regionCopies).toBe(1);
-    expect(count(auth, /session\.user\.commissionVisible\s*=/g)).toBe(regionCopies);
-  });
-
-  it("is read from the database user, not from the token it is replacing", () => {
-    expect(count(auth, /token\.commissionVisible\s*=\s*dbUser\.commissionVisible/g)).toBe(2);
-  });
-});
-
-describe("commissionVisible is declared wherever regionId is in src/types/next-auth.d.ts", () => {
-  const types = readFileSync("src/types/next-auth.d.ts", "utf8");
-
-  it("has one declaration per regionId declaration", () => {
-    const regionDeclarations = count(types, /^\s*regionId\??:/gm);
-    expect(regionDeclarations).toBe(6);
-    expect(count(types, /^\s*commissionVisible\??:/gm)).toBe(regionDeclarations);
-  });
-
-  it("declares it required on the session user and the token, optional on User", () => {
-    expect(count(types, /^\s*commissionVisible: boolean;/gm)).toBe(4);
-    expect(count(types, /^\s*commissionVisible\?: boolean;/gm)).toBe(2);
-  });
-});
-
 // The client page memoises its lookup on primitives (React's `cache` compares
 // by identity), so the grant has to be passed through that memo as a primitive
 // too. Dropping it would fail closed: the clients list shows a manager their

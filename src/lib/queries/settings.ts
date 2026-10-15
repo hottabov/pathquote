@@ -1,15 +1,5 @@
 import { cache } from "react";
-import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { DEFAULT_COMMISSION_TIERS, validateCommissionTiers, type CommissionTier } from "@/lib/pricing";
-
-/** Lets a caller already inside a `db.$transaction(async (tx) => ...)` read a
- * setting through its own `tx` rather than the `db` singleton, which would see
- * a different snapshot and check out a second pool connection while the
- * transaction holds one. Structurally satisfied by both. Only
- * `getCommissionTiers` takes it so far, because only the recalc
- * (src/lib/documents/recalc.ts) reads a setting from inside a transaction. */
-type SettingReader = { setting: Prisma.TransactionClient["setting"] };
 
 const QUOTE_VALIDITY_SETTING_KEY = "quote.validityDays";
 
@@ -73,81 +63,6 @@ export const getShowOptionIcons = cache(async function getShowOptionIcons(): Pro
   const setting = await db.setting.findUnique({ where: { key: SHOW_OPTION_ICONS_SETTING_KEY } });
   const rawValue = setting?.value;
   return typeof rawValue === "boolean" ? rawValue : DEFAULT_SHOW_OPTION_ICONS;
-});
-
-const COMMISSION_TIERS_SETTING_KEY = "commission.tiers";
-
-/** Structural check only (shape, not the cross-row gap/overlap rules — see
- * `validateCommissionTiers` in src/lib/pricing.ts for those) that a
- * `Setting.value` read back from the database is actually a
- * `CommissionTier[]` before this module trusts it as one. Defensive: the
- * only writer already validates through `commissionTiersSchema`
- * (src/lib/validation/settings.ts), but a `Setting` row is a bare Json
- * column with nothing enforcing that at rest. */
-function isCommissionTierArray(value: unknown): value is CommissionTier[] {
-  return (
-    Array.isArray(value) &&
-    value.every((row) => {
-      if (typeof row !== "object" || row === null) return false;
-      const r = row as Record<string, unknown>;
-      return typeof r.minPct === "number" && (r.maxPct === null || typeof r.maxPct === "number") && typeof r.ratePct === "number";
-    })
-  );
-}
-
-/**
- * The admin-editable commission-rate table (`Setting` key
- * "commission.tiers"), read by `getDocumentForBuilder`'s commission
- * calculation (src/lib/queries/documents.ts) and by the Settings →
- * Preferences editor (`CommissionTiersForm`).
- *
- * Ships pre-filled: when no `Setting` row exists yet, this returns
- * `DEFAULT_COMMISSION_TIERS` (src/lib/pricing.ts), not an empty table — an
- * admin has to explicitly clear it (save an empty table) to reach "no
- * commission tiers configured". That empty-array state IS preserved and
- * returned here as `[]` (see `validateCommissionTiers`'s doc comment for
- * why saving one is allowed) — it's the only way `computeTotals` ends up
- * with `commission: null`, and that distinction — "cleared on purpose" vs.
- * "nothing saved yet" vs. "a real table" — is the whole point of not just
- * defaulting an unset row to `[]`.
- *
- * A row that's present but doesn't parse as a structurally sound, valid
- * `CommissionTier[]` (shouldn't happen — the only writer, `updateSetting`,
- * always validates through `commissionTiersSchema` first — but a `Setting`
- * row is a bare Json column with no constraint enforcing that at rest)
- * falls back to `DEFAULT_COMMISSION_TIERS` too, the same "invalid stored
- * value -> default" rule `getShowOptionIcons` above already follows —
- * never a table that could silently pay the wrong rate.
- */
-export async function getCommissionTiers(client?: SettingReader): Promise<CommissionTier[]> {
-  return client ? readCommissionTiers(client) : readDefaultCommissionTiers();
-}
-
-async function readCommissionTiers(client: SettingReader): Promise<CommissionTier[]> {
-  const setting = await client.setting.findUnique({ where: { key: COMMISSION_TIERS_SETTING_KEY } });
-  if (setting === null) return DEFAULT_COMMISSION_TIERS;
-
-  const rawValue = setting.value;
-  if (!isCommissionTierArray(rawValue)) return DEFAULT_COMMISSION_TIERS;
-  if (validateCommissionTiers(rawValue) !== null) return DEFAULT_COMMISSION_TIERS;
-  return rawValue;
-}
-
-/** Only the `db`-singleton read is request-memoized, and deliberately so:
- * a caller that hands in its own `client` is inside a transaction (see
- * `SettingReader` above), and a transaction's reads must stay that
- * transaction's, never answered from — or shared with — a memo the rest of
- * the request can reach. React's `cache` would in fact key a transaction
- * client apart from `db` (arguments are matched by identity, and Prisma
- * hands out a fresh `tx` per transaction), so wrapping the exported function
- * whole would not actually cross the two; splitting the memo off the
- * parameter says that in the code rather than resting it on that detail,
- * and keeps a caller's explicitly-passed `db` from quietly sharing the
- * singleton's memo either way. */
-const readDefaultCommissionTiers = cache(async function readDefaultCommissionTiers(): Promise<
-  CommissionTier[]
-> {
-  return readCommissionTiers(db);
 });
 
 const SIGNING_LINK_VALIDITY_SETTING_KEY = "signing.linkValidityDays";
