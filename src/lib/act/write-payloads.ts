@@ -113,11 +113,10 @@ export const HISTORY_TYPE_QUOTE = 62;
  * From the `enum` declared on Opportunity.status in RAW/ACT/swagger.json (a
  * local capture, not committed):
  * `Open`, `Won`, `Lost`, `Inactive` ("This displays the status of the
- * opportunity (Open, Won, Lost, or inactive)"). That is ACT!'s own published
- * schema for this installation, not a guess -- but no opportunity has yet been
- * read back from the live API to see these strings on a real record, and a
- * schema can declare an enum the server serialises differently. Confirm
- * against a live `GET /api/opportunities` before the first write. Every status
+ * opportunity (Open, Won, Lost, or inactive)"). Those names are what is SENT,
+ * and ACT! takes them: the first live create sent "Open". What comes BACK is
+ * a number (readOpportunityStatus below), so every status read goes through
+ * readOpportunityStatus before it is compared with these. Every status
  * this module sends comes from here, and so do the ones it reads back (`open`
  * in revisedOpportunityBody, `won` in wonOpportunityBody), so that check
  * changes one place. `Inactive` is absent only because nothing here sends it
@@ -130,6 +129,32 @@ export const OPPORTUNITY_STATUS = {
 } as const;
 
 export type OpportunityStatus = (typeof OPPORTUNITY_STATUS)[keyof typeof OPPORTUNITY_STATUS];
+
+/**
+ * ACT! READS STATUS BACK AS A NUMBER. The live API answered a GET of an
+ * opportunity it had just created with `"status": 0` (production, 2026-10-13)
+ * -- not the string swagger declares, while the create's `"status": "Open"`
+ * was taken. So the server serialises the .NET enum by value and parses it
+ * by name. Swagger lists the names in declaration order, which is the order
+ * of the values: 0 Open, 1 Won, 2 Lost, 3 Inactive.
+ *
+ * Before this, every read status was a number, so nothing was ever Open: the
+ * first deal's product line was skipped as if the deal were closed, and it
+ * showed 0.
+ */
+const STATUS_BY_VALUE = ["Open", "Won", "Lost", "Inactive"] as const;
+
+/**
+ * Opportunity.status as read from ACT!, as its name: a string as it came, a
+ * number by STATUS_BY_VALUE, and "" for anything else. A number outside the
+ * list keeps its digits ("7"), which is no status's name -- not Open, so a
+ * deal in a status never seen is left alone, as for any status never seen.
+ */
+export function readOpportunityStatus(raw: unknown): string {
+  if (typeof raw === "string") return raw;
+  if (typeof raw === "number" && Number.isInteger(raw)) return STATUS_BY_VALUE[raw] ?? String(raw);
+  return "";
+}
 
 /**
  * The two ACT! contact statuses (`idStatus`, "ID/Status") PathQuote reads or

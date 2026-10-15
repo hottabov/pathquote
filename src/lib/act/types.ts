@@ -120,7 +120,8 @@ export type ActStage = {
 export type ActOpportunity = {
   id: string;
   name: string | null;
-  status: string | null;
+  /** A number as ACT! reads it back, a name as it is sent: readOpportunityStatus in src/lib/act/write-payloads.ts. */
+  status: string | number | null;
   stage: ActStage | null;
   probability: number | null;
   productTotal: number | null;

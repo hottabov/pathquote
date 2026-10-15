@@ -85,6 +85,7 @@ import {
   opportunityName,
   productLineLookup,
   productLineWrite,
+  readOpportunityStatus,
   revisedOpportunityBody,
   summaryProductBody,
   summaryProductPatch,
@@ -1281,7 +1282,7 @@ class Pass {
     if (askFirst) {
       await this.beforeCall();
       const opportunity = await this.client.getOpportunity(opportunityId);
-      const decision = productLineWrite(opportunity.status, {
+      const decision = productLineWrite(readOpportunityStatus(opportunity.status), {
         accepted: row.document.acceptedAt !== null,
         signed: row.document.signingStatus === "SIGNED",
       });

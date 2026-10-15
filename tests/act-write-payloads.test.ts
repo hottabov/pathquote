@@ -13,6 +13,7 @@ import {
   newContactBody,
   newOpportunityBody,
   opportunityIsOpen,
+  readOpportunityStatus,
   opportunityLookup,
   opportunityName,
   productLineLookup,
@@ -915,5 +916,23 @@ describe("historyRegarding and historyLookup", () => {
       matches: 3,
     });
     expect(historyLookup([ours(undefined), ours(42)], r2)).toEqual({ kind: "create" });
+  });
+});
+
+describe("readOpportunityStatus", () => {
+  it("names the numbers ACT! reads back, in swagger's order", () => {
+    expect([0, 1, 2, 3].map(readOpportunityStatus)).toEqual(["Open", "Won", "Lost", "Inactive"]);
+  });
+
+  it("keeps a string as it came, and makes nothing Open that is not", () => {
+    expect(readOpportunityStatus("Open")).toBe("Open");
+    expect(readOpportunityStatus(7)).toBe("7");
+    expect(readOpportunityStatus(0.5)).toBe("");
+    expect(readOpportunityStatus(null)).toBe("");
+    expect(opportunityIsOpen(readOpportunityStatus(7))).toBe(false);
+  });
+
+  it("lets the first revision's line be written on a deal ACT! reads back as 0", () => {
+    expect(productLineWrite(readOpportunityStatus(0), { accepted: false, signed: false })).toEqual({ kind: "write" });
   });
 });

@@ -157,6 +157,16 @@ describe("serviceAccountUserId", () => {
 });
 
 describe("opportunityNow", () => {
+  it("reads the status ACT! sends back as a number by its name: 0 is Open", () => {
+    // Production, 2026-10-13: a GET of an opportunity created "Open" answered "status": 0.
+    const stage = { number: 4, process: { id: SALES_CYCLE } };
+    expect(opportunityNow({ status: 0, stage }).status).toBe("Open");
+    expect(opportunityNow({ status: 1, stage }).status).toBe("Won");
+    expect(opportunityNow({ status: 2, stage }).status).toBe("Lost");
+    expect(opportunityNow({ status: 3, stage }).status).toBe("Inactive");
+    expect(opportunityNow({ status: 7, stage }).status).toBe("7");
+  });
+
   const SALES_CYCLE = "2380e83d-cef4-4b6d-ad15-dc9a558431ab";
 
   it("reads the stage's process and number, and the status", () => {
