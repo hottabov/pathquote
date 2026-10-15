@@ -21,9 +21,9 @@
  *   4. Looks the company up by name. If ACT! has none, POSTs it with the
  *      PathQuote main address as `address` and the delivery address as
  *      `shippingAddress`, then reads it back.
- *   5. If the quote's ACT! contact has no linked company, PATCHes the contact
- *      with `companyID` and `company`, reads it back, and prints whether the
- *      link took; then reads its associated-companies.
+ *   5. If the quote's ACT! contact has no associated company, PUTs the
+ *      association (contacts/{id}/associated-companies/{companyId}) -- how
+ *      ACT!'s own linked contacts hold their company -- and reads it back.
  *   6. If the quote has an ACT! opportunity, PUTs the company association on
  *      it and reads its associated companies back.
  * Nothing is stored in PathQuote: the feature, once built, finds the company
@@ -129,6 +129,17 @@ async function readOnly(db: typeof import("../src/lib/db").db): Promise<void> {
   console.log(`  nonsense name: ${nonsense.length} row(s) (0 = filter honoured)`);
   const page = rows(await call("GET", `/api/companies?$top=5`));
   console.log(`  unfiltered $top=5: ${page.length} row(s)`);
+  // PathQuote's name is often not ACT!'s exactly ("Flynt Amtex Inc" vs "Flynt Amtex Inc."):
+  // can a lookup be wider than eq?
+  const words = actName.split(/\s+/).filter(Boolean);
+  const prefix = words.slice(0, Math.min(2, words.length)).join(" ");
+  for (const expr of [`startswith(name,'${prefix.replace(/'/g, "''")}')`, `contains(name,'${(words[1] ?? words[0]).replace(/'/g, "''")}')`]) {
+    const q = new URLSearchParams({ $filter: expr, $top: "50" });
+    const got = await call("GET", `/api/companies?${q.toString()}`);
+    const list = rows(got);
+    console.log(`  ${expr}: ${got.status === 200 ? `${list.length} row(s); includes the known id: ${list.some((r) => r.id === known.actCompanyId)}` : got.text.slice(0, 200)}`);
+    for (const r of list.slice(0, 5)) console.log(`    ${brief(r)}`);
+  }
 
   console.log("\n2. The company record, raw");
   print("address", company.address);
@@ -204,18 +215,20 @@ async function write(db: typeof import("../src/lib/db").db, key: string): Promis
     console.log(`\n5. Contact ${contactId}`);
     const before = ((await call("GET", `/api/contacts/${contactId}`)).json ?? {}) as Record<string, unknown>;
     print("before company / companyID", [before.company, before.companyID]);
-    const linked = typeof before.companyID === "string" && !/^0{8}-/.test(before.companyID) && before.companyID !== "";
-    if (linked) {
-      console.log("  already linked to a company: left alone");
+    // ACT!'s imported contacts show their company as an ASSOCIATION, with
+    // companyID empty (read-only part, 2026-10-16), so that is what is written.
+    const existing = rows(await call("GET", `/api/contacts/${contactId}/associated-companies`));
+    console.log(`  associated before: ${existing.map(brief).join(" | ") || "(none)"}`);
+    if (existing.length > 0) {
+      console.log("  already associated with a company: left alone");
     } else {
-      const patch = await call("PATCH", `/api/contacts/${contactId}`, { id: contactId, companyID: companyId, company: back.name ?? pq.name });
-      if (patch.status >= 300) console.log(`  PATCH answered: ${patch.text.slice(0, 400)}`);
+      const put = await call("PUT", `/api/contacts/${contactId}/associated-companies/${companyId}`);
+      if (put.status >= 300) console.log(`  PUT answered: ${put.text.slice(0, 400)}`);
       const after = ((await call("GET", `/api/contacts/${contactId}`)).json ?? {}) as Record<string, unknown>;
       print("after company / companyID", [after.company, after.companyID]);
-      console.log(`  link took: ${after.companyID === companyId}`);
+      const assoc = rows(await call("GET", `/api/contacts/${contactId}/associated-companies`));
+      console.log(`  associated after: ${assoc.map(brief).join(" | ") || "(none)"}`);
     }
-    const assoc = await call("GET", `/api/contacts/${contactId}/associated-companies`);
-    console.log(`  associated-companies: ${rows(assoc).map(brief).join(" | ") || assoc.text.slice(0, 200)}`);
   }
 
   if (doc.actOpportunityId) {
