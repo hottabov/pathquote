@@ -1,10 +1,22 @@
 // Decide which ACT! user, if any, each PathQuote user is.
 //
 // This module is the decision half of `npm run act:map-users`;
-// scripts/map-act-users.ts is the I/O around it. Nothing else populates
-// User.actUserId, and without it every record PathQuote creates in ACT! is
-// owned by the integration account (`Marketing`) -- twelve managers' quotes
-// showing up as one person's pipeline.
+// scripts/map-act-users.ts is the I/O around it. It and the hand link below
+// are the only things that populate User.actUserId, and without it every
+// record PathQuote creates in ACT! is owned by the integration account (the
+// ACT_USER login) -- twelve managers' quotes showing up as one person's
+// pipeline.
+//
+// Users can also be linked BY HAND, in Settings -> Users -> <user> -> ACT!
+// (src/lib/act/user-link.ts), which is how distributors are linked: their ACT!
+// users have no email and are Inactive, so this email join cannot reach them.
+// This script never overwrites a stored link: it writes each column only
+// where it is still null. A hand link to an ACT! user whose email is not the
+// person's -- a distributor's, with none -- is reported under DRIFT and left
+// alone, and its Acc Mgr is never filled in from here. A hand link to the
+// ACT! user with the person's own email is `already mapped`, and `--apply`
+// then fills an empty Acc Mgr with that user's exact Rep item, as for any
+// mapped row.
 //
 // Pure and tested for the same reason preflight.ts is: the risk in the script
 // is writing the wrong value onto the wrong person, in either column, and that
@@ -875,6 +887,12 @@ export function formatReport(plan: UserMapPlan, options: ReportOptions): string[
     } else if (entry.reason === "stored-id-other-email") {
       out.push(`      stored id resolves to ${describeActUser(entry.storedActUser)}`);
       out.push("      whose email is not this person's.");
+      if (emailKey(entry.storedActUser.email) === null) {
+        // Only a person can have made this link: no email means this script
+        // never could. It is what a distributor linked by hand looks like.
+        out.push("      That Act! user has no email, so this link was made by hand (Settings ->");
+        out.push("      Users -> <user> -> ACT!), as distributors are linked. Expected; leave it.");
+      }
       if (entry.matchedByEmail.length === 0) {
         out.push("      No Act! user carries this person's email.");
       } else if (entry.matchedByEmail.length === 1) {

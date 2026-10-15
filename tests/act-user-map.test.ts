@@ -318,6 +318,30 @@ describe("planUserMap", () => {
       );
     });
 
+    it("says a link to an Act! user with no email was made by hand, and writes nothing for it", () => {
+      // A distributor linked in Settings -> Users -> <user> -> ACT!: Inactive,
+      // no email, and an exact Rep item that must not be filled in from here.
+      const plan = planUserMap(
+        [actUser("a1", null, { status: "Inactive", displayName: "Mr Sistemas" })],
+        [pqUser("u1", "dist@example.com", { actUserId: "a1" })],
+        [{ id: "r1", value: "Mr Sistemas", description: null }],
+      );
+      const report = formatReport(plan, { includeInactive: true }).join("\n");
+      expect(report).toContain("this link was made by hand");
+      expect(entriesToWrite(plan, { includeInactive: true })).toEqual([]);
+      expect(accountMgrWrites(plan, { includeInactive: true })).toEqual([]);
+      // Claimed by the stored link, so not relisted as a spare Act! user.
+      expect(plan.unusedActUsers).toEqual([]);
+    });
+
+    it("does not call a stored link to another person's email a hand link", () => {
+      const plan = planUserMap(
+        [actUser("a1", "someone-else@example.com")],
+        [pqUser("u1", "anna@example.com", { actUserId: "a1" })],
+      );
+      expect(formatReport(plan, { includeInactive: false }).join("\n")).not.toContain("made by hand");
+    });
+
     it("holds back a match whose Act! id is already stored on another PathQuote row", () => {
       // u1 holds a1 but a1's email is bob's now; u2 IS bob. Writing a1 onto u2
       // would hit the unique index on actUserId, so it is reported instead.
