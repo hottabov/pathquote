@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { auth } from "@/auth";
@@ -13,10 +14,12 @@ import {
   setUserActSyncVisible,
   setUserCommissionTiers,
 } from "@/lib/actions/users";
+import { setUserActLink } from "@/lib/actions/act-user-link";
 import { setCatalogVisibility } from "@/lib/actions/catalog-visibility";
 import { setContactsVisibility } from "@/lib/actions/contacts-visibility";
 import { UserFlagToggle } from "@/components/users/user-flag-toggle";
 import { CommissionTiersForm } from "@/components/users/commission-tiers-form";
+import { ActUserLinkSection, ActUserLinkSectionFallback } from "@/components/users/act-user-link-section";
 import { EditUserForm } from "@/components/users/edit-user-form";
 import { UserAccessSection } from "@/components/users/user-access-section";
 import { SetPasswordForm } from "@/components/users/set-password-form";
@@ -71,6 +74,10 @@ export default async function EditUserPage({ params }: { params: Promise<Params>
   ]);
 
   const isSelf = session.user.id === user.id;
+  // The page is admin-only already (above); the ACT! section asks again by
+  // name, so it stays admin-only if the page is ever opened wider, and
+  // setUserActLink checks a third time.
+  const viewerIsAdmin = isAdminRole(session.user.role);
   const isLastActiveAdmin = isAdminRole(user.role) && user.active && activeAdminCount <= 1;
 
   return (
@@ -211,6 +218,35 @@ export default async function EditUserPage({ params }: { params: Promise<Params>
           defaultValue={user.commissionTiers}
         />
       </SectionCard>
+
+      {/* Who this user is in ACT!, linked by hand -- the only way to link a
+          distributor, whose ACT! user has no email for act:map-users to join
+          on (src/lib/act/user-link.ts). It asks ACT! live, which answers only
+          the production VPS, so it streams in under Suspense and gives up
+          after ~10 s: the rest of this page never waits on ACT!, and a failure
+          shows the stored values with the controls disabled. */}
+      {viewerIsAdmin ? (
+        <SectionCard
+          title="ACT!"
+          description="Which ACT! user this user is, and their Acc Mgr value in ACT!. Records PathQuote writes into ACT! for this user's quotes are owned by that ACT! user, and contacts created for them get that Acc Mgr. Only admins and developers can change it."
+        >
+          <Suspense
+            fallback={
+              <ActUserLinkSectionFallback
+                storedActUserId={user.actUserId}
+                storedAccountMgr={user.actAccountMgr}
+              />
+            }
+          >
+            <ActUserLinkSection
+              userName={user.name}
+              storedActUserId={user.actUserId}
+              storedAccountMgr={user.actAccountMgr}
+              action={setUserActLink.bind(null, user.id)}
+            />
+          </Suspense>
+        </SectionCard>
+      ) : null}
 
       <SectionCard
         title="Access"
