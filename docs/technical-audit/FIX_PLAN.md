@@ -43,3 +43,40 @@ the files listed in their package.
 ## Wave 3 (needs the owner / VPS)
 - Evidence script on the VPS; then compose limits + log rotation + pg config, nginx log_format/keepalive/static caching, drain cadence (PERF-13/14/15).
 - Deploy: ordinary push to `main` after merge; migration z70 is additive (indexes only, `CREATE INDEX` — not `CONCURRENTLY`, Prisma runs it in a transaction; tables are small enough that the lock is sub-second at 8.8k rows); rollback = `TAG=<prev>` and leave the indexes.
+
+## Deployment of `audit/performance-2026-10` (prepared 2026-10-16, not executed)
+
+What ships: 9 commits on top of `main` @ af1d83f. No data migration; one
+additive index migration (`z70_perf_indexes`: three `CREATE INDEX`, run by
+`prisma migrate deploy` inside a transaction before the new app starts —
+sub-second at production's row counts). No `Document` rows are touched.
+
+1. Merge the branch into `main` (fast-forward) and push. CI runs lint,
+   typecheck, 3,890 tests, `migrate diff`, the seed twice.
+2. The deploy job: `docker compose pull`, `up -d postgres` — **this recreates
+   the Postgres container** because `docker-compose.yml` changed its
+   `command` (pg_stat_statements, slow-statement log) and `logging`. Expect
+   a few seconds without the database, inside the window that already
+   restarts the app. Then `migrate deploy`, `up -d app gotenberg`, health.
+3. After the first healthy check, once, on the VPS:
+   ```bash
+   cd /opt/pathquote && docker compose exec -T postgres psql -U pathquote -d pathquote -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements;'
+   ```
+4. Add `PRISMA_SLOW_MS=500` to `/opt/pathquote/.env` and `docker compose up -d app`
+   (one more restart) — optional, but it is what makes a slow query visible.
+5. nginx by hand (runbook §3b): timing log format, keep-alive upstream,
+   immutable `/_next/static/`. `nginx -t && systemctl reload nginx`.
+6. Watch for a day: `docker compose logs app --since 24h | grep -E '\[runtime\]|slow-query|slow-save'`
+   and `/api/health` → `dbMs`, `pool.waiting`.
+
+Rollback: `TAG=af1d83f docker compose up -d app` (the previous image keeps
+working against the z70 indexes — they are additive). Revert
+`docker-compose.yml` in the checkout only if the Postgres flags cause
+trouble (`git checkout af1d83f -- docker-compose.yml && docker compose up -d postgres`).
+The nginx steps are independent and reversible one by one.
+
+What a user should notice: saving a field in a quote no longer waits on a
+page render; switching builder tabs is instant; the quotes list opens with
+the latest 200 and offers "Show all"; the first open of a draft downloads
+~270 KB less JavaScript and no editor until Quote setup is opened; the
+dashboard no longer fires background requests on load.
