@@ -95,3 +95,18 @@ Baseline measurements, then launch read-only diagnosis agents.
   dead send-dialog code, one-off scripts).
 - Local Postgres still has `log_min_duration_statement=0` from this audit
   (ALTER SYSTEM); reset once measurements are no longer needed.
+
+## 2026-10-16 (night) — production evidence collected, two more fixes
+
+- SSH access granted (dedicated key). Evidence in PRODUCTION.md and
+  scripts/prod-evidence-2026-10-16.txt (redacted). Server p50 19 ms / p95
+  117 ms; every request > 3 s this week = the user page's ACT! section or
+  Sync now; ACT! costs the VPS 1–2 s per request; users are far from the VPS
+  (Cloudflare in front). PERF-13/14 rejected as causes. Prod holds 13 quotes
+  and 8,845 companies.
+- PERF-19 (ACT! lists cached) and PERF-20 (clients one-tree rows, −14 %)
+  committed (12a146a). Branch: 14 commits, typecheck/lint/3,890 tests green,
+  build warning-free.
+- Next: owner merges + deploys (FIX_PLAN.md); after deploy run the
+  VERIFICATION.md post-deploy commands; decide the pageSize=all cap and
+  "Sync now" (PERF-11). Local Postgres statement logging still on.

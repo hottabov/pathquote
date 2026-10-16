@@ -155,3 +155,15 @@ is at or below its baseline.
 | Dashboard ≤ 2 prefetches | **0 — met** |
 | Finalize returns before Gotenberg | **met by construction** (`after()`); not exercised in the browser (local Gotenberg present but no finalize run in this session) |
 | Pool: checkout > 5 s fails loudly; statements > 30 s cut | **met by configuration**; not load-tested |
+
+## Production-driven fixes (12a146a)
+
+| Scenario | Before | After | Where measured |
+|---|---|---|---|
+| /settings/users/[id] open and save (PERF-19) | prod: GET 6–10 s, POST 6–11 s (two sequential ACT! reads of 1–2 s each per render, three per save) | ACT! lists cached 10 min per process; a save makes no ACT! call | code + unit tests; **to verify on the VPS after deploy** (commands in VERIFICATION.md) |
+| /clients?pageSize=all (PERF-20) | prod: 8,845 rows, 5,848,032 B RSC, 2.87 s; local old code 401 rows: HTML 2,508,031 B, RSC 1,397,079 B | local new code 401 rows: HTML 2,350,222 B, RSC 1,194,600 B (**−14 %**), 76 KB on the wire, 105–121 ms | local; the row is now one tree, but the payload is dominated by per-cell class strings, so "all" at 8,845 rows stays a multi-MB page — the cap is the owner's decision |
+
+The clients result is a miss against the intent: one tree per row saved
+14 %, not half. At 2.7 KB per `<tr>` the cost is Tailwind class strings
+repeated in every cell, which gzip hides on the wire (76 KB) but React still
+serialises and the browser still parses.

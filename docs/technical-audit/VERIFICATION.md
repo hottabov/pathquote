@@ -86,3 +86,23 @@ measured from localhost, no WAN): sign in once in a browser, copy the
 ```bash
 for p in /quotes /clients /; do for i in 1 2 3 4 5; do curl -s -o /dev/null -w "$p %{http_code} ttfb=%{time_starttransfer} total=%{time_total} bytes=%{size_download}\n" -H "Cookie: authjs.session-token=$TOKEN" http://127.0.0.1:3010$p; done; done
 ```
+
+## Production (read-only, 2026-10-16) — what was verified there
+
+See PRODUCTION.md for the numbers. Verified on the VPS: host idle, no memory
+or I/O pressure, Postgres healthy (hit ratio 100 %, no lock waits), nginx adds
+no time (`rt` ≈ `urt`), the `pq_timing` access log is live, one drain tick
+costs 1.35 s wall / 0.17 s CPU, ACT! costs the VPS 1–2 s per request.
+
+## To verify after the deploy (commands, read-only)
+
+```bash
+# ACT! user page no longer takes seconds (PERF-19): p95/p99 of the page since the deploy
+L=/var/log/nginx/q.pathfindercut.com.access.log
+grep -E "/settings/users/[a-z0-9]+" $L | grep "$(date -u +%d/%b/%Y)" | grep -oE "rt=[0-9.]+" | cut -d= -f2 | sort -n | awk '{a[NR]=$1} END{print "n="NR, "p50="a[int(NR*.5)+1], "p95="a[int(NR*.95)], "max="a[NR]}'
+# autosaves (PERF-01): POST /quotes/<id> since the deploy
+grep -E "\"POST /quotes/[a-z0-9]+ " $L | grep "$(date -u +%d/%b/%Y)" | grep -oE "rt=[0-9.]+" | cut -d= -f2 | sort -n | awk '{a[NR]=$1} END{print "n="NR, "p50="a[int(NR*.5)+1], "p95="a[int(NR*.95)], "max="a[NR]}'
+# pool / event loop never complained
+docker compose logs app --since 24h 2>&1 | grep -cE "\[runtime\]|slow-query"
+curl -s http://127.0.0.1:3010/api/health
+```
