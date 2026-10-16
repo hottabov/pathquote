@@ -77,7 +77,7 @@ async function main(): Promise<number> {
     if (doc.actOpportunityId) {
       console.log("\nACT! opportunity");
       const opp = (await act.getOpportunity(doc.actOpportunityId)) as unknown as Record<string, unknown>;
-      pick(opp, ["name", "status", "probability", "productTotal", "weightedTotal", "grossMargin", "openDate", "estimatedCloseDate", "actualCloseDate", "recordManagerID", "recordManager", "manager", "recordOwner"]);
+      pick(opp, ["name", "status", "probability", "productTotal", "weightedTotal", "grossMargin", "openDate", "estimatedCloseDate", "actualCloseDate", "recordManagerID", "recordManager", "manager", "recordOwner", "isPrivate", "contactNames"]);
       const stage = opp.stage as Record<string, unknown> | undefined;
       show("stage", stage ? `${stage.name} (${stage.number}, ${stage.probability}%)` : "-");
       show("companies", (opp.companies as unknown[] | undefined)?.length ?? 0);
