@@ -2,12 +2,13 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { auth } from "@/auth";
 import { isAdminRole } from "@/lib/roles";
-import { getQuoteDocument } from "@/lib/queries/quote-documents";
+import { getQuoteDocument, getQuoteDocumentForRegion } from "@/lib/queries/quote-documents";
 import { DOCUMENT_TOKENS } from "@/lib/quote-variables";
 import { renderStoredRichText } from "@/lib/rich-text";
 import { PageHeader } from "@/components/ui-kit";
 import {
   QuoteDocumentEditor,
+  ReadOnlyPane,
   type QuoteDocumentVersion,
 } from "@/components/quote-documents/quote-document-editor";
 
@@ -23,6 +24,11 @@ type Params = { key: string };
 // the catalogue route by opaque id instead.
 export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
   const { key } = await params;
+  const session = await auth();
+  if (!isAdminRole(session?.user?.role)) {
+    const own = await getQuoteDocumentForRegion(key, session?.user?.regionId ?? null);
+    return { title: own ? `${own.title} — ${key}` : key };
+  }
   // `getQuoteDocument` is request-memoized, so resolving it here and again in
   // the page body is one query, not two.
   // `quoteDocument`, not `document`: in this codebase `Document` is the quote
@@ -37,11 +43,12 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
  *
  * A MANAGER is NOT sent to `notFound()` here. `/settings/content/[key]` did
  * exactly that, which is why a salesperson could never read the terms their
- * own client was signing. They get the page, every region tab, and every
- * word — rendered, not editable. What the page withholds from them is the
- * editor, the variable palette, Save, and region create/delete, all of which
- * would fail against `requireAdmin()` server actions anyway; `canEdit` is
- * the single switch, read the same way `/catalog/[seriesId]` reads it.
+ * own client was signing. They get the one version THEIR region prints (its
+ * own where it has one, the default otherwise), rendered, not editable — no
+ * region tabs, nothing of another region's, and `notFound()` for a document
+ * their region does not print at all. What the page withholds from them is
+ * the editor, the variable palette, Save, and region create/delete, all of
+ * which would fail against `requireAdmin()` server actions anyway.
  *
  * The read-only body is rendered HERE, on the server, through
  * `renderStoredRichText` — the same allowlist sanitizer every other stored
@@ -55,15 +62,40 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
  */
 export default async function QuoteDocumentPage({ params }: { params: Promise<Params> }) {
   const { key } = await params;
-  const [session, quoteDocument] = await Promise.all([auth(), getQuoteDocument(key)]);
+  const session = await auth();
+  const canEdit = isAdminRole(session?.user?.role);
+
+  if (!canEdit) {
+    const own = await getQuoteDocumentForRegion(key, session?.user?.regionId ?? null);
+    if (!own) notFound();
+    return (
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          backHref="/documents"
+          backLabel="Documents"
+          title={own.title}
+          description={`${key} — read-only. Only an admin can change what a customer signs.`}
+        />
+        <ReadOnlyPane
+          version={{
+            regionCode: null,
+            title: own.title,
+            body: own.body,
+            includedByDefault: own.includedByDefault,
+            bodyHtml: renderStoredRichText(own.body),
+          }}
+        />
+      </div>
+    );
+  }
+
+  const quoteDocument = await getQuoteDocument(key);
 
   // `null` only when the key names nothing at all. A key with region versions
   // but no global default is a region-only document (D5) and a perfectly real
   // result — the editor renders an explanatory Default tab for it rather than
   // a 404.
   if (!quoteDocument) notFound();
-
-  const canEdit = isAdminRole(session?.user?.role);
 
   const versions: QuoteDocumentVersion[] = [];
   if (quoteDocument.default) {
@@ -72,7 +104,7 @@ export default async function QuoteDocumentPage({ params }: { params: Promise<Pa
       title: quoteDocument.default.title,
       body: quoteDocument.default.body,
       includedByDefault: quoteDocument.default.includedByDefault,
-      bodyHtml: canEdit ? null : renderStoredRichText(quoteDocument.default.body),
+      bodyHtml: null,
     });
   }
   for (const override of quoteDocument.overrides) {
@@ -81,7 +113,7 @@ export default async function QuoteDocumentPage({ params }: { params: Promise<Pa
       title: override.title,
       body: override.body,
       includedByDefault: override.includedByDefault,
-      bodyHtml: canEdit ? null : renderStoredRichText(override.body),
+      bodyHtml: null,
     });
   }
 
@@ -93,18 +125,13 @@ export default async function QuoteDocumentPage({ params }: { params: Promise<Pa
         backHref="/documents"
         backLabel="Documents"
         title={heading}
-        description={
-          canEdit
-            ? key
-            : `${key} — read-only. Only an admin can change what a customer signs.`
-        }
+        description={key}
       />
 
       <QuoteDocumentEditor
         documentKey={quoteDocument.key}
         versions={versions}
         activeRegions={quoteDocument.activeRegions.map((region) => ({ code: region.code, name: region.name }))}
-        canEdit={canEdit}
         // The palette's own list, straight from the registry the save
         // validator checks against — an author is offered exactly the tokens
         // `updateQuoteDocument` will accept, and passing it from the server

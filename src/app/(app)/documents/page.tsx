@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { FileCheck, Plus } from "lucide-react";
 import { auth } from "@/auth";
 import { isAdminRole } from "@/lib/roles";
-import { listQuoteDocuments } from "@/lib/queries/quote-documents";
+import { listQuoteDocuments, listQuoteDocumentsForRegion } from "@/lib/queries/quote-documents";
 import { reorderQuoteDocuments } from "@/lib/actions/quote-documents";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -24,10 +24,12 @@ export const dynamic = "force-dynamic";
  * NOT gated on role, unlike `/settings/content`, the admin-only screen this
  * replaces. That screen 404'd a MANAGER, which meant a salesperson could not
  * read the terms their own client was about to sign — the defect this
- * section exists to fix. A manager gets the same three rows, the same badges
- * and the same documents behind them; what they do not get is a drag handle,
- * because `reorderQuoteDocuments` is `requireAdmin()` and offering a control
- * that cannot work is worse than not offering it.
+ * section exists to fix. A manager (and a regional manager) gets the
+ * documents HIS region prints — its own version where it has one, the
+ * default otherwise — and nothing of any other region's
+ * (`listQuoteDocumentsForRegion`). Nor a drag handle, because
+ * `reorderQuoteDocuments` is `requireAdmin()` and offering a control that
+ * cannot work is worse than not offering it.
  *
  * No group headers, unlike the content-block list: `terms.*`, `conditions.*`
  * and `rsp.*` were 22 fragments that needed grouping into three families.
@@ -42,8 +44,11 @@ export const dynamic = "force-dynamic";
 export default async function QuoteDocumentsPage() {
   // AppLayout already calls requireSession and redirects an unauthenticated
   // request, so a session is always present here — only the role matters.
-  const [session, documents] = await Promise.all([auth(), listQuoteDocuments()]);
+  const session = await auth();
   const isAdmin = isAdminRole(session?.user?.role);
+  const documents = isAdmin
+    ? await listQuoteDocuments()
+    : await listQuoteDocumentsForRegion(session?.user?.regionId ?? null);
 
   return (
     <div className="flex flex-col gap-6">
@@ -52,7 +57,7 @@ export default async function QuoteDocumentsPage() {
         description={
           isAdmin
             ? "The legal text printed on every quote. Drag to set the order they print in."
-            : "The legal text printed on every quote. Only an admin can change it."
+            : "The legal text printed on your region's quotes. Only an admin can change it."
         }
         actions={
           // Admin only. A MANAGER reads this section and edits nothing, and

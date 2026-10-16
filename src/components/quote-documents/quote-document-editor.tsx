@@ -45,25 +45,19 @@ export type QuoteDocumentEditorRegion = { code: string; name: string };
  * tab owns its panel by id, only the selected tab is in the tab order, and
  * Left/Right/Home/End move the selection — the pattern the roles promise.
  *
- * `canEdit` is the whole of the permission story on this page. A MANAGER
- * reaches it (they need to know what their own client is signing — the
- * admin-only content screen this replaces never let them), sees every tab and
- * every word, and is shown no control that would fail: no editor, no
- * palette, no Save, no create-version, no delete. The actions themselves are
- * `requireAdmin()` regardless, so this is about not offering a button that
- * cannot work, not about security.
+ * Admin only. A manager reading a document gets `ReadOnlyPane` alone, with
+ * the one version his region prints and no tabs (see
+ * `/documents/[key]/page.tsx`).
  */
 export function QuoteDocumentEditor({
   documentKey,
   versions,
   activeRegions,
-  canEdit,
   tokens,
 }: {
   documentKey: string;
   versions: QuoteDocumentVersion[];
   activeRegions: QuoteDocumentEditorRegion[];
-  canEdit: boolean;
   tokens: QuoteToken[];
 }) {
   const [activeTab, setActiveTab] = useState<string | null>(null); // null = Default tab
@@ -160,35 +154,16 @@ export function QuoteDocumentEditor({
         className="focus-ring rounded-lg"
       >
         {activeTab === null ? (
-          <DefaultPane
+          <DefaultPane documentKey={documentKey} version={defaultVersion} tokens={tokens} />
+        ) : selectedRegion ? (
+          <DocumentRegionPane
             documentKey={documentKey}
-            version={defaultVersion}
-            canEdit={canEdit}
+            regionCode={selectedRegion.code}
+            regionName={selectedRegion.name}
+            version={versionByCode.get(selectedRegion.code) ?? null}
+            hasDefault={defaultVersion !== null}
             tokens={tokens}
           />
-        ) : selectedRegion ? (
-          canEdit ? (
-            <DocumentRegionPane
-              documentKey={documentKey}
-              regionCode={selectedRegion.code}
-              regionName={selectedRegion.name}
-              version={versionByCode.get(selectedRegion.code) ?? null}
-              hasDefault={defaultVersion !== null}
-              tokens={tokens}
-            />
-          ) : versionByCode.has(selectedRegion.code) ? (
-            <ReadOnlyPane version={versionByCode.get(selectedRegion.code)!} />
-          ) : (
-            <EmptyState
-              icon={FileText}
-              title={`No ${selectedRegion.code} version`}
-              description={
-                defaultVersion
-                  ? `${selectedRegion.name} prints the default document shown on the Default tab.`
-                  : `This document has no default, so ${selectedRegion.name} does not print it.`
-              }
-            />
-          )
         ) : null}
       </div>
     </div>
@@ -206,12 +181,10 @@ function registerTab(refs: Map<string, HTMLButtonElement>, code: string, node: H
 function DefaultPane({
   documentKey,
   version,
-  canEdit,
   tokens,
 }: {
   documentKey: string;
   version: QuoteDocumentVersion | null;
-  canEdit: boolean;
   tokens: QuoteToken[];
 }) {
   if (!version) {
@@ -228,8 +201,6 @@ function DefaultPane({
     );
   }
 
-  if (!canEdit) return <ReadOnlyPane version={version} />;
-
   return (
     <QuoteDocumentForm
       action={updateQuoteDocument.bind(null, documentKey, null)}
@@ -241,11 +212,11 @@ function DefaultPane({
   );
 }
 
-/** What a MANAGER sees on any tab: the document as stored, with its
+/** What a reader who may not edit sees: the document as stored, with its
  * `{{tokens}}` still visible — they are part of the text, and hiding them
  * would misrepresent what is actually written — plus the same Preview button
  * an admin gets, for reading it the way a customer will. */
-function ReadOnlyPane({ version }: { version: QuoteDocumentVersion }) {
+export function ReadOnlyPane({ version }: { version: QuoteDocumentVersion }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6">

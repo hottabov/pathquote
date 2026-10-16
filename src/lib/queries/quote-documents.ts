@@ -1,9 +1,10 @@
 import { cache } from "react";
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import type { QuoteDocumentRow } from "@/lib/quotation-data";
+import { resolveQuoteDocuments, type QuoteDocumentRow } from "@/lib/quotation-data";
 import {
   buildQuoteDocumentList,
+  type QuoteDocumentListItem,
   type QuoteDocumentRegionRow,
 } from "@/lib/quote-document-list";
 
@@ -161,11 +162,12 @@ export const getQuoteDocument = cache(async function getQuoteDocument(
  * caller omits it and goes through the `db` singleton.
  */
 export async function getQuoteDocumentsForRegion(
-  regionId: string,
+  regionId: string | null,
   tx?: Prisma.TransactionClient
 ): Promise<QuoteDocumentRow[]> {
+  // `null` is a user with no region of their own: the defaults alone.
   const rows = await (tx ?? db).quoteDocument.findMany({
-    where: { OR: [{ regionId: null }, { regionId }] },
+    where: regionId ? { OR: [{ regionId: null }, { regionId }] } : { regionId: null },
   });
 
   return rows.map((row) => ({
@@ -176,4 +178,54 @@ export async function getQuoteDocumentsForRegion(
     sortOrder: row.sortOrder,
     includedByDefault: row.includedByDefault,
   }));
+}
+
+// --- a non-admin's view of the Documents screen --------------------------
+
+/**
+ * The documents one region prints, one row per key -- its own version where
+ * it has one, the default otherwise -- in print order. What a manager's
+ * Documents screen lists: every manager belongs to a region, and another
+ * region's agreements are none of theirs (Vadym, 2026-10-16 -- "Кожен
+ * менеджер має свій регіон і він має бачити лише свій регіон в
+ * Документах"). No region badges: there is only one region in view.
+ */
+export async function listQuoteDocumentsForRegion(regionId: string | null): Promise<QuoteDocumentListItem[]> {
+  const rows = await getQuoteDocumentsForRegion(regionId);
+  return Array.from(resolveQuoteDocuments(rows, regionId ?? "").values())
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key))
+    .map((row) => ({
+      key: row.key,
+      title: row.title,
+      sortOrder: row.sortOrder,
+      includedByDefault: row.includedByDefault,
+      regionCodes: [],
+      regionOnly: false,
+    }));
+}
+
+/**
+ * The one version of document `key` that `regionId` prints, or `null` when
+ * that region prints nothing under this key (another region's agreement).
+ * Same resolution as a quote's: the region's own version wins over the
+ * default.
+ */
+export async function getQuoteDocumentForRegion(
+  key: string,
+  regionId: string | null
+): Promise<QuoteDocumentRow | null> {
+  const rows = await db.quoteDocument.findMany({
+    where: { key, ...(regionId ? { OR: [{ regionId: null }, { regionId }] } : { regionId: null }) },
+  });
+  const resolved = resolveQuoteDocuments(rows, regionId ?? "").get(key);
+  return resolved
+    ? {
+        key: resolved.key,
+        regionId: resolved.regionId,
+        title: resolved.title,
+        body: resolved.body,
+        sortOrder: resolved.sortOrder,
+        includedByDefault: resolved.includedByDefault,
+      }
+    : null;
 }
