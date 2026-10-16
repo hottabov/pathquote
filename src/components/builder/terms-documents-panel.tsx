@@ -7,9 +7,14 @@ import { EmptyState, ReadOnlyValue, fieldInputClass } from "@/components/ui-kit"
 import { useToast } from "@/components/ui-kit/client";
 import { useAutosave } from "@/lib/use-autosave";
 import { cn } from "@/lib/utils";
-import { setDocumentExclusions, setQuoteTerms } from "@/lib/actions/documents";
+import { setDocumentChoices, setQuoteTerms } from "@/lib/actions/documents";
 import { quoteTermsSchema } from "@/lib/validation/quote-documents";
 import type { QuoteTermValues } from "@/lib/quote-terms";
+import {
+  isQuoteDocumentIncluded,
+  withQuoteDocumentChoice,
+  type QuoteDocumentChoices,
+} from "@/lib/quote-document-choice";
 
 /** One legal document as the panel offers it — the resolved
  * `QuoteDocument` for this quote's region (see `resolveQuoteDocuments` in
@@ -90,7 +95,7 @@ export function TermsDocumentsPanel({
   region,
   terms,
   documents,
-  excludedKeys,
+  choices: initialChoices,
   readOnly = false,
 }: {
   documentId: string;
@@ -100,8 +105,9 @@ export function TermsDocumentsPanel({
   terms: Record<TermKey, number | null>;
   /** Every document resolved for this quote's region, in print order. */
   documents: PanelDocument[];
-  /** The keys this quote currently excludes (`DocumentExclusion` rows). */
-  excludedKeys: string[];
+  /** This quote's own decisions by document key (`QuoteDocumentChoice`
+   * rows) — absence means the document's default. */
+  choices: QuoteDocumentChoices;
   readOnly?: boolean;
 }) {
   const [drafts, setDrafts] = useState<TermDrafts>(() => toDrafts(terms));
@@ -133,35 +139,32 @@ export function TermsDocumentsPanel({
   });
 
   const toast = useToast();
-  const [excluded, setExcluded] = useState<string[]>(excludedKeys);
+  const [choices, setChoices] = useState<QuoteDocumentChoices>(initialChoices);
   const [pending, startTransition] = useTransition();
 
-  // A document nobody opted into is not something a quote can turn on: the
-  // only per-quote channel is exclusion, so the renderer drops it whatever
-  // this panel does (see `buildQuotationData`'s selection comment). It is
-  // listed, unticked and disabled rather than hidden, so an author can see
-  // the region has such a document and who to ask about it — and it is never
-  // written into an exclusion set, since it was never included to exclude.
-  const optional = documents.filter((doc) => !doc.includedByDefault);
-  const offered = documents.filter((doc) => doc.includedByDefault);
-
-  function toggleDocument(key: string, include: boolean) {
-    const previous = excluded;
-    const next = include ? excluded.filter((k) => k !== key) : [...excluded.filter((k) => k !== key), key];
-    setExcluded(next);
+  // Every document is a tickbox, whatever its default. One an admin set to
+  // "not included by default" (an optional agreement such as RSP Plus)
+  // starts unticked and is the author's to turn on; the rest start ticked.
+  // Only a departure from the default is stored, so a quote keeps following
+  // a default an admin later changes for the documents it never touched.
+  function toggleDocument(doc: PanelDocument, include: boolean) {
+    const previous = choices;
+    const next = withQuoteDocumentChoice(choices, doc, include);
+    setChoices(next);
     startTransition(async () => {
-      const result = await setDocumentExclusions(documentId, next);
+      const result = await setDocumentChoices(
+        documentId,
+        Object.entries(next).map(([key, included]) => ({ key, included }))
+      );
       if (result?.error) {
-        setExcluded(previous);
+        setChoices(previous);
         toast.error(result.error);
       }
     });
   }
 
-  const excludedSet = new Set(excluded);
-
   if (readOnly) {
-    const printed = offered.filter((doc) => !excludedSet.has(doc.key));
+    const printed = documents.filter((doc) => isQuoteDocumentIncluded(doc, choices));
     return (
       <div className="flex flex-col gap-4">
         {/* Through ReadOnlyValue like every other read-only field in the
@@ -287,35 +290,22 @@ export function TermsDocumentsPanel({
           />
         ) : null}
 
-        {offered.map((doc) => (
-          <label key={doc.key} className="flex h-11 items-center justify-between gap-3">
-            <span className="text-sm text-brand-dark">{doc.title}</span>
+        {documents.map((doc) => (
+          <label key={doc.key} className="flex min-h-11 items-center justify-between gap-3 py-1">
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className="text-sm text-brand-dark">{doc.title}</span>
+              {doc.includedByDefault ? null : (
+                <span className="text-xs text-slate-500">Optional — not included unless ticked.</span>
+              )}
+            </span>
             <input
               type="checkbox"
-              checked={!excludedSet.has(doc.key)}
+              checked={isQuoteDocumentIncluded(doc, choices)}
               disabled={pending}
-              onChange={(event) => toggleDocument(doc.key, event.target.checked)}
-              className="size-4 rounded border-slate-300 accent-brand disabled:cursor-not-allowed"
+              onChange={(event) => toggleDocument(doc, event.target.checked)}
+              className="size-4 shrink-0 rounded border-slate-300 accent-brand disabled:cursor-not-allowed"
             />
           </label>
-        ))}
-
-        {optional.map((doc) => (
-          <div key={doc.key} className="flex flex-col gap-0.5 py-2">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-sm text-slate-500">{doc.title}</span>
-              <input
-                type="checkbox"
-                checked={false}
-                disabled
-                readOnly
-                className="size-4 rounded border-slate-300 accent-brand disabled:cursor-not-allowed"
-              />
-            </div>
-            <p className="text-xs text-slate-500">
-              Not offered by default — an admin turns it on for the region in Documents.
-            </p>
-          </div>
         ))}
       </div>
     </div>

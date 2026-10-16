@@ -49,4 +49,4 @@ export {
   setIncoterm,
   setDocumentTax,
 } from "./documents/presentation";
-export { setQuoteTerms, setDocumentExclusions } from "./documents/terms";
+export { setQuoteTerms, setDocumentChoices } from "./documents/terms";

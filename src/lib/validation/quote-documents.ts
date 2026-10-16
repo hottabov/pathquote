@@ -26,7 +26,7 @@ const RESERVED_QUOTE_DOCUMENT_KEYS = new Set(["new"]);
  * ever typed, and therefore the only chance to canonicalize one.
  *
  * A key is permanent: it is what `/documents/<key>` resolves, what a
- * per-quote `DocumentExclusion` stores in place of an id (so an exclusion
+ * per-quote `QuoteDocumentChoice` stores in place of an id (so a choice
  * survives the quote changing region), and what the ContentBlock migration
  * wrote. Nothing renames one. Lowercased because Postgres compares "DPA" and
  * "dpa" as different keys, which would give an admin two documents they
@@ -164,7 +164,7 @@ export function isQuoteDocumentKeyPermutation(proposed: string[], actual: string
   return true;
 }
 
-// --- the builder's own panel (setQuoteTerms / setDocumentExclusions) --------
+// --- the builder's own panel (setQuoteTerms / setDocumentChoices) -----------
 
 /**
  * One ceiling for all four figures rather than a plausible bound per unit
@@ -224,20 +224,23 @@ export const quoteTermsSchema = z.object({
 export type QuoteTermsInput = z.infer<typeof quoteTermsSchema>;
 
 /**
- * `setDocumentExclusions`' input: the complete set of document keys this
- * quote leaves out, submitted whole so the action can replace the stored set
- * rather than diff it (see `DocumentExclusion`'s doc comment in
- * schema.prisma — absence means included, so the common quote submits `[]`).
+ * `setDocumentChoices`' input: the complete set of this quote's decisions
+ * about its legal documents — `included: false` for one it leaves out,
+ * `included: true` for one it asks for that its region does not print by
+ * default. Submitted whole so the action can replace the stored set rather
+ * than diff it (see `QuoteDocumentChoice`'s doc comment in schema.prisma —
+ * absence means the document's default, so the common quote submits `[]`).
  *
  * Shape only. Whether a key names a document that actually resolves for this
- * quote's region is deliberately not checked: an exclusion is subtractive, so
- * one naming nothing removes nothing, and the alternative — reading the
+ * quote's region is deliberately not checked: a choice about a document the
+ * region does not have changes nothing that prints (`isQuoteDocumentIncluded`
+ * is only ever asked about resolved rows), and the alternative — reading the
  * region's documents inside the write path purely to reject a key the panel
  * could not have produced — buys no integrity for the query it costs.
  */
-export const documentExclusionsSchema = z
-  .array(keySchema, { error: "Invalid document selection" })
+export const documentChoicesSchema = z
+  .array(z.object({ key: keySchema, included: z.boolean() }), { error: "Invalid document selection" })
   .max(100, "Invalid document selection")
-  .refine((keys) => new Set(keys).size === keys.length, "Duplicate document in selection");
+  .refine((choices) => new Set(choices.map((choice) => choice.key)).size === choices.length, "Duplicate document in selection");
 
-export type DocumentExclusionsInput = z.infer<typeof documentExclusionsSchema>;
+export type DocumentChoicesInput = z.infer<typeof documentChoicesSchema>;

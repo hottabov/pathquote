@@ -73,6 +73,7 @@ import { Tooltip } from "@/components/ui-kit/client";
 import { HoverPrefetchLink } from "@/components/hover-prefetch-link";
 import { pathWorksModulesWithoutHost } from "@/lib/production-forms/pathworks";
 import { readProductSpecs } from "@/lib/validation/product-specs";
+import { isQuoteDocumentIncluded } from "@/lib/quote-document-choice";
 
 export const dynamic = "force-dynamic";
 
@@ -269,7 +270,7 @@ export default async function DocumentBuilderPage({
 
   // One row per key for this region (its own version where it has one, the
   // global default otherwise), in the print order an admin set — the same
-  // selection `buildQuotationData` makes, minus the exclusion filter, which
+  // selection `buildQuotationData` makes, minus the inclusion filter, which
   // is exactly what the panel is for.
   const panelDocuments = Array.from(resolveQuoteDocuments(quoteDocumentRows, document.regionId).values())
     .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -303,7 +304,7 @@ export default async function DocumentBuilderPage({
     })),
     extraLineCount: document.extraLines.length,
     printedDocumentCount: panelDocuments.filter(
-      (row) => row.includedByDefault && !document.excludedDocumentKeys.includes(row.key)
+      (row) => isQuoteDocumentIncluded(row, document.documentChoices)
     ).length,
     discountViolations: document.discountViolations,
     // `capMessageText` is one or the other (both can never be true at once
@@ -532,7 +533,7 @@ export default async function DocumentBuilderPage({
                 warrantyMonths: document.warrantyMonths,
               }}
               documents={panelDocuments}
-              excludedKeys={document.excludedDocumentKeys}
+              choices={document.documentChoices}
               readOnly={!isDraft}
             />
           </SectionCard>

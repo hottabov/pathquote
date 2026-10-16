@@ -1157,7 +1157,7 @@ model Document {
   actOutbox               ActOutbox[]
   events                  QuoteEvent[]
   emails                  QuoteEmail[]
-  exclusions              DocumentExclusion[]
+  documentChoices         QuoteDocumentChoice[]
   items                   DocumentItem[]
   lines                   DocumentLine[]
   createdAt               DateTime            @default(now())
@@ -1333,13 +1333,18 @@ model QuoteDocument {
   @@index([regionId])
 }
 
-/// A document an individual quote leaves out. Stores the document's `key`,
-/// not its id, so the exclusion still means the same thing if the quote's
-/// region changes and a different QuoteDocument row becomes the resolved
-/// one. Absence means included — the common case writes no row at all.
-model DocumentExclusion {
+/// What an individual quote decided about one legal document, against that
+/// document's `includedByDefault`: `included: false` leaves out a document
+/// the region prints by default, `included: true` asks for one it does not
+/// (an optional agreement such as RSP Plus). Absence means the default --
+/// the common quote has no rows at all. Stores the document's `key`, not its
+/// id, so the choice still means the same thing if the quote's region
+/// changes and a different QuoteDocument row becomes the resolved one.
+/// Was `DocumentExclusion` (exclusions only) until z68.
+model QuoteDocumentChoice {
   documentId       String
   quoteDocumentKey String
+  included         Boolean
   document         Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@id([documentId, quoteDocumentKey])

@@ -192,7 +192,7 @@ export function quotationDoc(overrides: Partial<QuotationDataDoc> = {}): Quotati
     installationDays: null,
     trainingDays: null,
     warrantyMonths: null,
-    excludedDocumentKeys: [],
+    documentChoices: {},
     documentsSnapshot: null,
     items: [quotationItem()],
     showItemPrices: false,

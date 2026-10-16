@@ -24,6 +24,7 @@ import "dotenv/config";
 import { db } from "@/lib/db";
 import { resolveQuoteDocuments } from "@/lib/quotation-data";
 import { getQuoteDocumentsForRegion } from "@/lib/queries/quote-documents";
+import { isQuoteDocumentIncluded, toQuoteDocumentChoices } from "@/lib/quote-document-choice";
 import {
   buildAndHashRevisionSnapshot,
   documentToRevisionSnapshotInput,
@@ -44,7 +45,7 @@ async function main() {
       company: true,
       contact: true,
       region: true,
-      exclusions: true,
+      documentChoices: true,
     },
   });
 
@@ -66,10 +67,10 @@ async function main() {
       regionCode: frozen?.regionCode ?? document.region.code,
     };
 
-    const excluded = new Set(document.exclusions.map((row) => row.quoteDocumentKey));
+    const choices = toQuoteDocumentChoices(document.documentChoices);
     const quoteDocuments = await getQuoteDocumentsForRegion(document.regionId);
     const documents_ = Array.from(resolveQuoteDocuments(quoteDocuments, document.regionId).values())
-      .filter((row) => row.includedByDefault && !excluded.has(row.key))
+      .filter((row) => isQuoteDocumentIncluded(row, choices))
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((row) => ({ key: row.key, title: row.title, body: row.body }));
 

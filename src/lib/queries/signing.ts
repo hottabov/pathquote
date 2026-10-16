@@ -31,6 +31,7 @@ import { computeTotals, type EngineInput } from "@/lib/pricing";
 import { getQuoteValidityDays } from "@/lib/queries/settings";
 import type { QuotationDataDoc, QuotationItemInput, QuotationLineInput } from "@/lib/quotation-data";
 import type { LineKind, OptionRole, ProductKind, SigningStatus } from "@prisma/client";
+import { toQuoteDocumentChoices } from "@/lib/quote-document-choice";
 
 /** The live catalog facts an OPTION line reads off its option — the same
  * shape the builder's own document read resolves, and for the same reason:
@@ -310,7 +311,7 @@ export async function getDocumentForSigning(tokenHash: string): Promise<Document
           signatures: {
             select: { role: true, imageUrl: true, signerName: true, signedAt: true },
           },
-          exclusions: { select: { quoteDocumentKey: true } },
+          documentChoices: { select: { quoteDocumentKey: true, included: true } },
         },
       },
     },
@@ -503,7 +504,7 @@ export async function getDocumentForSigning(tokenHash: string): Promise<Document
     installationDays: document.installationDays,
     trainingDays: document.trainingDays,
     warrantyMonths: document.warrantyMonths,
-    excludedDocumentKeys: document.exclusions.map((exclusion) => exclusion.quoteDocumentKey),
+    documentChoices: toQuoteDocumentChoices(document.documentChoices),
     documentsSnapshot: document.documentsSnapshot,
     signatures: document.signatures,
   };

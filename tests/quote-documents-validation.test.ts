@@ -7,7 +7,7 @@ import {
   isQuoteDocumentKeyPermutation,
   regionCodeSchema,
   quoteTermsSchema,
-  documentExclusionsSchema,
+  documentChoicesSchema,
 } from "../src/lib/validation/quote-documents";
 import { accepts, rejects, expectValid } from "./helpers/schema";
 
@@ -118,7 +118,7 @@ describe("newQuoteDocumentSchema", () => {
   ]);
 
   // The key is the document's permanent identity: it is what `/documents/<key>`
-  // resolves, what a per-quote `DocumentExclusion` stores instead of an id, and
+  // resolves, what a per-quote `QuoteDocumentChoice` stores instead of an id, and
   // what the ContentBlock migration wrote. Nothing renames one. So the one
   // moment it is typed is the only chance to canonicalize it — Postgres
   // compares "DPA" and "dpa" as different keys, which would give an admin two
@@ -214,16 +214,31 @@ describe("quoteTermsSchema", () => {
   ]);
 });
 
-describe("documentExclusionsSchema", () => {
-  accepts(documentExclusionsSchema, [
-    ["an empty list — the common quote, which excludes nothing", []],
-    ["a list of real document keys", ["rsp"]],
-    ["several distinct keys", ["rsp", "conditions"]],
+describe("documentChoicesSchema", () => {
+  accepts(documentChoicesSchema, [
+    ["an empty list — the common quote, which follows every default", []],
+    ["a document left out", [{ key: "rsp", included: false }]],
+    ["an optional document asked for", [{ key: "rsp-plus", included: true }]],
+    [
+      "several distinct keys",
+      [
+        { key: "rsp", included: false },
+        { key: "rsp-plus", included: true },
+      ],
+    ],
   ]);
 
-  rejects(documentExclusionsSchema, [
-    ["a duplicated key", ["rsp", "rsp"], "Duplicate document"],
-    ["a key that is not a document key at all", ["general conditions"]],
-    ["something that is not a list", "rsp"],
+  rejects(documentChoicesSchema, [
+    [
+      "a duplicated key",
+      [
+        { key: "rsp", included: false },
+        { key: "rsp", included: true },
+      ],
+      "Duplicate document",
+    ],
+    ["a key that is not a document key at all", [{ key: "general conditions", included: false }]],
+    ["a choice with no decision", [{ key: "rsp" }]],
+    ["a bare list of keys", ["rsp"]],
   ]);
 });

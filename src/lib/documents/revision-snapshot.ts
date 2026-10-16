@@ -299,7 +299,7 @@ export function buildAndHashRevisionSnapshot(input: RevisionSnapshotInput): {
 // string), and the already-resolved legal documents are passed in, so this
 // module needs no Prisma or quotation-data import and stays in the DB-free
 // test suite. The caller is responsible for resolving/filtering the documents
-// (resolveQuoteDocuments → includedByDefault && !excluded → sortOrder), which
+// (resolveQuoteDocuments → isQuoteDocumentIncluded → sortOrder), which
 // is exactly what buildQuotationData does.
 
 /** A decimal as it arrives from Prisma (or a plain string) — anything that

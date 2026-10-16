@@ -24,6 +24,7 @@ import { generateRevisionPdf } from "@/lib/documents/revision";
 import { enqueueActWrite, enqueueActWriteForNewestRevision } from "@/lib/act/outbox";
 import { drainAfterResponse } from "@/lib/act/drain-after";
 import { NOT_FOUND_ERROR } from "./_shared";
+import { isQuoteDocumentIncluded } from "@/lib/quote-document-choice";
 
 /** Thrown inside `finalizeDocument`'s `$transaction` to roll it back when
  * `validateFinalizable` refuses the document, carrying that check's own
@@ -335,15 +336,14 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
       if (!fresh) throw new NotFinalizableError(NOT_FOUND_ERROR);
 
       // Resolve the included legal documents exactly as buildQuotationData
-      // does (resolveQuoteDocuments → included-and-not-excluded → sortOrder),
+      // does (resolveQuoteDocuments → isQuoteDocumentIncluded → sortOrder),
       // keeping the RAW body so the hash never depends on the per-finalize
       // date `{{validityDate}}` would bake in. The rest of the projection is
       // shared with the backfill via documentToRevisionSnapshotInput.
-      const excludedKeys = new Set(forSnapshot.excludedDocumentKeys);
       const resolvedDocuments = Array.from(
         resolveQuoteDocuments(quoteDocuments, forSnapshot.regionId).values()
       )
-        .filter((row) => row.includedByDefault && !excludedKeys.has(row.key))
+        .filter((row) => isQuoteDocumentIncluded(row, forSnapshot.documentChoices))
         .sort((a, b) => a.sortOrder - b.sortOrder)
         .map((row) => ({ key: row.key, title: row.title, body: row.body }));
 

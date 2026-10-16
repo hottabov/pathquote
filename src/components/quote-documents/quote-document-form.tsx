@@ -237,7 +237,7 @@ export function QuoteDocumentForm({
           <span>
             Include on new quotes
             <span className="block text-xs text-slate-500">
-              An author can still untick it on an individual quote.
+              Ticked on every new quote. Unticked, it is optional: an author can still tick it on an individual quote.
             </span>
           </span>
         </label>

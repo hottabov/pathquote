@@ -3,7 +3,7 @@
  *
  * Used to clear demo and test data off a machine while the tool is still
  * being built. It removes all `Document` rows — which cascades to
- * `DocumentItem`, `DocumentLine`, `DocumentExclusion`, `SigningRequest` and
+ * `DocumentItem`, `DocumentLine`, `QuoteDocumentChoice`, `SigningRequest` and
  * `Signature` — resets the per-region quote numbering, and deletes the files
  * those rows owned: the archived signed PDFs (`Document.signedPdfName`) and
  * the frozen signature images (`Signature.imageUrl`).

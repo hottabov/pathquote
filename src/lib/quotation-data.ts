@@ -66,6 +66,7 @@ import {
   type ToSheetLineInput,
 } from "./sheet-data";
 import { identityResolver } from "./sheet-identity";
+import { isQuoteDocumentIncluded, type QuoteDocumentChoices } from "./quote-document-choice";
 
 // --- input shape -------------------------------------------------------------
 
@@ -177,11 +178,12 @@ export type QuotationDataDoc = Omit<ToSheetDataDoc, "items"> & {
   installationDays: number | null;
   trainingDays: number | null;
   warrantyMonths: number | null;
-  /** `DocumentExclusion.quoteDocumentKey` for this quote — the documents its
-   * author unticked. Keys, not ids, so an exclusion still means the same
+  /** This quote's `QuoteDocumentChoice` rows by document key — the documents
+   * its author unticked (`false`) or asked for (`true`) against their
+   * `includedByDefault`. Keys, not ids, so a choice still means the same
    * thing if the quote's region changes and a different `QuoteDocument` row
    * becomes the resolved one. Empty is the common case. */
-  excludedDocumentKeys: string[];
+  documentChoices: QuoteDocumentChoices;
   /** `Document.documentsSnapshot` exactly as stored (an opaque `Json?` column
    * written by `finalizeDocument`) — `unknown` for the same reason
    * `entitySnapshot` is: Prisma gives no compile-time guarantee about its
@@ -1249,16 +1251,9 @@ export function buildQuotationData(
   };
 
   // Selection, in this order: resolve each key to the row this region should
-  // print → drop the documents nobody opted into → drop the ones this quote
-  // unticked → order by the print order an admin set.
-  //
-  // `includedByDefault: false` is a document a quote must ask for, and the
-  // only per-quote channel that exists today is exclusion (`DocumentExclusion`
-  // stores what was unticked, never what was ticked) — so such a document is
-  // dropped here unconditionally. Every seeded document is `true`; the
-  // builder panel would need an inclusion list of its own before an optional
-  // one could be turned on, which is not something this renderer can invent.
-  const excluded = new Set(doc.excludedDocumentKeys);
+  // print → keep the ones this quote prints (its own choice where it made
+  // one, the document's `includedByDefault` otherwise — see
+  // `isQuoteDocumentIncluded`) → order by the print order an admin set.
   // Collected as the bodies are substituted, so a clause that vanished from
   // the preview says so. `substituteWithReport` rather than
   // `substitutePlaceholders`: the report was being discarded here, which left
@@ -1269,7 +1264,7 @@ export function buildQuotationData(
   const liveDocuments: QuotationDocumentSection[] = Array.from(
     resolveQuoteDocuments(documents, doc.regionId).values()
   )
-    .filter((row) => row.includedByDefault && !excluded.has(row.key))
+    .filter((row) => isQuoteDocumentIncluded(row, doc.documentChoices))
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((row) => {
       const report = substituteWithReport(row.body, documentVars);

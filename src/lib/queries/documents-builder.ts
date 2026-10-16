@@ -14,6 +14,7 @@ import { computeTotals, parseCommissionTiers, type CommissionResult, type Docume
 import { getQuoteValidityDays } from "@/lib/queries/settings";
 import { destinationCountry, suggestTax, type Incoterm, type TaxSuggestion, type TaxTreatment } from "@/lib/documents/tax-rules";
 import { resolveDocumentTax } from "@/lib/documents/tax";
+import { toQuoteDocumentChoices, type QuoteDocumentChoices } from "@/lib/quote-document-choice";
 
 /**
  * The builder's own read: one document, everything on it, priced. By some
@@ -479,10 +480,10 @@ export type DocumentForBuilder = {
   installationDays: number | null;
   trainingDays: number | null;
   warrantyMonths: number | null;
-  /** The `quoteDocumentKey`s of this quote's `DocumentExclusion` rows — the
-   * legal documents its author unticked. Empty is the common case (absence
-   * means included). */
-  excludedDocumentKeys: string[];
+  /** This quote's `QuoteDocumentChoice` rows by document key — the legal
+   * documents its author unticked (`false`) or asked for (`true`). Empty is
+   * the common case (absence means the document's default). */
+  documentChoices: QuoteDocumentChoices;
   /** `Document.documentsSnapshot` exactly as stored (an opaque `Json?`
    * column, frozen by `finalizeDocument`) — `unknown` for the same reason
    * `entitySnapshot` above is, and validated at runtime by its one consumer
@@ -674,10 +675,10 @@ async function loadDocumentForBuilder(
       signatures: {
         select: { role: true, imageUrl: true, signerName: true, signedAt: true },
       },
-      // Feeds QuotationDataDoc.excludedDocumentKeys — the legal documents
-      // this quote's author unticked. Absence means included, so the common
-      // quote selects nothing here.
-      exclusions: { select: { quoteDocumentKey: true } },
+      // Feeds QuotationDataDoc.documentChoices — the legal documents this
+      // quote's author ticked or unticked against their default. Absence
+      // means the default, so the common quote selects nothing here.
+      documentChoices: { select: { quoteDocumentKey: true, included: true } },
       // Feeds the document page's signing panel (see `signingRequests`'
       // own doc comment on `DocumentForBuilder` above) — newest first so
       // that array's index 0 is always "the current request" without the
@@ -890,7 +891,7 @@ async function loadDocumentForBuilder(
     installationDays: document.installationDays,
     trainingDays: document.trainingDays,
     warrantyMonths: document.warrantyMonths,
-    excludedDocumentKeys: document.exclusions.map((exclusion) => exclusion.quoteDocumentKey),
+    documentChoices: toQuoteDocumentChoices(document.documentChoices),
     documentsSnapshot: document.documentsSnapshot,
     entityName: document.region.entityName,
     entityLegalId: document.region.entityLegalId,

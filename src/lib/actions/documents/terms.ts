@@ -3,7 +3,7 @@
 /**
  * What a quote promises and what it prints: the four standard-terms figures
  * a salesperson may override for this deal, and which of the region's legal
- * documents the quote leaves out.
+ * documents the quote prints.
  *
  * Both are DRAFT-only and scoped exactly like every other document mutation
  * in this directory. Neither affects money, so — like `setPriceDisplay` and
@@ -15,7 +15,7 @@ import { db } from "@/lib/db";
 import { requireSession } from "@/lib/authz";
 import { documentWhereForUser } from "@/lib/scope";
 import { idSchema } from "@/lib/validation/documents";
-import { documentExclusionsSchema, quoteTermsSchema } from "@/lib/validation/quote-documents";
+import { documentChoicesSchema, quoteTermsSchema } from "@/lib/validation/quote-documents";
 import { NOT_FOUND_ERROR, flattenZodError } from "../_shared";
 import { assertStillDraft, mapDraftWriteError, type ActionResult } from "./_internal";
 
@@ -67,34 +67,34 @@ export async function setQuoteTerms(documentId: string, input: unknown): Promise
 }
 
 /**
- * Replaces this quote's set of excluded documents with `keys` — the legal
- * documents its author unticked. RSP printed on every quote today whether or
- * not the customer bought it; this is the tickbox.
+ * Replaces this quote's decisions about its legal documents with `choices` —
+ * the documents its author unticked (`included: false`) and the optional ones
+ * it ticked (`included: true`, e.g. RSP Plus, which no quote prints unless
+ * asked). A document with no choice follows its `includedByDefault`.
  *
  * The panel submits the whole set rather than one change, so this is a
- * replace: delete every stored exclusion the new set doesn't name, then
- * create the ones it does. Two statements means the `status: "DRAFT"` check
- * cannot ride along in a single `where` the way `setQuoteTerms` above manages
- * — hence the guarded transaction (`assertStillDraft` +
- * `mapDraftWriteError`), the same shape `setIncoterm` and every
- * money-affecting mutation in this directory use. The guard is not
- * ceremonial: `finalizeDocument` committing between the pre-read and these
- * writes would otherwise change what an already-numbered quote prints.
+ * replace: delete every stored choice, then create the new set. Two
+ * statements means the `status: "DRAFT"` check cannot ride along in a single
+ * `where` the way `setQuoteTerms` above manages — hence the guarded
+ * transaction (`assertStillDraft` + `mapDraftWriteError`), the same shape
+ * `setIncoterm` and every money-affecting mutation in this directory use. The
+ * guard is not ceremonial: `finalizeDocument` committing between the pre-read
+ * and these writes would otherwise change what an already-numbered quote
+ * prints.
  *
- * The exclusions live on `DocumentExclusion`, keyed by the document's `key`
+ * The choices live on `QuoteDocumentChoice`, keyed by the document's `key`
  * rather than its id, so the same row still means the same thing if this
  * quote's region changes and a different `QuoteDocument` becomes the resolved
  * one.
  */
-export async function setDocumentExclusions(documentId: string, keys: unknown): Promise<ActionResult> {
+export async function setDocumentChoices(documentId: string, choices: unknown): Promise<ActionResult> {
   const session = await requireSession();
 
   const parsedDocumentId = idSchema.safeParse(documentId);
   if (!parsedDocumentId.success) return { error: NOT_FOUND_ERROR };
 
-  const parsedKeys = documentExclusionsSchema.safeParse(keys);
-  if (!parsedKeys.success) return { error: flattenZodError(parsedKeys.error) };
-  const excluded = parsedKeys.data;
+  const parsedChoices = documentChoicesSchema.safeParse(choices);
+  if (!parsedChoices.success) return { error: flattenZodError(parsedChoices.error) };
 
   const document = await db.document.findFirst({
     where: { id: parsedDocumentId.data, status: "DRAFT", ...documentWhereForUser(session.user) },
@@ -105,24 +105,14 @@ export async function setDocumentExclusions(documentId: string, keys: unknown): 
   try {
     await db.$transaction(async (tx) => {
       await assertStillDraft(tx, document.id);
-      // Ticking a document back on is the delete half of this replace. The
-      // `notIn` clause is spread rather than passed with an empty array so
-      // "nothing is excluded any more" reads as the plain "delete this
-      // document's exclusions" it is, instead of resting on how Prisma
-      // renders `NOT IN ()`.
-      await tx.documentExclusion.deleteMany({
-        where: {
-          documentId: document.id,
-          ...(excluded.length > 0 ? { quoteDocumentKey: { notIn: excluded } } : {}),
-        },
-      });
-      if (excluded.length > 0) {
-        // `skipDuplicates` because the delete above deliberately leaves the
-        // rows that are still excluded in place — re-creating them would
-        // collide with the `@@id([documentId, quoteDocumentKey])` primary key.
-        await tx.documentExclusion.createMany({
-          data: excluded.map((quoteDocumentKey) => ({ documentId: document.id, quoteDocumentKey })),
-          skipDuplicates: true,
+      await tx.quoteDocumentChoice.deleteMany({ where: { documentId: document.id } });
+      if (parsedChoices.data.length > 0) {
+        await tx.quoteDocumentChoice.createMany({
+          data: parsedChoices.data.map((choice) => ({
+            documentId: document.id,
+            quoteDocumentKey: choice.key,
+            included: choice.included,
+          })),
         });
       }
     });

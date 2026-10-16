@@ -403,7 +403,7 @@ describe("quote-documents.json well-formedness", () => {
 
   it("includes every document on a new quote by default", () => {
     // RSP is the one an author routinely unticks, but that is a per-quote
-    // exclusion (DocumentExclusion), not a different default.
+    // choice (QuoteDocumentChoice), not a different default.
     for (const d of documents) expect(d.includedByDefault, d.key).toBe(true);
   });
 

@@ -1892,7 +1892,7 @@ describe("quote documents", () => {
   });
 
   it("leaves out a document this quote excludes", () => {
-    const doc = quotationDoc({ excludedDocumentKeys: ["conditions"] });
+    const doc = quotationDoc({ documentChoices: { conditions: false } });
     const data = buildQuotationData(doc, [terms, conditions]);
     expect(data.documents.map((d) => d.key)).toEqual(["terms"]);
   });
@@ -1901,6 +1901,12 @@ describe("quote documents", () => {
     const optional = { ...conditions, key: "optional", includedByDefault: false };
     const data = buildQuotationData(quotationDoc(), [terms, optional]);
     expect(data.documents.map((d) => d.key)).toEqual(["terms"]);
+  });
+
+  it("prints a document not included by default when the quote asks for it", () => {
+    const optional = { ...conditions, key: "optional", includedByDefault: false };
+    const data = buildQuotationData(quotationDoc({ documentChoices: { optional: true } }), [terms, optional]);
+    expect(data.documents.map((d) => d.key)).toEqual(["terms", "optional"]);
   });
 
   it("renders a FINAL quote from its snapshot, not from live text", () => {
