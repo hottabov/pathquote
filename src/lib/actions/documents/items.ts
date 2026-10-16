@@ -119,12 +119,13 @@ export async function addItem(documentId: string, productId: string): Promise<Ac
         },
       });
 
-      // Options the machine always ships with (the FabricPro's crate --
-      // see DEFAULT_OPTION_ROLES). Same rules as a hand-picked option:
-      // active, compatible with this product, priced in this region. One
-      // that fails any of them is simply not added -- the machine still is,
-      // and the manager can pick the option by hand.
-      const roles = defaultOptionRoles(product.form);
+      // Options the product starts with -- the FabricPro's crate, and the
+      // installation and training of anything that gets installed (see
+      // default-options.ts). Same rules as a hand-picked option: active,
+      // compatible with this product, priced in this region. One that fails
+      // any of them is simply not added -- the product still is, and the
+      // manager can pick the option by hand.
+      const roles = defaultOptionRoles(product);
       if (roles.length > 0) {
         const defaults = await tx.option.findMany({
           where: {
@@ -133,10 +134,21 @@ export async function addItem(documentId: string, productId: string): Promise<Ac
             compat: { some: { OR: compatibilityOrFilter(product.id, product.seriesId) ?? [] } },
             prices: { some: { regionId: document.regionId, needsReview: false } },
           },
-          include: { prices: { where: { regionId: document.regionId } } },
+          include: {
+            prices: { where: { regionId: document.regionId } },
+            compat: { where: { productId: product.id }, select: { id: true } },
+            conflictGroupMemberships: { select: { groupId: true } },
+          },
           orderBy: [{ sortOrder: "asc" }, { code: "asc" }],
         });
-        const picked = pickDefaultOptions(roles, defaults);
+        const picked = pickDefaultOptions(
+          roles,
+          defaults.map((option) => ({
+            ...option,
+            fitsProduct: option.compat.length > 0,
+            conflictGroupIds: option.conflictGroupMemberships.map((m) => m.groupId),
+          }))
+        );
         if (picked.length > 0) {
           await tx.documentLine.createMany({
             data: picked.map((option, index) => ({
@@ -148,8 +160,12 @@ export async function addItem(documentId: string, productId: string): Promise<Ac
               name: option.name,
               description: option.shortDescription,
               qty: 1,
-              unitPrice: option.prices[0].amount,
-              listPrice: option.prices[0].amount,
+              // The EasyLoader's installation is the hourly rate times the
+              // hours of its table, and a new item has no table yet: it
+              // starts at nothing and is repriced when one is drawn
+              // (`setEasyLoaderLayout`), like every other derived line.
+              unitPrice: option.role === "EL_INSTALL" ? 0 : option.prices[0].amount,
+              listPrice: option.role === "EL_INSTALL" ? 0 : option.prices[0].amount,
               sortOrder: index,
             })),
           });
