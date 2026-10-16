@@ -1,4 +1,3 @@
-import { mSeriesSpecSchema } from "@/lib/validation/production-spec";
 import { PATHWORKS_ROLES } from "../pathworks";
 import type { HtmlFormSpec } from "../types";
 
@@ -20,7 +19,6 @@ export const mSeriesSpec: HtmlFormSpec = {
   title: "M-Series Order Form",
   form: "M_SERIES",
   renderer: "html",
-  specSchema: mSeriesSpecSchema,
   // "ui" is not listed: screenSideSchema defaults to -Y, so it can never be
   // missing -- leaving it here would permanently disable the download button
   // for any spec stored before that default existed.

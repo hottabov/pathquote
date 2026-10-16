@@ -9,7 +9,7 @@ import {
   industryEqualsQuery,
   industryMatchesQuery,
   matchingIndustryAlias,
-} from "@/lib/validation/industries";
+} from "@/lib/validation/industries-client";
 
 /**
  * `aliases` are the other spellings that should also find this row — ACT!'s

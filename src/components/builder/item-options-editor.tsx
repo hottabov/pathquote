@@ -36,6 +36,7 @@ import { setItemOptions } from "@/lib/actions/documents";
 import { pickDerivativeWidth } from "@/lib/image-derivative-width";
 import type { CompatibleOption } from "@/lib/queries/documents";
 import type { OptionSelectionInput } from "@/lib/validation/documents";
+import { autosaveKeyFor } from "@/lib/option-selections";
 
 // The panel draws each option's icon at 24 CSS px (`size-6`) — the same box
 // the PDF's own `.pq-option-icon` fills (see DERIVATIVE_WIDTH_BY_CLASS in
@@ -225,30 +226,6 @@ function buildSelections(
     });
 }
 
-/**
- * What the options autosave is keyed by: the manager's own picks, and not
- * the rows a locked role derives from somewhere else on the card.
- *
- * `selections` (the payload) is built from `effective`, which re-reads the
- * derived rows — the MTS's per-metre rail, the M-Series transformer, the
- * EasyLoader's table modules — from the item's lines on every render. After
- * a save the server derives those rows afresh (`withDerivedMtsTravel` and
- * friends in actions/documents/options.ts) and the page refresh brings them
- * back as props, so the payload changes even though nothing the manager
- * chose did. Keyed on the payload, `useAutosave` saw a new value and sent an
- * identical second save for every tick on such an item (PERF-17 in
- * docs/technical-audit). Keyed on the manager's rows alone, the derived
- * rows can move without triggering a save, and the server — which ignores
- * whatever the client sends for them anyway — stays the only author of them.
- *
- * Pure, so it is unit-tested (tests/item-options-autosave-key.test.ts).
- */
-export function autosaveKeyFor(
-  selections: readonly OptionSelectionInput[],
-  isLocked: (optionId: string) => boolean
-): string {
-  return JSON.stringify(selections.filter((selection) => !isLocked(selection.optionId)));
-}
 
 export function ItemOptionsEditor({
   itemId,

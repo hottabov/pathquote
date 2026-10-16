@@ -3,6 +3,7 @@
 // validation/content.ts: no `@/lib/db` or `next/*` imports, so a plain unit
 // test needs no DATABASE_URL.
 import { z } from "zod";
+import { TERM_FIGURE_MAX, TERM_FIGURE_MESSAGES } from "./quote-terms-client";
 
 /** A quote-document key, e.g. "terms", "conditions", "rsp", or a future
  * region-only one like "dpa". Same shape `CONTENT_KEY_REGEX` used
@@ -166,16 +167,10 @@ export function isQuoteDocumentKeyPermutation(proposed: string[], actual: string
 
 // --- the builder's own panel (setQuoteTerms / setDocumentChoices) -----------
 
-/**
- * One ceiling for all four figures rather than a plausible bound per unit
- * (weeks, days, days, months). These are typo guards, not business rules:
- * what a quote may promise for delivery or warranty is a commercial
- * judgement the discount cap has no equivalent of, and the real check is a
- * salesperson reading the sentence back. 999 is high enough that no honest
- * figure ever meets it and low enough that a mistyped year ("2026 weeks")
- * does.
- */
-const TERM_FIGURE_MAX = 999;
+// The ceiling and the three messages live in quote-terms-client.ts, with the
+// zod-free `termFigureError` the builder's panel runs on every keystroke; the
+// schema below is built from the same constants so the two cannot drift
+// (tests/quote-terms-client.test.ts holds them to the same verdicts).
 
 /**
  * One per-quote override of a region's standard-terms figure. Blank (a
@@ -200,10 +195,10 @@ const termFigureSchema = z.preprocess(
   // Nullable delegates to the number rule instead, so "12.5" says "Enter a
   // whole number".
   z.coerce
-    .number({ error: "Enter a whole number" })
-    .int("Enter a whole number")
-    .min(0, "Enter 0 or more")
-    .max(TERM_FIGURE_MAX, `Enter ${TERM_FIGURE_MAX} or less`)
+    .number({ error: TERM_FIGURE_MESSAGES.wholeNumber })
+    .int(TERM_FIGURE_MESSAGES.wholeNumber)
+    .min(0, TERM_FIGURE_MESSAGES.min)
+    .max(TERM_FIGURE_MAX, TERM_FIGURE_MESSAGES.max)
     .nullable()
 );
 

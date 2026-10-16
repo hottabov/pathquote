@@ -8,7 +8,7 @@ import { useToast } from "@/components/ui-kit/client";
 import { useAutosave } from "@/lib/use-autosave";
 import { cn } from "@/lib/utils";
 import { setDocumentChoices, setQuoteTerms } from "@/lib/actions/documents";
-import { quoteTermsSchema } from "@/lib/validation/quote-documents";
+import { termFigureError } from "@/lib/validation/quote-terms-client";
 import type { QuoteTermValues } from "@/lib/quote-terms";
 import {
   isQuoteDocumentIncluded,
@@ -62,8 +62,9 @@ function toDrafts(terms: Partial<Record<TermKey, number | null>>): TermDrafts {
  * names no field.
  */
 function termFieldError(raw: string): string | null {
-  const result = quoteTermsSchema.shape.deliveryWeeks.safeParse(raw);
-  return result.success ? null : (result.error.issues[0]?.message ?? "Invalid value");
+  // The same rule `quoteTermsSchema` applies on the server, stated without
+  // zod so the schema's runtime stays out of this bundle (PERF-08).
+  return termFigureError(raw);
 }
 
 /**

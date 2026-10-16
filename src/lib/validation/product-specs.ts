@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { BELTS, PATHWORKS_MODULES, SOFTWARE_MODES } from "./product-specs-client";
 
 /**
  * The shape of `Product.specs` -- the physical facts about a product that
@@ -46,14 +47,14 @@ export const productSpecsSchema = z
     /** L-Series extended length variant. */
     extended: z.boolean().optional(),
     /** L-Series cutting belt. */
-    belt: z.enum(["urethane", "felt"]).optional(),
+    belt: z.enum(BELTS).optional(),
     /** PathWorks: sold standalone or integrated into PathCut. */
-    softwareMode: z.enum(["standalone", "integrated"]).optional(),
+    softwareMode: z.enum(SOFTWARE_MODES).optional(),
     /**
      * Which PathWorks module box this software product ticks on the
      * M-Series form (rows 62-64). Only the five modules the form prints.
      */
-    pathworksModule: z.enum(["PDG", "WPN", "WPL", "ANT_V5", "ANT_V6"]).optional(),
+    pathworksModule: z.enum(PATHWORKS_MODULES).optional(),
   })
   .strict();
 

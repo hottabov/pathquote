@@ -63,12 +63,13 @@ export async function GET(
   const headers: Record<string, string> = {
     "Content-Type": contentType,
     "Content-Length": String(size),
-    // A derivative is keyed by the original's uuid, which `saveUpload` never
-    // reuses, so its bytes can never change under a client — cache it for a
-    // year. The original keeps the shorter window it always had.
-    "Cache-Control": derivedPath
-      ? "private, max-age=31536000, immutable"
-      : "private, max-age=86400",
+    // Original and derivative alike: the name is the uuid `saveUpload` minted
+    // for these bytes and never reuses (src/lib/uploads.ts), so nothing can
+    // change under a client -- cache for a year, and tell the browser not to
+    // revalidate. The original used to get a day, which cost a builder page
+    // its 12-30 image requests again every morning (audit 2026-10-16,
+    // PERF-18). `private`: these are behind the session.
+    "Cache-Control": "private, max-age=31536000, immutable",
     "X-Content-Type-Options": "nosniff",
   };
   // SVG is XML that can carry <script>/event-handler content -- sandbox it

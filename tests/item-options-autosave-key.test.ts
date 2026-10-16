@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { autosaveKeyFor } from "@/components/builder/item-options-editor";
+import { autosaveKeyFor } from "@/lib/option-selections";
 import type { OptionSelectionInput } from "@/lib/validation/documents";
 
 /**

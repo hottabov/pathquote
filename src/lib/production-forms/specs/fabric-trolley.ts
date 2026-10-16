@@ -1,4 +1,3 @@
-import { z } from "zod";
 import type { HtmlFormSpec } from "../types";
 
 /**
@@ -16,14 +15,11 @@ import type { HtmlFormSpec } from "../types";
  * `covers` is empty -- and if one is ever added, it surfaces on the
  * Additional items sheet until this form grows a box for it.
  */
-export const fabricTrolleySpecSchema = z.object({});
-
 export const fabricTrolleySpec: HtmlFormSpec = {
   id: "fabric-trolley",
   title: "FabricPro Trolley Order Form",
   form: "FP_TROLLEY",
   renderer: "html",
-  specSchema: fabricTrolleySpecSchema,
   requires: [],
 
   covers: [],

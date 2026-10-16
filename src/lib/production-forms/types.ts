@@ -1,5 +1,4 @@
 import type { OptionRole, ProductKind, ProductionForm } from "@prisma/client";
-import type { z } from "zod";
 import type { ProductSpecs } from "@/lib/validation/product-specs";
 
 /** One option line on a quote item, joined to its catalogue row. */
@@ -116,7 +115,6 @@ export type HtmlFormSpec = {
   renderer: "html";
   /** productionSpec keys that block generation while unanswered. */
   requires: string[];
-  specSchema: z.ZodTypeAny;
   /** Option roles this form prints a box for. */
   covers: OptionRole[];
   /**

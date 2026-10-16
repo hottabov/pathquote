@@ -1,4 +1,3 @@
-import { lSeriesSpecSchema } from "@/lib/validation/production-spec";
 import { PATHWORKS_ROLES } from "../pathworks";
 import type { HtmlFormSpec } from "../types";
 
@@ -25,7 +24,6 @@ export const lSeriesSpec: HtmlFormSpec = {
   title: "L-Series Order Form",
   form: "L_SERIES",
   renderer: "html",
-  specSchema: lSeriesSpecSchema,
   requires: [],
 
   // The tools row prints a quantity per tool rather than a tick, and every

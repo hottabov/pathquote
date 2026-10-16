@@ -1,6 +1,5 @@
 import type { OptionRole, ProductionForm } from "@prisma/client";
-import type { z } from "zod";
-import { missingKeys } from "@/lib/validation/production-spec";
+import { missingKeys } from "@/lib/validation/production-spec-client";
 import { FORM_SPECS } from "./specs";
 import type { FormContext, FormItemOption, FormSpec } from "./types";
 
@@ -15,26 +14,11 @@ export function resolveForm(form: ProductionForm | null | undefined): FormSpec |
   return FORM_SPECS.find((spec) => spec.form === form) ?? null;
 }
 
-/**
- * Whether a form asks for the +Y/-Y operator side. The Heavy Duty Roll Feeder
- * and the Leather Nesting System have no screen and no control box, and the
- * Fabric Trolley is not a machine at all -- it is a trolley, with nothing an
- * operator stands at and no side to be built for (Vadym, 2026-09-22). The
- * builder does not ask any of them, "apply this side to the quote" skips
- * them, and the quotation prints no side line for them.
- *
- * The EasyFeeder was in that set too ("the form asks for the model only",
- * Vadym, 2026-09-17) and came back out on 2026-09-22: the side is now printed
- * on the customer's quote (see `screenSideLabel`), because the director's
- * point is that it decides where the equipment stands, and a side nobody can
- * choose is a side the quote cannot state. Its control box is asked for the
- * same way every other one is.
- */
-const NO_SCREEN_SIDE: ReadonlySet<ProductionForm> = new Set(["HDRF", "LNS", "FP_TROLLEY"]);
-
-export function formHasScreenSide(form: ProductionForm | null | undefined): boolean {
-  return resolveForm(form) !== null && !NO_SCREEN_SIDE.has(form!);
-}
+// `formHasScreenSide` and `NO_SCREEN_SIDE` live in ./screen-side.ts, with
+// no spec behind them, so the builder's client components can ask the
+// question without importing the specs (and their zod schemas). Re-exported
+// here for every server-side caller.
+export { NO_SCREEN_SIDE, formHasScreenSide } from "./screen-side";
 
 /**
  * What this form calls its +Y/-Y answer, in the customer's terms as well as
@@ -59,10 +43,9 @@ export function screenSideLabel(form: ProductionForm | null | undefined): string
   return "Operator screen side";
 }
 
-/** The productionSpec schema for an item, or null when it prints no form. */
-export function specSchemaForForm(form: ProductionForm | null | undefined): z.ZodTypeAny | null {
-  return resolveForm(form)?.specSchema ?? null;
-}
+// `specSchemaForForm` lives in ./spec-schemas.ts: the schemas are zod, this
+// module is read by the builder's client components, and the only validator
+// is a server action.
 
 /** Which of a form's requirements this item has not answered yet. */
 export function missingRequirements(spec: FormSpec, productionSpec: unknown): string[] {

@@ -1,4 +1,3 @@
-import { easyLoaderSpecSchema } from "@/lib/validation/production-spec";
 import type { ProductSpecs } from "@/lib/validation/product-specs";
 import { EL_MODULE_ROLE_LIST } from "../table-sections";
 import type { HtmlFormSpec } from "../types";
@@ -34,7 +33,6 @@ export const easyLoaderSpec: HtmlFormSpec = {
   title: "EasyLoader Order Form",
   form: "EASYLOADER",
   renderer: "html",
-  specSchema: easyLoaderSpecSchema,
   // "ui" is not listed: screenSideSchema defaults to -Y, so it can never be
   // missing. "sections" is not listed either: an empty array legitimately
   // means one undivided table -- see easyLoaderSpecSchema.

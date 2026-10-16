@@ -1,4 +1,3 @@
-import { fabricProSpecSchema } from "@/lib/validation/production-spec";
 import type { HtmlFormSpec } from "../types";
 
 /**
@@ -16,7 +15,6 @@ export const fabricProSpec: HtmlFormSpec = {
   title: "Fabric Pro Order Form",
   form: "FABRICPRO",
   renderer: "html",
-  specSchema: fabricProSpecSchema,
   // "ui" is not listed: screenSideSchema defaults to -Y, so it can never be
   // missing. FabricPro has no other required field.
   requires: [],

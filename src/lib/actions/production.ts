@@ -6,7 +6,8 @@ import { requireSession } from "@/lib/authz";
 import { documentWhereForUser } from "@/lib/scope";
 import { idSchema } from "@/lib/validation/documents";
 import { screenSideSchema } from "@/lib/validation/production-spec";
-import { formHasScreenSide, specSchemaForForm } from "@/lib/production-forms/resolve";
+import { formHasScreenSide } from "@/lib/production-forms/resolve";
+import { specSchemaForForm } from "@/lib/production-forms/spec-schemas";
 import { NOT_FOUND_ERROR, flattenZodError, type ActionResult } from "./_shared";
 
 export type { ActionResult };

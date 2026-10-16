@@ -124,7 +124,16 @@ export function PhoneField({
   const [country, setCountry] = useState(() => splitNumber(value, defaultCountry).country);
   const [national, setNational] = useState(() => splitNumber(value, defaultCountry).national);
 
+  // The formatting library (google-libphonenumber, ~580 KB of JavaScript)
+  // is fetched the first time the field is touched -- focus, or a value
+  // already present on mount that is worth grouping -- not on every mount:
+  // the client card, the new-client form and the builder's "+ New company"
+  // panel all render this field, and most visits never type a phone number
+  // (audit 2026-10-16, PERF-08). Until it arrives the field works ungrouped.
+  const [wanted, setWanted] = useState(() => value !== "");
+
   useEffect(() => {
+    if (!wanted) return;
     let live = true;
     import("google-libphonenumber").then((loaded) => {
       // A CommonJS package. Whether the bundler's interop puts its exports
@@ -139,7 +148,7 @@ export function PhoneField({
     return () => {
       live = false;
     };
-  }, []);
+  }, [wanted]);
 
   const dial = dialCodeFor(country) ?? 0;
 
@@ -206,6 +215,7 @@ export function PhoneField({
           aria-label="Country calling code"
           value={country}
           onChange={(e) => handleCountry(e.target.value)}
+          onFocus={() => setWanted(true)}
           disabled={disabled}
           autoComplete="off"
           className={cn(fieldInputClass, "w-[7.5rem] shrink-0 pr-1")}
@@ -224,6 +234,7 @@ export function PhoneField({
           autoComplete="tel-national"
           value={format(national)}
           onChange={(e) => handleNational(e.target.value)}
+          onFocus={() => setWanted(true)}
           disabled={disabled}
           placeholder={placeholder}
           maxLength={24}

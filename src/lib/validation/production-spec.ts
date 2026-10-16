@@ -1,6 +1,22 @@
 import { z } from "zod";
 import { M_SERIES_VOLTAGES, X_CALIBRE_VOLTAGES } from "@/lib/production-forms/voltage";
 import { MAX_SECTIONS } from "../production-forms/table-sections";
+import {
+  DEFAULT_SCREEN_SIDE,
+  EASYLOADER_CUSTOM_WIDTH_MAX_MM,
+  EASYLOADER_USAGES,
+  ROLL_FEED_DISTANCE_MAX_MM,
+  ROLL_FEED_MAX,
+  SCREEN_SIDE_VALUES,
+  SECTION_LENGTH_MAX_M,
+  SECTION_SURFACES,
+} from "./production-spec-client";
+
+// The helpers a browser needs live in production-spec-client.ts, which has
+// no zod import -- the builder's client components import them from there
+// so the zod runtime stays out of their bundle (PERF-08). Re-exported here
+// so every server-side caller keeps its one import.
+export { missingKeys, readScreenSide } from "./production-spec-client";
 
 /**
  * Operator-screen side. Shared by every machine that has one, because a
@@ -12,25 +28,12 @@ import { MAX_SECTIONS } from "../production-forms/table-sections";
  * production-spec panel still gets the correct standard rather than a blank
  * box on the form.
  */
-export const screenSideSchema = z.enum(["+Y", "-Y"]).default("-Y");
+export const screenSideSchema = z.enum(SCREEN_SIDE_VALUES).default(DEFAULT_SCREEN_SIDE);
 
 export type ScreenSide = z.infer<typeof screenSideSchema>;
 
-/**
- * The side a stored `productionSpec` actually means, defaults included --
- * `-Y` for a spec that is null, unparseable, or simply has not been opened
- * yet, which is the same standard the M-Series form prints as `(STD)`.
- *
- * Exists because three places now answer this question (the builder's panel,
- * the production form, the quotation's own line) and each of them used to
- * reach into the opaque JSON itself with `spec.ui ?? "-Y"`. A quote that
- * printed a side the form did not would be worse than printing none.
- */
-export function readScreenSide(productionSpec: unknown): ScreenSide {
-  const ui = (productionSpec as { ui?: unknown } | null | undefined)?.ui;
-  const parsed = screenSideSchema.safeParse(ui);
-  return parsed.success ? parsed.data : "-Y";
-}
+// `readScreenSide` -- the side a stored spec actually means, defaults
+// included -- is defined in production-spec-client.ts and re-exported above.
 
 /**
  * The side written for a reader rather than for a JSON column: a real minus
@@ -147,15 +150,15 @@ export const lSeriesSpecSchema = z.object({
 
 export const easyLoaderSpecSchema = z.object({
   ui: screenSideSchema,
-  usage: z.enum(["onload", "offload"]).default("onload"),
-  customWidthMm: z.number().int().positive().max(9999).optional(),
+  usage: z.enum(EASYLOADER_USAGES).default("onload"),
+  customWidthMm: z.number().int().positive().max(EASYLOADER_CUSTOM_WIDTH_MAX_MM).optional(),
   // The table's physical layout, and now the thing the EasyLoader's option
   // lines are computed from rather than checked against -- see
   // `deriveEasyLoaderOptions`. An empty array is a table with no modules,
   // which prices at nothing; the machine itself costs nothing, because every
   // part of it is one of these.
   sections: z
-    .array(z.object({ lengthM: z.number().positive().max(99), surface: z.enum(["static", "conveyor"]) }))
+    .array(z.object({ lengthM: z.number().positive().max(SECTION_LENGTH_MAX_M), surface: z.enum(SECTION_SURFACES) }))
     .max(MAX_SECTIONS)
     .default([]),
   /** Adds the electrical busbar and the travel-platform support rail, one of
@@ -188,7 +191,10 @@ export const easyLoaderSpecSchema = z.object({
    * bigger rolls, and someone have smaller rolls... you can have up to 4
    * different roll holders."
    */
-  rollFeedDistancesMm: z.array(z.number().int().min(0).max(99999)).max(4).default([]),
+  rollFeedDistancesMm: z
+    .array(z.number().int().min(0).max(ROLL_FEED_DISTANCE_MAX_MM))
+    .max(ROLL_FEED_MAX)
+    .default([]),
   // `paperRollHolder` and `crate` moved out: they are options the customer
   // pays for, so they belong on the quote's option lines, not here. The form
   // now ticks their boxes from the option codes instead.
@@ -215,34 +221,5 @@ export type LSeriesSpec = z.infer<typeof lSeriesSpecSchema>;
 export type EasyLoaderSpec = z.infer<typeof easyLoaderSpecSchema>;
 export type FabricProSpec = z.infer<typeof fabricProSpecSchema>;
 
-/**
- * Which of a form's `requires` keys are not yet answered. Drives both the
- * disabled download button and the 422 the route returns, so the UI and the
- * server can never disagree about what is missing.
- *
- * Two keys need more than a presence check: `drills` is satisfied when absent
- * or answered "no" and missing only when ticked with no detail, and
- * `sections` is not satisfied by an empty array.
- */
-export function missingKeys(spec: unknown, required: string[]): string[] {
-  const record = (spec ?? {}) as Record<string, unknown>;
-
-  return required.filter((key) => {
-    const value = record[key];
-    // Drills are optional: the "Drills required" box is a yes/no, and an
-    // unticked box means no. Only "required, but no detail" blocks the form.
-    if (key === "drills") {
-      if (value === undefined || value === null) return false;
-      const drills = value as { required?: boolean; detail?: string };
-      if (drills.required === false) return false;
-      return !drills.detail || drills.detail.trim().length === 0;
-    }
-
-    if (value === undefined || value === null) return true;
-
-    if (Array.isArray(value)) return value.length === 0;
-    if (typeof value === "string") return value.trim().length === 0;
-
-    return false;
-  });
-}
+// `missingKeys` -- which of a form's `requires` keys are still unanswered --
+// is defined in production-spec-client.ts and re-exported at the top.

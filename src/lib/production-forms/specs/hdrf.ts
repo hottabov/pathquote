@@ -1,4 +1,3 @@
-import { z } from "zod";
 import type { HtmlFormSpec } from "../types";
 
 /**
@@ -12,14 +11,11 @@ import type { HtmlFormSpec } from "../types";
  * all `role: CRATE`. Nothing is asked of the manager, so the spec is empty
  * and nothing is required.
  */
-export const hdrfSpecSchema = z.object({});
-
 export const hdrfSpec: HtmlFormSpec = {
   id: "hdrf",
   title: "HDRF Order Form",
   form: "HDRF",
   renderer: "html",
-  specSchema: hdrfSpecSchema,
   requires: [],
 
   covers: ["CRATE"],

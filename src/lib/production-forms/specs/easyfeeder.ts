@@ -1,5 +1,3 @@
-import { z } from "zod";
-import { screenSideSchema } from "@/lib/validation/production-spec";
 import type { HtmlFormSpec } from "../types";
 
 /**
@@ -24,16 +22,11 @@ import type { HtmlFormSpec } from "../types";
  * anything added anyway goes to the Additional items sheet rather than
  * vanishing.
  */
-export const easyFeederSpecSchema = z.object({
-  ui: screenSideSchema,
-});
-
 export const easyFeederSpec: HtmlFormSpec = {
   id: "easyfeeder",
   title: "EasyFeeder Order Form",
   form: "EASYFEEDER",
   renderer: "html",
-  specSchema: easyFeederSpecSchema,
   requires: [],
 
   covers: [],

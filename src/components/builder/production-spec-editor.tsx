@@ -19,7 +19,7 @@ import { formHasScreenSide, missingRequirements, resolveForm, screenSideLabel } 
 import { REQUIREMENT_LABELS } from "@/lib/production-forms/readiness";
 import { easyLoaderPrintedWidth } from "@/lib/production-forms/specs/easyloader";
 import type { ProductSpecs } from "@/lib/validation/product-specs";
-import { readScreenSide } from "@/lib/validation/production-spec";
+import { readScreenSide } from "@/lib/validation/production-spec-client";
 import {
   layoutTotals,
   modulesIn,

@@ -1,11 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import {
-  resolveForm,
-  specSchemaForForm,
-  missingRequirements,
-  unmatchedOptions,
-} from "../src/lib/production-forms/resolve";
+import { resolveForm, missingRequirements, unmatchedOptions } from "../src/lib/production-forms/resolve";
+import { specSchemaForForm } from "../src/lib/production-forms/spec-schemas";
 import { PATHWORKS_BOXES, pathWorksTicked } from "../src/lib/production-forms/pathworks";
 import { EasyLoaderForm } from "../src/components/forms/easyloader-form";
 import { FabricProForm } from "../src/components/forms/fabricpro-form";

@@ -1,4 +1,3 @@
-import { z } from "zod";
 import type { HtmlFormSpec } from "../types";
 
 /**
@@ -15,14 +14,11 @@ import type { HtmlFormSpec } from "../types";
  * The catalogue sells no option for an LNS, so `covers` is empty; one added
  * later surfaces on the Additional items sheet until this form has a box.
  */
-export const leatherNestingSpecSchema = z.object({});
-
 export const leatherNestingSpec: HtmlFormSpec = {
   id: "leather-nesting",
   title: "Leather Nesting System Order Form",
   form: "LNS",
   renderer: "html",
-  specSchema: leatherNestingSpecSchema,
   requires: [],
 
   covers: [],

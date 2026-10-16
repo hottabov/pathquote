@@ -1,4 +1,3 @@
-import { xCalibreSpecSchema } from "@/lib/validation/production-spec";
 import { PATHWORKS_ROLES } from "../pathworks";
 import type { HtmlFormSpec } from "../types";
 
@@ -25,7 +24,6 @@ export const xCalibreSpec: HtmlFormSpec = {
   title: "X-Calibre Order Form",
   form: "X_CALIBRE",
   renderer: "html",
-  specSchema: xCalibreSpecSchema,
   requires: ["voltage", "drills"],
 
   // Every X-compatible option in the catalogue has a box (2026-09-16 dump):
