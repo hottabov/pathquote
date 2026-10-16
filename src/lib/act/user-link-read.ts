@@ -68,8 +68,27 @@ async function readBoth(): Promise<{ actUsers: ActUserRow[]; repItems: RepPickli
   };
 }
 
-/** ACT!'s users and Rep items, or why they could not be read. Never throws. */
-export async function readActLinkLists(): Promise<ActLinkLists> {
+/**
+ * How long a successful read is reused before ACT! is asked again. The
+ * production nginx log of 2026-10-16 showed what reading live costs: ACT!
+ * answers the VPS in 1-2 s per request (TCP 0.25 s, TLS 0.8 s, then the
+ * query), two requests in sequence here, so every open of a user page and --
+ * worse -- every save of the ACT! link (setUserActLink re-reads before it
+ * writes, then the page re-renders and reads a third time) took 6-11 s. The
+ * two lists are an administrator's user table and a picklist; ten minutes of
+ * staleness means a user added in ACT! this minute is offered after lunch,
+ * which is a fair trade for a page that opens at once.
+ */
+const ACT_LINK_LISTS_TTL_MS = 10 * 60 * 1000;
+
+/** A failed read is not retried on every request either: ACT! being down is
+ * a condition that lasts minutes, and each attempt costs the deadline. */
+const ACT_LINK_LISTS_FAILURE_TTL_MS = 30 * 1000;
+
+let cached: { lists: ActLinkLists; expiresAt: number } | null = null;
+let inFlight: Promise<ActLinkLists> | null = null;
+
+async function readUncached(): Promise<ActLinkLists> {
   const loginName = loginNameFromEnv();
   try {
     const lists = await withDeadline(readBoth(), ACT_USER_LINK_DEADLINE_MS);
@@ -78,4 +97,31 @@ export async function readActLinkLists(): Promise<ActLinkLists> {
     console.warn("act user link: could not read ACT!'s users or Rep list", error);
     return { ok: false, loginName, reason: actUnreachableReason(error) };
   }
+}
+
+/**
+ * ACT!'s users and Rep items, or why they could not be read. Never throws.
+ * Served from a process-wide cache for ACT_LINK_LISTS_TTL_MS after a
+ * successful read (ACT_LINK_LISTS_FAILURE_TTL_MS after a failed one), and
+ * concurrent callers share one read rather than logging in to ACT! twice.
+ */
+export async function readActLinkLists(): Promise<ActLinkLists> {
+  const now = Date.now();
+  if (cached && cached.expiresAt > now) return cached.lists;
+  if (inFlight) return inFlight;
+  inFlight = readUncached()
+    .then((lists) => {
+      cached = { lists, expiresAt: Date.now() + (lists.ok ? ACT_LINK_LISTS_TTL_MS : ACT_LINK_LISTS_FAILURE_TTL_MS) };
+      return lists;
+    })
+    .finally(() => {
+      inFlight = null;
+    });
+  return inFlight;
+}
+
+/** Drops the cache, so the next read asks ACT! again. For tests and for an
+ * administrator's "refresh" should one ever be added. */
+export function forgetActLinkLists(): void {
+  cached = null;
 }

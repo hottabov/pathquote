@@ -2,12 +2,16 @@ import Link from "next/link";
 import { Building2, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ExternalLink } from "lucide-react";
 import { EmptyState } from "@/components/ui-kit/empty-state";
 import {
-  TableShell,
-  RowCell,
-  tableClassName,
+  ResponsiveTableShell,
+  responsiveCellClassName,
+  responsiveRowClassName,
+  responsiveTableClassName,
+  responsiveTbodyClassName,
+  responsiveTheadClassName,
   tableHeadRowClassName,
-  tableRowClassName,
 } from "@/components/ui-kit/data-table";
+import { LinkedRowsBody } from "@/components/ui-kit/list-table";
+import { cn } from "@/lib/utils";
 import { ClientsToolbar } from "@/components/clients/clients-toolbar";
 import { SortLinkTh } from "@/components/ui-kit/sort-link-th";
 import {
@@ -20,7 +24,7 @@ import {
   type ClientListSortKey,
   type ClientListWindow,
 } from "@/lib/client-list";
-import { websiteHref, websiteLabel } from "@/lib/website";
+import { websiteHref } from "@/lib/website";
 
 /**
  * One row of the /clients list, with its location string already built by
@@ -134,31 +138,31 @@ export function ClientsList({
         />
       ) : (
         <>
-          <TableShell
-            table={
-              <table className={tableClassName}>
-                <thead>
-                  <tr className={tableHeadRowClassName}>
-                    <SortHeader column="name" paging={paging} />
-                    <SortHeader column="location" paging={paging} />
-                    <SortHeader column="contacts" paging={paging} />
-                    {showOwner ? <SortHeader column="owner" paging={paging} /> : null}
-                    <th scope="col" className="px-4 py-3">
-                      <span className="sr-only">Website</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <CompanyRow key={row.id} row={row} showOwner={showOwner} />
-                  ))}
-                </tbody>
-              </table>
-            }
-            cards={rows.map((row) => (
-              <CompanyCard key={row.id} row={row} showOwner={showOwner} />
-            ))}
-          />
+          {/* One element tree per row for both layouts (ResponsiveTableShell
+              switches the table elements' display at md), one link per row
+              and one delegated click handler: the production log showed
+              pageSize=all rendering 8,845 rows twice -- 5.8 MB in 2.9 s
+              (audit 2026-10-16, PERF-20). */}
+          <ResponsiveTableShell>
+            <table className={responsiveTableClassName}>
+              <thead className={responsiveTheadClassName}>
+                <tr className={tableHeadRowClassName}>
+                  <SortHeader column="name" paging={paging} />
+                  <SortHeader column="location" paging={paging} />
+                  <SortHeader column="contacts" paging={paging} />
+                  {showOwner ? <SortHeader column="owner" paging={paging} /> : null}
+                  <th scope="col" className="px-4 py-3">
+                    <span className="sr-only">Website</span>
+                  </th>
+                </tr>
+              </thead>
+              <LinkedRowsBody className={responsiveTbodyClassName}>
+                {rows.map((row) => (
+                  <CompanyRow key={row.id} row={row} showOwner={showOwner} />
+                ))}
+              </LinkedRowsBody>
+            </table>
+          </ResponsiveTableShell>
           <PageControls paging={paging} />
         </>
       )}
@@ -253,6 +257,12 @@ function PageLink({
   );
 }
 
+/**
+ * One company, one tree. Cells are in table order; below md each is placed on
+ * the card grid by `col-start` / `row-start` (inert in table layout). The name
+ * cell holds the row's only link; `LinkedRowsBody` reads `data-href` for
+ * clicks elsewhere on the row, and leaves the website link alone.
+ */
 function CompanyRow({ row, showOwner }: { row: ClientListRow; showOwner: boolean }) {
   const href = `/clients/${row.id}`;
   // The stored website is a bare domain; an href needs the scheme added or the
@@ -260,30 +270,38 @@ function CompanyRow({ row, showOwner }: { row: ClientListRow; showOwner: boolean
   const siteHref = websiteHref(row.website);
 
   return (
-    <tr className={tableRowClassName}>
-      <RowCell href={href} primary={`Open ${row.name}`}>
-        <span aria-hidden="true" className="font-medium text-brand-dark">
-          {row.name}
+    <tr data-href={href} className={cn(responsiveRowClassName, "cursor-pointer")}>
+      <td className={cn(responsiveCellClassName, "col-start-1 row-start-1")}>
+        <span className="flex min-w-0 items-center gap-2">
+          <Building2 className="size-4 shrink-0 text-brand md:hidden" aria-hidden="true" />
+          <Link href={href} prefetch={false} className="focus-ring truncate rounded-sm font-medium text-brand-dark">
+            {row.name}
+          </Link>
         </span>
-      </RowCell>
-      <RowCell href={href}>
-        <span className="text-sm text-slate-600">{row.location}</span>
-      </RowCell>
-      <RowCell href={href}>
-        <span className="text-sm text-slate-500">{row.contactsLabel}</span>
-      </RowCell>
+      </td>
+      <td className={cn(responsiveCellClassName, "col-start-1 row-start-2")}>
+        <span className="block truncate text-sm text-slate-500 md:text-slate-600">{row.location}</span>
+      </td>
+      <td className={cn(responsiveCellClassName, "col-start-2 row-start-2 text-right md:text-left")}>
+        <span className="text-sm whitespace-nowrap text-slate-500">{row.contactsLabel}</span>
+      </td>
       {showOwner ? (
-        <RowCell href={href}>
-          <span className="text-sm text-slate-600">{row.ownerLabel}</span>
-        </RowCell>
+        <td className={cn(responsiveCellClassName, "col-start-1 row-start-3")}>
+          {/* Prefixed on the card, like the Salesperson line on a quote card:
+              a bare name under the location reads as more metadata rather
+              than as the person who looks after this client. */}
+          <span className="truncate text-xs text-slate-500 md:text-sm md:text-slate-600">
+            <span className="md:hidden">Owner: </span>
+            {row.ownerLabel}
+          </span>
+        </td>
       ) : null}
-      {/* Deliberately its own plain `<td>` (no `RowCell`/row link) — the
-          external website link must stay independently clickable, and
-          nesting an `<a>` inside a `RowCell`'s own `<Link>` would be invalid
-          HTML and would fight the row link for clicks. */}
-      <td className="p-0 align-middle">
+      {/* Its own cell, never inside the row link: the external website link
+          must stay independently clickable (`LinkedRowsBody` leaves clicks on
+          an `<a>` alone). */}
+      <td className={cn(responsiveCellClassName, "col-start-3 row-start-1 row-span-2 md:p-0 md:text-right")}>
         {siteHref ? (
-          <div className="flex justify-end px-2">
+          <div className="flex justify-end md:px-2">
             <a
               href={siteHref}
               target="_blank"
@@ -297,48 +315,5 @@ function CompanyRow({ row, showOwner }: { row: ClientListRow; showOwner: boolean
         ) : null}
       </td>
     </tr>
-  );
-}
-
-function CompanyCard({ row, showOwner }: { row: ClientListRow; showOwner: boolean }) {
-  const siteHref = websiteHref(row.website);
-
-  return (
-    <div className="relative flex min-h-12 flex-col gap-2 rounded-xl border border-slate-200 bg-white p-4 transition-colors active:bg-slate-100">
-      <Link
-        href={`/clients/${row.id}`}
-        className="focus-ring absolute inset-0 rounded-xl focus-visible:z-10"
-      >
-        <span className="sr-only">Open {row.name}</span>
-      </Link>
-      <div className="flex items-start justify-between gap-3">
-        <div className="relative flex min-w-0 items-center gap-2">
-          <Building2 className="size-4 shrink-0 text-brand" aria-hidden="true" />
-          <p className="truncate font-medium text-brand-dark">{row.name}</p>
-        </div>
-      </div>
-      <div className="relative flex items-center justify-between gap-3 text-sm text-slate-500">
-        <span className="truncate">{row.location}</span>
-        <span className="shrink-0">{row.contactsLabel}</span>
-      </div>
-      {/* Prefixed, like the Salesperson line on a quote card: unprefixed, a
-          bare name under the location reads as more metadata rather than as
-          the person who looks after this client. */}
-      {showOwner ? (
-        <p className="relative truncate text-xs text-slate-500">Owner: {row.ownerLabel}</p>
-      ) : null}
-      {siteHref ? (
-        <a
-          href={siteHref}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`Open ${row.name}'s website`}
-          className="focus-ring relative z-10 -my-1 inline-flex min-h-11 w-fit items-center gap-1.5 rounded-md text-sm text-slate-500 hover:text-brand"
-        >
-          <ExternalLink className="size-3.5 shrink-0" aria-hidden="true" />
-          <span className="truncate">{websiteLabel(row.website)}</span>
-        </a>
-      ) : null}
-    </div>
   );
 }

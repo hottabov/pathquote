@@ -1,0 +1,125 @@
+### host
+4
+               total        used        free      shared  buff/cache   available
+Mem:            7901        2995         686         263        4220        4343
+Swap:           2047         668        1379
+NAME      TYPE SIZE   USED PRIO
+/swapfile file   2G 668.1M   -2
+ 10:27:57 up 514 days,  4:50,  2 users,  load average: 0.04, 0.05, 0.07
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/vda1       233G   67G  167G  29% /
+/dev/vda1       233G   67G  167G  29% /
+some avg10=0.18 avg60=0.03 avg300=0.00 total=123655368431
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+some avg10=0.00 avg60=0.00 avg300=0.00 total=502495706
+full avg10=0.00 avg60=0.00 avg300=0.00 total=408617169
+some avg10=0.00 avg60=0.00 avg300=0.00 total=6537733089
+full avg10=0.00 avg60=0.00 avg300=0.00 total=6175625175
+### vmstat (5 s)
+procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st
+ 0  0 684168 702996 177648 4144400    0    0    10    18    0    0  1  1 98  0  0
+ 1  0 684168 704036 177648 4144476    0    0     0   164 1633 2882  4  3 93  0  0
+ 1  0 684168 707572 177648 4144484    0    0     0     0 1078 1595  5  2 93  0  0
+ 0  0 684168 717212 177648 4144492    0    0     0   688 1137 1757  4  3 94  0  0
+ 0  0 684168 717212 177648 4144492    0    0     0    12  706 1175  1  1 99  0  0
+### containers
+CONTAINER ID   NAME                    CPU %     MEM USAGE / LIMIT     MEM %     NET I/O         BLOCK I/O         PIDS
+15a36343ba59   pathquote-app-1         0.00%     155.6MiB / 7.717GiB   1.97%     921kB / 726kB   1.12MB / 4.1kB    11
+1bb1d0fabb58   pathquote-postgres-1    0.00%     115.8MiB / 7.717GiB   1.46%     570MB / 578MB   1.19GB / 2.12GB   6
+24f341319470   pathquote-gotenberg-1   0.27%     338.7MiB / 7.717GiB   4.29%     181MB / 148MB   5.5GB / 2.19GB    123
+/pathquote-app-1 oom=false restarts=0 started=2026-10-16T04:08:08.119127065Z mem=0 log={}
+/pathquote-postgres-1 oom=false restarts=0 started=2026-08-29T11:07:58.723741801Z mem=0 log={}
+/pathquote-gotenberg-1 oom=false restarts=0 started=2026-08-29T11:07:58.723250396Z mem=0 log={}
+4.0K	/var/lib/docker/containers/15a36343ba596d243a6ea121c90e59b7b808ad5ff55da422f423275ef2a40b18/15a36343ba596d243a6ea121c90e59b7b808ad5ff55da422f423275ef2a40b18-json.log
+40K	/var/lib/docker/containers/24f3413194703b847e9cb7a45271a006266bf765310cc56277c97856d08a0a3f/24f3413194703b847e9cb7a45271a006266bf765310cc56277c97856d08a0a3f-json.log
+216K	/var/lib/docker/containers/1bb1d0fabb58821667966586ea5665ef2de38eff29d846fce45bda11980170c2/1bb1d0fabb58821667966586ea5665ef2de38eff29d846fce45bda11980170c2-json.log
+### app log: slow saves & errors (72h)
+0
+postgres-1  | 2026-10-16 00:26:58.719 UTC [55] LOG:  checkpoint starting: time
+postgres-1  | 2026-10-16 00:26:58.824 UTC [55] LOG:  checkpoint complete: wrote 2 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.101 s, sync=0.001 s, total=0.105 s; sync files=2, longest=0.001 s, average=0.001 s; distance=5 kB, estimate=143 kB; lsn=0/12DE0B60, redo lsn=0/12DE0B28
+postgres-1  | 2026-10-16 00:31:58.924 UTC [55] LOG:  checkpoint starting: time
+postgres-1  | 2026-10-16 00:31:59.430 UTC [55] LOG:  checkpoint complete: wrote 6 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.502 s, sync=0.002 s, total=0.507 s; sync files=6, longest=0.001 s, average=0.001 s; distance=9 kB, estimate=130 kB; lsn=0/12DE3208, redo lsn=0/12DE31D0
+postgres-1  | 2026-10-16 00:46:58.684 UTC [55] LOG:  checkpoint starting: time
+postgres-1  | 2026-10-16 00:47:00.394 UTC [55] LOG:  checkpoint complete: wrote 18 buffers (0.1%); 0 WAL file(s) added, 0 removed, 0 recycled; write=1.705 s, sync=0.003 s, total=1.710 s; sync files=18, longest=0.002 s, average=0.001 s; distance=52 kB, estimate=122 kB; lsn=0/12DF03F0, redo lsn=0/12DF03B8
+postgres-1  | 2026-10-16 00:56:58.572 UTC [55] LOG:  checkpoint starting: time
+postgres-1  | 2026-10-16 00:57:04.194 UTC [55] LOG:  checkpoint complete: wrote 57 buffers (0.3%); 0 WAL file(s) added, 0 removed, 0 recycled; write=5.615 s, sync=0.003 s, total=5.622 s; sync files=37, longest=0.002 s, average=0.001 s; distance=243 kB, estimate=243 kB; lsn=0/12E2E830, redo lsn=0/12E2D1F0
+postgres-1  | 2026-10-16 01:11:58.475 UTC [55] LOG:  checkpoint starting: time
+postgres-1  | 2026-10-16 01:12:02.693 UTC [55] LOG:  checkpoint complete: wrote 43 buffers (0.3%); 0 WAL file(s) added, 0 removed, 0 recycled; write=4.212 s, sync=0.004 s, total=4.219 s; sync files=34, longest=0.002 s, average=0.001 s; distance=224 kB, estimate=241 kB; lsn=0/12E65368, redo lsn=0/12E65330
+postgres-1  | 2026-10-16 01:41:59.207 UTC [55] LOG:  checkpoint starting: time
+postgres-1  | 2026-10-16 01:42:19.461 UTC [55] LOG:  checkpoint complete: wrote 203 buffers (1.2%); 0 WAL file(s) added, 0 removed, 0 recycled; write=20.250 s, sync=0.002 s, total=20.255 s; sync files=36, longest=0.001 s, average=0.001 s; distance=1146 kB, estimate=1146 kB; lsn=0/12F83BC8, redo lsn=0/12F83B90
+postgres-1  | 2026-10-16 03:02:00.947 UTC [55] LOG:  checkpoint starting: time
+postgres-1  | 2026-10-16 03:02:08.876 UTC [55] LOG:  checkpoint complete: wrote 80 buffers (0.5%); 0 WAL file(s) added, 0 removed, 0 recycled; write=7.921 s, sync=0.005 s, total=7.929 s; sync files=51, longest=0.002 s, average=0.001 s; distance=463 kB, estimate=1077 kB; lsn=0/13006300, redo lsn=0/12FF79F0
+postgres-1  | 2026-10-16 03:07:00.976 UTC [55] LOG:  checkpoint starting: time
+postgres-1  | 2026-10-16 03:07:09.206 UTC [55] LOG:  checkpoint complete: wrote 83 buffers (0.5%); 0 WAL file(s) added, 1 removed, 0 recycled; write=8.221 s, sync=0.004 s, total=8.231 s; sync files=29, longest=0.002 s, average=0.001 s; distance=344 kB, estimate=1004 kB; lsn=0/1304DDD0, redo lsn=0/1304DD98
+postgres-1  | 2026-10-16 03:12:00.303 UTC [55] LOG:  checkpoint starting: time
+postgres-1  | 2026-10-16 03:12:06.933 UTC [55] LOG:  checkpoint complete: wrote 67 buffers (0.4%); 0 WAL file(s) added, 0 removed, 0 recycled; write=6.624 s, sync=0.004 s, total=6.631 s; sync files=54, longest=0.002 s, average=0.001 s; distance=229 kB, estimate=927 kB; lsn=0/13087418, redo lsn=0/130873E0
+postgres-1  | 2026-10-16 04:42:02.487 UTC [55] LOG:  checkpoint starting: time
+postgres-1  | 2026-10-16 04:42:03.395 UTC [55] LOG:  checkpoint complete: wrote 10 buffers (0.1%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.904 s, sync=0.002 s, total=0.909 s; sync files=8, longest=0.001 s, average=0.001 s; distance=10 kB, estimate=835 kB; lsn=0/13089FB8, redo lsn=0/13089F80
+### nginx (live template)
+23:	keepalive_timeout 8;
+43:	client_max_body_size 100m;
+60:	http2 on;
+93:	access_log off;
+97:	log_format rt_cache '$remote_addr $upstream_response_time $upstream_cache_status [$time_local] '
+362:fastcgi_socket_keepalive on;
+20146:	gzip on;
+20311:log_format pq_timing '$remote_addr - $remote_user [$time_local] "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" rt=$request_time urt=$upstream_response_time';
+20315:log_format rt_cache_redis '$remote_addr $upstream_response_time $srcache_fetch_status [$time_local] '
+20334:    access_log off;
+20343:        access_log off;
+20349:        access_log off;
+20359:        access_log off;
+20366:        access_log off;
+20373:        access_log off;
+20427:	keepalive_requests 500;
+20428:	keepalive_disable msie6;
+20483:    keepalive 5;
+20503:    keepalive 5;
+20523:    keepalive 5;
+20543:    keepalive 5;
+20563:    keepalive 5;
+20583:    keepalive 5;
+20603:    keepalive 5;
+20623:    keepalive 5;
+20639:    keepalive 64;
+20649:    keepalive 10;
+20721:  access_log   /var/log/nginx/22222.access.log rt_cache;
+20775:        proxy_http_version 1.1;
+20896:    access_log /var/log/nginx/pathfindercut.com.access.log rt_cache_redis;
+20990:    access_log off;
+21003:    access_log off;
+21010:    access_log off;
+21024:        access_log off;
+21040:        access_log off;
+21050:# enable gzip on static assets - php files are forbidden
+21055:        access_log off;
+21087:    access_log off;
+21098:    access_log off;
+21106:    access_log off;
+access log: /var/log/nginx/dev.pathfindercut.com.access.log
+### postgres
+# Do not edit this file manually!
+# It will be overwritten by the ALTER SYSTEM command.
+autovacuum=on
+effective_cache_size=5242888kB
+log_min_duration_statement=-1ms
+max_connections=100
+shared_buffers=163848kB
+shared_preload_libraries=
+track_io_timing=off
+work_mem=4096kB
+db_size=53 MB
+rows: ActOutbox=11
+rows: Company=8845
+rows: Contact=10519
+rows: Document=13
+rows: DocumentItem=21
+rows: DocumentLine=113
+rows: Option=105
+rows: Product=59
+rows: QuoteRevision=13
+rows: User=10
+ERROR:  aggregate functions are not allowed in GROUP BY
+LINE 5: ...||' wait='||coalesce(wait_event_type,'-')||' n='||count(*) F...
+                                                             ^
