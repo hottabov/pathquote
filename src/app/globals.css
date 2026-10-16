@@ -86,7 +86,13 @@
      animates on load, nothing loops, and nothing moves that the user did not
      just act on. Easing follows the usual split: ease-out for anything
      entering or leaving, ease-in-out for something already on screen that
-     moves to a new place. */
+     moves to a new place.
+
+     One exception, decided 2026-10-16: the loading skeletons (`.skeleton`
+     below) fade in block by block and loop a shimmer. They are only on
+     screen while there is nothing else to look at, and a placeholder that
+     visibly moves is what tells someone the app is still working rather
+     than stuck. */
   /* Tailwind has no `--duration-*` namespace, so these do not become
      `duration-micro` utilities; reference them as `duration-(--duration-ui)`.
      They live here rather than in a bare `:root` block so the whole design
@@ -346,6 +352,105 @@
     overflow: hidden;
   }
 
+  /* ── Loading skeletons ───────────────────────────────────────────────────
+     The placeholders every loading.tsx draws (src/components/ui-kit/
+     skeleton.tsx). Two motions, both CSS only so a skeleton costs no
+     JavaScript and works before hydration:
+
+     - `.skeleton-reveal`: each group fades up in sequence, `--skeleton-step`
+       places along it. Everything waits `--skeleton-lead` first, so a page
+       that answers within that never flashes a skeleton at all, and the
+       hand-off between two nested loading boundaries (the (app) one, then a
+       section's own) stays invisible when the first one is quick.
+     - `.skeleton::after`: a band of light sweeps across each block, then
+       rests. Its start is offset by the same step, so the light travels
+       down the page as a wave instead of every block flashing at once.
+       `transform` only, so it stays on the compositor.
+
+     The hint below the blocks only appears once a load has gone on long
+     enough that someone might start to wonder. */
+  :root {
+    --color-skeleton: oklch(0.928 0.008 255);
+    --color-skeleton-soft: oklch(0.955 0.005 255);
+    /* White with a trace of brand accent (#00b8e2), so the sweep reads as
+       PathQuote's own light rather than a generic grey flash. */
+    --skeleton-glint: color-mix(in oklab, rgb(255 255 255 / 0.8), rgb(0 184 226 / 0.8) 14%);
+    --skeleton-lead: 120ms;
+    --skeleton-stagger: 70ms;
+    --skeleton-shimmer: 1.8s;
+  }
+
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--radius-control, 0.5rem);
+    background-color: var(--color-skeleton);
+  }
+  .skeleton-soft {
+    background-color: var(--color-skeleton-soft);
+  }
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(100deg, transparent 20%, var(--skeleton-glint) 50%, transparent 80%);
+    animation: skeleton-shimmer var(--skeleton-shimmer) var(--ease-move, cubic-bezier(0.645, 0.045, 0.355, 1)) infinite;
+    animation-delay: calc(var(--skeleton-lead) + var(--skeleton-step, 0) * 90ms);
+  }
+
+  .skeleton-reveal {
+    animation: skeleton-in 320ms var(--ease-out-soft, cubic-bezier(0.215, 0.61, 0.355, 1)) both;
+    animation-delay: calc(var(--skeleton-lead) + var(--skeleton-step, 0) * var(--skeleton-stagger));
+  }
+
+  .skeleton-hint {
+    opacity: 0;
+    animation: skeleton-hint-in 400ms var(--ease-out-soft, cubic-bezier(0.215, 0.61, 0.355, 1)) 5s forwards;
+  }
+
+  /* Reduced motion: the blocks are simply there, still and grey. The
+     global backstop at the bottom of this file would already cut both
+     animations to a single 0.01ms frame; turning them off outright is
+     clearer and leaves no one-frame flash of the sweep. The hint keeps its
+     delay — it appears, it just doesn't fade. */
+  @media (prefers-reduced-motion: reduce) {
+    .skeleton::after {
+      display: none;
+    }
+    .skeleton-reveal {
+      animation: none;
+    }
+  }
+}
+
+@keyframes skeleton-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Sweep across in the first 60% of the cycle, rest for the remainder:
+   a pause between passes reads as breathing rather than strobing. */
+@keyframes skeleton-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  60%,
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes skeleton-hint-in {
+  to {
+    opacity: 1;
+  }
 }
 
 @layer utilities {
