@@ -106,3 +106,16 @@ grep -E "\"POST /quotes/[a-z0-9]+ " $L | grep "$(date -u +%d/%b/%Y)" | grep -oE 
 docker compose logs app --since 24h 2>&1 | grep -cE "\[runtime\]|slow-query"
 curl -s http://127.0.0.1:3010/api/health
 ```
+
+## Production deploy of 2026-10-16 (c5f0b6a) — verified on the VPS
+
+| Step | Result |
+|---|---|
+| CI run 38890320680 | lint, typecheck, tests, migrate diff, seed ×2: success; images built; deploy job success |
+| `/api/health` after deploy | `{"ok":true,"db":true,"schemaOk":true,"dbMs":12,"pool":{"total":1,"idle":1,"waiting":0}}` |
+| Postgres recreated with the new `command` | `shared_preload_libraries=pg_stat_statements`, `log_min_duration_statement=500ms`, `log_lock_waits=on`; `CREATE EXTENSION pg_stat_statements` done once |
+| Container logs | json-file capped `max-size 20m`, `max-file 5` on all three services |
+| `PRISMA_SLOW_MS=500` | added to `.env` before the app was recreated; present in the container's env |
+| nginx | `pathquote-upstream.conf` (keep-alive 16) + site block on `http://pathquote_app` with HTTP/1.1 and `Connection ""`; `/_next/static/` answers `cache-control: public, max-age=31536000, immutable`; `nginx -t` ok, reloaded; `/login` on-box 19–20 ms as before |
+| `pq-act-drain.timer` | installed `OnCalendar=*:0/5`; first manual tick ran the new image (`act:drain ok`) |
+| First ACT! lists refresh | **failed**: ACT! login did not answer within the 10 s deadline inherited from the in-page read; fixed by giving the background read the client's normal limits (next deploy) |

@@ -1,5 +1,5 @@
 [Unit]
-Description=PathQuote ACT! drain: queued quotes sent to the CRM, every 15 minutes
+Description=PathQuote ACT! drain: queued quotes sent to the CRM, a requested sync, ACT! lists -- every 5 minutes
 After=docker.service network-online.target
 Wants=network-online.target
 OnFailure=pq-backup-alert@%n.service

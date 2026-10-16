@@ -13,8 +13,8 @@
 // builds the pool on import.
 
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { actReaderFromEnv, REP_PICKLIST_ID, type ActRequestLimits } from "@/lib/act/client";
-import { ACT_USER_LINK_DEADLINE_MS, type ActUserRow, type RepPicklistItem } from "@/lib/act/user-link";
+import { actReaderFromEnv, REP_PICKLIST_ID } from "@/lib/act/client";
+import type { ActUserRow, RepPicklistItem } from "@/lib/act/user-link";
 
 export const ACT_LINK_LISTS_KEY = "act.linkLists";
 
@@ -22,9 +22,10 @@ export const ACT_LINK_LISTS_KEY = "act.linkLists";
  *  administrator's user table and a picklist change a few times a year. */
 export const ACT_LINK_LISTS_MAX_AGE_MS = 60 * 60 * 1000;
 
-/** One attempt per read, under the deadline, as before: this runs in the
- *  background now, but a hung ACT! should still not hold the drain. */
-const ACT_USER_LINK_LIMITS: ActRequestLimits = { timeoutMs: ACT_USER_LINK_DEADLINE_MS, attempts: 1 };
+// The client's ordinary limits, not the 10 s deadline the in-page read had:
+// this runs in the background now, and the first tick on the VPS showed ACT!'s
+// login alone can take longer than that (2026-10-16). A hung ACT! still cannot
+// hold the drain past the client's own timeout and attempts.
 
 export type ActLinkLists =
   | { ok: true; loginName: string | null; actUsers: ActUserRow[]; repItems: RepPicklistItem[]; readAt: string }
@@ -74,7 +75,7 @@ export async function readActLinkLists(client: SettingClient): Promise<ActLinkLi
 }
 
 async function readBothFromAct(): Promise<Omit<StoredActLinkLists, "readAt">> {
-  const reader = actReaderFromEnv(ACT_USER_LINK_LIMITS);
+  const reader = actReaderFromEnv();
   // One after the other: the client logs in on its first request, and two at
   // once would log in twice.
   const users = await reader.users();
