@@ -33,56 +33,85 @@ export type DocumentListItem = {
 };
 
 /**
+ * How many rows `listDocuments` returns unless told otherwise, and so how many
+ * the /quotes page renders before offering "Show all". 200 is well past what a
+ * salesperson scrolls through -- the search box is how anything older is
+ * found -- while keeping the page's HTML and RSC payload bounded: the audit
+ * measured ~7.5 KB per row before this limit existed, which at 600 quotes was
+ * a 4.5 MB page for an admin.
+ */
+export const DOCUMENT_LIST_PAGE_SIZE = 200;
+
+export type DocumentListPage = {
+  rows: DocumentListItem[];
+  /** Every document in the viewer's scope, counted with the same `where` the
+   * rows were read with -- what the page compares `rows.length` against to
+   * know whether there is more to show. */
+  total: number;
+};
+
+/**
  * Documents visible to `user` — all for ADMIN, this region's for a
  * REGIONAL_MANAGER, own-only for MANAGER, all via `documentWhereForUser` —
- * optionally narrowed by a case-insensitive search on the client company's
- * name, newest-edited first. A document with no client yet (`companyId` is
- * null pre-Task-D-finalize) never matches a non-empty `q`.
+ * newest-edited first, together with how many there are in all.
+ *
+ * `limit` bounds the rows (default `DOCUMENT_LIST_PAGE_SIZE`; `null` means
+ * every row, which only the "Show all" action asks for) and `skip` is the
+ * offset the "Show all" action continues from: the number of rows the browser
+ * already holds. For an offset to mean anything the order has to be total, so
+ * `id` breaks ties on `updatedAt` -- a seeded database writes many rows in
+ * the same millisecond, and without the tiebreak two reads could disagree
+ * about which of them fall either side of row 200. Postgres serves this as a
+ * bounded top-N over the `[authorId, updatedAt]` / `[regionId, updatedAt]`
+ * indexes with an incremental sort on `id` for the ties.
  */
 export async function listDocuments(
   user: ScopeUser,
-  params: { q?: string } = {}
-): Promise<DocumentListItem[]> {
-  const { q } = params;
+  params: { limit?: number | null; skip?: number } = {}
+): Promise<DocumentListPage> {
+  const limit = params.limit === undefined ? DOCUMENT_LIST_PAGE_SIZE : params.limit;
+  const skip = params.skip ?? 0;
 
-  const where: NonNullable<Parameters<typeof db.document.findMany>[0]>["where"] = {
-    ...documentWhereForUser(user),
+  const where = documentWhereForUser(user);
+
+  const [documents, total] = await Promise.all([
+    db.document.findMany({
+      where,
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+      ...(limit === null ? {} : { take: limit }),
+      ...(skip > 0 ? { skip } : {}),
+      select: {
+        id: true,
+        status: true,
+        number: true,
+        total: true,
+        currency: true,
+        currencySymbol: true,
+        updatedAt: true,
+        signingStatus: true,
+        company: { select: { name: true } },
+        // `authorId` is a required column with an FK to User, so `author` is
+        // never null -- unlike `company`, which is null until the builder's
+        // client step. No `?.` needed below.
+        author: { select: { name: true, email: true } },
+      },
+    }),
+    db.document.count({ where }),
+  ]);
+
+  return {
+    rows: documents.map((d) => ({
+      id: d.id,
+      status: d.status,
+      number: d.number,
+      companyName: d.company?.name ?? null,
+      total: d.total.toString(),
+      currency: d.currency,
+      currencySymbol: d.currencySymbol,
+      updatedAt: d.updatedAt,
+      signingStatus: d.signingStatus,
+      salespersonName: d.author.name ?? d.author.email,
+    })),
+    total,
   };
-
-  if (q && q.trim()) {
-    where.company = { name: { contains: q.trim(), mode: "insensitive" } };
-  }
-
-  const documents = await db.document.findMany({
-    where,
-    orderBy: { updatedAt: "desc" },
-    select: {
-      id: true,
-      status: true,
-      number: true,
-      total: true,
-      currency: true,
-      currencySymbol: true,
-      updatedAt: true,
-      signingStatus: true,
-      company: { select: { name: true } },
-      // `authorId` is a required column with an FK to User, so `author` is
-      // never null -- unlike `company`, which is null until the builder's
-      // client step. No `?.` needed below.
-      author: { select: { name: true, email: true } },
-    },
-  });
-
-  return documents.map((d) => ({
-    id: d.id,
-    status: d.status,
-    number: d.number,
-    companyName: d.company?.name ?? null,
-    total: d.total.toString(),
-    currency: d.currency,
-    currencySymbol: d.currencySymbol,
-    updatedAt: d.updatedAt,
-    signingStatus: d.signingStatus,
-    salespersonName: d.author.name ?? d.author.email,
-  }));
 }

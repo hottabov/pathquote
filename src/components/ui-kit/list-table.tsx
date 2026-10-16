@@ -1,6 +1,7 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useState, type MouseEvent, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowDown, ArrowUp, ChevronsUpDown, Search, X } from "lucide-react";
 import {
   filterAndSortRows,
@@ -198,6 +199,59 @@ export function SortableTh<K extends string>({
         />
       </button>
     </th>
+  );
+}
+
+/** Selector for the things inside a row that own their own click -- the row
+ * link itself, a delete button, an external website link. A click that starts
+ * on one of these is theirs, not the row's. */
+const OWN_CLICK_SELECTOR = "a, button, input, select, textarea, label, [role='button']";
+
+/**
+ * A `<tbody>` that makes every `<tr data-href>` inside it navigate on click,
+ * through ONE handler for the whole list.
+ *
+ * Each row keeps exactly one real link -- the primary cell's, which is what
+ * the keyboard reaches and a screen reader announces -- and this handler gives
+ * mouse and touch users the rest of the row as a target, the way `RowCell`'s
+ * link-per-cell did before. Delegating from the `<tbody>` rather than giving
+ * each row its own `onClick` is what keeps a 600-row list cheap: no handler,
+ * no hook and no client-component boundary per row, just an attribute, so the
+ * rows themselves can be server-rendered markup (the /clients list) or part of
+ * a client list (/quotes) alike.
+ *
+ * It stays out of the way of everything that is not a plain left click on
+ * row chrome: a modified click (new tab) and a middle click are left to the
+ * real link, so they behave on it and do nothing elsewhere rather than
+ * hijacking the row; a click that lands on a control inside the row (the
+ * delete button, the website link) is that control's; and a mouse-up that
+ * ends a text selection does not navigate away from what was just selected.
+ */
+export function LinkedRowsBody({ className, children }: { className?: string; children: ReactNode }) {
+  const router = useRouter();
+
+  function handleClick(event: MouseEvent<HTMLTableSectionElement>) {
+    if (event.defaultPrevented || event.button !== 0) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+    const target = event.target as Element | null;
+    if (!target) return;
+    if (target.closest(OWN_CLICK_SELECTOR)) return;
+
+    const row = target.closest<HTMLElement>("tr[data-href]");
+    if (!row || !event.currentTarget.contains(row)) return;
+
+    const selection = typeof window !== "undefined" ? window.getSelection()?.toString() : "";
+    if (selection) return;
+
+    const href = row.dataset.href;
+    if (href) router.push(href);
+  }
+
+  return (
+    <tbody className={className} onClick={handleClick}>
+      {children}
+    </tbody>
   );
 }
 

@@ -1,92 +1,122 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo, useState, useTransition } from "react";
 import { FileText } from "lucide-react";
-import { DeleteDocumentButton } from "@/components/documents/delete-document-button";
+import {
+  DeleteDocumentButton,
+  useDeleteDocument,
+  type DeletableQuote,
+} from "@/components/documents/delete-document-button";
 import { EmptyState } from "@/components/ui-kit/empty-state";
 import {
-  TableShell,
-  RowCell,
-  tableClassName,
+  ResponsiveTableShell,
+  responsiveCellClassName,
+  responsiveRowClassName,
+  responsiveTableClassName,
+  responsiveTbodyClassName,
+  responsiveTheadClassName,
   tableHeadRowClassName,
-  tableRowClassName,
 } from "@/components/ui-kit/data-table";
 import { StatusBadge, STATUS_TONE } from "@/components/ui-kit/status-badge";
+import { useToast } from "@/components/ui-kit/client";
 import {
+  LinkedRowsBody,
   ListResultCount,
   ListSearchInput,
   SortableTh,
   useListTable,
 } from "@/components/ui-kit/list-table";
+import { Button } from "@/components/ui/button";
 import type { ActionResult } from "@/lib/actions/documents";
-import type { DocumentStatus, SigningStatus } from "@prisma/client";
+import type { RemainingQuotesResult } from "@/lib/actions/documents-list";
+import type { QuoteListRow } from "@/components/documents/quote-list-rows";
 import { cn } from "@/lib/utils";
 
-/**
- * One row of the /quotes list, with every displayed string already
- * rendered by the server page.
- *
- * Deliberately a view model rather than the `DocumentListItem` the query
- * returns: this component is a client component, so anything it formats
- * itself ships to the browser along with it. Keeping `formatMoney`,
- * `relativeDate` and the two status-label helpers on the server means the
- * search box can also match exactly what the user can see, because the
- * labels it searches ARE the labels on screen — no second formatting path
- * that could drift from the first.
- *
- * `totalValue` and `updatedAtMs` ride along beside their labels purely so
- * those two columns sort by value; "A$1,200" and "Yesterday" sort as text
- * the way nobody wants.
- */
-export type QuoteListRow = {
-  id: string;
-  numberLabel: string;
-  companyLabel: string;
-  totalLabel: string;
-  totalValue: number;
-  status: DocumentStatus;
-  statusLabel: string;
-  signingStatus: SigningStatus;
-  /** Null for NOT_SENT, which renders no second badge — see
-   * `signingStatusLabel` (src/lib/signing/state.ts). */
-  signingLabel: string | null;
-  updatedLabel: string;
-  updatedAtMs: number;
-  canDelete: boolean;
-  /** Who wrote the quote (see `DocumentListItem.salespersonName`). Present on
-   * every row regardless of viewer — `showSalesperson` below decides whether
-   * it is rendered, and a MANAGER's rows are all their own anyway. */
-  salespersonLabel: string;
-};
+export type { QuoteListRow };
 
 type SortKey = "number" | "type" | "company" | "total" | "status" | "updated" | "salesperson";
 
+/**
+ * The /quotes list: client-side search and sort over the rows it holds, one
+ * element tree per row, one link per row.
+ *
+ * It used to render every row twice (a table row for md+ and a card for
+ * mobile, one hidden by CSS), wrap each of seven cells in its own `<Link>`
+ * and mount a delete component with three hooks per row -- about 7.5 KB of
+ * payload per quote, 4.5 MB for an admin's 602 (audit 2026-10-16, PERF-05).
+ * Now the same `<table>` is both layouts (`ResponsiveTableShell` switches
+ * the table elements' display by breakpoint), the primary cell carries the
+ * row's only `<Link>` (what the keyboard and a screen reader reach;
+ * `prefetch={false}` -- a quote page is the whole builder render), and
+ * `LinkedRowsBody` gives mouse and touch the rest of the row through one
+ * delegated handler. The delete flow is one `useDeleteDocument` for the list.
+ *
+ * Bounded, too: the page sends the most recent `DOCUMENT_LIST_PAGE_SIZE`
+ * rows and `total`; when the scope holds more, "Show all" fetches the rest
+ * through `loadRemaining` (a server action that applies the same scope from
+ * the session) and appends them, so the search then covers everything. Rows
+ * loaded that way live in `extra`, keyed out of the page's own rows by id so
+ * a refresh after a delete (which re-sends the first page) never duplicates.
+ */
 export function QuotesList({
   rows,
+  total,
   deleteAction,
+  loadRemaining,
   showSalesperson,
 }: {
   rows: QuoteListRow[];
+  /** Every quote in the viewer's scope, from the same query that produced `rows`. */
+  total: number;
   /** `deleteDocument`, handed down from the server page — a server action
    * passes through a client component as a reference, and it re-checks
    * every permission server-side regardless of which rows rendered a
    * button. */
   deleteAction: (documentId: string) => Promise<ActionResult>;
+  /** `listRemainingQuotes`: the rows after the first `loaded`, in the same
+   * order and under the same scope. */
+  loadRemaining: (loaded: number) => Promise<RemainingQuotesResult>;
   /** Whether to render the trailing `Salesperson` column — `canSeeSalesperson`
    * (src/lib/roles.ts), resolved on the server page. False for a MANAGER,
    * whose list is their own quotes and for whom the column would be one name
    * repeated down the page.
    *
    * Also gates whether the name joins the search text, so a manager's search
-   * matches only what is on their screen — the rule this component's own
-   * header comment states about every other column. */
+   * matches only what is on their screen. */
   showSalesperson: boolean;
 }) {
-  const { query, setQuery, sort, toggleSort, visible, isFiltered } = useListTable<
-    QuoteListRow,
-    SortKey
-  >({
-    rows,
+  const toast = useToast();
+  const [extra, setExtra] = useState<QuoteListRow[]>([]);
+  const [loadingRest, startLoadingRest] = useTransition();
+
+  const allRows = useMemo(() => {
+    const seen = new Set(rows.map((row) => row.id));
+    return [...rows, ...extra.filter((row) => !seen.has(row.id))];
+  }, [rows, extra]);
+
+  const { requestDelete, pendingId } = useDeleteDocument({
+    action: deleteAction,
+    // The page's own rows come back fresh with the revalidation the action
+    // ran; a row only this list holds has to go here.
+    onDeleted: (id) => setExtra((current) => current.filter((row) => row.id !== id)),
+  });
+
+  const remaining = Math.max(0, total - allRows.length);
+
+  function showAll() {
+    startLoadingRest(async () => {
+      const result = await loadRemaining(allRows.length);
+      if ("error" in result) {
+        toast.error(result.error);
+        return;
+      }
+      setExtra((current) => [...current, ...result.rows]);
+    });
+  }
+
+  const { query, setQuery, sort, toggleSort, visible, isFiltered } = useListTable<QuoteListRow, SortKey>({
+    rows: allRows,
     // Matches `listDocuments`' own `updatedAt: "desc"`, so the list looks
     // the same before and after hydration.
     defaultSort: { key: "updated", direction: "desc" },
@@ -134,187 +164,137 @@ export function QuotesList({
           }
         />
       ) : (
-        <TableShell
-          table={
-            <table className={tableClassName}>
-              <thead>
-                <tr className={tableHeadRowClassName}>
-                  <SortableTh label="Number" sortKey="number" sort={sort} onSort={toggleSort} />
-                  <SortableTh label="Type" sortKey="type" sort={sort} onSort={toggleSort} />
-                  <SortableTh label="Company" sortKey="company" sort={sort} onSort={toggleSort} />
-                  <SortableTh label="Total" sortKey="total" sort={sort} onSort={toggleSort} align="right" />
-                  <SortableTh label="Status" sortKey="status" sort={sort} onSort={toggleSort} />
-                  <SortableTh label="Updated" sortKey="updated" sort={sort} onSort={toggleSort} />
-                  {showSalesperson ? (
-                    <SortableTh
-                      label="Salesperson"
-                      sortKey="salesperson"
-                      sort={sort}
-                      onSort={toggleSort}
-                    />
-                  ) : null}
-                  <th scope="col" className="px-4 py-3">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((row) => (
-                  <DocumentRow
-                    key={row.id}
-                    row={row}
-                    deleteAction={deleteAction}
-                    showSalesperson={showSalesperson}
-                  />
-                ))}
-              </tbody>
-            </table>
-          }
-          cards={visible.map((row) => (
-            <DocumentCard
-              key={row.id}
-              row={row}
-              deleteAction={deleteAction}
-              showSalesperson={showSalesperson}
-            />
-          ))}
-        />
+        <ResponsiveTableShell>
+          <table className={responsiveTableClassName}>
+            <thead className={responsiveTheadClassName}>
+              <tr className={tableHeadRowClassName}>
+                <SortableTh label="Number" sortKey="number" sort={sort} onSort={toggleSort} />
+                <SortableTh label="Type" sortKey="type" sort={sort} onSort={toggleSort} />
+                <SortableTh label="Company" sortKey="company" sort={sort} onSort={toggleSort} />
+                <SortableTh label="Total" sortKey="total" sort={sort} onSort={toggleSort} align="right" />
+                <SortableTh label="Status" sortKey="status" sort={sort} onSort={toggleSort} />
+                <SortableTh label="Updated" sortKey="updated" sort={sort} onSort={toggleSort} />
+                {showSalesperson ? (
+                  <SortableTh label="Salesperson" sortKey="salesperson" sort={sort} onSort={toggleSort} />
+                ) : null}
+                <th scope="col" className="px-4 py-3">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <LinkedRowsBody className={responsiveTbodyClassName}>
+              {visible.map((row) => (
+                <QuoteRow
+                  key={row.id}
+                  row={row}
+                  showSalesperson={showSalesperson}
+                  deletePending={pendingId === row.id}
+                  onDelete={requestDelete}
+                />
+              ))}
+            </LinkedRowsBody>
+          </table>
+        </ResponsiveTableShell>
       )}
+
+      {remaining > 0 ? (
+        <div className="flex flex-col items-center gap-2 text-sm text-slate-500">
+          <p>
+            Showing the {allRows.length} most recently updated of {total} quotes.
+          </p>
+          <Button type="button" variant="outline" onClick={showAll} disabled={loadingRest} className="h-11">
+            {loadingRest ? "Loading…" : `Show all ${total}`}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-/** Beside the DRAFT/FINAL badge on both the table row and the card — see
- * `signingStatusLabel`'s own doc comment for why NOT_SENT renders nothing
- * here rather than an empty pill. */
+/** Beside the DRAFT/FINAL badge — see `signingStatusLabel`'s own doc comment
+ * for why NOT_SENT renders nothing here rather than an empty pill. */
 function SigningBadge({ row }: { row: QuoteListRow }) {
   if (!row.signingLabel) return null;
   return <StatusBadge tone={STATUS_TONE[row.signingStatus]}>{row.signingLabel}</StatusBadge>;
 }
 
-function DocumentRow({
+/**
+ * One row, one tree. Cells are in table order; below md each one is placed
+ * on the card grid (`responsiveRowClassName`: a flexible text column, a
+ * right-aligned value column, a trailing icon column) by its `col-start` /
+ * `row-start` classes, which table layout ignores from md up. The Number
+ * cell holds the row's only link; `LinkedRowsBody` reads `data-href` for
+ * clicks that land anywhere else on the row.
+ */
+function QuoteRow({
   row,
-  deleteAction,
   showSalesperson,
+  deletePending,
+  onDelete,
 }: {
   row: QuoteListRow;
-  deleteAction: (documentId: string) => Promise<ActionResult>;
   showSalesperson: boolean;
+  deletePending: boolean;
+  onDelete: (row: DeletableQuote) => void;
 }) {
   const href = `/quotes/${row.id}`;
 
   return (
-    <tr className={tableRowClassName}>
-      <RowCell href={href} primary={`Open ${row.numberLabel}`}>
-        <span aria-hidden="true" className="font-mono text-sm text-brand-dark">
+    <tr data-href={href} className={cn(responsiveRowClassName, "cursor-pointer")}>
+      <td className={cn(responsiveCellClassName, "col-start-1 row-start-3")}>
+        <Link
+          href={href}
+          prefetch={false}
+          aria-label={`Open ${row.numberLabel}`}
+          className="focus-ring rounded-sm font-mono text-xs text-slate-500 md:text-sm md:text-brand-dark"
+        >
           {row.numberLabel}
-        </span>
-      </RowCell>
-      <RowCell href={href}>
-        <span className="inline-flex items-center gap-1.5 text-sm text-slate-600">
+        </Link>
+      </td>
+      <td className={cn(responsiveCellClassName, "col-start-1 row-start-1")}>
+        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 md:text-sm md:font-normal md:text-slate-600">
           <FileText className="size-3.5 text-brand" aria-hidden="true" />
           Quote
         </span>
-      </RowCell>
-      <RowCell href={href}>
-        <span className="text-sm text-slate-700">{row.companyLabel}</span>
-      </RowCell>
-      <RowCell href={href} align="right">
+      </td>
+      <td className={cn(responsiveCellClassName, "col-start-1 row-start-2")}>
+        <span className="block truncate font-medium text-brand-dark md:font-normal md:text-slate-700">
+          {row.companyLabel}
+        </span>
+      </td>
+      <td className={cn(responsiveCellClassName, "col-start-2 row-start-2 text-right")}>
         <span className="text-sm font-medium tabular-nums text-brand-dark">{row.totalLabel}</span>
-      </RowCell>
-      <RowCell href={href}>
-        <span className="flex flex-wrap items-center gap-1.5">
+      </td>
+      <td className={cn(responsiveCellClassName, "col-start-2 row-start-1 md:text-left")}>
+        <span className="flex flex-wrap items-center justify-end gap-1.5 md:justify-start">
           <StatusBadge tone={STATUS_TONE[row.status]}>{row.statusLabel}</StatusBadge>
           <SigningBadge row={row} />
         </span>
-      </RowCell>
-      <RowCell href={href}>
-        <span className="text-sm text-slate-500">{row.updatedLabel}</span>
-      </RowCell>
+      </td>
+      <td className={cn(responsiveCellClassName, "col-start-2 row-start-3 text-right md:text-left")}>
+        <span className="text-xs text-slate-500 md:text-sm">{row.updatedLabel}</span>
+      </td>
       {showSalesperson ? (
-        <RowCell href={href}>
-          <span className="text-sm text-slate-600">{row.salespersonLabel}</span>
-        </RowCell>
+        <td className={cn(responsiveCellClassName, "col-start-1 row-start-4")}>
+          {/* On the card the author goes under the company rather than in its
+              own column; "by" because without it a bare name reads as more
+              metadata. The prefix is hidden where the column header says it. */}
+          <span className="truncate text-xs text-slate-500 md:text-sm md:text-slate-600">
+            <span className="md:hidden">by </span>
+            {row.salespersonLabel}
+          </span>
+        </td>
       ) : null}
-      {/* Deliberately its own plain `<td>` (no `RowCell`/`Link`) — a delete
-          button nested inside an `<a>` would be invalid HTML and would fire
-          both the button's click and the row's navigation. */}
-      <td className="p-0 align-middle">
+      {/* Its own cell, never inside the link: a button inside an `<a>` is
+          invalid HTML and would fire both. Spans the card's rows so the icon
+          sits beside the whole card; empty when the viewer may not delete. */}
+      <td className={cn(responsiveCellClassName, "col-start-3 row-start-1 row-span-3 md:p-0 md:text-right")}>
         {row.canDelete ? (
-          <div className="flex justify-end px-2">
-            <DeleteDocumentButton
-              documentId={row.id}
-              numberLabel={row.numberLabel}
-              status={row.status}
-              signingStatus={row.signingStatus}
-              action={deleteAction}
-            />
+          <div className="flex justify-end md:px-2">
+            <DeleteDocumentButton row={row} pending={deletePending} onClick={onDelete} />
           </div>
         ) : null}
       </td>
     </tr>
-  );
-}
-
-function DocumentCard({
-  row,
-  deleteAction,
-  showSalesperson,
-}: {
-  row: QuoteListRow;
-  deleteAction: (documentId: string) => Promise<ActionResult>;
-  showSalesperson: boolean;
-}) {
-  return (
-    <div className="relative rounded-xl border border-slate-200 bg-white p-4">
-      <Link
-        href={`/quotes/${row.id}`}
-        className={cn(
-          "focus-ring flex min-h-12 flex-col gap-2 rounded-lg transition-colors active:bg-slate-100",
-          row.canDelete && "pr-12"
-        )}
-      >
-        <div className="flex items-center justify-between gap-3">
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500">
-            <FileText className="size-3.5 text-brand" aria-hidden="true" />
-            Quote
-          </span>
-          <span className="flex flex-wrap items-center justify-end gap-1.5">
-            <StatusBadge tone={STATUS_TONE[row.status]}>{row.statusLabel}</StatusBadge>
-            <SigningBadge row={row} />
-          </span>
-        </div>
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate font-medium text-brand-dark">{row.companyLabel}</p>
-            <p className="font-mono text-xs text-slate-500">
-              {row.numberLabel} · {row.updatedLabel}
-            </p>
-            {/* On a card the author goes under the company rather than in its
-                own column — same information, one line, no horizontal scroll.
-                Prefixed with "by": without it this is a third small grey line
-                under the mono "number · updated" one, distinguished only by
-                font family, and a name reads as more metadata. */}
-            {showSalesperson ? (
-              <p className="truncate text-xs text-slate-500">by {row.salespersonLabel}</p>
-            ) : null}
-          </div>
-          <span className="shrink-0 text-sm font-medium tabular-nums text-brand-dark">
-            {row.totalLabel}
-          </span>
-        </div>
-      </Link>
-      {row.canDelete ? (
-        <div className="absolute top-3 right-3">
-          <DeleteDocumentButton
-            documentId={row.id}
-            numberLabel={row.numberLabel}
-            status={row.status}
-            signingStatus={row.signingStatus}
-            action={deleteAction}
-          />
-        </div>
-      ) : null}
-    </div>
   );
 }

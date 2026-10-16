@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HoverPrefetchLink } from "@/components/hover-prefetch-link";
 import type { Metadata } from "next";
 import type { LucideIcon } from "lucide-react";
 import { FileText, Plus } from "lucide-react";
@@ -33,7 +34,9 @@ export default async function DashboardPage() {
 
   const [counts, documents, me] = await Promise.all([
     countsForDashboard(session.user),
-    listDocuments(session.user, {}),
+    // Only the handful of rows the card shows, not the viewer's whole list:
+    // an admin's list is every quote in the business.
+    listDocuments(session.user, { limit: RECENT_LIMIT }),
     // Read fresh from the database rather than off the session — the JWT
     // only revalidates every few minutes (see src/auth.ts), so a session
     // issued before the user set their name or photo still carries neither.
@@ -43,7 +46,7 @@ export default async function DashboardPage() {
     // row loads.
     getUser(session.user.id),
   ]);
-  const recentDocuments = documents.slice(0, RECENT_LIMIT);
+  const recentDocuments = documents.rows;
   const displayName = me?.name ?? session.user.name;
   const firstName = firstNameFrom(displayName, session.user.email ?? "");
 
@@ -98,9 +101,9 @@ export default async function DashboardPage() {
           own: `Your last ${RECENT_LIMIT} quotes`,
         })}
         actions={
-          <Link href="/quotes" className="focus-ring rounded-md text-sm font-medium text-brand hover:underline">
+          <HoverPrefetchLink href="/quotes" className="focus-ring rounded-md text-sm font-medium text-brand hover:underline">
             View all
-          </Link>
+          </HoverPrefetchLink>
         }
       >
         {recentDocuments.length === 0 ? (
@@ -131,7 +134,7 @@ function NavCard({
   count?: number;
 }) {
   return (
-    <Link
+    <HoverPrefetchLink
       href={href}
       className="focus-ring flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 transition-colors hover:border-brand-accent-ink hover:bg-slate-50 active:bg-slate-100"
     >
@@ -147,15 +150,20 @@ function NavCard({
         <p className="font-medium text-brand-dark">{label}</p>
         <p className="text-sm text-slate-500">{description}</p>
       </div>
-    </Link>
+    </HoverPrefetchLink>
   );
 }
 
 function RecentDocumentRow({ document }: { document: DocumentListItem }) {
   return (
     <li>
+      {/* `prefetch={false}`: a quote page is the whole builder render (the
+          audit measured 14 route prefetches fired from this dashboard and
+          aborted by the first click), and these rows are glanced at, not
+          reliably opened. The click still lands on a warm server. */}
       <Link
         href={`/quotes/${document.id}`}
+        prefetch={false}
         className="focus-ring flex min-h-14 items-center justify-between gap-3 rounded-lg px-2 py-3 transition-colors hover:bg-slate-50"
       >
         <div className="flex min-w-0 items-center gap-3">
