@@ -10,7 +10,18 @@
 | `docker compose config` | compose edits | valid |
 | Browser (Chromium) | login, dashboard, builder, one discount autosave | recorded in PERFORMANCE.md (before) |
 
-(after-fix rows are added as each package lands)
+| `npm run typecheck`, `npm run lint`, `npx vitest run` | integrated tree @ a37e7c7 | typecheck clean, lint clean, 155 files / 3,890 tests passed |
+| `next build` | @ a37e7c7 | ok, 26.8 s; one Turbopack warning about `node:perf_hooks` in the edge evaluation of instrumentation.ts (guarded; silenced with `turbopackIgnore` in the follow-up commit) |
+| `docs/technical-audit/scripts/client-zod-trace.mjs` | import graph from every "use client" module | no module reaches zod; only the deliberate lazy `import("google-libphonenumber")` is reported |
+| Built chunk scan | `.next/static/chunks` | no chunk with zod markers; tiptap (393 KB) and phone (579 KB) remain as lazy chunks |
+| Browser: dashboard, builder load, 4 autosaves, tab switches, /quotes + Show all | :3200, volume DB | recorded in PERFORMANCE.md "After" |
+| `measure.sh` ×2 | 11 paths, ADMIN + MANAGER | `scripts/after-prod-admin-volume*.txt`, `after-prod-manager-volume.txt` |
+| Independent review of `main...HEAD` | fresh agent, read-only | pending at the time of writing; result appended below |
+
+### Not verified (honest gaps)
+- Finalize / sign / send in the browser after the `after()` change (no SMTP locally; Gotenberg is up but no finalize was run). Covered by typecheck + the existing action tests only.
+- Concurrency: no multi-user load run. The pool bounds are configuration, not a measurement.
+- Production: nothing. Every number above is local.
 
 ## Evidence still needed from production (owner runs this; read-only)
 

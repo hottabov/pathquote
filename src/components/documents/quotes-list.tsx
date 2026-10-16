@@ -246,7 +246,7 @@ function QuoteRow({
           href={href}
           prefetch={false}
           aria-label={`Open ${row.numberLabel}`}
-          className="focus-ring rounded-sm font-mono text-xs text-slate-500 md:text-sm md:text-brand-dark"
+          className="focus-ring rounded-sm font-mono text-xs whitespace-nowrap text-slate-500 md:text-sm md:text-brand-dark"
         >
           {row.numberLabel}
         </Link>
@@ -263,7 +263,7 @@ function QuoteRow({
         </span>
       </td>
       <td className={cn(responsiveCellClassName, "col-start-2 row-start-2 text-right")}>
-        <span className="text-sm font-medium tabular-nums text-brand-dark">{row.totalLabel}</span>
+        <span className="text-sm font-medium whitespace-nowrap tabular-nums text-brand-dark">{row.totalLabel}</span>
       </td>
       <td className={cn(responsiveCellClassName, "col-start-2 row-start-1 md:text-left")}>
         <span className="flex flex-wrap items-center justify-end gap-1.5 md:justify-start">
@@ -272,7 +272,7 @@ function QuoteRow({
         </span>
       </td>
       <td className={cn(responsiveCellClassName, "col-start-2 row-start-3 text-right md:text-left")}>
-        <span className="text-xs text-slate-500 md:text-sm">{row.updatedLabel}</span>
+        <span className="text-xs whitespace-nowrap text-slate-500 md:text-sm">{row.updatedLabel}</span>
       </td>
       {showSalesperson ? (
         <td className={cn(responsiveCellClassName, "col-start-1 row-start-4")}>

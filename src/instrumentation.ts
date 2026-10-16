@@ -17,7 +17,10 @@
 
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
-  const { monitorEventLoopDelay } = await import("node:perf_hooks");
+  // `turbopackIgnore`: the edge bundle also evaluates this file and would
+  // otherwise warn about a Node module; the guard above means it never runs
+  // there.
+  const { monitorEventLoopDelay } = await import(/* turbopackIgnore: true */ "node:perf_hooks");
   const { dbPoolStats } = await import("@/lib/db");
 
   const histogram = monitorEventLoopDelay({ resolution: 20 });

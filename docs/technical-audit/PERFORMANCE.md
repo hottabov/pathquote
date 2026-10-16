@@ -86,3 +86,59 @@ companies, same machine). Production targets are set once VPS access exists.
 | Pool | a checkout that waits > 5 s fails loudly; statements > 30 s are cut | silent indefinite queueing is the "hang with all 200s" signature |
 
 Targets are not lowered after the fact. A miss is documented as a miss.
+
+## After — production build of `audit/performance-2026-10` @ a37e7c7, same machine, volume DB (2026-10-16)
+
+Two runs of N=10 (`scripts/after-prod-admin-volume.txt`, `-run2.txt`); the
+better of the two p50s is NOT taken — both are shown where they differ.
+"Before" for list pages is Baseline B-volume (`scripts/baseline-prod-admin-volume.txt`);
+for the two template quotes it is Baseline A (tiny DB — those pages do not
+depend on the number of other quotes).
+
+| path (ADMIN) | ttfb p50 before → after | total p95 before → after | HTML bytes before → after | SQL before → after |
+|---|---|---|---|---|
+| / (dashboard) | 34 → 36–47 | 56 → 76–91 | 72,173 → 72,214 | 8 → 9 (count query added) |
+| /quotes (602 quotes) | 31 → 38–50 | 207 → 105–183 | **4,548,265 → 1,019,274** (200 rows; wire 36 KB gzip) | 3 → 4 (+count) |
+| /clients | 32 → 39–51 | 46 → 57–78 | 257,390 → 257,390 | 3 → 3 |
+| /clients/[PERF company] | 30 → 39–49 | 45 → 64–159 | 125,510 → 125,106 | 6 → 6 |
+| /quotes/[PERF final] (builder) | 33 → 37–46 | 74 → 115–118 | 229,690 → 199,518 | **64 → 52** |
+| /quotes/[draft] (builder) | 34 → 37–40 | 81 → 102–117 | 291,427 → 255,546 | **64 → 38** |
+| /quotes/[final] (builder) | 36 → 39 | 90 → 79–94 | 231,901 → 200,441 | **64 → 52** |
+| /quotes/[final]/quotation | 33 → 40–46 | 65 → 83–248 | 249,566 → 249,566 | 18 → 18 |
+| /catalog | 25 → 31–35 | 36 → 46–69 | 83,848 → 83,848 | 3 → 3 |
+| /catalog/options | 32 → 35–39 | 60 → 74–89 | 454,151 → 454,151 | 7 → 7 |
+| /settings/users | 34 → 36–39 | 47 → 57–72 | 161,547 → 161,547 | 2 → 2 |
+
+MANAGER (150 quotes in scope): /quotes 871,153 → 607,084 bytes (all 150 rows
+still fit under the 200 cap; the saving is the per-row cost), SQL 4 → 5.
+
+TTFB is 5–15 ms higher across the board in the after-runs, including on pages
+whose code did not change (catalog, settings, quotation). The two after-runs
+were taken minutes after a `next build` and alongside a browser session on
+the same machine; the before-runs on an idle machine. The numbers that
+changed by design (SQL count, bytes, requests) are the comparison; a
+same-conditions TTFB re-run is listed under "Still to do".
+
+### Browser scenarios (Chromium, same server)
+
+| Scenario | Before | After |
+|---|---|---|
+| Dashboard load: RSC prefetches | 14 (7 routes × 2), all aborted | **0** |
+| Builder (draft) load | TTFB 14 ms, load 136 ms, 18 chunks, **1,230 KB** decoded JS, tiptap chunk (393 KB) downloaded, 12 images | TTFB 49 ms, load 183 ms, 19 chunks, **956 KB** decoded JS, tiptap NOT downloaded, 12 images, 0 RSC |
+| One discount autosave | 1 POST **132,031 B** decoded (whole page re-rendered inside the action), 185 ms; **84 SQL** on the critical path | 1 POST **71 B**, 4 samples 193 / 117 / 53 / 43 ms (first after a 30 s idle = pool reconnect); **20 SQL** on the critical path; then ONE refresh GET (119 KB decoded / 29 KB wire, 91 ms, 38 SQL) off the critical path; totals and readiness update |
+| Switch to Quote setup | full navigation: builder page re-rendered (64 SQL, 200+ KB) | **0 server requests**; URL → `?tab=settings`; the editor chunk (393 KB) loads now, once |
+| Switch to History | full navigation | **0 server requests**; URL → `?tab=history` |
+| /quotes (602 quotes) | 602 rows × 2 trees, ~7 Links per row, 4.5 MB | 200 rows, 1 tree, **200 Links**, 6,845 DOM nodes, 36 KB wire; "Show all 602" = 1 POST, 146 KB decoded / 13.6 KB wire, 96 ms → 602 rows |
+| Built chunks containing zod | 1 chunk, 379,785 B, in the builder / clients routes | **none** (`scripts/client-zod-trace.mjs`: no "use client" module reaches zod) |
+
+### Targets — met / missed
+
+| Target | Result |
+|---|---|
+| Autosave: ≤ 100 ms p95 local, ≤ 25 SQL, < 5 KB, no page render in the response | **met** on SQL (20), payload (71 B) and design; latency 43–53 ms warm, 117–193 ms on the first save after the pool idled — p95 over 4 samples is a miss on the letter; the cold sample is the 30 s idle reconnect, not the action |
+| Builder ≤ 40 SQL, TTFB ≤ 60 ms p95, HTML ≤ 200 KB | draft **38 SQL met**, FINAL 52 (forms document still loaded for FINAL — by design); TTFB p95 45–51 **met**; HTML 255 KB draft / 200 KB final — **missed** on the draft (catalog + compatible options payload remain; see Still to do) |
+| /quotes 600 quotes: ≤ 400 KB HTML, TTFB ≤ 80 ms p95 | raw HTML 1,019 KB for the 200-row page — **missed on raw bytes** (36 KB on the wire; ~4.3 KB/row of mostly repeated Tailwind classes and an inline SVG per row); TTFB p95 68–81 **borderline** |
+| /clients: index-served sort, TTFB ≤ 80 ms p95 | index added (z70); p95 43–64 **met**; EXPLAIN check on 8.8k rows needs production (local has 401) |
+| Dashboard ≤ 2 prefetches | **0 — met** |
+| Finalize returns before Gotenberg | **met by construction** (`after()`); not exercised in the browser (local Gotenberg present but no finalize run in this session) |
+| Pool: checkout > 5 s fails loudly; statements > 30 s cut | **met by configuration**; not load-tested |

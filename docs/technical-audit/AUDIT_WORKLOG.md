@@ -59,3 +59,28 @@ Baseline measurements, then launch read-only diagnosis agents.
 - Next: fix the seeder's one type error, commit the lead package, integrate
   agent commits, rebuild, re-measure (tiny + volume), browser verification,
   independent review.
+- W1 landed (5845b79, 2f286d8): `setItemDiscount`, `setDocumentDiscount`,
+  `setDocumentNotes`, `setValidityDays`, `setIncoterm`, `setDocumentTax`,
+  `setQuoteTerms`, `setItemOptions` no longer revalidate; `useAutosave`
+  schedules one coalesced `router.refresh()` (150 ms) after a burst;
+  `writeItemOptions` keeps revalidating for the two click callers; seven
+  lifecycle buttons lost their duplicate `router.refresh()`; PERF-17 (double
+  save on derived option lines) confirmed and fixed with a locked-role-free
+  autosave key + test.
+- Lead ops package landed (a86f66b): compose log rotation / app healthcheck /
+  Postgres statement stats, runbook §3b, settings in one query, fflate gone.
+
+## 2026-10-16 (evening) — agents W2/W3/W4 died on a rate limit; finished by the lead
+
+- All three had committed nothing; their working-tree edits were reviewed and
+  completed by hand: W2 needed one lint fix (ref-during-render → derived
+  state); W3 needed the quotes page, dashboard and quotes-list wiring; W4
+  needed every component import switched, the form specs split from their zod
+  schemas (spec-schemas.ts), phone-field focus loading, the files route, and
+  the four equivalence tests. Commits 2480a9c (builder), 2dba935 (lists),
+  a37e7c7 (bundle).
+- Checks: typecheck, lint, 3,890 tests green; production build ok; browser
+  scenarios and two timing runs recorded in PERFORMANCE.md.
+- Independent review of `main...HEAD` running (fresh agent).
+- Pending: nowrap fix in the quotes table + `turbopackIgnore` comment
+  (uncommitted, needs a rebuild), review findings, final report, SSH request.
