@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { PenLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui-kit/client";
@@ -35,7 +34,6 @@ export function SignButton({
   hasAuthorSignature: boolean;
   savedSignatureUrl: string | null;
 }) {
-  const router = useRouter();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +51,6 @@ export function SignButton({
       setChoosing(false);
       setDrawing(false);
       toast.success("Signature applied");
-      router.refresh();
     });
   }
 

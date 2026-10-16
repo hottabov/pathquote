@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useConfirm, useToast } from "@/components/ui-kit/client";
@@ -29,7 +28,6 @@ export function UnfinalizeButton({
   wasSent?: boolean;
   sentLabel?: string | null;
 }) {
-  const router = useRouter();
   const confirm = useConfirm();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
@@ -55,7 +53,6 @@ export function UnfinalizeButton({
           return;
         }
         toast.success("Document unfinalized — back to draft");
-        router.refresh();
       } catch {
         setError("Forbidden");
       }

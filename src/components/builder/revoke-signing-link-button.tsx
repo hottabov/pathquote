@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useConfirm, useToast } from "@/components/ui-kit/client";
@@ -18,7 +17,6 @@ import { revokeSigningLink } from "@/lib/actions/signing";
  * expect: this kills a link the client could be looking at right now.
  */
 export function RevokeSigningLinkButton({ documentId }: { documentId: string }) {
-  const router = useRouter();
   const confirm = useConfirm();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
@@ -42,7 +40,6 @@ export function RevokeSigningLinkButton({ documentId }: { documentId: string }) 
         return;
       }
       toast.success("Signing link revoked");
-      router.refresh();
     });
   }
 

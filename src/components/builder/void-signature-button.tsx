@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Dialog } from "@base-ui/react/dialog";
 import { ShieldOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,7 +17,6 @@ import { voidSignature } from "@/lib/actions/finalize";
  * server (`voidSignature` → `requireAdmin`) is the real boundary.
  */
 export function VoidSignatureButton({ documentId }: { documentId: string }) {
-  const router = useRouter();
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
@@ -38,7 +36,6 @@ export function VoidSignatureButton({ documentId }: { documentId: string }) {
         toast.success("Signature voided — quote back to draft");
         setOpen(false);
         setReason("");
-        router.refresh();
       } catch {
         setError("Forbidden");
       }

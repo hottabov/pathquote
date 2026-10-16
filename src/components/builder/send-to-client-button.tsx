@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useConfirm, useToast } from "@/components/ui-kit/client";
@@ -44,7 +43,6 @@ export function SendToClientButton({
    * right now. */
   disabledReason: string | null;
 }) {
-  const router = useRouter();
   const confirm = useConfirm();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
@@ -67,7 +65,6 @@ export function SendToClientButton({
         return;
       }
       toast.success("Sent to client");
-      router.refresh();
     });
   }
 

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useConfirm, useToast } from "@/components/ui-kit/client";
@@ -15,7 +14,6 @@ import { acceptQuote } from "@/lib/actions/finalize";
  * the real boundary, hence the try/catch around the call.
  */
 export function AcceptButton({ documentId }: { documentId: string }) {
-  const router = useRouter();
   const confirm = useConfirm();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
@@ -39,7 +37,6 @@ export function AcceptButton({ documentId }: { documentId: string }) {
           return;
         }
         toast.success("Quote accepted");
-        router.refresh();
       } catch {
         setError("Forbidden");
       }

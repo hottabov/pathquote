@@ -1,7 +1,6 @@
 "use client";
 
 import { useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useConfirm, useToast } from "@/components/ui-kit/client";
@@ -13,11 +12,13 @@ import { unmetBlockers, type ReadinessRow } from "@/lib/quote-readiness";
  * trip for a normal user (only an admin can undo it — see
  * UnfinalizeButton), so unlike the lightweight remove-item/delete-draft
  * buttons elsewhere in the builder this gets its own confirm dialog
- * spelling out exactly what happens, a success toast naming the assigned
- * number, and an explicit `router.refresh()`: the page's server component
- * needs to re-read `document.status`/`number` to flip the whole builder
- * into its read-only FINAL view (every section below switches `readOnly`),
- * not just have one row's data change underneath it.
+ * spelling out exactly what happens and a success toast naming the assigned
+ * number. There is no `router.refresh()` here: `finalizeDocument` itself
+ * revalidates this page (`revalidateDocument`), and because the browser is
+ * standing on it Next re-renders the builder inside the action's own
+ * response — that one render is what flips every section to its read-only
+ * FINAL view. A second refresh from here used to double that cost (PERF-07
+ * in docs/technical-audit).
  */
 export function FinalizeButton({
   documentId,
@@ -34,7 +35,6 @@ export function FinalizeButton({
    */
   rows: ReadinessRow[];
 }) {
-  const router = useRouter();
   const confirm = useConfirm();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
@@ -59,7 +59,6 @@ export function FinalizeButton({
         return;
       }
       toast.success(`Finalized as ${result.number}`);
-      router.refresh();
     });
   }
 
