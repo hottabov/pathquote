@@ -40,6 +40,19 @@ export async function generateRevisionPdf(
   });
   if (!revision || revision.pdfPath) return;
 
+  // This renders from the LIVE document, and since 2026-10-16 it runs after
+  // the finalize response has gone (`after()`), behind Gotenberg's queue. In
+  // that gap the manager may have unfinalized and edited: the revision rows
+  // survive an unfinalize, so rendering now would file an edited draft as
+  // this revision's frozen PDF. Only render while the document is still
+  // FINAL and this revision is still its newest; otherwise leave `pdfPath`
+  // null, which every reader already treats as "not generated yet".
+  const current = await db.document.findUnique({
+    where: { id: documentId },
+    select: { status: true, revisions: { orderBy: { revision: "desc" }, take: 1, select: { id: true } } },
+  });
+  if (!current || current.status !== "FINAL" || current.revisions[0]?.id !== revisionId) return;
+
   const doc = await getDocumentForBuilder(user, documentId);
   if (!doc) return;
   const quoteDocuments = await getQuoteDocumentsForRegion(doc.regionId);

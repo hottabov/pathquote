@@ -55,8 +55,9 @@ const SLOW_QUERY_MS = Number(process.env.PRISMA_SLOW_MS ?? 0);
  *   drain -- run on their own lock clients through `createPrismaClient`,
  *   which does not set this). `idle_in_transaction_session_timeout` frees a
  *   connection whose transaction is waiting on something that is not the
- *   database; Prisma's interactive transactions already time out at 5 s, so
- *   60 s only ever fires on a leak.
+ *   database. The one web transaction built to run longer than that --
+ *   the catalogue import, 120 s -- lifts both with SET LOCAL for its own
+ *   duration (src/lib/actions/catalog-import.ts).
  * - `max` stays at the default 10: `openLockConnection`'s connection
  *   arithmetic in src/lib/act/sync.ts counts on it.
  */

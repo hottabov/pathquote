@@ -46,7 +46,8 @@ export type DocumentListPage = {
   rows: DocumentListItem[];
   /** Every document in the viewer's scope, counted with the same `where` the
    * rows were read with -- what the page compares `rows.length` against to
-   * know whether there is more to show. */
+   * know whether there is more to show. `-1` when the caller did not ask
+   * (`withTotal`), to keep the count off pages that never show it. */
   total: number;
 };
 
@@ -67,7 +68,7 @@ export type DocumentListPage = {
  */
 export async function listDocuments(
   user: ScopeUser,
-  params: { limit?: number | null; skip?: number } = {}
+  params: { limit?: number | null; skip?: number; withTotal?: boolean } = {}
 ): Promise<DocumentListPage> {
   const limit = params.limit === undefined ? DOCUMENT_LIST_PAGE_SIZE : params.limit;
   const skip = params.skip ?? 0;
@@ -96,7 +97,10 @@ export async function listDocuments(
         author: { select: { name: true, email: true } },
       },
     }),
-    db.document.count({ where }),
+    // The scoped count is a full scan of the viewer's quotes; only the list
+    // page needs it (to know whether to offer "Show all"). The dashboard
+    // reads a handful of rows and gets -1 for a total it never shows.
+    params.withTotal ? db.document.count({ where }) : Promise.resolve(-1),
   ]);
 
   return {

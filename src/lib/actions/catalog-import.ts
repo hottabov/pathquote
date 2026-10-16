@@ -131,6 +131,13 @@ export async function applyCatalogImport(input: ApplyInput): Promise<ApplyResult
   try {
     const summary = await db.$transaction(
       async (tx) => {
+        // The web pool's session carries statement_timeout 30 s and
+        // idle_in_transaction_session_timeout 60 s (src/lib/db.ts). This is
+        // the one web transaction built to run longer -- parsing and diffing
+        // happen between its statements -- so lift both for its duration;
+        // SET LOCAL ends with the transaction.
+        await tx.$executeRaw`SET LOCAL statement_timeout = 0`;
+        await tx.$executeRaw`SET LOCAL idle_in_transaction_session_timeout = 0`;
         const snapshot = await loadCatalogSnapshot(tx);
         const { parsed, errors } = parseCatalogSheets(sheets, snapshot);
         if (errors.length > 0) throw new ImportAbort(STALE_PREVIEW);

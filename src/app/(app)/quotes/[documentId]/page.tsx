@@ -59,6 +59,7 @@ import { AcceptButton } from "@/components/builder/accept-button";
 import { VoidSignatureButton } from "@/components/builder/void-signature-button";
 import { UnsentChangesBanner } from "@/components/builder/unsent-changes-banner";
 import { RevisionsSection, EmailHistorySection } from "@/components/builder/quote-history-sections";
+import { PdfPendingRefresh } from "@/components/builder/pdf-pending-refresh";
 import { getQuoteHistory } from "@/lib/queries/quote-revisions";
 import { getQuoteActState } from "@/lib/queries/act-quote";
 import { ActStateCard } from "@/components/documents/act-state-card";
@@ -347,6 +348,10 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
       {/* Never while the client has already signed — a signed quote has, by
           definition, no changes waiting to be sent (and clears any stale flag
           left by an older send that predated the flag being cleared on send). */}
+      {/* The newest revision's PDF renders after the finalize response; this
+          re-reads the page until the History tab's link can appear. */}
+      <PdfPendingRefresh pending={!isDraft && history !== null && history.revisions.length > 0 && history.revisions[0].pdfPath === null} />
+
       <UnsentChangesBanner
         hasUnsentChanges={document.hasUnsentChanges && document.signingStatus !== "SIGNED"}
         sentAt={document.sentAt}

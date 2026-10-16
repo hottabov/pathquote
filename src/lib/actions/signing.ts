@@ -180,6 +180,11 @@ export async function signQuoteAsAuthor(documentId: string, dataUrl: string): Pr
     const previousArchive = document.signedPdfName;
     after(async () => {
       try {
+        // Still SIGNED? A void that landed while this waited on Gotenberg's
+        // queue would otherwise get its archive re-written from a document
+        // the client no longer stands behind.
+        const still = await db.document.findUnique({ where: { id: document.id }, select: { signingStatus: true } });
+        if (still?.signingStatus !== "SIGNED") return;
         const forPdf = await getDocumentForBuilder(session.user, document.id);
         if (forPdf) {
           const quoteDocuments = await getQuoteDocumentsForRegion(forPdf.regionId);

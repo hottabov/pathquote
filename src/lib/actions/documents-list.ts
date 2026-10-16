@@ -35,6 +35,6 @@ export async function listRemainingQuotes(loaded: unknown): Promise<RemainingQuo
   const skip = parseLoadedCount(loaded);
   if (skip === null) return { error: "Could not load the remaining quotes. Reload the page and try again." };
 
-  const { rows, total } = await listDocuments(session.user, { skip, limit: null });
+  const { rows, total } = await listDocuments(session.user, { skip, limit: null, withTotal: true });
   return { rows: toQuoteListRows(rows, session.user.role), total };
 }

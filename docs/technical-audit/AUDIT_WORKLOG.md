@@ -84,3 +84,14 @@ Baseline measurements, then launch read-only diagnosis agents.
 - Independent review of `main...HEAD` running (fresh agent).
 - Pending: nowrap fix in the quotes table + `turbopackIgnore` comment
   (uncommitted, needs a rebuild), review findings, final report, SSH request.
+
+## 2026-10-16 (late) — review applied, final state
+
+- Independent review: 0 blockers; 3 should-fix + 4 nits applied (see
+  VERIFICATION.md), 1 nit left as is. typecheck/lint clean, 3,890 tests pass.
+- Branch `audit/performance-2026-10` is ready to merge. Deployment and rollback
+  in FIX_PLAN.md. Still open: production evidence (SSH), PERF-12 second pass,
+  PERF-13/14 (ops, need VPS numbers), owner decisions in FINDINGS (PERF-11,
+  dead send-dialog code, one-off scripts).
+- Local Postgres still has `log_min_duration_statement=0` from this audit
+  (ALTER SYSTEM); reset once measurements are no longer needed.

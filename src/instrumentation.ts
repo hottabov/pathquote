@@ -21,7 +21,15 @@ export async function register() {
   // otherwise warn about a Node module; the guard above means it never runs
   // there.
   const { monitorEventLoopDelay } = await import(/* turbopackIgnore: true */ "node:perf_hooks");
-  const { dbPoolStats } = await import("@/lib/db");
+  // The import builds the pool; a box without DATABASE_URL must still boot
+  // so /api/health can answer 503 rather than the process dying in register.
+  let dbPoolStats: () => { total: number; idle: number; waiting: number };
+  try {
+    ({ dbPoolStats } = await import("@/lib/db"));
+  } catch (error) {
+    console.error("[runtime] database pool not available; event-loop lag only", error);
+    dbPoolStats = () => ({ total: 0, idle: 0, waiting: 0 });
+  }
 
   const histogram = monitorEventLoopDelay({ resolution: 20 });
   histogram.enable();

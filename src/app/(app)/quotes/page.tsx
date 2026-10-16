@@ -30,7 +30,7 @@ export default async function DocumentsPage() {
   // `listRemainingQuotes`, which applies the same scope from the session. The
   // audit measured ~7.5 KB per row before the bound existed: 602 quotes made a
   // 4.5 MB page for an admin.
-  const { rows: documents, total } = await listDocuments(session.user);
+  const { rows: documents, total } = await listDocuments(session.user, { withTotal: true });
 
   // Rendered strings, per-role gating (`canDelete`, the Salesperson column)
   // -- all decided here, on the server, by the same `toQuoteListRows` the

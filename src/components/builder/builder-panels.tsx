@@ -60,20 +60,21 @@ export function BuilderPanels({
 
   return (
     <>
-      {tabs.map((id) =>
-        visited.has(id) ? (
-          <div
-            key={id}
-            role="tabpanel"
-            id={`builder-panel-${id}`}
-            aria-labelledby={`builder-tab-${id}`}
-            hidden={id !== active}
-            className="flex flex-col gap-4"
-          >
-            {panels[id]}
-          </div>
-        ) : null
-      )}
+      {tabs.map((id) => (
+        // An unvisited panel is an empty, hidden element rather than nothing,
+        // so the strip's `aria-controls` always points at a real id. Its
+        // content -- and so its client components -- mount on first visit.
+        <div
+          key={id}
+          role="tabpanel"
+          id={`builder-panel-${id}`}
+          aria-labelledby={`builder-tab-${id}`}
+          hidden={id !== active}
+          className="flex flex-col gap-4"
+        >
+          {visited.has(id) ? panels[id] : null}
+        </div>
+      ))}
     </>
   );
 }

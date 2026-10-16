@@ -16,7 +16,22 @@
 | Built chunk scan | `.next/static/chunks` | no chunk with zod markers; tiptap (393 KB) and phone (579 KB) remain as lazy chunks |
 | Browser: dashboard, builder load, 4 autosaves, tab switches, /quotes + Show all | :3200, volume DB | recorded in PERFORMANCE.md "After" |
 | `measure.sh` ×2 | 11 paths, ADMIN + MANAGER | `scripts/after-prod-admin-volume*.txt`, `after-prod-manager-volume.txt` |
-| Independent review of `main...HEAD` | fresh agent, read-only | pending at the time of writing; result appended below |
+| Independent review of `main...HEAD` | fresh agent, read-only, not given the plan | 0 blockers, 3 should-fix, 5 nits — all but one applied (below) |
+
+### Independent review — findings and what was done
+
+| # | Severity | Finding | Action |
+|---|---|---|---|
+| 1 | should-fix | `generateRevisionPdf` renders from the live document; in `after()` an unfinalize + edit could be filed as the frozen revision's PDF | guard added: render only while the document is still FINAL and the revision is still its newest; countersign re-archive re-checks SIGNED |
+| 2 | should-fix | page revalidated before the PDF exists; History link only appears on the next navigation | `PdfPendingRefresh` polls 3/6/9/12 s while the newest revision has no `pdfPath` |
+| 3 | should-fix | db.ts comment wrong; catalog import runs a 120 s web transaction under the new 30 s / 60 s session bounds | `SET LOCAL` lifts both inside that transaction; comment corrected |
+| 4 | nit | dashboard paid an unused scoped `count(*)` | count is opt-in (`withTotal`); dashboard skips it |
+| 5 | nit | "Show all" offset can drift under concurrent edits | an empty answer hides the control; dedupe by id already covered duplicates |
+| 6 | nit | `aria-controls` pointed at unmounted panel ids | unvisited panels render as empty hidden elements |
+| 7 | nit | pool built at boot via instrumentation; a box without DATABASE_URL dies in `register` | import wrapped; lag logging continues without pool stats |
+| 8 | nit | coalesced refresh is page-agnostic (a save flushed within 150 ms of navigating refreshes the next page) | left as is: one extra render, no leak |
+
+Verified sound by the reviewer: every autosaved action has only its hook as caller; the seven buttons' actions all revalidate; `pg` `options` applies (`statement_timeout=30s` observed); `after()` usage per Next 16 docs; z70 names and `migrate diff` clean; tab deep links and hydration; `listCompatibleOptionsForProducts` equals the per-product query; `createCompanyInline` skips nothing `setDocumentClient` did; `listRemainingQuotes` scope; validators equivalent on the untested edge cases too; every upload filename is a fresh uuid.
 
 ### Not verified (honest gaps)
 - Finalize / sign / send in the browser after the `after()` change (no SMTP locally; Gotenberg is up but no finalize was run). Covered by typecheck + the existing action tests only.

@@ -88,6 +88,10 @@ export function QuotesList({
 }) {
   const toast = useToast();
   const [extra, setExtra] = useState<QuoteListRow[]>([]);
+  // Set when a "Show all" came back empty: `total` was counted at page load,
+  // and a quote another user touched since can push one row past the offset
+  // so that `remaining` never reaches zero. One empty answer ends it.
+  const [exhausted, setExhausted] = useState(false);
   const [loadingRest, startLoadingRest] = useTransition();
 
   const allRows = useMemo(() => {
@@ -102,7 +106,7 @@ export function QuotesList({
     onDeleted: (id) => setExtra((current) => current.filter((row) => row.id !== id)),
   });
 
-  const remaining = Math.max(0, total - allRows.length);
+  const remaining = exhausted ? 0 : Math.max(0, total - allRows.length);
 
   function showAll() {
     startLoadingRest(async () => {
@@ -111,6 +115,7 @@ export function QuotesList({
         toast.error(result.error);
         return;
       }
+      if (result.rows.length === 0) setExhausted(true);
       setExtra((current) => [...current, ...result.rows]);
     });
   }
