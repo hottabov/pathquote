@@ -35,6 +35,11 @@ import { assertStillDraft, mapDraftWriteError, type ActionResult } from "./_inte
  * A single-statement write, so it folds its own `status: "DRAFT"` check into
  * the `updateMany`'s `where` (see the note in _internal.ts) rather than
  * taking a transaction.
+ *
+ * Autosaved from `TermsDocumentsPanel` and called from nowhere else, so it
+ * does not revalidate the quote page: `useAutosave` refreshes it once after
+ * the burst of saves settles (PERF-01 in docs/technical-audit).
+ * `setDocumentChoices` below is a click, not an autosave, and still does.
  */
 export async function setQuoteTerms(documentId: string, input: unknown): Promise<ActionResult> {
   const session = await requireSession();
@@ -62,7 +67,7 @@ export async function setQuoteTerms(documentId: string, input: unknown): Promise
   });
   if (updated.count !== 1) return { error: NOT_FOUND_ERROR };
 
-  revalidateDocument(document.id);
+  // Autosaved; the client refreshes after the burst (see `useAutosave`).
   return {};
 }
 

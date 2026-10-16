@@ -70,6 +70,13 @@ const MAX_OPTION_SELECTIONS = 100;
  * conflicting options unchanged is still a save, though, and is rejected
  * exactly like a brand-new one — the rule is "no new writes with a
  * conflicting pair", not "grandfather whatever was already there".
+ *
+ * Autosaved from `ItemOptionsEditor` and called from nowhere else, so this
+ * action does not revalidate the quote page: `useAutosave` refreshes it once
+ * after the burst of ticks settles (PERF-01 in docs/technical-audit). The
+ * two click-driven callers of the same body (`setMachineVoltage`,
+ * `setEasyLoaderLayout`) keep revalidating — see `writeItemOptions`'
+ * `revalidate` flag.
  */
 export async function setItemOptions(
   itemId: string,
@@ -81,7 +88,7 @@ export async function setItemOptions(
   const withModules = await withDerivedEasyLoaderModules(session.user, itemId, normalised.selections);
   const withTransformer = await withDerivedTransformer(session.user, itemId, withModules);
   if ("error" in withTransformer) return withTransformer;
-  return writeItemOptions(session.user, itemId, withTransformer.selections);
+  return writeItemOptions(session.user, itemId, withTransformer.selections, { revalidate: false });
 }
 
 /**
@@ -234,12 +241,18 @@ async function writeItemOptions(
   {
     alsoWrite,
     layout,
+    revalidate = true,
   }: {
     alsoWrite?: (tx: Prisma.TransactionClient) => Promise<void>;
     /** The EasyLoader table the `EL_INSTALL` line is priced from, when the
      * caller is about to store a new one (`setEasyLoaderLayout`) and the
      * item's own `productionSpec` is therefore not yet the right answer. */
     layout?: Section[];
+    /** Whether a successful write revalidates the quote page. On by default
+     * for the click-driven callers; `setItemOptions` turns it off because it
+     * is autosaved and `useAutosave` refreshes the page after the burst
+     * instead of paying a full render inside every save (PERF-01). */
+    revalidate?: boolean;
   } = {}
 ): Promise<ActionResult> {
   const parsedItemId = idSchema.safeParse(itemId);
@@ -278,7 +291,7 @@ async function writeItemOptions(
     } catch (error) {
       return mapDraftWriteError(error);
     }
-    revalidateDocument(item.documentId);
+    if (revalidate) revalidateDocument(item.documentId);
     return concessionWarning ? { warning: concessionWarning } : {};
   }
 
@@ -479,7 +492,7 @@ async function writeItemOptions(
     return mapDraftWriteError(error);
   }
 
-  revalidateDocument(item.documentId);
+  if (revalidate) revalidateDocument(item.documentId);
   return concessionWarning ? { warning: concessionWarning } : {};
 }
 
@@ -757,7 +770,9 @@ export async function setEasyLoaderLayout(itemId: string, spec: unknown): Promis
     },
   });
 
-  // `writeItemOptions` has already revalidated on success; on failure there
-  // is nothing to revalidate, since the whole transaction rolled back.
+  // `writeItemOptions` has already revalidated on success (its default, kept
+  // here because this is a click in the spec editor, not an autosave); on
+  // failure there is nothing to revalidate, since the whole transaction
+  // rolled back.
   return written;
 }

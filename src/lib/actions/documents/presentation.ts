@@ -151,6 +151,10 @@ export async function setPriceDisplay(documentId: string, input: unknown): Promi
  * display field, so unlike `setItemDiscount`/`setDocumentDiscount` there's
  * no `recalcDocument` call here (mirrors `setItemShowImage`/
  * `setPriceDisplay`).
+ *
+ * Autosaved from `NotesSection` and called from nowhere else, so it does not
+ * revalidate the quote page: `useAutosave` refreshes it once after the burst
+ * of saves settles (PERF-01 in docs/technical-audit).
  */
 export async function setDocumentNotes(documentId: string, formData: FormData): Promise<ActionResult> {
   const session = await requireSession();
@@ -175,7 +179,7 @@ export async function setDocumentNotes(documentId: string, formData: FormData): 
   });
   if (updated.count !== 1) return { error: NOT_FOUND_ERROR };
 
-  revalidateDocument(document.id);
+  // Autosaved; the client refreshes after the burst (see `useAutosave`).
   return {};
 }
 
@@ -231,7 +235,8 @@ export async function setDocumentHeroImage(documentId: string, url: string | nul
  * DRAFT-only and scoped like every other document mutation in this
  * directory; purely a display/finalize-time field, so — like
  * `setItemShowImage`/`setPriceDisplay`/`setDocumentNotes` — there's no
- * `recalcDocument` call here.
+ * `recalcDocument` call here. Autosaved from `ValidityDaysField` only, so no
+ * revalidate either: the client refreshes after the burst.
  */
 export async function setValidityDays(documentId: string, formData: FormData): Promise<ActionResult> {
   const session = await requireSession();
@@ -253,7 +258,7 @@ export async function setValidityDays(documentId: string, formData: FormData): P
   });
   if (updated.count !== 1) return { error: NOT_FOUND_ERROR };
 
-  revalidateDocument(document.id);
+  // Autosaved; the client refreshes after the burst (see `useAutosave`).
   return {};
 }
 
@@ -264,6 +269,8 @@ export async function setValidityDays(documentId: string, formData: FormData): P
  * taxed, a foreign FOB is not — src/lib/documents/tax-rules.ts), so it takes
  * the same guarded transaction + `recalcAndEnforce` as every money-affecting
  * mutation here. DRAFT-only, scoped like every other document mutation.
+ * Autosaved from `DeliveryTaxField` only, so it does not revalidate the quote
+ * page: `useAutosave` refreshes it once after the burst (PERF-01).
  */
 export async function setIncoterm(documentId: string, formData: FormData): Promise<ActionResult> {
   const session = await requireSession();
@@ -290,7 +297,7 @@ export async function setIncoterm(documentId: string, formData: FormData): Promi
     return mapDraftWriteError(error);
   }
 
-  revalidateDocument(document.id);
+  // Autosaved; the client refreshes after the burst (see `useAutosave`).
   return concessionWarning ? { warning: concessionWarning } : {};
 }
 
@@ -300,7 +307,9 @@ export async function setIncoterm(documentId: string, formData: FormData): Promi
  * salesperson's own name, rate and reason and marks them overridden so no
  * recalc touches them (src/lib/documents/tax.ts). Free for anyone who may
  * edit the draft; the reason is what makes an override visible (Vadym,
- * 2026-09-30). A blank reason saves and blocks finalize instead.
+ * 2026-09-30). A blank reason saves and blocks finalize instead. Autosaved
+ * from `DeliveryTaxField` only, so — like `setIncoterm` — no revalidate here;
+ * the client refreshes after the burst.
  */
 export async function setDocumentTax(documentId: string, formData: FormData): Promise<ActionResult> {
   const session = await requireSession();
@@ -344,6 +353,6 @@ export async function setDocumentTax(documentId: string, formData: FormData): Pr
     return mapDraftWriteError(error);
   }
 
-  revalidateDocument(document.id);
+  // Autosaved; the client refreshes after the burst (see `useAutosave`).
   return concessionWarning ? { warning: concessionWarning } : {};
 }

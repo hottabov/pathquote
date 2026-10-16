@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 export type AutosaveStatus = "idle" | "saving" | "slow" | "saved" | "error";
 
@@ -30,6 +31,39 @@ const REPORT_SLOW_SAVE_MS = 3000;
 const SAVED_LINGER_MS = 2000;
 
 /**
+ * How long the page refresh waits after a save lands, so that several fields
+ * saving in the same breath (a discount and the tax it moves, the four terms
+ * figures, an options tick that flushes as the sheet closes) share one
+ * refresh. Short enough that the totals still visibly follow the save.
+ */
+const REFRESH_COALESCE_MS = 150;
+
+// One scheduler for every hook instance on the page, not one per hook: the
+// point is that seven autosaving fields produce one refresh per burst, and a
+// per-instance timer would give seven. The router is taken from whichever
+// hook asked last; every instance on a page holds the same app-router
+// object, so it does not matter which.
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+let refreshWith: (() => void) | null = null;
+
+/**
+ * Asks for one `router.refresh()` about `REFRESH_COALESCE_MS` from now. A
+ * request made while one is already scheduled folds into it. The refresh
+ * itself runs inside `startTransition`, so the server render it triggers
+ * does not block the field the user is still typing in.
+ */
+function scheduleRefresh(refresh: () => void): void {
+  refreshWith = refresh;
+  if (refreshTimer !== null) return;
+  refreshTimer = setTimeout(() => {
+    refreshTimer = null;
+    const run = refreshWith;
+    refreshWith = null;
+    if (run) startTransition(run);
+  }, REFRESH_COALESCE_MS);
+}
+
+/**
  * Debounced autosave for a single value: `delay`ms after `value` last
  * changes, calls `onSave(value)` and reflects the outcome as `status`
  * (`"idle" | "saving" | "saved" | "error"`) plus `error` — meant to back a
@@ -53,11 +87,27 @@ const SAVED_LINGER_MS = 2000;
  * `enabled: false` (e.g. a read-only document) suppresses saving entirely
  * without needing the caller to conditionally call the hook.
  *
+ * The actions this hook calls do NOT revalidate the quote page themselves
+ * (see `setDocumentDiscount`, `setItemOptions`, … in
+ * src/lib/actions/documents/). They used to, and because the browser was
+ * standing on that very path Next re-rendered the whole builder inside each
+ * save's response — one discount keystroke cost 84 SQL statements and a
+ * 132 KB reply, and the next save queued behind that render (PERF-01 in
+ * docs/technical-audit). Instead, once a save lands and no newer save for
+ * this field is pending, the hook asks for one coalesced `router.refresh()`
+ * (`scheduleRefresh` above) so the totals, the Summary panel's cap warning
+ * and every other server-rendered figure catch up once per burst rather
+ * than once per save. A save that returned `{ warning }` still refreshes —
+ * that warning reaches the Summary panel through the refresh — but one that
+ * returned `{ error }` or threw does not, since nothing changed.
+ *
  * Tests: this repo has no React test renderer (no @testing-library/react in
- * package.json; vitest runs in a plain node environment), so the hook's
- * timing is not unit-tested. The "value returns to the last saved value
- * while a save is pending" path is a two-line state transition in the
- * effect below, covered by reading it rather than by a mocked-timer harness.
+ * package.json; vitest runs in a plain node environment and, by its own
+ * config, uses no fake timers), so neither the hook's debounce nor the
+ * refresh coalescing is unit-tested. The "value returns to the last saved
+ * value while a save is pending" path and the "superseded save does not
+ * refresh" path are each a short guard in the code below, covered by
+ * reading it rather than by a mocked-timer harness.
  */
 export function useAutosave<T>({
   value,
@@ -73,6 +123,7 @@ export function useAutosave<T>({
   /** Names the field in the slow-save report (see `reportSlowSave`). */
   label?: string;
 }): AutosaveState {
+  const router = useRouter();
   const [status, setStatus] = useState<AutosaveStatus>("idle");
   const [error, setError] = useState<string | null>(null);
 
@@ -114,6 +165,10 @@ export function useAutosave<T>({
       lastSavedValue.current = saving;
       setStatus("saved");
       setError(null);
+      // The server has the new value and no newer save for this field is
+      // waiting (a pending one would have bumped `saveToken` and returned
+      // above): let the page re-read it, once for the whole burst.
+      if (!savePending.current) scheduleRefresh(() => router.refresh());
       if (savedLingerTimer.current) clearTimeout(savedLingerTimer.current);
       savedLingerTimer.current = setTimeout(() => {
         if (token === saveToken.current) setStatus("idle");

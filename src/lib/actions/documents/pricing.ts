@@ -115,6 +115,11 @@ function discountCapMessage(
  * but concentrates entirely onto the smaller commissionable slice once
  * actually applied — silently a much bigger effective percentage discount
  * than what this check approved.
+ *
+ * Autosaved from `ItemDiscountField` and called from nowhere else, so this
+ * action does not revalidate the quote page: `useAutosave` refreshes it once
+ * after the burst of saves settles (PERF-01 in docs/technical-audit). The
+ * returned `warning` still reaches the Summary panel through that refresh.
  */
 export async function setItemDiscount(itemId: string, formData: FormData): Promise<ActionResult> {
   const session = await requireSession();
@@ -224,7 +229,8 @@ export async function setItemDiscount(itemId: string, formData: FormData): Promi
     return mapDraftWriteError(error);
   }
 
-  revalidateDocument(item.documentId);
+  // No revalidate here: the field autosaves through `useAutosave`, which
+  // refreshes the page once after the burst (see src/lib/use-autosave.ts).
   const combinedWarning = warning ?? concessionWarning;
   return combinedWarning ? { warning: combinedWarning } : {};
 }
@@ -251,6 +257,9 @@ export async function setItemDiscount(itemId: string, formData: FormData): Promi
  * plain, un-narrowed subtotal instead) would have the same AMOUNT-mode
  * under/over-reporting problem `setItemDiscount`'s own doc comment describes
  * one level down.
+ *
+ * Autosaved from `DocumentDiscountField` only, so — like `setItemDiscount` —
+ * no revalidate here; the client refreshes after the burst.
  */
 export async function setDocumentDiscount(documentId: string, formData: FormData): Promise<ActionResult> {
   const session = await requireSession();
@@ -373,7 +382,7 @@ export async function setDocumentDiscount(documentId: string, formData: FormData
     return mapDraftWriteError(error);
   }
 
-  revalidateDocument(document.id);
+  // No revalidate here either: autosaved, the client refreshes after the burst.
   const combinedWarning = warning ?? concessionWarning;
   return combinedWarning ? { warning: combinedWarning } : {};
 }

@@ -225,6 +225,31 @@ function buildSelections(
     });
 }
 
+/**
+ * What the options autosave is keyed by: the manager's own picks, and not
+ * the rows a locked role derives from somewhere else on the card.
+ *
+ * `selections` (the payload) is built from `effective`, which re-reads the
+ * derived rows — the MTS's per-metre rail, the M-Series transformer, the
+ * EasyLoader's table modules — from the item's lines on every render. After
+ * a save the server derives those rows afresh (`withDerivedMtsTravel` and
+ * friends in actions/documents/options.ts) and the page refresh brings them
+ * back as props, so the payload changes even though nothing the manager
+ * chose did. Keyed on the payload, `useAutosave` saw a new value and sent an
+ * identical second save for every tick on such an item (PERF-17 in
+ * docs/technical-audit). Keyed on the manager's rows alone, the derived
+ * rows can move without triggering a save, and the server — which ignores
+ * whatever the client sends for them anyway — stays the only author of them.
+ *
+ * Pure, so it is unit-tested (tests/item-options-autosave-key.test.ts).
+ */
+export function autosaveKeyFor(
+  selections: readonly OptionSelectionInput[],
+  isLocked: (optionId: string) => boolean
+): string {
+  return JSON.stringify(selections.filter((selection) => !isLocked(selection.optionId)));
+}
+
 export function ItemOptionsEditor({
   itemId,
   itemName,
@@ -429,18 +454,22 @@ export function ItemOptionsEditor({
   // and Done all do the same harmless thing.
   //
   // Keyed by a stable serialisation rather than the array, because the array
-  // is rebuilt on every render and would retrigger the hook forever.
-  const autosaveKey = JSON.stringify(selections);
+  // is rebuilt on every render and would retrigger the hook forever — and by
+  // the manager's own rows only, not the derived ones, for the reason
+  // `autosaveKeyFor` gives. The whole set, derived rows included, is still
+  // what gets sent.
+  const autosaveKey = autosaveKeyFor(selections, isLocked);
   const autosave = useAutosave({
     value: autosaveKey,
     label: "item-options",
     enabled: open && !readOnly && !mtsWithoutLength && toolsWithoutConsumable.length === 0,
-    // `setItemOptions` revalidates the quote, so the card's breakdown and the
-    // totals follow each save without a refresh from here. The loop that
-    // could cause is closed on this side: `selected` is seeded from the
-    // item's lines only when the sheet opens (`openPanel`), so the server's
-    // normalised lines (MTS travel, EasyLoader modules) coming back as props
-    // do not change what this hook is saving.
+    // `setItemOptions` does not revalidate the quote; `useAutosave` refreshes
+    // the page once after the burst of ticks, and that refresh is what
+    // brings the card's breakdown, the totals and the server-derived lines
+    // (MTS travel, transformer, EasyLoader modules) back as props. Those
+    // props do not re-trigger this hook: `selected` is seeded from the lines
+    // only when the sheet opens (`openPanel`), and the key above leaves the
+    // derived rows out.
     onSave: async () => {
       const result = await setItemOptions(itemId, selections);
       if (result?.error) return { error: result.error };
@@ -451,7 +480,7 @@ export function ItemOptionsEditor({
     // A tick made less than the debounce before Done/Escape used to be
     // dropped: closing disables the autosave, which cancelled the pending
     // save, while the checkbox had looked ticked. Send it now. It runs on its
-    // own and revalidates the quote when it lands, so the sheet can close
+    // own and asks for the page refresh when it lands, so the sheet can close
     // straight away.
     void autosave.flush();
     setOpen(false);
