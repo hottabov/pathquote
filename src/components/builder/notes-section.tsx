@@ -21,6 +21,16 @@ import { ReadOnlyValue } from "@/components/ui-kit";
  * `setDocumentNotes` directly (DRAFT-only — see that action) 800ms after
  * typing settles.
  *
+ * The editor's chunk (Tiptap, ~393 KB) is loaded by `RichTextEditor`'s
+ * `next/dynamic` the moment this mounts in its editable form. That used to
+ * be every DRAFT open, because the Quote-setup panel was in the DOM, hidden,
+ * from the first render. It is now the first time Quote setup is actually
+ * opened: `BuilderPanels` (builder-panels.tsx) mounts a panel on its first
+ * selection and keeps it mounted after -- keeps it, because `useAutosave`'s
+ * unmount cleanup drops a pending save, and a note typed just before a tab
+ * switch must not be lost. Nothing here defers anything itself; do not add
+ * a second layer of laziness on top.
+ *
  * `notes` may still be a legacy markdown row (`toEditorHtml` normalizes it
  * to HTML for the editor on first load — see src/lib/rich-text.ts); once
  * saved, it's always HTML from then on. `setDocumentNotes` sanitizes on

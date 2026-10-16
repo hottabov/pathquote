@@ -11,9 +11,28 @@ import {
   normalizeIndustryName,
 } from "@/lib/validation/industries";
 import { companyWhereForUser } from "@/lib/scope";
+import { listIndustryPickerOptions, type IndustryPickerOption } from "@/lib/queries/industries";
 import { NOT_FOUND_ERROR, flattenZodError, type ActionResult } from "./_shared";
 
-export type { ActionResult };
+export type { ActionResult, IndustryPickerOption };
+
+/**
+ * The industry list for a picker that opens on demand -- the builder's
+ * "+ New company" panel (src/components/builder/client-section.tsx), which
+ * is opened on a small minority of quote visits. The quote page used to load
+ * the 31 industries and their 282 aliases on every open and serialise them
+ * into the page for a panel most visits never show; the panel asks for them
+ * here the moment it opens instead.
+ *
+ * A read behind a session, not a role: every signed-in user may pick an
+ * industry (`createIndustry` is open to all of them too), and the list holds
+ * nothing about any manager's companies. The /clients screens still get the
+ * list from their page, where the picker is always on screen.
+ */
+export async function listIndustriesForPicker(): Promise<IndustryPickerOption[]> {
+  await requireSession();
+  return listIndustryPickerOptions();
+}
 
 function isUniqueConstraintError(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";

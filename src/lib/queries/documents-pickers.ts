@@ -1,7 +1,7 @@
 import type { OptionRole } from "@prisma/client";
 import type { ConsumableLink } from "@/lib/consumables";
 import { db } from "@/lib/db";
-import { compatibilityOrFilter } from "@/lib/catalog-compat";
+import { partitionByCompatKey, type CompatKey } from "@/lib/compatible-options-partition";
 import {
   isSeriesHidden,
   NO_HIDDEN_CATALOG_IDS,
@@ -168,25 +168,65 @@ export type CompatibleOption = {
   consumables: ConsumableLink[];
 };
 
+export type { CompatKey };
+
 /**
  * Active options compatible with `productId` and/or `seriesId` — an option
  * counts as compatible when it has a compat row at either the series level
  * (matching `seriesId`) or the product level (matching `productId`; e.g.
  * EasyLoader accessories are only compatible with product EL-2020, not the
  * whole EasyLoader series) — see `compatibilityOrFilter`. Each result
- * carries its price in `regionId` if one exists. Preloaded once per distinct
- * (productId, seriesId) pair on the builder page (not per item) and handed
- * to each item's options editor — a product with no price row at all, or
- * one flagged `needsReview`, is still included (so the editor can show it
- * disabled with "price required") rather than silently hidden.
+ * carries its price in `regionId` if one exists. A product with no price row
+ * at all, or one flagged `needsReview`, is still included (so the editor can
+ * show it disabled with "price required") rather than silently hidden.
+ *
+ * The one-product form of `listCompatibleOptionsForProducts` below, kept for
+ * callers that have a single item in hand. The builder page does not use it:
+ * it has several products and asks for all of them at once.
  */
 export async function listCompatibleOptions(
   productId: string | null,
   seriesId: string | null,
   regionId: string
 ): Promise<CompatibleOption[]> {
-  const or = compatibilityOrFilter(productId, seriesId);
-  if (!or) return [];
+  const key = "single";
+  const byKey = await listCompatibleOptionsForProducts([{ key, productId, seriesId }], regionId);
+  return byKey[key];
+}
+
+/**
+ * The compatible options for every product on a quote, in ONE read rather
+ * than one per product -- keyed exactly as the caller keyed `keys`, so the
+ * builder page can hand the result straight to the items list.
+ *
+ * Why one read: each product's own `listCompatibleOptions` was 5-8 statements
+ * (the options, then each nested relation as a round trip of its own, then
+ * the conflict groups and their members), and a quote with three machines ran
+ * that three times for option sets that overlap almost entirely -- most
+ * options are series-level and shared. Here every option compatible with ANY
+ * of the keys is fetched once, with the compat rows it matched on, and
+ * `partitionByCompatKey` gives each key the subset its own query would have
+ * returned, in the same `sortOrder` order. Same statements as before for one
+ * product; a flat 6-9 for any number of them.
+ *
+ * Every key gets an entry. A key no option fits, or one with neither id (an
+ * item whose product no longer resolves and never had a series), gets `[]`
+ * -- what its own query returned -- so callers index without a fallback.
+ */
+export async function listCompatibleOptionsForProducts(
+  keys: readonly CompatKey[],
+  regionId: string
+): Promise<Record<string, CompatibleOption[]>> {
+  if (keys.length === 0) return {};
+
+  // The union of every key's own `compatibilityOrFilter`, as two `in` lists.
+  // A key with neither id contributes nothing and partitions to `[]` below.
+  const seriesIds = Array.from(new Set(keys.flatMap((k) => (k.seriesId ? [k.seriesId] : []))));
+  const productIds = Array.from(new Set(keys.flatMap((k) => (k.productId ? [k.productId] : []))));
+  const or: Array<{ seriesId: { in: string[] } } | { productId: { in: string[] } }> = [];
+  if (seriesIds.length > 0) or.push({ seriesId: { in: seriesIds } });
+  if (productIds.length > 0) or.push({ productId: { in: productIds } });
+  if (or.length === 0) return partitionByCompatKey(keys, []);
 
   const options = await db.option.findMany({
     where: { active: true, compat: { some: { OR: or } } },
@@ -199,6 +239,10 @@ export async function listCompatibleOptions(
         orderBy: [{ sortOrder: "asc" }, { consumable: { code: "asc" } }],
         select: { qty: true, consumable: { select: { id: true, code: true, name: true } } },
       },
+      // Only the rows that could have matched a key -- what the partition
+      // reads to decide which key(s) each option belongs to. Rows for other
+      // series/products are not needed and not fetched.
+      compat: { where: { OR: or }, select: { seriesId: true, productId: true } },
     },
   });
 
@@ -219,7 +263,7 @@ export async function listCompatibleOptions(
       : [];
   const groupById = new Map(groups.map((g) => [g.id, g]));
 
-  return options.map((o) => {
+  const shaped = options.map((o) => {
     const price = o.prices[0];
 
     // Union every OTHER option across every group this one belongs to,
@@ -243,7 +287,7 @@ export async function listCompatibleOptions(
       }
     }
 
-    return {
+    const option: CompatibleOption = {
       id: o.id,
       code: o.code,
       name: o.name,
@@ -255,5 +299,13 @@ export async function listCompatibleOptions(
       conflictsWith: Array.from(partnersById.values()),
       consumables: o.consumables.map(({ qty, consumable }) => ({ ...consumable, qty })),
     };
+    return { option, compat: o.compat };
   });
+
+  // Partition on the compat rows, then drop them: the same option object is
+  // shared between every key it fits, which is fine for a read-only prop.
+  const partitioned = partitionByCompatKey(keys, shaped);
+  return Object.fromEntries(
+    Object.entries(partitioned).map(([key, rows]) => [key, rows.map((row) => row.option)])
+  );
 }

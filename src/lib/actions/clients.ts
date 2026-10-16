@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { recalcDocument } from "@/lib/documents/recalc";
 import { requireSession } from "@/lib/authz";
-import { companyOwnedWhereForUser, companyWhereForUser } from "@/lib/scope";
+import { companyOwnedWhereForUser, companyWhereForUser, documentWhereForUser } from "@/lib/scope";
 import { companySchema, contactSchema } from "@/lib/validation/clients";
 import { idSchema } from "@/lib/validation/documents";
 import { NOT_FOUND_ERROR, flattenZodError, type ActionResult } from "./_shared";
@@ -354,10 +354,16 @@ export async function deleteContact(contactId: string): Promise<ActionResult> {
 // builder's inline "+ New company" / "+ New contact" panels
 // (src/components/builder/client-section.tsx): plain-object input instead
 // of FormData, and the created entity is RETURNED instead of redirecting,
-// so the builder can select it and call setDocumentClient without ever
-// leaving the page. Validation and scope rules are shared with the form
-// actions above (same zod schemas, same companyWhereForUser) — the two
-// stay in sync by construction.
+// so the builder can select it without ever leaving the page. Validation and
+// scope rules are shared with the form actions above (same zod schemas, same
+// companyWhereForUser) — the two stay in sync by construction.
+//
+// A new company is also put ON the draft by `createCompanyInline` itself when
+// the builder passes the draft's id: one round trip for one intent, where
+// the builder used to follow the create with a separate `setDocumentClient`
+// call (two POSTs, two re-renders of the page). A new contact still goes
+// through `setDocumentClient` from the builder, since it may be chosen for a
+// company that is already on the quote.
 
 export type CompanyInlineInput = {
   name: string;
@@ -384,13 +390,37 @@ export type CreateCompanyInlineResult =
   | { ok: true; company: { id: string; name: string } }
   | { error: string };
 
+/** Thrown inside `createCompanyInline`'s transaction when the draft it was
+ * asked to put the company on turned out not to be a draft any more (or to
+ * be gone), so the company's creation rolls back with it. Reported to the
+ * caller as the same `NOT_FOUND_ERROR` `setDocumentClient` gives for a
+ * document that is no longer editable. */
+class DraftGoneError extends Error {}
+
 /**
  * Creates a company owned by the current session's user (same ownership
  * rule as `createCompany`). `notes` isn't collectable from the inline
  * panel — it's deliberately short; a manager who needs it uses the full
  * /clients/new form or edits the company afterwards from /clients.
+ *
+ * With `documentId` -- the builder always passes its draft's -- the new
+ * company is also made that draft's client, in the same transaction as its
+ * creation, doing what `setDocumentClient` would: the draft gets the
+ * company, its contact is whatever the company's primary contact is (nothing
+ * -- the company is seconds old and has none), and the quote is re-priced,
+ * because the client's country moves the suggested tax. One statement folds
+ * the DRAFT check into the write (`updateMany` scoped to `status: "DRAFT"`
+ * and to the caller, reading `count !== 1` as "gone or no longer a draft"),
+ * the same atomic form the document actions use for a single-statement
+ * write, so a Finalize landing between the pre-read and this write rolls the
+ * whole thing back -- the company included, rather than leaving a new client
+ * that was never put on anything. The pre-read makes that the race only:
+ * a stale tab is told "Not found" before any company is created.
  */
-export async function createCompanyInline(input: CompanyInlineInput): Promise<CreateCompanyInlineResult> {
+export async function createCompanyInline(
+  input: CompanyInlineInput,
+  documentId?: string | null
+): Promise<CreateCompanyInlineResult> {
   const session = await requireSession();
 
   const parsed = companySchema.safeParse(input);
@@ -401,32 +431,72 @@ export async function createCompanyInline(input: CompanyInlineInput): Promise<Cr
     return { error: UNKNOWN_INDUSTRY_ERROR };
   }
 
-  const created = await db.company.create({
-    data: {
-      name: parsed.data.name,
-      industryId: parsed.data.industryId ?? null,
-      street: parsed.data.street ?? null,
-      city: parsed.data.city ?? null,
-      state: parsed.data.state ?? null,
-      postcode: parsed.data.postcode ?? null,
-      country: parsed.data.country ?? null,
-      website: parsed.data.website ?? null,
-      taxId: parsed.data.taxId ?? null,
-      notes: null,
-      ownerId: session.user.id,
-      deliverySameAsMain: parsed.data.deliverySameAsMain,
-      deliveryStreet: parsed.data.deliveryStreet ?? null,
-      deliveryCity: parsed.data.deliveryCity ?? null,
-      deliveryState: parsed.data.deliveryState ?? null,
-      deliveryPostcode: parsed.data.deliveryPostcode ?? null,
-      deliveryCountry: parsed.data.deliveryCountry ?? null,
-      deliveryContactName: parsed.data.deliveryContactName ?? null,
-      deliveryPhone: parsed.data.deliveryPhone ?? null,
-      deliveryNotes: parsed.data.deliveryNotes ?? null,
-    },
-  });
+  // The draft to put the company on, checked the way `setDocumentClient`
+  // checks it before writing: it exists, it is this caller's to edit, and it
+  // is still a draft. `null` when the caller asked for no assignment.
+  let draftId: string | null = null;
+  if (documentId) {
+    const parsedDocumentId = idSchema.safeParse(documentId);
+    if (!parsedDocumentId.success) return { error: NOT_FOUND_ERROR };
+    const draft = await db.document.findFirst({
+      where: { id: parsedDocumentId.data, status: "DRAFT", ...documentWhereForUser(session.user) },
+      select: { id: true },
+    });
+    if (!draft) return { error: NOT_FOUND_ERROR };
+    draftId = draft.id;
+  }
+
+  const data = {
+    name: parsed.data.name,
+    industryId: parsed.data.industryId ?? null,
+    street: parsed.data.street ?? null,
+    city: parsed.data.city ?? null,
+    state: parsed.data.state ?? null,
+    postcode: parsed.data.postcode ?? null,
+    country: parsed.data.country ?? null,
+    website: parsed.data.website ?? null,
+    taxId: parsed.data.taxId ?? null,
+    notes: null,
+    ownerId: session.user.id,
+    deliverySameAsMain: parsed.data.deliverySameAsMain,
+    deliveryStreet: parsed.data.deliveryStreet ?? null,
+    deliveryCity: parsed.data.deliveryCity ?? null,
+    deliveryState: parsed.data.deliveryState ?? null,
+    deliveryPostcode: parsed.data.deliveryPostcode ?? null,
+    deliveryCountry: parsed.data.deliveryCountry ?? null,
+    deliveryContactName: parsed.data.deliveryContactName ?? null,
+    deliveryPhone: parsed.data.deliveryPhone ?? null,
+    deliveryNotes: parsed.data.deliveryNotes ?? null,
+  };
+
+  let created: { id: string; name: string };
+  try {
+    created = await db.$transaction(async (tx) => {
+      const company = await tx.company.create({ data, select: { id: true, name: true } });
+      if (draftId) {
+        // `contactId: null` is what `setDocumentClient`'s primary-contact
+        // resolution yields for a company with no contacts, which a company
+        // created in this very transaction necessarily is.
+        const guarded = await tx.document.updateMany({
+          where: { id: draftId, status: "DRAFT" },
+          data: { companyId: company.id, contactId: null },
+        });
+        if (guarded.count !== 1) throw new DraftGoneError();
+        // The client decides the destination country and VAT ID the tax
+        // suggestion reads, so the quote is re-priced here, in the same
+        // transaction, exactly as `setDocumentClient` does. Pre-tax totals
+        // are untouched, so neither recalc cap can trip.
+        await recalcDocument(draftId, tx);
+      }
+      return company;
+    });
+  } catch (error) {
+    if (error instanceof DraftGoneError) return { error: NOT_FOUND_ERROR };
+    throw error;
+  }
 
   revalidateCompanyList();
+  if (draftId) revalidateDocument(draftId);
   return { ok: true, company: { id: created.id, name: created.name } };
 }
 

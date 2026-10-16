@@ -1,10 +1,10 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Hammer, ScrollText, Factory, History } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CountBadge } from "@/components/ui-kit";
-import { parseTab, type BuilderTab } from "@/lib/builder-tabs";
+import { builderTabSearch, parseTab, type BuilderTab } from "@/lib/builder-tabs";
 
 export type { BuilderTab };
 
@@ -18,43 +18,40 @@ const TAB_META: Record<BuilderTab, { label: string; Icon: typeof Hammer }> = {
 /**
  * The builder's three tabs, with the active one carried in the URL as `?tab=`.
  *
- * In the URL rather than in component state for two reasons the user hits
- * daily: the browser's back button then steps between tabs instead of leaving
- * the quote entirely, and a link to a particular quote's terms can be sent to
- * someone. `scroll: false` because switching tabs is not navigation to a new
- * document and should not throw the page back to the top.
+ * In the URL rather than in component state so that a link to a particular
+ * quote's setup or history can be sent to someone, and so a reload lands on
+ * the tab that was open. Written with `window.history.replaceState`, NOT
+ * `router.replace`: the router call was a navigation, and on this page a
+ * navigation meant a full server render of the quote -- the builder's whole
+ * query set and 200+ KB of HTML -- to show a panel whose content the browser
+ * already had. Next keeps `useSearchParams` in step with native history
+ * updates, so the strip here and `BuilderPanels` both re-read the new value
+ * and a switch is one client render and zero requests. Nothing server-side
+ * reads `?tab=` any more (the page no longer takes `searchParams`), so there
+ * is nothing a request would have told us anyway.
  *
- * `router.replace`, not `push`: a tab is a view of the same quote, so filling
- * the history stack with one entry per glance would make back useless for its
- * real job of leaving the quote. The one back step between tabs comes from
- * replace swapping the current entry.
- *
- * The route is untouched. `/quotes/[documentId]` still renders all three
- * panels server-side; this only decides which one is visible, so switching is
- * instant and no data is refetched.
+ * `replaceState`, not `pushState`: a tab is a view of the same quote, so
+ * filling the history stack with one entry per glance would make back useless
+ * for its real job of leaving the quote. Native history does not scroll, so
+ * the old `scroll: false` has no counterpart to lose.
  */
 export function BuilderTabs({
   tabs,
   counts,
 }: {
   /** Which tabs this quote has, in order -- see `builderTabsFor`. Passed in
-   * rather than derived here because the page already knows the status and
-   * has to resolve `?tab=` against the same list to decide which panel to
-   * mark hidden. */
+   * rather than derived here because the page already knows the status, and
+   * `BuilderPanels` resolves `?tab=` against the same list to decide which
+   * panel to show. */
   tabs: BuilderTab[];
   counts: Partial<Record<BuilderTab, number>>;
 }) {
-  const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
   const active = parseTab(params.get("tab"), tabs);
 
   function select(tab: BuilderTab) {
-    const next = new URLSearchParams(params.toString());
-    if (tab === "build") next.delete("tab");
-    else next.set("tab", tab);
-    const query = next.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    window.history.replaceState(null, "", `${pathname}${builderTabSearch(params.toString(), tab)}`);
   }
 
   return (

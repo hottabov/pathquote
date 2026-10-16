@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { builderTabsFor, parseTab } from "@/lib/builder-tabs";
+import { builderTabSearch, builderTabsFor, parseTab } from "@/lib/builder-tabs";
 
 describe("builderTabsFor", () => {
   it("gives a draft three tabs, with no Order forms among them", () => {
@@ -52,5 +52,28 @@ describe("parseTab", () => {
     // The tab strip only ever renders tabs the page handed it, so it can
     // call this without repeating the status.
     expect(parseTab("forms")).toBe("forms");
+  });
+});
+
+describe("builderTabSearch", () => {
+  it("writes ?tab= for a tab other than Build", () => {
+    expect(builderTabSearch("", "settings")).toBe("?tab=settings");
+    expect(builderTabSearch("", "history")).toBe("?tab=history");
+  });
+
+  it("removes ?tab= for Build rather than writing ?tab=build", () => {
+    // The plain quote URL and Build are the same place; a bookmark of one
+    // should equal a bookmark of the other.
+    expect(builderTabSearch("tab=settings", "build")).toBe("");
+    expect(builderTabSearch("", "build")).toBe("");
+  });
+
+  it("keeps every other parameter as it was", () => {
+    expect(builderTabSearch("foo=1&tab=settings", "history")).toBe("?foo=1&tab=history");
+    expect(builderTabSearch("foo=1&tab=settings", "build")).toBe("?foo=1");
+  });
+
+  it("replaces a repeated tab parameter with a single one", () => {
+    expect(builderTabSearch("tab=a&tab=b", "forms")).toBe("?tab=forms");
   });
 });

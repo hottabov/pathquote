@@ -18,6 +18,26 @@ export async function listIndustries() {
   });
 }
 
+/** What the industry picker needs of a row -- its id, its name, and the
+ * other spellings it searches (`IndustryOption` in
+ * src/components/clients/industry-picker.tsx has this exact shape). */
+export type IndustryPickerOption = { id: string; name: string; aliases: { name: string }[] };
+
+/**
+ * `listIndustries` cut down to the picker's own fields, for the one place
+ * that fetches the list on demand rather than with the page: the builder's
+ * "+ New company" panel (through the `listIndustriesForPicker` server action).
+ * The alias ids are dropped here rather than mapped off by the caller because
+ * the action's return value is what crosses the wire, and 282 ids nobody
+ * reads is exactly the kind of weight the on-demand load exists to avoid.
+ */
+export async function listIndustryPickerOptions(): Promise<IndustryPickerOption[]> {
+  return db.industry.findMany({
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, aliases: { orderBy: { name: "asc" }, select: { name: true } } },
+  });
+}
+
 /**
  * How many companies point at an industry, across every owner. Shown in the
  * rename confirmation so a shared-row edit is never silent.

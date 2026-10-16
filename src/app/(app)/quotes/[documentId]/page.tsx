@@ -19,8 +19,8 @@ import {
   getDocumentForBuilder,
   getDocumentForForms,
   getItemPickerCatalog,
-  listCompatibleOptions,
-  type CompatibleOption,
+  listCompatibleOptionsForProducts,
+  type CompatKey,
   type DocumentForBuilder,
 } from "@/lib/queries/documents";
 import type { ClientSearchCompany } from "@/lib/queries/client-search";
@@ -32,7 +32,6 @@ import { getQuoteValidityDays, getShowOptionIcons } from "@/lib/queries/settings
 import { getSpecImages } from "@/lib/queries/spec-images";
 import { SCREEN_SIDE_FIELD } from "@/lib/production-forms/spec-images";
 import { getUser } from "@/lib/queries/users";
-import { listIndustries } from "@/lib/queries/industries";
 import { canAuthorSign, canRevoke, canSendToClient, signingStatusLabel } from "@/lib/signing/state";
 import { concessionCapMessage, markupCapMessage } from "@/lib/pricing";
 import { formatDateAU } from "@/lib/format";
@@ -52,7 +51,8 @@ import { ProductionFormsSection } from "@/components/documents/production-forms-
 import { DocumentTotals } from "@/components/builder/sticky-footer";
 import { FinalizeButton } from "@/components/builder/finalize-button";
 import { QuoteBar } from "@/components/builder/quote-bar";
-import { builderTabsFor, parseTab } from "@/lib/builder-tabs";
+import { BuilderPanels } from "@/components/builder/builder-panels";
+import { builderTabsFor } from "@/lib/builder-tabs";
 import { ReadinessPanel } from "@/components/builder/readiness-panel";
 import { UnfinalizeButton } from "@/components/builder/unfinalize-button";
 import { AcceptButton } from "@/components/builder/accept-button";
@@ -94,21 +94,17 @@ export async function generateMetadata({
   return { title: document.number ?? "New quote" };
 }
 
-export default async function DocumentBuilderPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<Params>;
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+export default async function DocumentBuilderPage({ params }: { params: Promise<Params> }) {
   const { documentId } = await params;
-  // Which panel is showing. In the URL so the browser's back button steps
-  // between them instead of leaving the quote, and so a link to a quote's
-  // terms can be sent to someone. Resolved below, once the status is known:
-  // which tabs a quote has depends on it, and `?tab=forms` on a draft is a
-  // URL that has to land on Build rather than on a panel that renders
-  // nothing.
-  const tabParam = (await searchParams).tab;
+  // No `searchParams` here, on purpose. The open tab lives in the URL as
+  // `?tab=` (so a link to a quote's setup or history can be sent, and a
+  // reload lands where it was), but it is read on the CLIENT, by
+  // `BuilderTabs` and `BuilderPanels`, and written with
+  // `history.replaceState`. Reading it here made every tab switch a
+  // navigation, and a navigation to this page is the whole builder query set
+  // and 200+ KB of HTML -- for a panel whose content the browser already
+  // had. This page renders every panel's content and lets the client decide
+  // which to show; it must not grow a dependency on the query string again.
   // AppLayout (src/app/(app)/layout.tsx) already calls requireSession and
   // redirects unauthenticated requests, so a session is always present here.
   // `requireRegion` rather than a bare `auth()`: the builder prices items, and
@@ -124,8 +120,10 @@ export default async function DocumentBuilderPage({
   if (!document) notFound();
 
   const isDraft = document.status === "DRAFT";
+  // Which tabs this quote has (a draft has no Order forms). `BuilderPanels`
+  // and `BuilderTabs` resolve `?tab=` against this same list, so a stale
+  // `?tab=forms` on a draft lands on Build there, as it used to here.
   const builderTabs = builderTabsFor({ isFinal: !isDraft });
-  const tab = parseTab(tabParam, builderTabs);
   const isAdmin = isAdminRole(session.user.role);
 
   // Only fetched for a FINAL document — a DRAFT never renders SignButton, so
@@ -164,28 +162,33 @@ export default async function DocumentBuilderPage({
       : null;
   const capExceeded = document.documentConcession.exceedsCap || document.documentConcession.exceedsMarkupCap;
 
-  // Compatible options are preloaded once per distinct (productId, seriesId)
-  // pair across the document's items (not once per item) — most documents
-  // have items from a handful of products at most, so this is a small,
-  // cheap fan-out. Keyed by productId when available (compatibility can
-  // differ product-to-product within the same series, e.g. EasyLoader
-  // accessories only for EL-2020) and falling back to `series:<seriesId>`
-  // for the defensive case of an item whose product no longer resolves
-  // (see `BuilderItem.productId`'s doc comment).
-  const compatKeys = new Map<string, { productId: string | null; seriesId: string | null }>();
+  // Compatible options are fetched for every distinct (productId, seriesId)
+  // pair across the document's items (not once per item) -- in ONE read for
+  // all of them (`listCompatibleOptionsForProducts`), where this used to
+  // issue a product's whole 5-8-statement query per pair. Keyed by productId
+  // when available (compatibility can differ product-to-product within the
+  // same series, e.g. EasyLoader accessories only for EL-2020) and falling
+  // back to `series:<seriesId>` for the defensive case of an item whose
+  // product no longer resolves (see `BuilderItem.productId`'s doc comment).
+  const compatKeysByKey = new Map<string, CompatKey>();
   for (const item of document.items) {
     if (!item.productId && !item.seriesId) continue;
     const key = item.productId ?? `series:${item.seriesId}`;
-    if (!compatKeys.has(key)) compatKeys.set(key, { productId: item.productId, seriesId: item.seriesId });
+    if (!compatKeysByKey.has(key)) {
+      compatKeysByKey.set(key, { key, productId: item.productId, seriesId: item.seriesId });
+    }
   }
+  const compatKeys = Array.from(compatKeysByKey.values());
 
   // Everything below depends on nothing but the session and the document
-  // just loaded, so it all goes out together rather than in the three
-  // sequential waves this used to run (hidden ids, then the batch, then the
-  // compatible-options fan-out). Only the item picker actually needs the
-  // hidden-id set in hand, so that one dependency is expressed as a `then`
-  // on its own promise instead of an `await` that would hold back the other
-  // six reads with it.
+  // just loaded, so it all goes out together in one wave. It used to run in
+  // three (hidden ids, then the batch, then the compatible-options fan-out)
+  // and later grew a fourth -- the History tab's revision/email log and the
+  // ACT! state card -- that waited for the batch though it needed only
+  // `document.id`; both are in the batch now. Only the item picker actually
+  // needs the hidden-id set in hand, so that one dependency is expressed as
+  // a `then` on its own promise instead of an `await` that would hold back
+  // the other reads with it.
   //
   // Whose visibility gates the item picker: the current *signed-in user*
   // (an ADMIN always resolves to `null` here and sees everything), not the
@@ -194,9 +197,12 @@ export default async function DocumentBuilderPage({
   // now that matters.
   const hiddenCatalogIdsPromise = getHiddenCatalogIds(catalogVisibilityUserId(session.user));
 
-  // Started alongside the batch below rather than added to it, to keep that
-  // destructuring untouched. Aliases ride along as search keys only.
-  const industriesPromise = listIndustries();
+  // Who is looking, for the ACT! card: where the quote's write into ACT!
+  // stands is read under the same scope as the page (getQuoteActState), and
+  // only for a viewer who gets the card at all -- canSeeActSync, through
+  // showsQuoteActCard: a distributor has no ACT! access, and is not shown
+  // the mechanism, though their quote is queued and sent all the same.
+  const actViewer = { role: session.user.role, actSyncVisible: session.user.actSyncVisible };
 
   const [
     catalog,
@@ -205,7 +211,9 @@ export default async function DocumentBuilderPage({
     formsDocument,
     screenSideImages,
     quoteDocumentRows,
-    compatibleOptionsEntries,
+    compatibleOptionsByItemKey,
+    history,
+    actState,
   ] = await Promise.all([
     hiddenCatalogIdsPromise.then((hiddenCatalogIds) =>
       getItemPickerCatalog(document.regionCode, hiddenCatalogIds)
@@ -213,9 +221,11 @@ export default async function DocumentBuilderPage({
     getShowOptionIcons(),
     getQuoteValidityDays(),
     // Separate, narrower payload (see `productionFormsInclude`) than
-    // `document` above -- `ProductionFormsSection` returns `null` itself
-    // for anything that isn't FINAL, so no status check is needed here.
-    getDocumentForForms(session.user, documentId),
+    // `document` above. Only a FINAL quote has order forms (`builderTabsFor`
+    // gives a draft no Forms tab), so a draft skips this read: it is a second
+    // full load of the document (~11 statements) that `ProductionFormsSection`
+    // would discard.
+    isDraft ? null : getDocumentForForms(session.user, documentId),
     // The screen-side diagrams (owner: illustrate +Y/-Y rather than
     // leaving it as bare text) — fetched once per page load, same as
     // `showOptionIcons`, and threaded down through ItemsSection/ItemsList
@@ -226,23 +236,14 @@ export default async function DocumentBuilderPage({
     // `resolveQuoteDocuments`, so the tickboxes can never offer a document
     // the sheet would not print (or miss one it would).
     getQuoteDocumentsForRegion(document.regionId),
-    Promise.all(
-      Array.from(compatKeys.entries()).map(
-        async ([key, { productId, seriesId }]) =>
-          [key, await listCompatibleOptions(productId, seriesId, document.regionId)] as const
-      )
-    ),
+    listCompatibleOptionsForProducts(compatKeys, document.regionId),
+    // Revision + send history: the History tab's content, and its count in
+    // the tab strip. Scoped to the same user; null only for a foreign/missing
+    // id, which cannot happen here since `document` already loaded under the
+    // same scope.
+    getQuoteHistory(session.user, document.id),
+    showsQuoteActCard(actViewer) ? getQuoteActState(session.user, document.id) : null,
   ]);
-
-  const industries = (await industriesPromise).map((i) => ({
-    id: i.id,
-    name: i.name,
-    aliases: i.aliases.map((alias) => ({ name: alias.name })),
-  }));
-
-  const compatibleOptionsByItemKey: Record<string, CompatibleOption[]> = Object.fromEntries(
-    compatibleOptionsEntries
-  );
 
   // The client picker is handed the quote's own company and nothing else; the
   // rest of the client list is searched for on demand (src/lib/actions/
@@ -323,22 +324,6 @@ export default async function DocumentBuilderPage({
     taxBlocker: document.taxBlocker,
   });
 
-  // Revision + send history: the History tab's content, and its count in
-  // the tab strip. Scoped to the same user; null only for a foreign/missing
-  // id, which cannot happen here since `document` already loaded under the
-  // same scope.
-  //
-  // Read beside it: where the quote's write into ACT! stands, for the card
-  // under Signing. Under the same scope as the page (getQuoteActState), and
-  // only for a viewer who gets the card at all -- canSeeActSync, through
-  // showsQuoteActCard: a distributor has no ACT! access, and is not shown
-  // the mechanism, though their quote is queued and sent all the same.
-  const actViewer = { role: session.user.role, actSyncVisible: session.user.actSyncVisible };
-  const [history, actState] = await Promise.all([
-    getQuoteHistory(session.user, document.id),
-    showsQuoteActCard(actViewer) ? getQuoteActState(session.user, document.id) : null,
-  ]);
-
   // Only the two tabs where a count says something. Quote setup has a fixed
   // number of cards, so a badge there would be decoration.
   const historyCount = (history?.revisions.length ?? 0) + (history?.emails.length ?? 0);
@@ -370,21 +355,23 @@ export default async function DocumentBuilderPage({
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:items-start">
         <div className="flex flex-col gap-4 lg:col-span-2">
-          {/* All three panels are rendered server-side and two are hidden,
-              rather than one being conditionally rendered: the data for all
-              of them is already in hand from the single Promise.all above,
-              so hiding costs nothing and switching tabs stays instant. */}
-          <div
-            role="tabpanel"
-            id="builder-panel-build"
-            aria-labelledby="builder-tab-build"
-            hidden={tab !== "build"}
-            className="flex flex-col gap-4"
-          >
+          {/* Every panel's content is rendered here, server-side -- the data
+              for all of them is already in hand from the single Promise.all
+              above -- and handed to `BuilderPanels`, which mounts only the
+              active one (and keeps a panel once it has been shown). So the
+              HTML carries one panel, the hidden ones' client components do
+              not hydrate, and the Quote-setup panel's rich-text editor is
+              not downloaded until someone opens Quote setup. Switching tabs
+              is a client render: `?tab=` changes by `history.replaceState`,
+              and this page is not re-requested. */}
+          <BuilderPanels
+            tabs={builderTabs}
+            panels={{
+              build: (
+                <>
           <ClientSection
             documentId={document.id}
             initialCompany={pickerCompany}
-            industries={industries}
             initialContactId={document.contactId}
             readOnly={!isDraft}
           />
@@ -423,27 +410,22 @@ export default async function DocumentBuilderPage({
               readOnly={!isDraft}
             />
           </SectionCard>
+                </>
+              ),
 
-          </div>
+              /* Quote setup: everything that is set once per quote rather
+                 than touched while assembling it. These cards used to sit in
+                 the same single column as the machines, in the same visual
+                 register, so "Setup image" and "Items" looked equally
+                 important and a salesperson scrolled past five of them on
+                 every quote.
 
-          {/* Quote setup: everything that is set once per quote rather than
-              touched while assembling it. These cards used to sit in the
-              same single column as the machines, in the same visual
-              register, so "Setup image" and "Items" looked equally
-              important and a salesperson scrolled past five of them on
-              every quote.
-
-              Called "Quote setup" rather than "Settings", which is already
-              the name of a whole section of this app: one word with two
-              meanings in one product is how a person ends up in the wrong
-              place. */}
-          <div
-            role="tabpanel"
-            id="builder-panel-settings"
-            aria-labelledby="builder-tab-settings"
-            hidden={tab !== "settings"}
-            className="flex flex-col gap-4"
-          >
+                 Called "Quote setup" rather than "Settings", which is already
+                 the name of a whole section of this app: one word with two
+                 meanings in one product is how a person ends up in the wrong
+                 place. */
+              settings: (
+                <>
 
           {/* First on the tab. It is the one thing here that is a piece of
               work rather than a setting -- a photo to find and drop in --
@@ -546,48 +528,37 @@ export default async function DocumentBuilderPage({
               readOnly={!isDraft}
             />
           </SectionCard>
+                </>
+              ),
 
-          </div>
+              /* History: read-only, and nothing anyone edits. It had no
+                 business sharing a column with the machines. Revisions, then
+                 the email log. The order forms used to sit between them,
+                 which is how a manager came to find the one thing the
+                 workshop needs filed under "History" -- a word that promises
+                 a record of what happened, not a job to do. */
+              history: (
+                <>
+                  {history ? (
+                    <RevisionsSection
+                      revisions={history.revisions}
+                      documentId={document.id}
+                      currency={document.currency}
+                      currencySymbol={document.currencySymbol}
+                    />
+                  ) : null}
+                  {history ? <EmailHistorySection emails={history.emails} /> : null}
+                </>
+              ),
 
-          {/* History: read-only, and nothing anyone edits. It had no business
-              sharing a column with the machines. */}
-          <div
-            role="tabpanel"
-            id="builder-panel-history"
-            aria-labelledby="builder-tab-history"
-            hidden={tab !== "history"}
-            className="flex flex-col gap-4"
-          >
-          {/* Revisions, then the email log. The order forms used to sit
-              between them, which is how a manager came to find the one
-              thing the workshop needs filed under "History" -- a word that
-              promises a record of what happened, not a job to do. */}
-          {history ? (
-            <RevisionsSection
-              revisions={history.revisions}
-              documentId={document.id}
-              currency={document.currency}
-              currencySymbol={document.currencySymbol}
-            />
-          ) : null}
-
-          {history ? <EmailHistorySection emails={history.emails} /> : null}
-          </div>
-
-          {/* Order forms: what the workshop builds from, and only a FINAL
-              quote has any. The tab itself only exists then -- see
-              `builderTabsFor` -- so this panel is never rendered empty. */}
-          {builderTabs.includes("forms") ? (
-            <div
-              role="tabpanel"
-              id="builder-panel-forms"
-              aria-labelledby="builder-tab-forms"
-              hidden={tab !== "forms"}
-              className="flex flex-col gap-4"
-            >
-              {formsDocument ? <ProductionFormsSection document={formsDocument} /> : null}
-            </div>
-          ) : null}
+              /* Order forms: what the workshop builds from, and only a FINAL
+                 quote has any. The tab itself only exists then -- see
+                 `builderTabsFor`, and `formsDocument` is only read then --
+                 so `BuilderPanels` never has a Forms panel to show for a
+                 draft, whatever the URL says. */
+              forms: formsDocument ? <ProductionFormsSection document={formsDocument} /> : undefined,
+            }}
+          />
         </div>
 
         {/* Right column: readiness, then the money, then signing. Every card

@@ -4,8 +4,11 @@
  * `builder-tabs.tsx` is a client component (it needs `useSearchParams`), and
  * a `"use client"` module's exports cannot be *called* from a server
  * component, only rendered or passed as props. The quote page is a server
- * component and has to resolve `?tab=` before it decides which panel to mark
- * hidden, so the parser lives here where both sides can reach it.
+ * component and decides which tabs a quote has (`builderTabsFor`) from its
+ * status; the strip and the panel host (`builder-panels.tsx`) are both client
+ * components that resolve `?tab=` against that list with `parseTab`. Pure
+ * functions here, so the two sides agree by construction and the parsing is
+ * unit-tested without a browser or a database.
  */
 export type BuilderTab = "build" | "settings" | "forms" | "history";
 
@@ -44,4 +47,23 @@ export function parseTab(
   // not quietly land them on Build.
   const raw = first === "terms" ? "settings" : first;
   return available.some((tab) => tab !== "build" && tab === raw) ? (raw as BuilderTab) : "build";
+}
+
+/**
+ * The query string that puts `tab` in the URL, keeping every other parameter
+ * as it was. Build is the default view, so selecting it removes `?tab=`
+ * rather than writing `?tab=build`: the plain quote URL and "Build" are the
+ * same place, and a bookmark of one should equal a bookmark of the other.
+ * Returns "" when nothing is left, so the caller can append it to the
+ * pathname directly.
+ *
+ * Pure so the tab strip's one piece of URL logic is tested here rather than
+ * through `window.history`.
+ */
+export function builderTabSearch(currentSearch: string, tab: BuilderTab): string {
+  const next = new URLSearchParams(currentSearch);
+  if (tab === "build") next.delete("tab");
+  else next.set("tab", tab);
+  const query = next.toString();
+  return query ? `?${query}` : "";
 }

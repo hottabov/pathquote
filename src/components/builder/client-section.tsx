@@ -21,6 +21,7 @@ import {
 import { IndustryPicker, type IndustryOption } from "@/components/clients/industry-picker";
 import { setDocumentClient } from "@/lib/actions/documents";
 import { createCompanyInline, createContactInline } from "@/lib/actions/clients";
+import { listIndustriesForPicker } from "@/lib/actions/industries";
 import { clientLocation } from "@/lib/client-search";
 import type { ClientSearchCompany } from "@/lib/queries/client-search";
 
@@ -55,9 +56,12 @@ import type { ClientSearchCompany } from "@/lib/queries/client-search";
  * manager building a quote for a client that doesn't exist yet never has
  * to leave the document. On success the new entity is made the selected
  * company directly from what the action returned — no search round trip to
- * find it again — and immediately applied to the document via
- * `setDocumentClient`, same as picking an existing company/contact from the
- * selects. These two panels keep an explicit
+ * find it again. A new company is put on the document BY `createCompanyInline`
+ * itself (it takes `documentId` and sets the client in the same transaction
+ * as the create -- one request for one intent, where this used to follow the
+ * create with a second `setDocumentClient` call and a second render of the
+ * page); a new contact is applied through `setDocumentClient`, same as
+ * picking an existing one from the select. These two panels keep an explicit
  * "Create" button (creation is an intentional trigger, unlike an edit) —
  * everything else in the builder that got autosaved keeps that button
  * gone (see item-discount-field.tsx, document-discount-field.tsx,
@@ -73,12 +77,15 @@ import type { ClientSearchCompany } from "@/lib/queries/client-search";
  * it is edited on the company card at /clients. The "+ New company" panel
  * still offers it, since that panel *is* the company card for a company
  * that doesn't exist yet; creating a new industry stays on
- * /settings/industries.
+ * /settings/industries. The industry list is fetched when that panel opens
+ * (`listIndustriesForPicker`), not handed down by the page: the page used to
+ * serialise 31 industries and 282 aliases into every quote render for a
+ * panel most visits never open. Fetched once per mount and kept, so
+ * reopening the panel is instant.
  */
 export function ClientSection({
   documentId,
   initialCompany,
-  industries,
   initialContactId,
   readOnly = false,
 }: {
@@ -87,8 +94,6 @@ export function ClientSection({
    * `firstName` asc, or null when it has none yet. The only company this
    * component is handed: every other one comes from the search. */
   initialCompany: ClientSearchCompany | null;
-  /** The shared Industry list, for the "+ New company" panel's picker. */
-  industries: IndustryOption[];
   initialContactId: string | null;
   readOnly?: boolean;
 }) {
@@ -116,6 +121,31 @@ export function ClientSection({
   }, [picking, selectedCompany]);
 
   const [showCompanyForm, setShowCompanyForm] = useState(false);
+  // The industry list for the panel's picker: `null` until the first time
+  // the panel opens, then kept for the life of this mount. `industriesError`
+  // is the one failure the user can do something about (retry); it is
+  // cleared by the retry itself.
+  const [industries, setIndustries] = useState<IndustryOption[] | null>(null);
+  const [industriesError, setIndustriesError] = useState<string | null>(null);
+  const [industriesAttempt, setIndustriesAttempt] = useState(0);
+  useEffect(() => {
+    if (!showCompanyForm || industries !== null) return;
+    let cancelled = false;
+    listIndustriesForPicker().then(
+      (rows) => {
+        if (!cancelled) setIndustries(rows);
+      },
+      () => {
+        if (!cancelled) setIndustriesError("Couldn't load the industry list.");
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+    // `industriesAttempt` is here on purpose: bumping it is how "Try again"
+    // re-runs this fetch.
+  }, [showCompanyForm, industries, industriesAttempt]);
+
   const [showMoreCompanyFields, setShowMoreCompanyFields] = useState(false);
   const [companyForm, setCompanyForm] = useState<CompanyFieldValues>(emptyCompanyFields);
   const [companyIndustryId, setCompanyIndustryId] = useState<string | null>(null);
@@ -202,8 +232,10 @@ export function ClientSection({
     setCompanyFormError(null);
     setCompanyFormPending(true);
     // `CompanyFieldValues` and `CompanyInlineInput` carry the same fields
-    // under the same names, so the whole form goes over as-is.
-    const result = await createCompanyInline({ ...companyForm, industryId: companyIndustryId });
+    // under the same names, so the whole form goes over as-is. The document
+    // id goes with it: the action puts the new company on the draft in the
+    // same transaction, so there is no `runSetClient` to follow this with.
+    const result = await createCompanyInline({ ...companyForm, industryId: companyIndustryId }, documentId);
     setCompanyFormPending(false);
 
     if ("error" in result) {
@@ -214,6 +246,8 @@ export function ClientSection({
     // Selected straight from what the action returned. It never goes through
     // the search, so it does not matter that the current results do not
     // contain it (and the next time the picker opens it is fetched afresh).
+    // The server has already assigned it, and the revalidation the action
+    // ran brings the page's own copy of the document into line.
     setSelectedCompany({
       id: result.company.id,
       name: result.company.name,
@@ -223,10 +257,10 @@ export function ClientSection({
       contacts: [],
     });
     setContactId("");
+    setError(null);
     refocusChange.current = true;
     setPicking(false);
     closeCompanyForm();
-    runSetClient(result.company.id, "");
     toast.success(`${result.company.name} created`);
   }
 
@@ -337,15 +371,49 @@ export function ClientSection({
                 <CompanyField binding={companyBinding} field="country" />
                 <CompanyField binding={companyBinding} field="website" className="sm:col-span-2" />
                 <FieldRow label="Industry" htmlFor="inline-company-industry" className="sm:col-span-2">
-                  <IndustryPicker
-                    id="inline-company-industry"
-                    industries={industries}
-                    selectedId={companyIndustryId}
-                    onChange={setCompanyIndustryId}
-                    allowCreate={false}
-                    usageCount={null}
-                    canRename={false}
-                  />
+                  {industries !== null ? (
+                    <IndustryPicker
+                      id="inline-company-industry"
+                      industries={industries}
+                      selectedId={companyIndustryId}
+                      onChange={setCompanyIndustryId}
+                      allowCreate={false}
+                      usageCount={null}
+                      canRename={false}
+                    />
+                  ) : industriesError ? (
+                    // The field's slot, holding the failure and the way out
+                    // of it, so the rest of the form stays usable: an
+                    // industry is optional and the company can be created
+                    // without one.
+                    <div className="flex min-h-11 items-center gap-3 text-sm">
+                      <p role="alert" className="text-destructive">
+                        {industriesError}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIndustriesError(null);
+                          setIndustriesAttempt((n) => n + 1);
+                        }}
+                        className="focus-ring rounded-md text-xs font-medium text-brand hover:underline"
+                      >
+                        Try again
+                      </button>
+                    </div>
+                  ) : (
+                    // Same box as the picker's own input, disabled, so the
+                    // form does not jump when the list arrives (a round trip
+                    // measured in tens of milliseconds, but visible).
+                    <input
+                      id="inline-company-industry"
+                      type="text"
+                      disabled
+                      aria-busy="true"
+                      placeholder="Loading industries…"
+                      className={fieldInputClass}
+                    />
+                  )}
                 </FieldRow>
               </div>
 
