@@ -1,4 +1,5 @@
 import { readActLinkLists } from "@/lib/act/user-link-read";
+import { db } from "@/lib/db";
 import {
   actUnreachableMessage,
   actUserLabel,
@@ -69,7 +70,7 @@ export function ActUserLinkSectionFallback({
  * could not be reached, and disables the controls.
  */
 export async function ActUserLinkSection({ userName, storedActUserId, storedAccountMgr, action }: Props) {
-  const lists = await readActLinkLists();
+  const lists = await readActLinkLists(db);
 
   if (!lists.ok) {
     const current = describeCurrentLink({ storedActUserId, storedAccountMgr, actUsers: null, loginName: lists.loginName });
@@ -113,6 +114,18 @@ export async function ActUserLinkSection({ userName, storedActUserId, storedAcco
   return (
     <div className="flex flex-col gap-4">
       <CurrentLink actUser={current.actUser} accountMgr={current.accountMgr} />
+      {/* The lists come from the background job's snapshot, not from ACT! on
+          this request (src/lib/act/user-link-read.ts); say how old they are
+          so a user added in ACT! a minute ago is not reported as missing. */}
+      <p className="text-xs text-slate-500">
+        ACT!&apos;s user list as read at{" "}
+        {new Date(lists.readAt).toLocaleString("en-AU", {
+          timeZone: "Australia/Melbourne",
+          dateStyle: "medium",
+          timeStyle: "short",
+        })}{" "}
+        (Melbourne); refreshed in the background about every hour.
+      </p>
       <ActUserLinkForm
         action={action}
         actUserOptions={buildActUserOptions(lists.actUsers, lists.repItems, storedActUserId)}

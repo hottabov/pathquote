@@ -571,7 +571,7 @@ the backups are (install lines below). One script, one schedule:
 | Unit | `pq-act-sync.timer` → `pq-act-sync.service` → `pq-act-sync.sh` |
 | When | daily 03:00 Australia/Melbourne, exactly on the hour |
 | Runs | `docker compose run --rm -T tools npm run act:sync -- --trigger=schedule` in `/opt/pathquote`, with `TAG` exported from `git rev-parse HEAD` |
-| Sends | first, the quotes queued for ACT! (§4d), if sending is switched on — at 03:00 normally none, because the 15-minute drain has sent them through the day |
+| Sends | first, the quotes queued for ACT! (§4d), if sending is switched on — at 03:00 normally none, because the five-minute drain has sent them through the day |
 | Reads | then, what changed in ACT! since the stored position — one night of edits is a page or two of 200 contacts, a few seconds |
 | Log | `/var/log/pq-act-sync.log`, one `act:sync start`/`act:sync ok` line per run, both naming the image SHA |
 | Record | every run writes itself into a `Setting` row, shown at `/settings/act-sync` — what its drain sent included |
@@ -858,9 +858,20 @@ is a full write; it detects that and refuses.
 
 ### "Sync now", and what bounds it
 
+**Since 2026-10-16 the button no longer runs the sync.** It records a request
+(`Setting` row `act.sync.requested`) and the drain's timer -- now every five
+minutes -- runs the sync at its next tick and clears the row
+(`scripts/act-drain.ts`, `src/lib/act/sync-request.ts`). The page says
+"Requested at … waiting for the background job" until the run's own record
+replaces it. Nothing below about nginx's 60 seconds applies to the button any
+more; it is kept for the record. The same tick also refreshes the snapshot of
+ACT!'s users and Rep list that the user pages read (`Setting` row
+`act.linkLists`, refreshed when older than an hour), so no page reads ACT!
+live. The audit that led here: docs/technical-audit/PRODUCTION.md.
+
 The button on `/settings/act-sync` first sends the quotes queued for ACT!, if
 sending is switched on, for at most 20 seconds (`SYNC_NOW_DRAIN_BUDGET_MS` in
-`src/lib/act/sync-drain-lock.ts`; what is left goes with the 15-minute drain),
+`src/lib/act/sync-drain-lock.ts`; what is left goes with the five-minute drain),
 then runs the same delta, recorded as a run by hand. It does not wait for the
 drain's lock: when another drain has it, the press starts nothing, records
 nothing, and says in amber "Quotes are being sent to ACT! right now, so the sync
@@ -969,7 +980,7 @@ three send nothing while the switch is off:
 | | When | Runs in | Log |
 |---|---|---|---|
 | The fast path | straight after the finalise, signature or acceptance, for that one quote | the `app` container | `docker compose logs app` |
-| `pq-act-drain.timer` → `pq-act-drain.service` → `pq-act-drain.sh` | every 15 minutes, on the quarter hour, every row that is due | `docker compose run --rm -T tools npm run act:drain` in `/opt/pathquote`, `TAG` from `git rev-parse HEAD` | `/var/log/pq-act-drain.log` |
+| `pq-act-drain.timer` → `pq-act-drain.service` → `pq-act-drain.sh` | every 5 minutes, on the quarter hour, every row that is due | `docker compose run --rm -T tools npm run act:drain` in `/opt/pathquote`, `TAG` from `git rev-parse HEAD` | `/var/log/pq-act-drain.log` |
 | The nightly sync, and **Sync now** (§4c) | at the start of every run that writes, before it reads ACT! | as §4c | `/var/log/pq-act-sync.log`, and the app's for Sync now |
 
 One drain at a time: a Postgres advisory lock (`DRAIN_LOCK_KEY`, 8472002, in
@@ -990,7 +1001,7 @@ section 11).
    section installs. `git log -1 --oneline` on the VPS names the commit.
 
 2. **Install the units** ("Installing or updating from the repository",
-   below). The drain then runs every 15 minutes and, the switch being off, logs
+   below). The drain then runs every 5 minutes and, the switch being off, logs
    `switched off -- sending to ACT! is off (Setting act.write.enabled), so nothing was sent`
    with how many due rows wait, and exits 0. That is expected.
 
@@ -1045,7 +1056,7 @@ section 11).
    | 6 | Product lines come back with an `itemNumber` property, read off the first of 50 opportunities that has any | a line without it: the drain could never find its own line again, and could create a second — the deal's amount doubled | no opportunity with products: inconclusive |
    | 7 | `GET /api/contacts/{id}/history` with the History lookup's `regarding eq` filter: no rows for a made-up regarding, on a contact that has History | — | the filter ignored or refused: the drain reads the contact's whole History instead, and for a contact with 1,000 or more refuses it as a full page, so that quote's History — and the win and promotion after it — wait |
    | 8 | The switch, and every unfinished row, by quote number | — | switch off with rows queued (step 5), or switch on with a row held |
-   | 9 | The 15-minute drain | — | — (INFO: the `tools` container cannot see systemd; it says what to run on the host) |
+   | 9 | The five-minute drain | — | — (INFO: the `tools` container cannot see systemd; it says what to run on the host) |
    | 10 | What is copied from ACT! by hand ("Things copied from ACT! by hand", below) | a stage gone, or in another process | a stage renamed or renumbered, the name length or a picklist id changed, or the metadata unreadable |
 
    A read that fails is a FAIL, "could not be checked": for checks 5 to 7 the
@@ -1105,7 +1116,7 @@ its first two. Then, as real quotes allow:
 - [ ] A FINAL quote with no contact: its card says **Held back from ACT!**, and
       why, rather than failing in silence.
 - [ ] A quote finalised while sending is switched off: it finalises, its card
-      says it is waiting, and the first 15-minute pass after switching on sends
+      says it is waiting, and the first five-minute pass after switching on sends
       it. (The plan's version — stop ACT!, or point `ACT_BASE` at a closed
       port — proves the same for an outage, at the cost of restarting
       production's app; the switch is the safe form.)
@@ -1146,7 +1157,7 @@ again before each call it makes to ACT!, so turning it off stops a pass
 **between calls**: a call already on its way finishes, and its result is
 stored. The queue is left exactly as it is. Finalising, signing and accepting go
 on queueing while it is off, and switching it back on sends what queued — at
-the next 15-minute pass, or a quote's own next event.
+the next five-minute pass, or a quote's own next event.
 
 ### Installing or updating from the repository
 
@@ -1167,7 +1178,7 @@ systemctl enable --now pq-act-drain.timer
 changed with the drain: the script learned the drain's wording, its log and the
 once-a-day stamp ("Alerts", below). Install only the drain's own three files
 and a drain failure emails as a unit the script knows nothing about, with no
-log, and every 15 minutes rather than once a day. The stamp
+log, and every 5 minutes rather than once a day. The stamp
 directory is also made by the script on its first drain alert; made here, it is
 never the question.
 
@@ -1219,7 +1230,7 @@ already over 10M is one it says it would rotate.
 if missing — each time it starts the unit, for that run's processes alone; and
 every unit is `Type=oneshot`, so nothing holds the file between runs. Once
 logrotate has renamed a log, the next run writes a fresh file at the old name.
-A run going at that moment — the drain, every 15 minutes, is the likeliest —
+A run going at that moment — the drain, every 5 minutes, is the likeliest —
 ends in the renamed file, `pq-act-drain.log.1`, which `delaycompress` leaves
 uncompressed until the rotation after. The one cost is the failure email, which
 tails 40 lines by the log's name: for a run that started before a rotation and
@@ -1273,7 +1284,7 @@ send is under way.
 | Held because (`blockedBy`) | Do | What happens next |
 |---|---|---|
 | ACT! refused the write — the reason quotes ACT!'s own words (`act`) | Put right in ACT! what it objected to — a country missing from the list, an Account Mgr off the Rep picklist, a permission — then **Try again now** | The same step goes again. Pressed before ACT! is put right, it is refused and held again |
-| ACT! has more than one opportunity, or product line, for this quote (`drain`) | Remove the extra records in ACT! by hand: PathQuote never deletes in ACT! | The 15-minute passes look again by themselves, up to 10 such quotes a pass, and the quote goes on once one is left; **Try again now** looks now |
+| ACT! has more than one opportunity, or product line, for this quote (`drain`) | Remove the extra records in ACT! by hand: PathQuote never deletes in ACT! | The five-minute passes look again by themselves, up to 10 such quotes a pass, and the quote goes on once one is left; **Try again now** looks now |
 | PathQuote cannot read the finalised copy (`revision`) | The developer fixes it; **Try again now** only after that | The copy is read again |
 | The quote has no contact, its contact has no name, and the like (empty) | Fix it in PathQuote, as the reason says | The next pass sees the fix and sends it; there is no button, and none is needed |
 | PathQuote asked ACT! to create the contact and never heard whether it did (`contact`) | Look in ACT! for the person, by name and email, created around when the quote was sent. Found: **ACT! has this person**, with their ACT! contact id. Not there: **ACT! has nobody** | Found: PathQuote reads that id back from ACT! first, links nothing unless ACT! has the contact and their name or email matches, then links them and sends every quote held on them. Not there: the next send creates them |
@@ -1307,7 +1318,7 @@ docker compose logs app 2>&1 | grep -A 8 'whose id PathQuote could not store'
 grep -A 8 'whose id PathQuote could not store' /var/log/pq-act-drain.log /var/log/pq-act-sync.log
 ```
 
-The fast path and Sync now log in the app; the 15-minute drain and the nightly
+The fast path and Sync now log in the app; the five-minute drain and the nightly
 sync in their own logs. No such line for the contact — no answer, a 5xx, a 408;
 the log says `act: ACT! may have created this contact` for those — means
 PathQuote never had an id: look for the person in ACT! by name and email.
@@ -1345,7 +1356,7 @@ If ACT! holds nobody, release the hold, and the next pass creates them:
 docker compose exec -T postgres psql -U pathquote -d pathquote -c "UPDATE \"Contact\" SET \"actCreateInFlightAt\" = NULL WHERE id = '<contact id>' AND \"actContactId\" IS NULL;"
 ```
 
-After any of these, nothing else is needed: the next full pass — the 15-minute
+After any of these, nothing else is needed: the next full pass — the five-minute
 drain, or the nightly sync's — re-plans every held row, finds the contact
 settled, and sends every quote on it. (The buttons also make those quotes due
 at once; the SQL leaves that to the pass.)
@@ -1378,7 +1389,7 @@ WHERE l.locktype = 'advisory'
   AND l.granted;"
 ```
 
-A drain that is working holds it briefly — a fast path for seconds, a 15-minute
+A drain that is working holds it briefly — a fast path for seconds, a five-minute
 pass for 10 minutes at the very worst — and the nightly sync for its whole run.
 A `backend_start` older than any of those is the dead session: end it with
 §4c's `pg_terminate_backend`, its pid in place of `<pid>`.

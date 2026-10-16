@@ -1,5 +1,5 @@
 [Unit]
-Description=PathQuote ACT! drain: queued quotes sent to the CRM, every 15 minutes
+Description=PathQuote ACT! drain: queued quotes sent to the CRM, a requested sync run, ACT! lists refreshed -- every 5 minutes
 
 [Timer]
 # On the quarter hour, all day. What this buys is the drain's backoff
@@ -28,7 +28,7 @@ Description=PathQuote ACT! drain: queued quotes sent to the CRM, every 15 minute
 # sync wait for it, not fail: the sync waits up to 15 minutes for the drain's
 # lock (DRAIN_LOCK_WAIT_MS in src/lib/act/sync.ts), and a pass is over in
 # about 10 at worst.
-OnCalendar=*:0/15
+OnCalendar=*:0/5
 # No Persistent=true. A tick missed while the box was down needs no catch-up
 # run: the next one is at most 15 minutes away, and it drains everything due
 # whenever it comes.

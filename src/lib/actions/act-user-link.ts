@@ -52,7 +52,7 @@ export async function setUserActLink(userId: string, formData: FormData): Promis
   const target = await db.user.findUnique({ where: { id: idParsed.data }, select: { id: true } });
   if (!target) return { error: NOT_FOUND_ERROR };
 
-  const lists = await readActLinkLists();
+  const lists = await readActLinkLists(db);
   if (!lists.ok) return { error: actUnreachableMessage(lists.reason) };
 
   const holders = parsed.value.actUserId

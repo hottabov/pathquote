@@ -10,6 +10,7 @@ import { db } from "@/lib/db";
 import { readActWriteSwitch } from "@/lib/act/drain";
 import { BLOCKED_BY } from "@/lib/act/drain-rules";
 import { LAST_RUN_KEY, parseStoredRun, type ActSyncRun } from "@/lib/act/run-record";
+import { readSyncRequest } from "@/lib/act/sync-request";
 import { isSyncRunning, readCursor } from "@/lib/act/sync";
 import { HELD_QUOTES_LISTED } from "@/lib/act/sync-view";
 import { isAdminRole } from "@/lib/roles";
@@ -63,6 +64,9 @@ export type ActOutboxStanding = {
 };
 
 export type ActSyncStatus = {
+  /** When somebody pressed Sync now and the background job has not yet
+   * picked it up (src/lib/act/sync-request.ts); null otherwise. */
+  requestedAt: Date | null;
   /** The last run, or null when none has been recorded or the record cannot be read. */
   lastRun: ActSyncRun | null;
   /**
@@ -188,8 +192,10 @@ export async function getActSyncStatus(user: ScopeUser): Promise<ActSyncStatus> 
   const outbox = await readOutboxStanding(user);
 
   const lastRun = row ? parseStoredRun(row.value) : null;
+  const request = await readSyncRequest(db);
 
   return {
+    requestedAt: request ? new Date(request.at) : null,
     lastRun,
     lastRunUnreadable: row !== null && lastRun === null,
     running,

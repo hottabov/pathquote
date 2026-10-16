@@ -1,34 +1,36 @@
-// The I/O half of linking a PathQuote user to an ACT! user by hand: read
-// ACT!'s user list and its Rep picklist, within a short budget, and never
-// throw. Every decision about what was read is in src/lib/act/user-link.ts.
+// The I/O half of linking a PathQuote user to an ACT! user by hand.
 //
-// Called by the ACT! section of the user page (which must not take the rest of
-// the page down with it -- ACT! answers only the production VPS) and by
-// setUserActLink, which re-reads both lists before it writes rather than
-// trusting what the browser was shown.
+// ACT!'s user list and its Rep picklist are read FROM A SNAPSHOT in the
+// database, never from ACT! on a request. Until 2026-10-16 the user page read
+// both lists live on every render and `setUserActLink` read them again before
+// every write: ACT! answers the VPS in 1-2 s per call, so the page took 6-10 s
+// and a save 6-11 s (production nginx log). The owner's rule is that nothing
+// reads from ACT! on a user's request. The periodic drain (scripts/act-drain.ts,
+// every five minutes) refreshes the snapshot when it is older than
+// ACT_LINK_LISTS_MAX_AGE_MS; the page and the action read the row and nothing
+// else. Every decision about what was read is in src/lib/act/user-link.ts.
+// The database client is a parameter so this module (and its test) never
+// builds the pool on import.
 
+import type { Prisma, PrismaClient } from "@prisma/client";
 import { actReaderFromEnv, REP_PICKLIST_ID, type ActRequestLimits } from "@/lib/act/client";
-import {
-  ACT_USER_LINK_DEADLINE_MS,
-  ActUserLinkDeadlineError,
-  actUnreachableReason,
-  type ActUserRow,
-  type RepPicklistItem,
-} from "@/lib/act/user-link";
+import { ACT_USER_LINK_DEADLINE_MS, type ActUserRow, type RepPicklistItem } from "@/lib/act/user-link";
 
-/**
- * One attempt per request, and under the overall deadline: a person is
- * waiting on the page, and a second attempt would only double the wait for an
- * ACT! that is not answering (the same reasoning as ACT_CONTACT_CHECK_LIMITS
- * in src/lib/act/outbox-admin.ts). The deadline, not these, is what bounds the
- * whole read; a request still running when it passes is a GET, and is simply
- * abandoned.
- */
+export const ACT_LINK_LISTS_KEY = "act.linkLists";
+
+/** A snapshot older than this is read again at the next drain tick. An
+ *  administrator's user table and a picklist change a few times a year. */
+export const ACT_LINK_LISTS_MAX_AGE_MS = 60 * 60 * 1000;
+
+/** One attempt per read, under the deadline, as before: this runs in the
+ *  background now, but a hung ACT! should still not hold the drain. */
 const ACT_USER_LINK_LIMITS: ActRequestLimits = { timeoutMs: ACT_USER_LINK_DEADLINE_MS, attempts: 1 };
 
 export type ActLinkLists =
-  | { ok: true; loginName: string | null; actUsers: ActUserRow[]; repItems: RepPicklistItem[] }
+  | { ok: true; loginName: string | null; actUsers: ActUserRow[]; repItems: RepPicklistItem[]; readAt: string }
   | { ok: false; loginName: string | null; reason: string };
+
+export type StoredActLinkLists = { readAt: string; actUsers: ActUserRow[]; repItems: RepPicklistItem[] };
 
 /** ACT_USER as set, for "owned by <login>". Read from the environment rather
  *  than the client so it is known even when the client cannot be built. */
@@ -36,15 +38,42 @@ function loginNameFromEnv(): string | null {
   return process.env.ACT_USER?.trim() || null;
 }
 
-function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new ActUserLinkDeadlineError(ms)), ms);
-  });
-  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+/** The reason the page shows while no snapshot exists -- a fresh install, or
+ *  a drain that has not run since this code shipped. */
+export const ACT_LINK_LISTS_NOT_READ_YET = "ACT!'s user list has not been read yet; the background job reads it every few minutes";
+
+type SettingClient = Pick<PrismaClient, "setting">;
+
+/** The stored lists, or null when the row is missing or does not parse. */
+export function parseStoredActLinkLists(value: unknown): StoredActLinkLists | null {
+  const record = value as { readAt?: unknown; actUsers?: unknown; repItems?: unknown } | null;
+  if (!record || typeof record !== "object") return null;
+  if (typeof record.readAt !== "string" || !Array.isArray(record.actUsers) || !Array.isArray(record.repItems)) return null;
+  return {
+    readAt: record.readAt,
+    actUsers: record.actUsers as ActUserRow[],
+    repItems: record.repItems as RepPicklistItem[],
+  };
 }
 
-async function readBoth(): Promise<{ actUsers: ActUserRow[]; repItems: RepPicklistItem[] }> {
+/**
+ * ACT!'s users and Rep items as last read by the background job, or why they
+ * are not available. Never throws, and never calls ACT!.
+ */
+export async function readActLinkLists(client: SettingClient): Promise<ActLinkLists> {
+  const loginName = loginNameFromEnv();
+  try {
+    const row = await client.setting.findUnique({ where: { key: ACT_LINK_LISTS_KEY } });
+    const stored = row ? parseStoredActLinkLists(row.value) : null;
+    if (!stored) return { ok: false, loginName, reason: ACT_LINK_LISTS_NOT_READ_YET };
+    return { ok: true, loginName, ...stored };
+  } catch (error) {
+    console.warn("act user link: could not read the stored ACT! lists", error);
+    return { ok: false, loginName, reason: "the stored ACT! lists could not be read" };
+  }
+}
+
+async function readBothFromAct(): Promise<Omit<StoredActLinkLists, "readAt">> {
   const reader = actReaderFromEnv(ACT_USER_LINK_LIMITS);
   // One after the other: the client logs in on its first request, and two at
   // once would log in twice.
@@ -69,59 +98,31 @@ async function readBoth(): Promise<{ actUsers: ActUserRow[]; repItems: RepPickli
 }
 
 /**
- * How long a successful read is reused before ACT! is asked again. The
- * production nginx log of 2026-10-16 showed what reading live costs: ACT!
- * answers the VPS in 1-2 s per request (TCP 0.25 s, TLS 0.8 s, then the
- * query), two requests in sequence here, so every open of a user page and --
- * worse -- every save of the ACT! link (setUserActLink re-reads before it
- * writes, then the page re-renders and reads a third time) took 6-11 s. The
- * two lists are an administrator's user table and a picklist; ten minutes of
- * staleness means a user added in ACT! this minute is offered after lunch,
- * which is a fair trade for a page that opens at once.
+ * Reads both lists from ACT! and stores them. For the background job only
+ * (scripts/act-drain.ts); throws on an ACT! failure so the caller can log it,
+ * leaving the previous snapshot in place.
  */
-const ACT_LINK_LISTS_TTL_MS = 10 * 60 * 1000;
-
-/** A failed read is not retried on every request either: ACT! being down is
- * a condition that lasts minutes, and each attempt costs the deadline. */
-const ACT_LINK_LISTS_FAILURE_TTL_MS = 30 * 1000;
-
-let cached: { lists: ActLinkLists; expiresAt: number } | null = null;
-let inFlight: Promise<ActLinkLists> | null = null;
-
-async function readUncached(): Promise<ActLinkLists> {
-  const loginName = loginNameFromEnv();
-  try {
-    const lists = await withDeadline(readBoth(), ACT_USER_LINK_DEADLINE_MS);
-    return { ok: true, loginName, ...lists };
-  } catch (error) {
-    console.warn("act user link: could not read ACT!'s users or Rep list", error);
-    return { ok: false, loginName, reason: actUnreachableReason(error) };
-  }
+export async function refreshActLinkLists(client: SettingClient, now: Date = new Date()): Promise<StoredActLinkLists> {
+  const lists = await readBothFromAct();
+  const value: StoredActLinkLists = { readAt: now.toISOString(), ...lists };
+  await client.setting.upsert({
+    where: { key: ACT_LINK_LISTS_KEY },
+    create: { key: ACT_LINK_LISTS_KEY, value: value as unknown as Prisma.InputJsonValue },
+    update: { value: value as unknown as Prisma.InputJsonValue },
+  });
+  return value;
 }
 
-/**
- * ACT!'s users and Rep items, or why they could not be read. Never throws.
- * Served from a process-wide cache for ACT_LINK_LISTS_TTL_MS after a
- * successful read (ACT_LINK_LISTS_FAILURE_TTL_MS after a failed one), and
- * concurrent callers share one read rather than logging in to ACT! twice.
- */
-export async function readActLinkLists(): Promise<ActLinkLists> {
-  const now = Date.now();
-  if (cached && cached.expiresAt > now) return cached.lists;
-  if (inFlight) return inFlight;
-  inFlight = readUncached()
-    .then((lists) => {
-      cached = { lists, expiresAt: Date.now() + (lists.ok ? ACT_LINK_LISTS_TTL_MS : ACT_LINK_LISTS_FAILURE_TTL_MS) };
-      return lists;
-    })
-    .finally(() => {
-      inFlight = null;
-    });
-  return inFlight;
-}
-
-/** Drops the cache, so the next read asks ACT! again. For tests and for an
- * administrator's "refresh" should one ever be added. */
-export function forgetActLinkLists(): void {
-  cached = null;
+/** Refreshes only when the snapshot is missing or older than `maxAgeMs`.
+ *  Returns what it did, for the job's log line. */
+export async function refreshActLinkListsIfStale(
+  client: SettingClient,
+  maxAgeMs: number = ACT_LINK_LISTS_MAX_AGE_MS,
+  now: Date = new Date(),
+): Promise<"fresh" | "refreshed"> {
+  const row = await client.setting.findUnique({ where: { key: ACT_LINK_LISTS_KEY } });
+  const stored = row ? parseStoredActLinkLists(row.value) : null;
+  if (stored && now.getTime() - Date.parse(stored.readAt) < maxAgeMs) return "fresh";
+  await refreshActLinkLists(client, now);
+  return "refreshed";
 }

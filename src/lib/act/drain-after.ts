@@ -34,7 +34,7 @@ import { drainActOutbox, readActWriteSwitch } from "@/lib/act/drain";
 /** How long the fast path may spend before leaving the row to the periodic drain. */
 const IN_REQUEST_DRAIN_BUDGET_MS = 20_000;
 
-const ROW_WAITS = "the row waits for the next drain that reaches it (the 15-minute drain, the nightly sync's, or the quote's next event)";
+const ROW_WAITS = "the row waits for the next drain that reaches it (the five-minute drain, the nightly sync's, or the quote's next event)";
 
 /** After the response, drain `documentId`'s row; `event` names the caller in the log. */
 export function drainAfterResponse(

@@ -36,6 +36,10 @@ import "dotenv/config";
 import { actClientFromEnv, type ActClient } from "../src/lib/act/client";
 import { describeDatabase } from "../src/lib/act/cli-args";
 import { drainActOutbox, type DrainResult } from "../src/lib/act/drain";
+import { SyncAlreadyRunningError, syncContacts } from "../src/lib/act/sync";
+import { takeSyncRequest } from "../src/lib/act/sync-request";
+import { refreshActLinkListsIfStale } from "../src/lib/act/user-link-read";
+import { db } from "../src/lib/db";
 import {
   ALERT_REARM_LINE,
   drainExitStatus,
@@ -146,6 +150,42 @@ async function main(): Promise<void> {
   // nothing else (drainRearmsAlert says why exit 0 alone is not enough).
   if (drainRearmsAlert(result)) console.log(ALERT_REARM_LINE);
   process.exitCode = drainExitStatus(result);
+
+  // The two background jobs this tick also carries (2026-10-16, both moved
+  // out of the web process so that nothing reads ACT! on a user's request):
+  // a "Sync now" request left by the settings page, and the snapshot of
+  // ACT!'s users and Rep list the user page reads. Neither changes the exit
+  // status above: the drain is what this unit is for, and both leave their
+  // own trace -- the sync its run record, the refresh a log line.
+  if (!args.documentId) {
+    await runRequestedSync(client);
+    await refreshLinkLists();
+  }
+}
+
+async function runRequestedSync(client: ActClient): Promise<void> {
+  try {
+    const request = await takeSyncRequest(db);
+    if (!request) return;
+    console.log(`sync requested at ${request.at} by user ${request.byUserId || "?"} -- running it now`);
+    const result = await syncContacts(client, { trigger: "manual", waitForDrainLock: true });
+    console.log(`sync done: ${result.failed} failed`);
+  } catch (error) {
+    if (error instanceof SyncAlreadyRunningError) {
+      console.log(`sync requested, but one is already running: ${error.message}`);
+      return;
+    }
+    console.error("act:drain: the requested sync failed", error);
+  }
+}
+
+async function refreshLinkLists(): Promise<void> {
+  try {
+    const outcome = await refreshActLinkListsIfStale(db);
+    if (outcome === "refreshed") console.log("ACT! user and Rep lists refreshed for the user pages");
+  } catch (error) {
+    console.error("act:drain: could not refresh ACT!'s user and Rep lists; the previous snapshot stays", error);
+  }
 }
 
 main().catch((error) => {

@@ -1,238 +1,36 @@
 "use server";
 
 import { requireActSync } from "@/lib/authz";
-import { actClientFromEnv } from "@/lib/act/client";
-import { FAILED_CONTACTS_DETAIL, messageOf } from "@/lib/act/run-record";
-import { DrainBusyError, SyncAlreadyRunningError, syncContacts } from "@/lib/act/sync";
-import { SYNC_NOW_DRAIN_BUDGET_MS } from "@/lib/act/sync-drain-lock";
-import { plural } from "@/lib/plural";
+import { messageOf } from "@/lib/act/run-record";
 import { revalidateActSync } from "@/lib/revalidate";
+import { requestSync } from "@/lib/act/sync-request";
+import { db } from "@/lib/db";
 import type { ActionResultWithWarning } from "./_shared";
 
-export type { ActionResultWithWarning };
-
 /**
- * Pull whatever has changed in ACT! since the stored cursor, now, because
- * somebody pressed the button rather than because the nightly timer fired.
+ * "Sync now": records a request that the background job honours at its next
+ * tick (scripts/act-drain.ts, every SYNC_REQUEST_PICKUP_MINUTES minutes).
+ *
+ * Until 2026-10-16 this ran `syncContacts` inside the server action -- 17-19 s
+ * per press in production's nginx log, on the pool every request shares, with
+ * nginx's 60 s `proxy_read_timeout` as the ceiling on a bad night (the long
+ * note that used to live here is in git history, 12a146a^). The owner's rule
+ * since the audit is that nothing reads from or writes to ACT! on a user's
+ * request; see src/lib/act/sync-request.ts. The page, revalidated below, says
+ * "requested" until the run's own record replaces it.
  *
  * `requireActSync`, not `requireAdmin`: a MANAGER may press this when an admin
- * has ticked `User.actSyncVisible` for them, and the point of that is the
- * manager who can see their own ACT! edit has not arrived and would otherwise
- * have to ask for it. What makes it safe to hand over is that there is nothing
- * here to get wrong -- the sync reads ACT!, its writes into PathQuote
- * fill blanks and never overwrite (`fillOnlyEmpty`, src/lib/act/merge.ts), the
- * advisory lock below means a second press cannot start a second run, and no
- * option is taken from the request (see the `trigger` comment inside).
- *
- * It also writes INTO ACT!: like every run that writes, it first sends the
- * quotes queued for ACT! (drainActOutbox, at the top of syncContacts in
- * src/lib/act/sync.ts), for at most SYNC_NOW_DRAIN_BUDGET_MS. That gives the
- * presser no reach of their own -- what it sends is the queue as it stands,
- * under the off switch, and the same rows the 15-minute drain would send
- * within the quarter hour anyway.
- *
- * Not the bare `requireSession` it was between 2026-10-10 and the per-user
- * grant, either, and this is the gate that makes the grant worth the name. A
- * server action is reachable by its id from anywhere; withholding the nav row
- * and the page from a distributor while leaving this callable would hide the
- * button rather than refuse it. There are now two callers to refuse: a signed-in
- * user without the grant, and an unauthenticated POST to this action's id,
- * which must not reach ACT! and for which this is the app's own answer rather
- * than the proxy's (see requireSession).
- *
- * `warning` rather than `error` for the three outcomes that are not this
- * caller's failure to report: a run that came back having dropped some
- * contacts, losing the lock race to a sync already going, and finding quotes
- * already being sent to ACT!. Everything else about this is the ordinary
- * action shape.
- *
- * HOW LONG THIS BLOCKS, which is the thing worth knowing before wiring a
- * button to it. A server action holds the request until it returns, and
- * Next.js dispatches a client's actions one at a time, so while this runs the
- * presser's other buttons queue behind it.
- *
- * The ordinary case is seconds: a night's worth of edits is a page or two of
- * 200 from ACT! (PAGE_SIZE, src/lib/act/client.ts) and a handful of rows
- * written per contact. The cases that are not seconds, with the numbers that
- * make them:
- *
- *   - A delta that has not run for a week, because the nightly job has been
- *     failing: a week of edits instead of a night of them. Larger, still
- *     bounded by how much anyone edits in a week.
- *   - A STORED CURSOR OF NULL. Then "delta" means every contact in ACT! --
- *     ~17,500, 88 pages -- without anybody passing `full`. This is the case
- *     that turns one click into a ten-minute import, and nothing in this file
- *     can see it coming; the Settings page can, because getActSyncStatus
- *     (src/lib/queries/act-sync.ts) returns the cursor for exactly this
- *     reason.
- *   - ACT! slow, or gone. One HTTP exchange is up to three attempts of a
- *     30-second timeout with 1s and 2s between them (REQUEST_TIMEOUT_MS,
- *     MAX_ATTEMPTS, RETRY_DELAY_MS in client.ts), so a single page can cost 93
- *     seconds and then either carry on or give up. Which way ACT! is gone
- *     decides which: a refused connection fails in moments and the run throws
- *     almost at once, where a host that swallows the connection instead -- the
- *     NAT rule withdrawn, the IIS box wedged -- costs the full 93 seconds for
- *     the very first request. ACT! merely slow is the expensive one, and it has
- *     two figures that are easy to confuse because they come from different
- *     arithmetic:
- *       - NOTHING RETRIES. Every page answers in 29 seconds, just inside the
- *         timeout, so every one succeeds first time: 88 x 29s is ~43 minutes.
- *       - EVERYTHING RETRIES. Each page's first two attempts time out and its
- *         third answers: 30 + 1 + 30 + 2 + 30 is 93 seconds, so 88 x 93s is
- *         ~2h16m. That is the ceiling -- the slowest a run can be and still
- *         finish -- and the 43 minutes is NOT it. Quote one or the other; the
- *         three-attempts-plus-backoff reasoning belongs to the 2h16m.
- *     No timeout anywhere in this app stops either of them.
- *   - NOT another drain going when it is pressed -- the 15-minute one, or a
- *     fast path after a finalise. The button does not wait for it (the
- *     nightly run does: DRAIN_LOCK_WAIT_MS in src/lib/act/sync.ts). It asks
- *     for the drain's lock once, before the run records anything, and finding
- *     it held comes back at once with DrainBusyError's sentence as a
- *     `warning`, last night's record untouched (drainLockApproach in
- *     src/lib/act/sync-drain-lock.ts says why).
- *   - The run's own drain, before the read: seconds when little is queued,
- *     up to SYNC_NOW_DRAIN_BUDGET_MS (20 seconds, in
- *     src/lib/act/sync-drain-lock.ts) and the step in flight when a backlog
- *     is. The rest of a backlog is left to the 15-minute drain, and the
- *     record says so.
- *
- * What bounds it is not in this repository: nginx's `proxy_read_timeout`, and
- * on the VPS that is 60 seconds. Measured 2026-10-10 rather than assumed --
- * the directive is set nowhere in the live configuration, 21,450 lines of it
- * with zero occurrences, so nginx's compiled-in default of 60s is what applies
- * (docs/runbook.md §4c, '"Sync now", and what bounds it', carries the two
- * commands for re-checking it after a WordOps update rewrites that generated
- * template). Neither the proxy block in runbook §3 nor the WordOps template
- * serving the live site sets a timeout. Nothing in the app narrows it either:
- * next.config.ts declares no `serverActions` limits, `maxDuration` means
- * nothing to a long-running `node server.js` behind a reverse proxy, and Node's
- * own response timeout is off by default. So at 60 seconds nginx stops waiting
- * and answers 504, and the browser gets a gateway error page where it expected
- * an action result -- the button reports a failure in whatever words the page's
- * error handling uses.
- *
- * The sync does not stop when that happens: nothing cancels a server action
- * because the client went away, so the process carries on, keeps the advisory
- * lock, and still writes its own record at the end. A reload then says
- * "Running now" and a later one says what changed; a second click meanwhile
- * loses the lock race and says so.
- *
- * Which is what makes this acceptable as it stands -- the ceiling is reached
- * by the page giving up on a run that goes on to succeed, not by work being
- * lost halfway. A job queue is the real answer to a button that can take two
- * hours and is not worth building for one whose ordinary case is seconds.
- * What is required instead is that the section around this button tells the
- * truth about the wait; and if 60 seconds turns out to bite in practice,
- * raising it is one `proxy_read_timeout` line in the site's own nginx override
- * directory -- nothing to edit, since nothing sets it today.
+ * has granted the section (`actSyncVisible`); the request carries their id.
  */
 export async function runActSyncNow(): Promise<ActionResultWithWarning> {
-  await requireActSync();
-
+  const session = await requireActSync();
   try {
-    // Credentials come from the container's environment, the same way
-    // scripts/act-sync.ts gets them. Nothing about which ACT! database to read
-    // or who to read it as is taken from the request: the button is a trigger,
-    // not a form.
-    const result = await syncContacts(actClientFromEnv(), {
-      // `trigger: "manual"` is the only option set, and in particular NOT
-      // `full: true`. The button runs the delta. A full re-read is ~17,500
-      // contacts and ten minutes or more of an HTTP request that somebody is
-      // watching, which is not a thing to put one click away; `npm run
-      // act:sync -- --full` is still there for the person who means it.
-      trigger: "manual",
-      // The button's two differences from the nightly run, both because
-      // nginx stops waiting after 60 seconds: it does not wait for a drain
-      // already going, and its own drain stops after 20 seconds. See the
-      // HOW LONG THIS BLOCKS note above.
-      waitForDrainLock: false,
-      drainTimeBudgetMs: SYNC_NOW_DRAIN_BUDGET_MS,
-    });
-
-    if (result.failed > 0) {
-      // The run came back, so the work it got through is saved -- a caveat on a
-      // save that succeeded, which is `warning` in its first sense. A plain `{}`
-      // here fires the panel's success toast over a run that dropped contacts,
-      // and whoever pressed it walks away believing it all went in.
-      //
-      // Everything after the count IS describeRun's failure detail -- the same
-      // const, not a copy of its words -- because the `finally` below
-      // revalidates and the section this toast sits on top of is about to say
-      // exactly this. Two wordings of one fact invite reading them as two
-      // different facts, and while this was a second copy held in step by a
-      // comment, nothing would have failed when one of them was reworded.
-      return {
-        warning: `${plural(result.failed, "contact", "contacts")} failed. ${FAILED_CONTACTS_DETAIL}`,
-      };
-    }
-
+    await requestSync(db, session.user.id);
     return {};
   } catch (error) {
-    if (error instanceof SyncAlreadyRunningError) {
-      // Not a failure: the nightly timer, or somebody else at the same
-      // button, is doing the work right now -- and with the section reaching
-      // past the admins, "somebody else" is a likelier reason than it was.
-      // The CLI reaches the same conclusion about the same error (see
-      // the catch at the bottom of scripts/act-sync.ts -- it exits 0 and
-      // explains itself), and this is the other half of that decision.
-      //
-      // Caught by type rather than by matching the message, for the reason the
-      // CLI gives: the message is written for this button. Which is also why
-      // it is returned as-is instead of being rewritten here -- there is one
-      // sentence for this event, it is declared next to the throw in
-      // src/lib/act/sync.ts, and a second copy in the action layer is how the
-      // two start disagreeing.
-      //
-      // Returned as `warning`, not `error`, so the page can say it without the
-      // red treatment reserved for something that needs fixing. This click
-      // saved nothing, which is the second of the two meanings `warning`
-      // carries -- not this caller's failure, and nothing for the reader to do;
-      // see the doc comment on ActionResultWithWarning in ./_shared.ts, which
-      // names this function as the example.
-      return { warning: error.message };
-    }
-    if (error instanceof DrainBusyError) {
-      // The same reasoning, one lock along: quotes are going to ACT! right
-      // now, which is the system working, and this click did nothing -- it
-      // threw before the start record, so the section beneath still shows
-      // the last run that happened. Amber, not red, and the sentence is the
-      // error's own (DRAIN_BUSY_MESSAGE in src/lib/act/sync-drain-lock.ts).
-      return { warning: error.message };
-    }
-
-    // A real failure -- a 401 from ACT!, the ACT_* variables missing from the
-    // container, the database refusing a write -- reaches the reader as its own
-    // message rather than being flattened into "something went wrong".
-    // Returned rather than rethrown because that is the only way the message
-    // itself arrives: a server action that throws reaches the browser as an
-    // opaque digest, and the sentence naming which of those three it was would
-    // be left in the log.
-    //
-    // Returning it does not swallow it, and for one of those three it does not
-    // even have to. A failure raised inside syncContacts once the start record
-    // had landed -- the 401, a contact write rejected mid-run -- has already
-    // had this same message written to the last-run record by the worker on its
-    // way out (the catch in syncContacts), which is what keeps the failure
-    // visible when this result never arrives: a 504'd click, a closed tab.
-    //
-    // The other two leave no record to find. actClientFromEnv() throws before
-    // syncContacts is entered, so a missing ACT_* variable never gets as far as
-    // the start record; and a database refusing writes is precisely the case
-    // where recordQuietly cannot store the failure either. For those the line
-    // below is the only trace there will be, which is why it carries the error
-    // itself and not just a sentence -- the stack survives in the service log.
-    console.error("act: the Sync now button's run failed", error);
+    console.error("act: the Sync now request could not be recorded", error);
     return { error: messageOf(error) };
   } finally {
-    // Every path that reached the sync, including the failures. A thrown run
-    // and a lost race both change what the page should say -- the first wrote a
-    // failure record, the second means another run is live -- and a press
-    // that found quotes being sent finds the queue the page counts moving
-    // under it, so the page is stale after every outcome, not just the good
-    // one. (requireActSync()
-    // redirects or throws above the try, so neither an unauthenticated caller
-    // nor one without the grant gets here; nothing changed for them to see,
-    // and there is no page of ours for them to be standing on.)
     revalidateActSync();
   }
 }

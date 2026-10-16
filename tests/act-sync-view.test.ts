@@ -54,6 +54,7 @@ function outbox(overrides: Partial<ActOutboxStanding> = {}): ActOutboxStanding {
 /** The status the query returns on an ordinary morning, before overrides. */
 function status(overrides: Partial<Parameters<typeof describeActSyncStatus>[0]> = {}) {
   return {
+    requestedAt: null,
     lastRun: run(),
     lastRunUnreadable: false,
     running: false,
@@ -220,9 +221,8 @@ describe("describeActSyncStatus — what the last run did", () => {
     if (view.runNow.kind !== "offer") throw new Error("unreachable");
     // The hint stands unchanged: a stored position means there IS a short list
     // of changes to fetch, which is the only claim it makes. What it must not
-    // do is say "a few seconds" beside a summary telling him to go to the
-    // server, and that half is gone.
-    expect(view.runNow.hint).toContain("Usually a few seconds");
+    // do is promise a wait beside a summary telling him to go to the server.
+    expect(view.runNow.hint).toContain("background job");
     expect(view.summary.detail).not.toContain("run on the server");
     // And the nightly hour is not transcribed a second time here: the schedule
     // card holds the only copy in the app (NIGHTLY_SCHEDULE), kept in step by
@@ -327,10 +327,22 @@ describe("describeActSyncStatus — the reload control", () => {
 describe("describeActSyncStatus — the Sync now button", () => {
   it("offers it, with what it does, once there is a stored position", () => {
     const view = describeActSyncStatus(status(), NOW);
+    // Since 2026-10-16 the button records a request that the background job
+    // runs at its next tick (src/lib/act/sync-request.ts); the hint says so,
+    // names the cadence, and never promises the browser will see it finish.
     expect(view.runNow).toEqual({
       kind: "offer",
-      hint: "Brings PathQuote up to date with the changes made in ACT! since the last sync. Usually a few seconds. Leave this page open while it works.",
+      hint: "Asks the background job to bring PathQuote up to date with the changes made in ACT! since the last sync. It runs within 5 minutes; reload this page to see the result. Nothing happens in your browser meanwhile.",
     });
+  });
+
+  it("says a request is waiting once one has been recorded, and when it was made", () => {
+    const view = describeActSyncStatus(status({ requestedAt: new Date("2026-10-10T00:02:00.000Z") }), NOW);
+    expect(view.runNow.kind).toBe("offer");
+    if (view.runNow.kind !== "offer") throw new Error("unreachable");
+    expect(view.runNow.hint).toContain("Requested at 10 Oct 2026, 11:02 am Melbourne time");
+    expect(view.runNow.hint).toContain("every 5 minutes");
+    expect(view.runNow.hint).toContain("Pressing again changes nothing");
   });
 
   it("withholds it entirely when nothing is stored", () => {
@@ -384,13 +396,12 @@ describe("describeActSyncStatus — the Sync now button", () => {
   });
 
   it("still offers it while a sync is running, and says what will happen", () => {
-    // Pressing it loses the advisory-lock race and comes back with the lock's
-    // own sentence, which is true and harmless -- so the button stays, and the
-    // hint says so in advance instead of letting him find out.
+    // Pressing it records a request the background job honours after the run
+    // that is going -- so the button stays, and the hint says so in advance.
     const view = describeActSyncStatus(status({ running: true }), NOW);
     expect(view.runNow.kind).toBe("offer");
     if (view.runNow.kind !== "offer") throw new Error("unreachable");
-    expect(view.runNow.hint).toContain("will not start a second one");
+    expect(view.runNow.hint).toContain("asks for another one after it");
   });
 });
 
@@ -429,7 +440,10 @@ describe("describeSyncAttempt", () => {
     // stored position moves past them anyway, and those counts reach neither
     // the record nor this page. What changed is in the section beneath.
     const attempt = describeSyncAttempt({ answered: true, result: {} });
-    expect(attempt).toEqual({ outcome: "done", message: "Sync finished." });
+    expect(attempt).toEqual({
+      outcome: "done",
+      message: "Sync requested. The background job runs it within 5 minutes; reload this page to see the result.",
+    });
     expect(attempt.message).not.toContain("up to date");
   });
 

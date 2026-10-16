@@ -49,6 +49,7 @@
 // compile error here rather than an `undefined` on the page.
 
 import { describeRun, type ActSyncRun, type RunDescription } from "@/lib/act/run-record";
+import { SYNC_REQUEST_PICKUP_MINUTES } from "@/lib/act/sync-request";
 import { relativeTime } from "@/lib/format";
 import { formatCount, plural } from "@/lib/plural";
 import type { ActOutboxStanding, ActSyncStatus } from "@/lib/queries/act-sync";
@@ -316,7 +317,7 @@ function summaryFor(
  * true and harmless answer. The hint says so in advance rather than letting him
  * find out.
  */
-function runNowFor(cursor: Date | null, running: boolean): ActSyncRunNow {
+function runNowFor(cursor: Date | null, running: boolean, requestedAt: Date | null): ActSyncRunNow {
   if (!cursor) {
     return {
       kind: "withhold",
@@ -329,8 +330,10 @@ function runNowFor(cursor: Date | null, running: boolean): ActSyncRunNow {
   return {
     kind: "offer",
     hint: running
-      ? "A sync is already running, so this will not start a second one — it will come back and tell you to wait. Reload the page instead to see how the one that is going is getting on."
-      : "Brings PathQuote up to date with the changes made in ACT! since the last sync. Usually a few seconds. Leave this page open while it works.",
+      ? "A sync is running right now. Pressing this asks for another one after it; reload the page to see how the one that is going is getting on."
+      : requestedAt
+        ? `Requested at ${melbourneTime(requestedAt)} and waiting for the background job, which runs every ${SYNC_REQUEST_PICKUP_MINUTES} minutes. Pressing again changes nothing. Reload this page to see the result.`
+        : `Asks the background job to bring PathQuote up to date with the changes made in ACT! since the last sync. It runs within ${SYNC_REQUEST_PICKUP_MINUTES} minutes; reload this page to see the result. Nothing happens in your browser meanwhile.`,
   };
 }
 
@@ -497,7 +500,7 @@ export function describeOutbox(outbox: ActOutboxStanding, now: Date): ActSyncOut
  * or a browser; the page passes `new Date()`.
  */
 export function describeActSyncStatus(status: ActSyncStatus, now: Date = new Date()): ActSyncView {
-  const { lastRun, lastRunUnreadable, running, cursor, outbox } = status;
+  const { lastRun, lastRunUnreadable, running, cursor, outbox, requestedAt } = status;
 
   return {
     // `startedAt`, not `finishedAt`: it is the one timestamp every record has
@@ -513,7 +516,7 @@ export function describeActSyncStatus(status: ActSyncStatus, now: Date = new Dat
     summary: summaryFor(lastRun, lastRunUnreadable, running, cursor),
     outbox: describeOutbox(outbox, now),
     reload: running,
-    runNow: runNowFor(cursor, running),
+    runNow: runNowFor(cursor, running, requestedAt),
     caughtUpTo: caughtUpToFor(cursor),
     schedule: NIGHTLY_SCHEDULE,
   };
@@ -588,5 +591,8 @@ export function describeSyncAttempt(
   // or anywhere on this page -- only in the CLI's own output. So a run can
   // finish clean having left contacts behind, and the toast must not promise
   // otherwise. What changed is in the section beneath, which has the counts.
-  return { outcome: "done", message: "Sync finished." };
+  return {
+    outcome: "done",
+    message: `Sync requested. The background job runs it within ${SYNC_REQUEST_PICKUP_MINUTES} minutes; reload this page to see the result.`,
+  };
 }

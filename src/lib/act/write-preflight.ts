@@ -961,7 +961,7 @@ export function backlogCheck(sendingOn: boolean, rows: readonly BacklogRow[], no
 export function drainTimerCheck(): Check {
   return {
     number: 9,
-    title: "The 15-minute drain",
+    title: "The five-minute drain",
     status: "INFO",
     reason: "not visible from inside the tools container: check it on the host",
     details: [
