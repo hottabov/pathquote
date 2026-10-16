@@ -1,0 +1,5 @@
+path                                     status ttfb_p50 ttfb_p95  tot_p50  tot_p95     bytes    sql    sql_ms
+/                                          200       34       55       42       88     72214      8       0.6
+/quotes                                    200       28       32       68       76   1030117      4       1.1
+/quotes/cmvah56ca42bdcb9db990c23a          200       31       34       58       76    200446     52       1.7
+/quotes/cmuz0mojr0000y59k2evtr86z          200       34       38       58       78    256349     38       1.2

@@ -17,10 +17,12 @@
 
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
-  // `turbopackIgnore`: the edge bundle also evaluates this file and would
-  // otherwise warn about a Node module; the guard above means it never runs
-  // there.
-  const { monitorEventLoopDelay } = await import(/* turbopackIgnore: true */ "node:perf_hooks");
+  // `process.getBuiltinModule` (Node 22.3+) rather than an `import`: the
+  // edge bundle also evaluates this file, and a bundler-visible import of a
+  // Node module warns there even though the guard above means it never runs.
+  const getBuiltin = (process as unknown as { getBuiltinModule?: (id: string) => unknown }).getBuiltinModule;
+  if (!getBuiltin) return;
+  const { monitorEventLoopDelay } = getBuiltin("node:perf_hooks") as typeof import("node:perf_hooks");
   // The import builds the pool; a box without DATABASE_URL must still boot
   // so /api/health can answer 503 rather than the process dying in register.
   let dbPoolStats: () => { total: number; idle: number; waiting: number };
