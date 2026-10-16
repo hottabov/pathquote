@@ -1,6 +1,7 @@
 # ACT! write-back: companies
 
-**Status:** design, decided 2026-10-15 with Vadym. Extends
+**Status:** design, decided 2026-10-15 with Vadym; ACT!'s behaviour verified
+live 2026-10-16 (§3). Extends
 `docs/superpowers/specs/2026-10-10-act-write-back.md` (the quote write-back,
 live since 2026-10-13) and replaces its §4 "company creation follows Stage 3".
 
@@ -26,51 +27,85 @@ answer that with a lookup before every create.
 | C2 | Addresses on a company PathQuote writes | PathQuote main address (`street/city/state/postcode/country`) → ACT! **business address** (`address`). Delivery address → ACT! **`shippingAddress`**; when `deliverySameAsMain`, the main address goes there too. Billing address untouched. |
 | C3 | Company already in ACT! | **Overwrite from PathQuote**: business and shipping address are written from PathQuote every time the quote's company is written, also on a company PathQuote did not create. PathQuote is the master for these two addresses. (Overrides old spec §6 "shipping only, needs a merge base".) The name is still never written (old spec §6b). |
 | C4 | Several companies with that name | **Narrow by country** (PathQuote `Company.country` vs the ACT! business address country). Exactly one left → use it. Still several, or none of them in that country → the quote is **held for an administrator**, who picks the company on the quote page (or chooses "create a new one"). |
-| C5 | Contacts already in ACT! (imported) with the company as text only | **Link them** to the found/created company **when the ACT! contact has no linked company**. A contact already linked to a company is left as it is. |
+| C5 | Contacts already in ACT! (imported) with the company as text only | **Link them** to the found/created company **when the ACT! contact has no associated company**. A contact already associated with a company is left as it is. |
+| O1 | Who owns what PathQuote writes (2026-10-16) | The quote author's ACT! user, linked by hand in Settings → Users (distributors are Inactive ACT! users with no email). An author not linked → the login (`ACT_USER`, John Hollo). No separate service-account owner. |
 
 Derived from those, not asked:
 
-- **A linked contact is the strongest evidence.** If the quote's ACT! contact is already linked to a company (`contact.companyID` set), that company *is* the quote's company in ACT!: store it, skip the name lookup. (C5 says such a contact is not relinked; using its company keeps the deal, the contact and the company consistent.)
+- **An associated contact is the strongest evidence.** If the quote's ACT! contact already has exactly one associated company, that company *is* the quote's company in ACT!: store it, skip the name lookup. Several associated → narrow by country as C4, else hold. (C5 says such a contact is not relinked; using its company keeps the deal, the contact and the company consistent.)
 - **`Company.actCompanyId` set → use it**, no lookup (the ~126 imported companies with a real ACT! company, and every one this feature finds or creates).
 - The **opportunity** and **History** are linked to the company (both bodies already carry `companies` when `companyActId` is known). An opportunity created before the company was known — Danam's — is associated afterwards.
 - Unchanged: one opportunity per deal, contact first, ex-tax amounts, every create looked up before it is sent, POST never retried.
 
-## 3. What ACT! offers (swagger, RAW/ACT/swagger.json)
+## 3. What ACT! does (verified live, 2026-10-16)
 
-- `GET/POST /api/companies`, `GET/PATCH/PUT /api/companies/{companyId}`.
-  Company: `name`, `address`, `billingAddress`, `shippingAddress` (each
-  `line1..3, city, state, postalCode, country`), `recordManagerID`, `phone`,
-  `website`, `customFields`, … `country` is a Countries picklist name, as for
-  contacts (COUNTRIES_PICKLIST_ID; same mapping as `newContactBody`).
-- Contact: `company` (text), `companyID` (uuid of the linked company).
-- Associations: `PUT /api/contacts/{contactId}/associated-companies/{companyId}`,
-  `PUT /api/companies/{companyId}/associated-contacts/{contactId}`,
-  `PUT /api/opportunities/{opportunityId}/associated-companies/{companyId}`.
+Probed with `npm run act:company-probe` on production (read-only part on
+"Flynt Amtex Inc."; write part on test quote Q-US-2026-001, company
+"enricotest", contact Tamara Testing, author Enrico Zamarra):
 
-**Unverified, to be probed live before any code relies on it (plan Task 1):**
-
-1. `GET /api/companies?$filter=name eq '…'` — honoured, as it is on opportunities and History? Case-insensitive?
-2. Which call makes the contact's **Company field a link** (what a person sees in ACT! as a linked company): PATCH the contact with `companyID` (and `company` = name), or PUT the association? In ACT! "associated companies" is a separate many-to-many tab; the link is what C5 asks for.
-3. Does `POST /api/companies` take `address`/`shippingAddress` on create, or do they need a PATCH?
-4. Does `POST /api/opportunities` with `companies: [{id}]` associate the company (no live opportunity has been created with one yet)?
-5. ACT! answers enums as numbers (opportunity `status`, 2026-10-13): check what else on Company comes back that way before comparing.
+1. **Lookup.** `GET /api/companies?$filter=name eq '…'` is honoured and
+   case-insensitive; `startswith(name,'…')` and `contains(name,'…')` work
+   too. Names differ between PathQuote and ACT! by punctuation and legal
+   form ("Flynt Amtex Inc" in PathQuote, "Flynt Amtex Inc." in ACT!), so
+   `eq` alone misses real matches. **Rule:** ask ACT! with `startswith` on the
+   name's first word (two words when the first is shorter than 4
+   characters), `$top` LOOKUP_TOP, then keep the rows whose
+   `normaliseCompanyName` (src/lib/act/company-key.ts: case, punctuation and
+   legal form folded) equals the PathQuote name's. A full page is refused, as
+   every lookup.
+2. **The contact–company link is an ASSOCIATION.** ACT!'s own linked contacts
+   have `companyID` "" and `company` as text; the company is in
+   `GET /api/contacts/{id}/associated-companies`. Linking = `PUT
+   /api/contacts/{contactId}/associated-companies/{companyId}` (200, read back
+   associated; `company` text and `companyID` unchanged). `companyID` is not
+   used.
+3. **Create.** `POST /api/companies` with `name`, `address`,
+   `shippingAddress` answers 201 with the record; both addresses read back as
+   sent. Country is a Countries picklist name (actCountryValue). Addresses
+   come back with `latitude`/`longitude` (number or null) — not ours, never
+   compared.
+4. **Opportunity–company.** `PUT
+   /api/opportunities/{id}/associated-companies/{companyId}` associates it
+   (read back). Whether `companies: [{id}]` on the create does the same is
+   untested; the step associates explicitly and checks.
+5. **Owner (recordManager).** ACT! IGNORES `recordManagerID` on create and on
+   PATCH, for opportunities, contacts, companies and History alike: every
+   record came back owned by the login. A PATCH of **`recordManager`: the
+   user's display name** is taken on opportunity, contact and company — also
+   for an **Inactive** user (Enrico Zamarra) — and the id follows. **History
+   cannot be re-owned** (PATCH answered 200, owner unchanged): a History is
+   always the login's. Harmless for the weekly report, which counts only Call
+   Completed / E-mail Sent / Meeting Held histories and prospects by the
+   CONTACT's owner.
+6. An opportunity whose record manager is someone else does not show in the
+   ACT! Opportunities list of the person looking (their default filter), but
+   does on the contact's Opportunities tab. Accepted by Vadym.
 
 ## 4. Flow
 
 New planner steps, in this order, before anything else that needs the company:
 
 ```
-create-contact (as today)
+create-contact (as today) → set its owner by name (O1)
 → resolve-company      find the quote's ACT! company, or decide to create one
-→ create-company       only when resolve found none
+→ create-company       only when resolve found none → set its owner by name
 → write-company        overwrite business + shipping address (C3), every row
-→ link-contact-company only when the ACT! contact has no linked company (C5)
-→ create/update-opportunity (now with companies) → associate-opportunity-company if missing
+→ link-contact-company only when the ACT! contact has no associated company (C5)
+→ create/update-opportunity → set its owner by name → associate-opportunity-company if missing
 → write-product-line → write-history (with companies) → … as today
 ```
 
+**Owner by name (O1).** After each create of a contact, company or
+opportunity, PATCH `{ id, recordManager: <author's ACT! display name> }`
+unless the record already reads back with that `recordManager`; the name is
+the one `GET /api/users` gives for User.actUserId (read once per pass, as the
+service account is now). An author with no ACT! user: nothing to do — the
+login owns it. Done as part of the create step, so a resumed step re-checks
+and re-sends only when the owner is still wrong. A record created before this
+change (Danam's contact, Q-US-2026-001's) is not revisited.
+
 `resolve-company` order: `Company.actCompanyId` → the ACT! contact's
-`companyID` → name lookup (C1/C4). Its result is stored on
+associated companies → name lookup (C1/C4). Its result is stored on
 `Company.actCompanyId` (the PathQuote company, shared by every quote on it), so
 it is decided once per company, not per quote.
 
@@ -89,12 +124,14 @@ with "Use this company" and "Create a new company in ACT!"; the choice is
 stored on `Company.actCompanyId` (or a "create" flag) and the row released.
 Managers see the hold and its sentence, as for every hold.
 
-**Echo.** Writing a company or relinking a contact bumps its `edited` in ACT!;
-the inbound sync reads contacts, not companies, and the contact's company text
-is not changed, so nothing comes back as a change. Setting
-`Company.actCompanyId` on a derived company keeps the inbound identity rules
-consistent (`src/lib/act/company-identity.ts`: an incoming contact with that
-`companyID` finds the same row by id).
+**Echo.** Writing a company or associating a contact bumps its `edited` in
+ACT!; the inbound sync reads contacts, not companies, and the contact's
+company text and `companyID` are not changed, so nothing comes back as a
+change — but the owner PATCH does change the contact, and the inbound sync
+must treat its own write as an echo (ActSnapshot / actSourceEditedAt, as for
+every write-back). Incoming contacts carry `companyID` "", so
+`src/lib/act/company-identity.ts` keeps finding the PathQuote company by its
+key; `Company.actCompanyId` set by this feature does not disturb that.
 
 ## 5. Out of scope
 
