@@ -1,0 +1,11 @@
+path                                     status ttfb_p50 ttfb_p95  tot_p50  tot_p95     bytes    sql    sql_ms
+/                                          200       31       42       39       55     64155      8       0.1
+/quotes                                    200       32       38       35       45     92144      3       0.1
+/quotes/cmuz0mojr0000y59k2evtr86z          200       34       41       73       81    291427     64       2.1
+/quotes/cmunfdu710000hn9km8a0km55          200       36       55       67       90    231901     64       2.2
+/quotes/cmunfdu710000hn9km8a0km55/quotation   200       33       37       62       65    249566     18       0.6
+/clients                                   200       31       46       34       51     88694      3       0.1
+/clients/cmuay9ec60003ft9kv1axvmpd         200       32       39       42       49    153143      6       0.3
+/catalog                                   200       25       32       27       36     83848      3       0.2
+/catalog/options                           200       32       38       56       60    454151      7       0.6
+/settings/users                            200       34       41       38       47    161547      2       0.1
