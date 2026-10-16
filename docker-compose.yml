@@ -7,6 +7,18 @@
 # used — the workflow pulls before it starts anything, and the VPS no longer
 # compiles. Locally `docker compose build` still works and tags into the same
 # name, so nothing about development changed.
+#
+# Logging: every service writes json-file logs, and without `max-size` those
+# files grow until the disk is full and `docker logs` crawls (audit
+# 2026-10-16, PERF-14). 20 MB x 5 keeps about a week of the app's output.
+# Changing the logging options recreates the container on the next
+# `docker compose up -d`; the deploy does that for `app` anyway.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
 services:
   app:
     image: ghcr.io/hottabov/pathquote:${TAG:-latest}
@@ -14,9 +26,19 @@ services:
       context: .
       target: run
     restart: unless-stopped
+    logging: *logging
     ports:
       - "127.0.0.1:3010:3000"
     env_file: .env
+    # The same probe the deploy's curl loop runs, so `docker compose ps` says
+    # whether the app answers and Docker restarts a hung process. busybox
+    # wget: node:22-alpine has no curl.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     depends_on:
       postgres:
         condition: service_healthy
@@ -42,6 +64,24 @@ services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *logging
+    # Stock postgres:16-alpine logs nothing about slow statements and ships no
+    # pg_stat_statements, so a slow production query had nowhere to show up
+    # (audit 2026-10-16, PERF-15). Statements over 500 ms, lock waits and I/O
+    # timing go to the container log; pg_stat_statements needs this preload
+    # plus a one-time `CREATE EXTENSION pg_stat_statements` (runbook §3b).
+    # A changed command recreates the container: a few seconds without the
+    # database, during the deploy that already restarts the app.
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - log_min_duration_statement=500
+      - -c
+      - log_lock_waits=on
+      - -c
+      - track_io_timing=on
     environment:
       POSTGRES_DB: pathquote
       POSTGRES_USER: pathquote
@@ -56,6 +96,7 @@ services:
   gotenberg:
     image: gotenberg/gotenberg:8
     restart: unless-stopped
+    logging: *logging
 volumes:
   pgdata:
   uploads:

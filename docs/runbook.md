@@ -333,6 +333,84 @@ certbot --nginx -d q.pathfindercut.com
 Certbot's systemd timer renews automatically; confirm it's active with
 `systemctl status certbot.timer`.
 
+## 3b. Performance settings for nginx and Postgres (2026-10-16)
+
+From the technical audit (docs/technical-audit/). Three facts about the live
+box drove these: the access log carries no request time, so a slow request
+leaves no trace; `proxy_read_timeout` is nginx's compiled-in 60 s (set
+nowhere in the configuration, §4c); and the per-site file is a WordOps
+template, not the block in §3. Edit the per-site file
+(`/var/www/q.pathfindercut.com/conf/nginx/*.conf`, §6), then `nginx -t &&
+systemctl reload nginx`.
+
+1. **Timings in the access log.** Put the `log_format` in the `http` context
+   (`/etc/nginx/conf.d/pathquote-log.conf`), the `access_log` in the server
+   block:
+
+   ```nginx
+   log_format pq_timing '$remote_addr [$time_local] "$request" $status $body_bytes_sent '
+                        'rt=$request_time urt=$upstream_response_time';
+   ```
+
+   ```nginx
+   access_log /var/log/nginx/q.pathfindercut.com.timing.log pq_timing;
+   ```
+
+   `rt=` is the number `src/app/api/client-timing/route.ts` has referred to
+   since 2026-10-01 and that did not exist until now. Percentiles:
+
+   ```bash
+   grep -oE 'rt=[0-9.]+' /var/log/nginx/q.pathfindercut.com.timing.log | cut -d= -f2 | sort -n | awk '{a[NR]=$1} END{print "n="NR, "p50="a[int(NR*.5)], "p95="a[int(NR*.95)], "p99="a[int(NR*.99)], "max="a[NR]}'
+   ```
+
+2. **Keep-alive to the app.** Without it every proxied request opens a new
+   TCP connection to Node. In the `http` context:
+
+   ```nginx
+   upstream pathquote_app {
+       server 127.0.0.1:3010;
+       keepalive 16;
+   }
+   ```
+
+   and in the `location /` block, `proxy_pass http://pathquote_app;` plus
+   `proxy_http_version 1.1; proxy_set_header Connection "";`.
+
+3. **Immutable static assets.** Next's hashed files under `/_next/static/`
+   never change under the same name:
+
+   ```nginx
+   location /_next/static/ {
+       proxy_pass http://pathquote_app;
+       proxy_http_version 1.1;
+       proxy_set_header Connection "";
+       add_header Cache-Control "public, max-age=31536000, immutable";
+   }
+   ```
+
+   Leave `proxy_read_timeout` at 60 s: the app is now built so that nothing a
+   user clicks waits on Gotenberg or ACT! inside the request.
+
+4. **Postgres.** `docker-compose.yml` now starts Postgres with
+   `pg_stat_statements` preloaded, statements over 500 ms logged, lock waits
+   and I/O timing on. One-time, after the first deploy that carries it:
+
+   ```bash
+   docker compose exec -T postgres psql -U pathquote -d pathquote -c 'CREATE EXTENSION IF NOT EXISTS pg_stat_statements;'
+   ```
+
+   Then the ten most expensive statements of the day:
+
+   ```bash
+   docker compose exec -T postgres psql -U pathquote -d pathquote -c "SELECT calls, round(mean_exec_time) AS mean_ms, round(total_exec_time) AS total_ms, left(query, 90) FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT 10;"
+   ```
+
+5. **App-side numbers.** `/api/health` now returns `dbMs` (the `SELECT 1`
+   round trip) and `pool` (`total`, `idle`, `waiting` connections). The app
+   logs `[runtime] event-loop p99=…` once a minute only when the Node event
+   loop stalls or a query is waiting for a connection, and `[slow-query]`
+   lines when `PRISMA_SLOW_MS` is set in `.env` (start with `PRISMA_SLOW_MS=500`).
+
 ## 4. Backups
 
 Set up 2026-09-29 (source in `scripts/ops/`, installed on the VPS). One

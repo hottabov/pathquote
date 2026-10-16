@@ -2,6 +2,23 @@ import { cache } from "react";
 import { db } from "@/lib/db";
 
 const QUOTE_VALIDITY_SETTING_KEY = "quote.validityDays";
+const SHOW_OPTION_ICONS_SETTING_KEY = "ui.showOptionIcons";
+/**
+ * The three settings this module serves, read in ONE query per render and
+ * memoised on the request: the builder page used to read two of them as two
+ * separate `findUnique`s on every render (and on every autosave's re-render).
+ * Same `cache` semantics as before -- it lives on the Flight render request,
+ * so a server action never sees a pre-write value on the re-render that
+ * follows. A missing row simply has no entry, and each getter below applies
+ * its own default.
+ */
+const loadSettings = cache(async function loadSettings(): Promise<Map<string, unknown>> {
+  const rows = await db.setting.findMany({
+    where: { key: { in: [QUOTE_VALIDITY_SETTING_KEY, SHOW_OPTION_ICONS_SETTING_KEY, SIGNING_LINK_VALIDITY_SETTING_KEY] } },
+    select: { key: true, value: true },
+  });
+  return new Map(rows.map((row) => [row.key, row.value as unknown]));
+});
 
 /** Fallback used when no `Setting` row exists for "quote.validityDays" (or
  * its value isn't a finite number) — quotes are valid for a week by
@@ -33,12 +50,9 @@ export const DEFAULT_QUOTE_VALIDITY_DAYS = 7;
  * value on the re-render that follows.
  */
 export const getQuoteValidityDays = cache(async function getQuoteValidityDays(): Promise<number> {
-  const setting = await db.setting.findUnique({ where: { key: QUOTE_VALIDITY_SETTING_KEY } });
-  const rawValue = setting?.value;
+  const rawValue = (await loadSettings()).get(QUOTE_VALIDITY_SETTING_KEY);
   return typeof rawValue === "number" && Number.isFinite(rawValue) ? rawValue : DEFAULT_QUOTE_VALIDITY_DAYS;
 });
-
-const SHOW_OPTION_ICONS_SETTING_KEY = "ui.showOptionIcons";
 
 /** Default used when no `Setting` row exists for "ui.showOptionIcons" (or
  * its stored value isn't a boolean) — icons are shown by default. */
@@ -60,8 +74,7 @@ export const DEFAULT_SHOW_OPTION_ICONS = true;
  * that function's doc comment for why the memo can't outlive one render.
  */
 export const getShowOptionIcons = cache(async function getShowOptionIcons(): Promise<boolean> {
-  const setting = await db.setting.findUnique({ where: { key: SHOW_OPTION_ICONS_SETTING_KEY } });
-  const rawValue = setting?.value;
+  const rawValue = (await loadSettings()).get(SHOW_OPTION_ICONS_SETTING_KEY);
   return typeof rawValue === "boolean" ? rawValue : DEFAULT_SHOW_OPTION_ICONS;
 });
 
@@ -93,8 +106,7 @@ export const DEFAULT_SIGNING_LINK_VALIDITY_DAYS = 30;
  * because a justification was found that actually holds.
  */
 export const getSigningLinkValidityDays = cache(async function getSigningLinkValidityDays(): Promise<number> {
-  const setting = await db.setting.findUnique({ where: { key: SIGNING_LINK_VALIDITY_SETTING_KEY } });
-  const rawValue = setting?.value;
+  const rawValue = (await loadSettings()).get(SIGNING_LINK_VALIDITY_SETTING_KEY);
   return typeof rawValue === "number" && Number.isFinite(rawValue)
     ? rawValue
     : DEFAULT_SIGNING_LINK_VALIDITY_DAYS;

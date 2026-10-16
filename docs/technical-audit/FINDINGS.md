@@ -39,4 +39,4 @@ Evidence is file:line on `main` @ af1d83f unless stated. Owner = who fixes.
 
 ## Over-engineering (ponytail-audit)
 
-(filled from ARCHITECTURE.md when the architecture agent reports)
+The ranked list lives in ARCHITECTURE.md (one line per finding, skill format). Applied here: `fflate` removed; the three `Setting` reads collapsed into one query. Owner decisions: dead `sendQuoteToClient`/`quote-send.ts` (+ the `emails` read on every builder render), the one-off scripts, the meta tests. Nothing else in that list is a speed fix.
