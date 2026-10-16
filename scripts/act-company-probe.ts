@@ -304,8 +304,46 @@ async function owner(db: typeof import("../src/lib/db").db, key: string): Promis
   await show("after recordManager PATCH");
 }
 
+/**
+ * --owner-all <quote>: the opportunity's answer -- recordManager by NAME is
+ * taken on a PATCH, recordManagerID is not (2026-10-16) -- tried on the
+ * quote's contact, its revision's History and the contact's associated
+ * companies: PATCH {id, recordManager: <author's ACT! name>} where the owner
+ * is somebody else, and read each back.
+ */
+async function ownerAll(db: typeof import("../src/lib/db").db, key: string): Promise<void> {
+  const doc = await db.document.findFirst({
+    where: { OR: [{ id: key }, { number: key }] },
+    include: { author: true, contact: true, revisions: { orderBy: { revision: "desc" }, take: 1 } },
+  });
+  if (!doc) throw new Error(`no quote with id or number ${key}`);
+  const users = rows(await call("GET", "/api/users"));
+  const author = users.find((u) => u.id === doc.author.actUserId);
+  if (!author) throw new Error("the quote's author has no ACT! user: nothing to set");
+  const name = String(author.username ?? author.displayName ?? "");
+  console.log(`\nOwner of every record: ${name} (${author.status})`);
+  const retarget = async (label: string, path: string, id: string) => {
+    const before = ((await call("GET", path)).json ?? {}) as Record<string, unknown>;
+    print(`${label} before recordManagerID / recordManager`, [before.recordManagerID, before.recordManager]);
+    if (before.recordManager === name) return;
+    const patch = await call("PATCH", path, { id, recordManager: name });
+    if (patch.status >= 300) console.log(`  PATCH answered: ${patch.text.slice(0, 300)}`);
+    const after = ((await call("GET", path)).json ?? {}) as Record<string, unknown>;
+    print(`${label} after  recordManagerID / recordManager`, [after.recordManagerID, after.recordManager]);
+  };
+  const contactId = doc.contact?.actContactId;
+  if (contactId) {
+    await retarget("contact", `/api/contacts/${contactId}`, contactId);
+    for (const company of rows(await call("GET", `/api/contacts/${contactId}/associated-companies`))) {
+      await retarget(`company "${company.name}"`, `/api/companies/${company.id}`, String(company.id));
+    }
+  }
+  const historyId = doc.revisions[0]?.actHistoryId;
+  if (historyId) await retarget("History", `/api/History/${historyId}`, historyId);
+}
+
 async function main(): Promise<number> {
-  if (npmSwallowedFlag(process.env, "--owner")) {
+  if (npmSwallowedFlag(process.env, "--owner-all") || npmSwallowedFlag(process.env, "--owner")) {
     console.error("npm kept --owner: run it as npm run act:company-probe -- --owner <quote>");
     return 2;
   }
@@ -314,6 +352,22 @@ async function main(): Promise<number> {
     return 2;
   }
   const args = process.argv.slice(2);
+  const allAt = args.indexOf("--owner-all");
+  if (allAt >= 0) {
+    const key = args[allAt + 1];
+    if (!key) {
+      console.error("usage: npm run act:company-probe -- --owner-all <quote number or document id>");
+      return 2;
+    }
+    const { db } = await import("../src/lib/db");
+    try {
+      await login();
+      await ownerAll(db, key);
+      return 0;
+    } finally {
+      await db.$disconnect();
+    }
+  }
   const ownerAt = args.indexOf("--owner");
   if (ownerAt >= 0) {
     const key = args[ownerAt + 1];
