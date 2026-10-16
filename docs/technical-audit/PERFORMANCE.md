@@ -131,7 +131,20 @@ same-conditions TTFB re-run is listed under "Still to do".
 | /quotes (602 quotes) | 602 rows × 2 trees, ~7 Links per row, 4.5 MB | 200 rows, 1 tree, **200 Links**, 6,845 DOM nodes, 36 KB wire; "Show all 602" = 1 POST, 146 KB decoded / 13.6 KB wire, 96 ms → 602 rows |
 | Built chunks containing zod | 1 chunk, 379,785 B, in the builder / clients routes | **none** (`scripts/client-zod-trace.mjs`: no "use client" module reaches zod) |
 
-### Targets — met / missed
+#### Final run after the review fixes (@ 7964898, quieter machine, N=10)
+
+| path (ADMIN, volume DB) | ttfb p50 / p95 | total p50 / p95 | HTML bytes | SQL |
+|---|---|---|---|---|
+| / (dashboard) | 34 / 55 | 42 / 88 | 72,214 | 8 (count dropped again) |
+| /quotes (602 quotes, 200 shown) | **28 / 32** (before 31 / 41) | 68 / 76 (before 179 / 207) | 1,030,117 | 4 |
+| /quotes/[PERF final] | **31 / 34** (before 33 / 36) | 58 / 76 (before 64 / 74) | 200,446 | 52 |
+| /quotes/[draft] | **34 / 38** (before 34 / 50) | 58 / 78 (before 81 / 98) | 256,349 | 38 |
+
+Raw: `scripts/after-prod-admin-volume-final.txt`. The earlier after-runs'
+higher TTFBs were machine load, as suspected: on a quiet machine every page
+is at or below its baseline.
+
+## Targets — met / missed
 
 | Target | Result |
 |---|---|
