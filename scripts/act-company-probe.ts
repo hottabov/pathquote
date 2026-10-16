@@ -242,12 +242,94 @@ async function write(db: typeof import("../src/lib/db").db, key: string): Promis
   }
 }
 
+/**
+ * --owner <quote>: who owns the quote's opportunity and History in ACT!, and
+ * whether ACT! lets the owner be changed afterwards. The create sends the
+ * author's ACT! user as recordManagerID, yet the first opportunity read back
+ * as owned by the login (2026-10-16). Reads the author's ACT! user, the
+ * opportunity and the revision's History, then -- only if the opportunity's
+ * owner is not the author -- PATCHes {id, recordManagerID} and reads it back,
+ * and if that changed nothing, tries {id, recordManager: <name>}.
+ */
+async function owner(db: typeof import("../src/lib/db").db, key: string): Promise<void> {
+  const doc = await db.document.findFirst({
+    where: { OR: [{ id: key }, { number: key }] },
+    include: { author: true, contact: true, revisions: { orderBy: { revision: "desc" }, take: 1 } },
+  });
+  if (!doc) throw new Error(`no quote with id or number ${key}`);
+  const authorId = doc.author.actUserId;
+  console.log(`\nOwner: quote ${doc.number} by ${doc.author.email}, ACT! user ${authorId ?? "(not linked)"}`);
+  const users = rows(await call("GET", "/api/users"));
+  const author = users.find((u) => u.id === authorId);
+  if (author) console.log(`  author in ACT!: ${author.username ?? author.displayName ?? "?"} -- ${author.status}, ${author.role}`);
+
+  const historyId = doc.revisions[0]?.actHistoryId;
+  if (doc.contact?.actContactId) {
+    const histories = rows(await call("GET", `/api/contacts/${doc.contact.actContactId}/history?$top=50`));
+    const mine = histories.find((h) => h.id === historyId) ?? histories.find((h) => String(h.regarding ?? "").includes(doc.number ?? "?"));
+    if (mine) {
+      print("History recordManagerID", mine.recordManagerID);
+      print("History recordManager / manager", [mine.recordManager, mine.manager]);
+    } else {
+      console.log("  the revision's History was not among the contact's first 50");
+    }
+  }
+
+  if (!doc.actOpportunityId) {
+    console.log("  no opportunity stored: nothing more to look at");
+    return;
+  }
+  const path = `/api/opportunities/${doc.actOpportunityId}`;
+  const show = async (label: string) => {
+    const o = ((await call("GET", path)).json ?? {}) as Record<string, unknown>;
+    print(`${label} recordManagerID / recordManager / manager / recordOwner`, [o.recordManagerID, o.recordManager, o.manager, o.recordOwner]);
+    return o;
+  };
+  const before = await show("before");
+  if (!authorId || !author) {
+    console.log("  the author has no ACT! user: the login owning it is expected; no write tried");
+    return;
+  }
+  const authorName = String(author.username ?? author.displayName ?? "");
+  if (before.recordManager === authorName) {
+    console.log("  already owned by the author: no write tried");
+    return;
+  }
+  const first = await call("PATCH", path, { id: doc.actOpportunityId, recordManagerID: authorId });
+  if (first.status >= 300) console.log(`  PATCH answered: ${first.text.slice(0, 300)}`);
+  const afterId = await show("after recordManagerID PATCH");
+  if (afterId.recordManager === authorName) return;
+  const second = await call("PATCH", path, { id: doc.actOpportunityId, recordManager: authorName });
+  if (second.status >= 300) console.log(`  PATCH answered: ${second.text.slice(0, 300)}`);
+  await show("after recordManager PATCH");
+}
+
 async function main(): Promise<number> {
+  if (npmSwallowedFlag(process.env, "--owner")) {
+    console.error("npm kept --owner: run it as npm run act:company-probe -- --owner <quote>");
+    return 2;
+  }
   if (npmSwallowedFlag(process.env, "--write")) {
     console.error("npm kept --write: run it as npm run act:company-probe -- --write <quote>");
     return 2;
   }
   const args = process.argv.slice(2);
+  const ownerAt = args.indexOf("--owner");
+  if (ownerAt >= 0) {
+    const key = args[ownerAt + 1];
+    if (!key) {
+      console.error("usage: npm run act:company-probe -- --owner <quote number or document id>");
+      return 2;
+    }
+    const { db } = await import("../src/lib/db");
+    try {
+      await login();
+      await owner(db, key);
+      return 0;
+    } finally {
+      await db.$disconnect();
+    }
+  }
   const writeAt = args.indexOf("--write");
   const target = writeAt >= 0 ? args[writeAt + 1] : undefined;
   if (writeAt >= 0 && !target) {
