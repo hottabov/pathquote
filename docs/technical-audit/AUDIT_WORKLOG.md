@@ -110,3 +110,13 @@ Baseline measurements, then launch read-only diagnosis agents.
 - Next: owner merges + deploys (FIX_PLAN.md); after deploy run the
   VERIFICATION.md post-deploy commands; decide the pageSize=all cap and
   "Sync now" (PERF-11). Local Postgres statement logging still on.
+
+## 2026-10-16 11:00–11:15 UTC — deployed to production
+
+- `main` fast-forwarded to the audit branch; two deploys (c5f0b6a: everything
+  + ACT! in the background; 7faef33: background read uses normal limits).
+- By hand on the VPS: nginx upstream keep-alive + immutable static,
+  `PRISMA_SLOW_MS`, `pg_stat_statements`, drain timer every 5 min, service
+  unit renamed. All verified (VERIFICATION.md).
+- Open: read the nginx log after a day of use; owner decisions (pageSize=all
+  cap, dead send-dialog code, one-off scripts); PERF-12 second pass.

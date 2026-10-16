@@ -75,3 +75,18 @@ one of them `/settings/users/<id>` (GET 6–10 s, POST 6–11 s) or
    milliseconds.
 5. The quotes-list bound (PERF-05) is correct engineering but not a production
    cause today (13 quotes). The clients list at `pageSize=all` is (PERF-20, new).
+
+## Deployed 2026-10-16 11:00–11:12 UTC (c5f0b6a, then 7faef33)
+
+Both deploys green; the Postgres container was recreated once (new flags),
+the app twice. Applied on the box by hand, as the runbook §3b describes:
+keep-alive upstream + immutable `/_next/static/`, `PRISMA_SLOW_MS=500`,
+`CREATE EXTENSION pg_stat_statements`, `pq-act-drain.timer` every five
+minutes (and the renamed service unit). The ACT! lists snapshot exists; no
+page reads ACT! on a request any more. Remaining in-request ACT! calls, by
+design: the `after()` fast-path drain (post-response, 20 s budget) and the
+administrator's explicit "ACT! has this person" check on a quote's ACT! card.
+
+What to read after a day of real use (VERIFICATION.md, post-deploy block):
+the user page's p95, `POST /quotes/<id>` p50/p95 (was 0.123/0.243 s), and
+`pg_stat_statements` top 10.

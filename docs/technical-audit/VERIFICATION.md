@@ -119,3 +119,8 @@ curl -s http://127.0.0.1:3010/api/health
 | nginx | `pathquote-upstream.conf` (keep-alive 16) + site block on `http://pathquote_app` with HTTP/1.1 and `Connection ""`; `/_next/static/` answers `cache-control: public, max-age=31536000, immutable`; `nginx -t` ok, reloaded; `/login` on-box 19–20 ms as before |
 | `pq-act-drain.timer` | installed `OnCalendar=*:0/5`; first manual tick ran the new image (`act:drain ok`) |
 | First ACT! lists refresh | **failed**: ACT! login did not answer within the 10 s deadline inherited from the in-page read; fixed by giving the background read the client's normal limits (next deploy) |
+| Second deploy (7faef33) | success; `/api/health` `dbMs` 2 ms, pool 1/1/0 |
+| `Setting act.linkLists` | written by the 11:05 UTC tick: 21 ACT! users, 11 Rep items, 4.3 KB — the user page's ACT! section now reads this row and nothing else |
+| `Setting act.sync.requested` | absent (no press yet); the next press is served by the next five-minute tick |
+| nginx, first 48 requests after the deploy | rt p50 0.014 s, p95 0.018 s, max 0.018 s (unauthenticated traffic + health polls only; an admin's first visit to a user page is the real check — the post-deploy commands above read it) |
+| App log after deploy | no `[runtime]`, `slow-query` or error lines |
