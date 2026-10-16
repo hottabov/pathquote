@@ -40,3 +40,22 @@ Baseline measurements, then launch read-only diagnosis agents.
   companies) for the volume run.
 - Blocker: production SSH denied by the permission classifier. Key generated at
   ~/.ssh/pathquote_audit_ed25519 (public half goes in the final report).
+
+## 2026-10-16 — Phase 2: fixes in flight (branch `audit/performance-2026-10`)
+
+- Lead package done locally: `src/lib/db.ts` (own pg Pool: connectionTimeout 5 s,
+  idle 30 s, statement_timeout 30 s, idle_in_tx 60 s, slow-query log over
+  `PRISMA_SLOW_MS`, `dbPoolStats`), `pg` added as a direct dependency,
+  `finalize.ts` + `signing.ts` PDF work moved into `after()`, in-request ACT!
+  drain budget capped at 20 s, `/api/health` reports `dbMs` + pool counters,
+  `src/instrumentation.ts` logs event-loop p99 / pool waiting once a minute
+  when over threshold, migration `z70_perf_indexes` (applied locally,
+  `migrate diff` clean).
+- Agents W1 (autosave/revalidate), W2 (builder page + tabs), W3 (lists +
+  prefetch), W4 (bundles) running on disjoint file sets; ARCH/ponytail agent
+  still running.
+- Owner's untracked file `docs/superpowers/plans/2026-10-16-act-write-back-companies.md`
+  is theirs — never staged.
+- Next: fix the seeder's one type error, commit the lead package, integrate
+  agent commits, rebuild, re-measure (tiny + volume), browser verification,
+  independent review.

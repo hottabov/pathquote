@@ -23,6 +23,7 @@ import { planRevision, revisionLabel } from "@/lib/documents/revision-plan";
 import { generateRevisionPdf } from "@/lib/documents/revision";
 import { enqueueActWrite, enqueueActWriteForNewestRevision } from "@/lib/act/outbox";
 import { drainAfterResponse } from "@/lib/act/drain-after";
+import { after } from "next/server";
 import { NOT_FOUND_ERROR } from "./_shared";
 import { isQuoteDocumentIncluded } from "@/lib/quote-document-choice";
 
@@ -456,13 +457,23 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
   // Best-effort: render and store this revision's PDF outside the transaction
   // so a Gotenberg failure can never roll back an issued quote (spec §5.4). A
   // null pdfPath just means "not generated yet", regenerable later.
+  //
+  // After the response, not before it. Rendering goes through Gotenberg
+  // (src/lib/pdf.ts: a 30 s timeout, two conversion slots, a queue behind
+  // them), and until 2026-10-16 the Finalize click waited for all of that.
+  // Nothing in the response needs the file: the History tab shows the PDF
+  // link once `pdfPath` is set, and "Send to client" renders on the fly when
+  // it is still null (src/lib/actions/signing.ts, sendQuoteToClient).
+  // `after()` runs the callback once the action's response has gone -- the
+  // same pattern as drainAfterResponse above.
   if (result.revisionId) {
-    await generateRevisionPdf(session.user, document.id, result.revisionId).catch((err) => {
-      console.error("[finalize] revision PDF generation failed", {
-        documentId: document.id,
-        revisionId: result.revisionId,
-        err,
-      });
+    const revisionId = result.revisionId;
+    after(async () => {
+      try {
+        await generateRevisionPdf(session.user, document.id, revisionId);
+      } catch (err) {
+        console.error("[finalize] revision PDF generation failed", { documentId: document.id, revisionId, err });
+      }
     });
   }
 

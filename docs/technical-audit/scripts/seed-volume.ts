@@ -425,7 +425,10 @@ async function seedDocuments() {
           documentId: docId,
           revision: 0,
           label: number,
-          snapshot: json(templateRevision.snapshot),
+          // QuoteRevision.snapshot is a required Json column, so a null here
+          // would have to be Prisma.JsonNull; the template is FINAL and always
+          // carries one, hence the narrowing cast.
+          snapshot: json(templateRevision.snapshot) as Prisma.InputJsonValue,
           snapshotHash: templateRevision.snapshotHash,
           pdfPath: null,
           signedPdfPath: null,

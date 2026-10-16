@@ -824,6 +824,11 @@ model Company {
   @@index([ownerId])
   @@index([country]) // every manager with a country grant filters on this: `country IN (...)` in companyWhereForUser, src/lib/scope.ts
   @@index([industryId]) // renaming an industry shows an affected-company count first ("Used by 14 companies"), counted by industryId
+  // The client list pages `ORDER BY name, id` with skip/take (listCompanies,
+  // src/lib/queries/clients.ts); the trigram index below serves search, not a
+  // sort, so without this btree every page view sorted all ~8,800 companies
+  // (audit 2026-10-16, PERF-06).
+  @@index([name, id])
   // Trigram, for the builder's client search (`contains`, case-insensitive, so ILIKE '%q%'). See z62_client_search_trgm.
   @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Company_name_trgm_idx")
 }
@@ -1175,6 +1180,13 @@ model Document {
   // the unbounded read; the scoped read is bounded by one author's documents
   // either way.
   @@index([updatedAt])
+  // The two scoped list reads (listDocuments, src/lib/queries/documents-list.ts):
+  // a MANAGER sees `WHERE authorId ORDER BY updatedAt DESC`, a REGIONAL_MANAGER
+  // `WHERE regionId ORDER BY updatedAt DESC`. The single-column indexes above
+  // serve the filter OR the sort, not both, so Postgres sorted the whole scoped
+  // set on every list view (audit 2026-10-16, PERF-05).
+  @@index([authorId, updatedAt])
+  @@index([regionId, updatedAt])
   // Nothing queries documents *by* contact, but deleteContact
   // (src/lib/actions/clients.ts) removes Contact rows, and this FK is
   // ON DELETE NO ACTION -- so Postgres must prove no Document references the

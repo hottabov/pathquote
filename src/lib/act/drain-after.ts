@@ -31,6 +31,9 @@ import { actClientFromEnv } from "@/lib/act/client";
 import { drainActOutbox, readActWriteSwitch } from "@/lib/act/drain";
 
 /** What becomes of a row this fast path did not write: the end of each log line below. */
+/** How long the fast path may spend before leaving the row to the periodic drain. */
+const IN_REQUEST_DRAIN_BUDGET_MS = 20_000;
+
 const ROW_WAITS = "the row waits for the next drain that reaches it (the 15-minute drain, the nightly sync's, or the quote's next event)";
 
 /** After the response, drain `documentId`'s row; `event` names the caller in the log. */
@@ -43,7 +46,14 @@ export function drainAfterResponse(
       try {
         // Off: nothing to do, and no reason to need ACT_* at all.
         if (!(await readActWriteSwitch())) return;
-        const result = await drainActOutbox(actClientFromEnv(), { onlyDocumentId: documentId });
+        // A short budget, not the five-minute default: this runs inside the
+        // web process, on the pool every request shares. One quote's row is a
+        // handful of ACT! calls; if ACT! is slow today the periodic drain
+        // picks the row up, as the log line below says.
+        const result = await drainActOutbox(actClientFromEnv(), {
+          onlyDocumentId: documentId,
+          timeBudgetMs: IN_REQUEST_DRAIN_BUDGET_MS,
+        });
         if (result.status === "busy") {
           console.info(`[act] another drain was running after the ${event}; ${ROW_WAITS}`, { documentId });
         }

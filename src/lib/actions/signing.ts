@@ -1,5 +1,7 @@
 "use server";
 
+import { after } from "next/server";
+
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { db } from "@/lib/db";
@@ -169,27 +171,35 @@ export async function signQuoteAsAuthor(documentId: string, dataUrl: string): Pr
   // on a retry). Only for SIGNED — in every other status no archived PDF
   // exists yet, and the client's own `completeSigning` renders one that already
   // includes this signature.
+  //
+  // Once the response has gone (`after()`), not before it: the re-render
+  // goes through Gotenberg (30 s timeout, two slots, a queue), and the
+  // manager's click has nothing to wait for -- the signature is saved, and
+  // the page already shows both signatures from live data.
   if (document.signingStatus === "SIGNED") {
-    try {
-      const forPdf = await getDocumentForBuilder(session.user, document.id);
-      if (forPdf) {
-        const quoteDocuments = await getQuoteDocumentsForRegion(forPdf.regionId);
-        const pdf = await renderQuotationPdfForDocument(forPdf, quoteDocuments);
-        const name = signedPdfFilename();
-        await mkdir(uploadsDir(), { recursive: true });
-        await writeFile(path.join(uploadsDir(), name), pdf);
-        await db.document.update({
-          where: { id: document.id },
-          data: { signedPdfName: name, signedPdfSha256: sha256Hex(pdf) },
-        });
-        // Best-effort delete of the superseded (client-only) archive.
-        if (document.signedPdfName && document.signedPdfName !== name) {
-          await unlink(path.join(uploadsDir(), document.signedPdfName)).catch(() => {});
+    const previousArchive = document.signedPdfName;
+    after(async () => {
+      try {
+        const forPdf = await getDocumentForBuilder(session.user, document.id);
+        if (forPdf) {
+          const quoteDocuments = await getQuoteDocumentsForRegion(forPdf.regionId);
+          const pdf = await renderQuotationPdfForDocument(forPdf, quoteDocuments);
+          const name = signedPdfFilename();
+          await mkdir(uploadsDir(), { recursive: true });
+          await writeFile(path.join(uploadsDir(), name), pdf);
+          await db.document.update({
+            where: { id: document.id },
+            data: { signedPdfName: name, signedPdfSha256: sha256Hex(pdf) },
+          });
+          // Best-effort delete of the superseded (client-only) archive.
+          if (previousArchive && previousArchive !== name) {
+            await unlink(path.join(uploadsDir(), previousArchive)).catch(() => {});
+          }
         }
+      } catch (error) {
+        console.error("[signing] re-archiving signed PDF after manager counter-signature failed", error);
       }
-    } catch (error) {
-      console.error("[signing] re-archiving signed PDF after manager counter-signature failed", error);
-    }
+    });
   }
 
   revalidateDocument(document.id);
