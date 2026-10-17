@@ -4,7 +4,7 @@ import type { HtmlFormSpec } from "../types";
 /**
  * L-Series. Rendered as a component for the same reason as the X-Calibre:
  * it has no xlsx implementation and should never grow one. Visual contract:
- * `docs/mockups/l-series-order-form.html`.
+ * the approved L-Series order-form mock-up (retired once the forms shipped).
  *
  * Three rows of this form are read off the product rather than asked:
  * `Model` from `Product.specs.widthCode` (180 / 220 / 320), `Cutting Length`

@@ -434,7 +434,7 @@ export type DocumentForBuilder = {
    * yet sent" banner. Cleared on a successful (re)send. */
   hasUnsentChanges: boolean;
   /** `Document.sentAt` — when the quote was last emailed to the client (the
-   * rich send, `sendQuoteToClient`). Null until first sent; paired with the
+   * confirmed send). Null until first sent; paired with the
    * banner. */
   sentAt: Date | null;
   /** `Document.acceptedAt` — when a client-signed quote was accepted into

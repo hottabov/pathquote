@@ -219,7 +219,7 @@ export type CreditUnitPriceInput = z.infer<typeof creditUnitPriceSchema>;
 
 /** One option selection from the item options editor: the option's `id`
  * (never its code -- a code is a label an admin can rename while the editor
- * is open, see docs/plans/2026-09-05-catalog-identity-and-cleanup.md), the
+ * is open, see docs/reference/catalog-v2-decisions.md), the
  * quantity of it on the item, and (for an MTS only) the travel length as
  * `{ metres }` — see src/lib/production-forms/mts.ts, which validates it.
  * Value type is loosely `string | number`; it is stored as-is in

@@ -890,7 +890,7 @@ function hasName(contact: { firstName: string; lastName: string | null }): boole
  * same unsigned-confirmation the win refuses (THE WIN NEEDS A STANDING
  * SIGNATURE). Vadym's own words for the trigger were "the contact signed the
  * quote". His other trigger, "the quote's status changed in PathQuote", is the
- * manual WON outcome in docs/specs/2026-10-12-quote-outcomes-and-reporting-
+ * manual WON outcome in docs/backlog/2026-10-12-quote-outcomes-and-reporting-
  * backlog.md, not acceptQuote, and arrives with that feature.
  */
 function promotionDue(quote: QuoteState): boolean {

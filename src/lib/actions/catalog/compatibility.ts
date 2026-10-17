@@ -12,7 +12,7 @@ import type { ActionResult } from "../_shared";
  * Product-level compatibility rows (out of phase-3 scope) are left alone.
  * Series travel as ids, never codes -- a code is a label an admin can
  * rename while the editor is open (see
- * docs/plans/2026-09-05-catalog-identity-and-cleanup.md). Unknown ids in
+ * docs/reference/catalog-v2-decisions.md). Unknown ids in
  * `seriesIds` are silently ignored (they simply don't resolve to a series
  * row and so are never added).
  */

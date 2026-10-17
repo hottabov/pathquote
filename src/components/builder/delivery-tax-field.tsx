@@ -45,7 +45,7 @@ function place(code: string | null): string {
  * autosave like every neighbouring field; the tax half saves one JSON
  * payload so the three custom inputs travel together.
  *
- * Decisions: Vadym, 2026-09-30 — docs/superpowers/specs/2026-09-30-tax-and-incoterms-design.md.
+ * Decisions: Vadym, 2026-09-30 — docs/design/2026-09-30-tax-and-incoterms-design.md.
  */
 export function DeliveryTaxField({
   documentId,

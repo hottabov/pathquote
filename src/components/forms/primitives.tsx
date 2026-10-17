@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
  * The pieces every production order form is assembled from.
  *
  * Their markup is lifted from the approved mockups
- * (`docs/mockups/*-order-form.html`) and their class names match
+ * (the approved order-form mock-ups (retired once the forms shipped)) and their class names match
  * `FORM_SHEET_CSS`. Layout differences between forms are real -- the
  * EasyLoader's table sections, the L-Series' consumables block -- so the
  * forms themselves are JSX rather than a schema; these are only the parts

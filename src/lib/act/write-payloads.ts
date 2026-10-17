@@ -35,7 +35,7 @@
 // the tax-inclusive total beside it for reference (historyBody).
 //
 // Why one line and not the quote's lines. The design spec
-// (docs/superpowers/specs/2026-09-08-act-integration-design.md, "Quote line
+// (docs/design/2026-09-08-act-integration-design.md, "Quote line
 // items go to /api/opportunities/{id}/products as free-form entries") wanted
 // every line item. But a revision can add, drop and reprice lines, and keeping
 // a set of products in step with that means deleting the ones that went --

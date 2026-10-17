@@ -97,7 +97,7 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
   // can be touched is the typeahead on a single client's card.
   { href: "/settings/industries", label: "Industries", icon: Factory, adminOnly: true },
   // The catalogue as a workbook: download, edit in Excel, upload back with a
-  // preview of every change (docs/plans/2026-09-05-catalog-import-export.md).
+  // preview of every change (docs/reference/catalog-import-export.md).
   // Its own section rather than a Catalogue sub-page because it is a global,
   // destructive action, not another list to administer.
   { href: "/settings/import-export", label: "Import / Export", icon: ArrowLeftRight, adminOnly: true },

@@ -29,7 +29,7 @@ import {
  * is exactly what the printed form asks for ("box shows the quantity when
  * more than one is required"). When production confirms the mapping this can
  * become the nine labels again; until then nothing is lost and nothing is
- * invented. See docs/specs/2026-09-11-order-forms-backlog.md §E.1.
+ * invented. See docs/backlog/2026-09-11-order-forms-backlog.md §E.1.
  */
 
 const OPTIONS: Array<{ role: OptionRole; code: string; desc?: string }> = [

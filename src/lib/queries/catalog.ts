@@ -296,7 +296,7 @@ export async function listOptions(params: {
   // filter chips render from the live series list on the same request, and
   // a stale bookmarked code merely filters to nothing, which is the right
   // outcome for a filter (unlike an identifier a write depends on -- see
-  // docs/plans/2026-09-05-catalog-identity-and-cleanup.md).
+  // docs/reference/catalog-v2-decisions.md).
   if (seriesCode && seriesCode.trim()) {
     where.compat = { some: { series: { code: seriesCode.trim() } } };
   }

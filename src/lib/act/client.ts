@@ -965,7 +965,7 @@ export class ActClient {
    * ("Update (partially) an already existing ..."), and a partial PATCH may
    * well work. Nothing in this repo records one being tried against this
    * server. What has been is the whole record:
-   * scripts/act-fix-country-usa.py and scripts/act-fix-country-spellings.py
+   * the one-off ACT! country fixers of 2026-10 (retired; see git history)
    * wrote production contacts and companies that way, because a partial write
    * to a nested object blanks its siblings. So this is the proven path. Once a
    * partial PATCH has been tried live -- a partial `customFields` included --

@@ -170,7 +170,7 @@ export type ActProductLine = {
  * `customFields`, naming only the custom fields to change, which are merged
  * key by key so that naming one cannot blank the rest. Nothing else: nothing
  * else is changed today, and the design spec's write
- * whitelist (docs/superpowers/specs/2026-09-08-act-integration-design.md)
+ * whitelist (docs/design/2026-09-08-act-integration-design.md)
  * sends only the fields PathQuote displays and edits, naming `recordManager`
  * among those never sent. (It named `idStatus` too; the plan's addendum of
  * 2026-10-12 made promotion the one exception.) `companyID` and

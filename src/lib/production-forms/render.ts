@@ -1,7 +1,8 @@
 // Server-only: the Gotenberg call that joins the production forms into one
 // download (src/app/api/quotes/[documentId]/production-forms/route.ts). Kept
-// separate from the route so each step is independently testable, matching
-// the split src/lib/pdf.ts makes for the document PDF pipeline.
+// separate from the route so each step is independently testable. The HTTP
+// call itself is src/lib/pdf.ts's `postToGotenberg`, so the merge waits in the
+// same two-slot queue as every conversion rather than beside it.
 //
 // `readTemplate` and `xlsxToPdf` used to live here too, for the forms drawn
 // by patching the original workbook. The last of those (Punchline) was
@@ -9,28 +10,7 @@
 // merge: every form is HTML, but each sheet is still its own PDF, and the
 // order the workshop expects comes from concatenating them here.
 
-const GOTENBERG_TIMEOUT_MS = 60_000;
-
-function gotenbergUrl(): string {
-  const baseUrl = process.env.GOTENBERG_URL;
-  if (!baseUrl) throw new Error("GOTENBERG_URL is not configured");
-  return baseUrl;
-}
-
-async function postToGotenberg(route: string, form: FormData): Promise<Buffer> {
-  const response = await fetch(`${gotenbergUrl()}${route}`, {
-    method: "POST",
-    body: form,
-    signal: AbortSignal.timeout(GOTENBERG_TIMEOUT_MS),
-  });
-
-  if (!response.ok) {
-    const snippet = (await response.text().catch(() => "")).slice(0, 500);
-    throw new Error(`Gotenberg returned ${response.status}: ${snippet}`);
-  }
-
-  return Buffer.from(await response.arrayBuffer());
-}
+import { postToGotenberg } from "@/lib/pdf";
 
 /**
  * Concatenates PDFs in the order given. Gotenberg's merge route orders by

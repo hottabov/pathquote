@@ -25,20 +25,8 @@ export interface QuoteRevisionRow {
   isSigned: boolean;
 }
 
-export interface QuoteEmailRow {
-  id: string;
-  to: string[];
-  cc: string[];
-  subject: string;
-  bodyText: string;
-  sentAt: Date;
-  sentByName: string | null;
-  revisionLabel: string | null;
-}
-
 export interface QuoteHistory {
   revisions: QuoteRevisionRow[];
-  emails: QuoteEmailRow[];
 }
 
 export async function getQuoteHistory(user: ScopeUser, documentId: string): Promise<QuoteHistory | null> {
@@ -59,34 +47,15 @@ export async function getQuoteHistory(user: ScopeUser, documentId: string): Prom
           createdById: true,
         },
       },
-      emails: {
-        orderBy: { sentAt: "desc" },
-        select: {
-          id: true,
-          to: true,
-          cc: true,
-          subject: true,
-          bodyText: true,
-          sentAt: true,
-          sentById: true,
-          revisionId: true,
-        },
-      },
     },
   });
   if (!document) return null;
 
-  const userIds = Array.from(
-    new Set([
-      ...document.revisions.map((r) => r.createdById),
-      ...document.emails.map((e) => e.sentById),
-    ])
-  );
+  const userIds = Array.from(new Set(document.revisions.map((r) => r.createdById)));
   const users = userIds.length
     ? await db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true } })
     : [];
   const nameById = new Map(users.map((u) => [u.id, u.name]));
-  const labelByRevisionId = new Map(document.revisions.map((r) => [r.id, r.label]));
 
   return {
     revisions: document.revisions.map((r) => ({
@@ -99,16 +68,6 @@ export async function getQuoteHistory(user: ScopeUser, documentId: string): Prom
       createdAt: r.createdAt,
       createdByName: nameById.get(r.createdById) ?? null,
       isSigned: document.signedRevisionId === r.id,
-    })),
-    emails: document.emails.map((e) => ({
-      id: e.id,
-      to: e.to,
-      cc: e.cc,
-      subject: e.subject,
-      bodyText: e.bodyText,
-      sentAt: e.sentAt,
-      sentByName: nameById.get(e.sentById) ?? null,
-      revisionLabel: labelByRevisionId.get(e.revisionId) ?? null,
     })),
   };
 }

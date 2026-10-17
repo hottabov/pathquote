@@ -355,7 +355,7 @@ describe("seed-lib: smoke assertions against the real catalog.json (counts only)
   // 10 -> 11: FP-TROLLEY was split out of the FabricPro ("FP") series into
   // its own "FPT" series, same reasoning as the HDRF split -- an ACCESSORY
   // does not belong under a SPREADER's quote copy (see
-  // docs/superpowers/plans/2026-09-07-category-quote-copy.md).
+  // the category quote-copy plan (retired once shipped)).
   it("has exactly 11 series", () => {
     expect(mapSeries(catalog)).toHaveLength(11);
   });

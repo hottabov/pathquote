@@ -4,9 +4,9 @@ import type { HtmlFormSpec } from "../types";
 /**
  * X-Calibre. Rendered as a component, not by patching a workbook -- it has
  * never had an xlsx implementation, and writing one now would be work the
- * render spec deletes (docs/superpowers/specs/2026-09-03-web-production-
+ * render spec deletes (docs/design/2026-09-03-web-production-
  * forms-design.md §7.1). The visual contract is
- * `docs/mockups/x-calibre-order-form.html`.
+ * the approved X-Calibre order-form mock-up (retired once the forms shipped).
  *
  * The printed form is correct as it stands: the catalogue sells two
  * machines, `X-10180` and `X-10220`, so one `X10` model box and two widths

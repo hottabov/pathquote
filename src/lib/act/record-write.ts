@@ -263,7 +263,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * laid over it.
  *
  * WHY THE WHOLE RECORD. The scripts that have written production ACT!
- * (scripts/act-fix-country-usa.py, scripts/act-fix-country-spellings.py) read
+ * (the one-off ACT! country fixers of 2026-10, since retired) read
  * each record in full, changed one field and sent every field back, because a
  * partial write to a nested object blanks its siblings. That is the path that
  * is known to work; see ActClient's `update` for what is not.
@@ -294,7 +294,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  *     scripts above do (`dict(record[field], country=...)`).
  *   - `id` is always the id the record is being written to, in the body as
  *     well as the path: ACT! answers a PATCH without it with a 400 and an
- *     empty body (docs/superpowers/specs/2026-09-08-act-integration-design.md,
+ *     empty body (docs/design/2026-09-08-act-integration-design.md,
  *     "What the API actually does, verified"). An `id` in `patch` cannot move
  *     the write to another record. A `current` carrying a different id throws
  *     -- that is a read that answered with the wrong record, and writing it
@@ -374,8 +374,8 @@ export const OPPORTUNITY_COMPUTED_FIELDS = [
  *
  * Opportunities only. A contact is sent back whole, those three fields
  * included, because that exact body is what the two scripts that wrote
- * production contacts sent (scripts/act-fix-country-usa.py,
- * scripts/act-fix-country-spellings.py); nothing has been learned since that
+ * production contacts sent (the one-off ACT! country fixers of 2026-10,
+ * since retired); nothing has been learned since that
  * says otherwise. A product line is sent back whole too, and that is the
  * weaker ground. fields_all.json lists nine product fields (`TBL_PRODUCTSERVICE`:
  * name, itemNumber, type, quantity, price, discountPrice, discount, cost,

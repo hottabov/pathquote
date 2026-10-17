@@ -1,4 +1,4 @@
-import { Download, History, Mail } from "lucide-react";
+import { Download, History } from "lucide-react";
 import {
   EmptyState,
   SectionCard,
@@ -8,7 +8,7 @@ import {
   tableRowClassName,
 } from "@/components/ui-kit";
 import { formatDateAU, formatMoney } from "@/lib/format";
-import type { QuoteRevisionRow, QuoteEmailRow } from "@/lib/queries/quote-revisions";
+import type { QuoteRevisionRow } from "@/lib/queries/quote-revisions";
 
 /** A consistent, fixed-size download button so the control never shifts with
  * the length of the text beside it (it always reads "PDF" with the icon). */
@@ -123,40 +123,6 @@ export function RevisionsSection({
           </div>
         ))}
       </div>
-    </SectionCard>
-  );
-}
-
-/**
- * The send history (spec §7): who the quote was emailed to, when, which
- * revision, with the exact text the manager sent expandable inline (a native
- * <details>, so no client JS). Renders nothing until at least one send.
- */
-export function EmailHistorySection({ emails }: { emails: QuoteEmailRow[] }) {
-  if (emails.length === 0) return null;
-
-  return (
-    <SectionCard title="Emails sent" icon={<Mail className="size-5" />}>
-      <ul className="flex flex-col gap-3">
-        {emails.map((e) => (
-          <li key={e.id} className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <span className="font-medium text-slate-800">{e.subject}</span>
-              <span className="text-slate-500">{formatDateAU(e.sentAt)}</span>
-            </div>
-            <div className="mt-1 text-slate-600">
-              To {e.to.join(", ")}
-              {e.cc.length ? ` · Cc ${e.cc.join(", ")}` : ""}
-              {e.revisionLabel ? ` · ${e.revisionLabel}` : ""}
-              {e.sentByName ? ` · sent by ${e.sentByName}` : ""}
-            </div>
-            <details className="mt-2">
-              <summary className="cursor-pointer text-brand-dark">Show message</summary>
-              <pre className="mt-2 whitespace-pre-wrap font-sans text-slate-700">{e.bodyText}</pre>
-            </details>
-          </li>
-        ))}
-      </ul>
     </SectionCard>
   );
 }

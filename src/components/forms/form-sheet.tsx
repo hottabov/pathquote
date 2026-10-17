@@ -11,7 +11,7 @@ import type { FormContext } from "@/lib/production-forms/types";
  * an entity name, legal id and address, but no phone, email or website. That
  * makes these correct for AU and wrong for any other region, which is a
  * reason to add the three columns rather than to invent values here -- noted
- * in docs/specs/2026-09-11-order-forms-backlog.md.
+ * in docs/backlog/2026-09-11-order-forms-backlog.md.
  */
 const HEAD_OFFICE = {
   phone: "+61 3 9338 3471",
@@ -153,7 +153,7 @@ export function FormSheet({
  * contents.
  *
  * No delivery address: delivery is logistics' job and gets its own document
- * (docs/specs/2026-09-11-order-forms-backlog.md, "Logistics"). A workshop
+ * (docs/backlog/2026-09-11-order-forms-backlog.md, "Logistics"). A workshop
  * sheet that names a destination reads as something the workshop arranges.
  * Three rows, four columns -- the band used to be two stacked columns and
  * took twice the height.

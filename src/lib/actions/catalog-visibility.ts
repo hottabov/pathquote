@@ -21,7 +21,7 @@ export type { ActionResult };
  * Series and products travel as ids, never codes: a code is a label an
  * admin can rename while this editor is open, and a rename must not turn a
  * saved "hidden" into a silent no-op (see
- * docs/plans/2026-09-05-catalog-identity-and-cleanup.md). Unknown ids in
+ * docs/reference/catalog-v2-decisions.md). Unknown ids in
  * either array are silently ignored (mirrors `setOptionCompatibility`):
  * they simply don't resolve to a row and so are never added.
  */

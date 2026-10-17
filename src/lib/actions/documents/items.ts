@@ -43,7 +43,7 @@ import { assertStillDraft, mapDraftWriteError, type ActionResult } from "./_inte
  * `catalogVisibilityUserId`) and so is never affected by this check.
  *
  * Takes the product's `id`, not its code: a code is a label an admin can
- * rename at any time (see docs/plans/2026-09-05-catalog-identity-and-cleanup.md),
+ * rename at any time (see docs/reference/catalog-v2-decisions.md),
  * and a picker left open across such a rename must still add the product it
  * showed. The code is only ever *snapshotted* onto the item, never used to
  * find it. An inactive product is treated as absent too -- the picker never

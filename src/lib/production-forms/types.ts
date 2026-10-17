@@ -95,7 +95,7 @@ export type FormContext = {
  * patched at hard-coded cell addresses and a React component -- discriminated
  * by `renderer`. The last workbook form (Punchline) was dropped on 2026-09-18
  * at the owner's instruction, and with it the whole xlsx path
- * (`docs/superpowers/specs/2026-09-03-web-production-forms-design.md` §7.1),
+ * (`docs/design/2026-09-03-web-production-forms-design.md` §7.1),
  * so one shape is left. `renderer` survives as the marker of that: a spec
  * says out loud that a component draws it, and the render tests assert it
  * rather than trusting the absence of a template field.

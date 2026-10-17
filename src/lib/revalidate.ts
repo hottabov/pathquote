@@ -153,7 +153,7 @@ export function revalidateConflictGroup(groupId: string): void {
 // Terms, General Conditions, RSP, and whatever a region adds later — the
 // legal text a customer signs, edited as whole documents rather than the
 // ContentBlock fragments they used to be (see
-// docs/superpowers/plans/2026-09-07-quote-documents.md).
+// docs/design/2026-09-07-quote-documentation-design.md).
 
 export function revalidateQuoteDocumentList(): void {
   revalidatePath("/documents");

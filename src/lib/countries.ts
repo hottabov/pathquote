@@ -46,7 +46,7 @@ export function countryName(code: string): string | undefined {
  *   - typos ("UDSA", "Lativa", "Trinidad and Tabago", "Unitted Kingdom") are
  *     wrong in ACT!, which is the source of truth for contacts. Translating
  *     them here would carry the mistake forever and hide it from whoever could
- *     fix it. Same reasoning as scripts/act-fix-country-usa.py, which corrects
+ *     fix it. Same reasoning as the one-off ACT! country fixer of 2026-10 (retired), which corrected
  *     the source rather than mapping around it.
  *   - regions and cities ("North America", "West Indies", "Africa",
  *     "Launceston", "Istanbul", "Québec") are not countries. Guessing a country

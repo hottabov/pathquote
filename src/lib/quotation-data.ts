@@ -109,7 +109,7 @@ export type QuotationItemInput = ToSheetItemInput & {
   /** `DocumentItem.serialNumber` — recorded post-installation and printed by
    * the production forms. Nothing in the quotation renderer reads it any more
    * (the RSP coverage table it used to fill is gone — see D10 in
-   * docs/superpowers/specs/2026-09-07-quote-documentation-design.md); it stays
+   * docs/design/2026-09-07-quote-documentation-design.md); it stays
    * on the input type because `DocumentForBuilder` carries it and structural
    * typing costs nothing for a field this module ignores. */
   serialNumber: string | null;

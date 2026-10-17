@@ -463,7 +463,7 @@ export async function finalizeDocument(documentId: string): Promise<FinalizeResu
   // them), and until 2026-10-16 the Finalize click waited for all of that.
   // Nothing in the response needs the file: the History tab shows the PDF
   // link once `pdfPath` is set, and "Send to client" renders on the fly when
-  // it is still null (src/lib/actions/signing.ts, sendQuoteToClient).
+  // it is still null (the History tab shows the link once it exists).
   // `after()` runs the callback once the action's response has gone -- the
   // same pattern as drainAfterResponse above.
   if (result.revisionId) {

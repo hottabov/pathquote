@@ -26,7 +26,7 @@ export const dynamic = "force-dynamic";
  * Settings -> Import / Export: the catalogue as a workbook. Download it,
  * edit it in Excel, upload it back; the app shows every change it would
  * make and writes nothing until the admin confirms
- * (docs/plans/2026-09-05-catalog-import-export.md).
+ * (docs/reference/catalog-import-export.md).
  */
 export default async function ImportExportPage() {
   // notFound() rather than a redirect: a Manager hitting a stale bookmark

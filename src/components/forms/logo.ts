@@ -7,7 +7,7 @@
  * bytes, and because an inline SVG prints at the renderer's own resolution
  * instead of at whatever the encoded image happened to be.
  *
- * Taken verbatim from `docs/mockups/x-calibre-order-form.html`, with one
+ * Taken verbatim from the approved X-Calibre order-form mock-up (retired once the forms shipped), with one
  * change: its internal `clip0_7241_21` id is renamed to something
  * form-specific. A document holding three sheets would otherwise repeat the
  * same id three times, and a duplicate id makes every later reference resolve

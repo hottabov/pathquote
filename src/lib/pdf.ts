@@ -213,6 +213,20 @@ export async function htmlToPdf(
   footerHtml?: string,
   options?: { printBackground?: boolean }
 ): Promise<Buffer> {
+  return postToGotenberg("/forms/chromium/convert/html", buildConvertForm(html, footerHtml, options));
+}
+
+/**
+ * The one call into Gotenberg, for every route: the chromium conversion
+ * above and the PDF merge the production-forms download uses
+ * (src/lib/production-forms/render.ts), so both wait in the same two-slot
+ * queue. The `GOTENBERG_URL` check stays outside the gate: a misconfigured
+ * deployment should fail instantly rather than take a slot to do it. The slot
+ * is given back in a `finally`, so a timeout, a non-2xx or an aborted request
+ * all release it -- a leaked slot would permanently shrink the pool for the
+ * lifetime of the process.
+ */
+export async function postToGotenberg(route: string, form: FormData): Promise<Buffer> {
   const baseUrl = process.env.GOTENBERG_URL;
   if (!baseUrl) {
     throw new Error("GOTENBERG_URL is not configured");
@@ -220,24 +234,24 @@ export async function htmlToPdf(
 
   await acquireConversionSlot();
   try {
-    return await convertHtml(baseUrl, html, footerHtml, options);
+    const response = await fetch(`${baseUrl}${route}`, {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(GOTENBERG_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      const snippet = (await response.text().catch(() => "")).slice(0, 500);
+      throw new Error(`Gotenberg returned ${response.status}: ${snippet}`);
+    }
+    return Buffer.from(await response.arrayBuffer());
   } finally {
-    // In a `finally` so a Gotenberg timeout, a non-2xx response or an aborted
-    // request all give the slot back — a leaked slot here would permanently
-    // shrink the pool for the lifetime of the process.
     releaseConversionSlot();
   }
 }
 
-/** The conversion itself, minus the gating — split out only so the slot is
- * released by one `finally` around the whole request rather than threaded
- * through every early return. */
-async function convertHtml(
-  baseUrl: string,
-  html: string,
-  footerHtml?: string,
-  options?: { printBackground?: boolean }
-): Promise<Buffer> {
+/** The multipart body of one A4 conversion: the page, its margins, and the
+ * footer page when there is one. */
+function buildConvertForm(html: string, footerHtml?: string, options?: { printBackground?: boolean }): FormData {
   const form = new FormData();
   form.set("files", new Blob([html], { type: "text/html" }), "index.html");
   form.set("paperWidth", "8.27");
@@ -246,32 +260,11 @@ async function convertHtml(
   form.set("marginBottom", footerHtml ? "0.4" : "0");
   form.set("marginLeft", "0");
   form.set("marginRight", "0");
-  // Off by default: the quotation sheet prints no fills, and turning it on
-  // there would only change a page nobody asked to change. The production
-  // forms need it -- their ticked boxes and section headers ARE fills, and
-  // Chromium drops every one of them without this.
   if (options?.printBackground) form.set("printBackground", "true");
-
   if (footerHtml) {
-    // `printBackground` isn't needed here — `buildFooterHtml`'s markup has
-    // no background of its own — so it's left at Gotenberg's default rather
-    // than turned on for a case that doesn't use it.
     form.append("files", new Blob([footerHtml], { type: "text/html" }), "footer.html");
   }
-
-  const response = await fetch(`${baseUrl}/forms/chromium/convert/html`, {
-    method: "POST",
-    body: form,
-    signal: AbortSignal.timeout(GOTENBERG_TIMEOUT_MS),
-  });
-
-  if (!response.ok) {
-    const snippet = (await response.text().catch(() => "")).slice(0, 500);
-    throw new Error(`Gotenberg returned ${response.status}: ${snippet}`);
-  }
-
-  const buf = await response.arrayBuffer();
-  return Buffer.from(buf);
+  return form;
 }
 
 // --- image resolution -----------------------------------------------------

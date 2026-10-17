@@ -7,9 +7,9 @@
  * sees the HTML string posted to it, never this app's compiled stylesheet,
  * so every rule the printed page needs has to travel inside that string.
  *
- * Lifted from the approved mockups in `docs/mockups/*-order-form.html`,
+ * Lifted from the approved mockups in the approved order-form mock-ups (retired once the forms shipped),
  * which are the visual contract
- * (docs/superpowers/specs/2026-09-03-web-production-forms-design.md §5). Two
+ * (docs/design/2026-09-03-web-production-forms-design.md §5). Two
  * changes were made on the way in: every class is prefixed `pf-`, so these
  * rules cannot collide with the quotation sheet's or the app's, and the
  * mockups' own page chrome -- toolbar, stage, the screen-only drop shadow --

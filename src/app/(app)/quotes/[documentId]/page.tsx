@@ -58,7 +58,7 @@ import { UnfinalizeButton } from "@/components/builder/unfinalize-button";
 import { AcceptButton } from "@/components/builder/accept-button";
 import { VoidSignatureButton } from "@/components/builder/void-signature-button";
 import { UnsentChangesBanner } from "@/components/builder/unsent-changes-banner";
-import { RevisionsSection, EmailHistorySection } from "@/components/builder/quote-history-sections";
+import { RevisionsSection } from "@/components/builder/quote-history-sections";
 import { PdfPendingRefresh } from "@/components/builder/pdf-pending-refresh";
 import { getQuoteHistory } from "@/lib/queries/quote-revisions";
 import { getQuoteActState } from "@/lib/queries/act-quote";
@@ -327,7 +327,7 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
 
   // Only the two tabs where a count says something. Quote setup has a fixed
   // number of cards, so a badge there would be decoration.
-  const historyCount = (history?.revisions.length ?? 0) + (history?.emails.length ?? 0);
+  const historyCount = history?.revisions.length ?? 0;
 
   return (
     <div className="flex flex-col gap-6 pb-4">
@@ -552,7 +552,6 @@ export default async function DocumentBuilderPage({ params }: { params: Promise<
                       currencySymbol={document.currencySymbol}
                     />
                   ) : null}
-                  {history ? <EmailHistorySection emails={history.emails} /> : null}
                 </>
               ),
 

@@ -1,7 +1,7 @@
 /**
  * Pure builder for the catalogue workbook (Phase 5 of
- * docs/plans/2026-09-05-catalog-identity-and-cleanup.md; the export half of
- * docs/plans/2026-09-05-catalog-import-export.md).
+ * docs/reference/catalog-v2-decisions.md; the export half of
+ * docs/reference/catalog-import-export.md).
  *
  * Snapshot in, SheetJS workbook out -- no database, no filesystem, so it can
  * be unit-tested against a JSON dump. Two IO shells share it:

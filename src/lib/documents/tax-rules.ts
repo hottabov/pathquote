@@ -1,7 +1,7 @@
 /**
  * Which tax a quote should carry, suggested from three facts: the selling
  * region's country, the country the goods go to, and the Incoterm (Vadym,
- * 2026-09-30 — see docs/superpowers/specs/2026-09-30-tax-and-incoterms-design.md).
+ * 2026-09-30 — see docs/design/2026-09-30-tax-and-incoterms-design.md).
  *
  * It is a suggestion. The salesperson is responsible for knowing whom and
  * where they sell to, and can replace it with a Custom tax on the quote's
