@@ -273,7 +273,7 @@ function CompanyRow({ row, showOwner }: { row: ClientListRow; showOwner: boolean
     <tr data-href={href} className={cn(responsiveRowClassName, "cursor-pointer")}>
       <td className={cn(responsiveCellClassName, "col-start-1 row-start-1")}>
         <span className="flex min-w-0 items-center gap-2">
-          <Building2 className="size-4 shrink-0 text-brand md:hidden" aria-hidden="true" />
+          <span className="list-icon list-icon-building text-brand md:hidden" />
           <Link href={href} prefetch={false} className="focus-ring truncate rounded-sm font-medium text-brand-dark">
             {row.name}
           </Link>

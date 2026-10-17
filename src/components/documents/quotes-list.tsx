@@ -258,7 +258,7 @@ function QuoteRow({
       </td>
       <td className={cn(responsiveCellClassName, "col-start-1 row-start-1")}>
         <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 md:text-sm md:font-normal md:text-slate-600">
-          <FileText className="size-3.5 text-brand" aria-hidden="true" />
+          <span className="list-icon list-icon-quote size-3.5 text-brand" />
           Quote
         </span>
       </td>

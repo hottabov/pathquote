@@ -167,3 +167,23 @@ The clients result is a miss against the intent: one tree per row saved
 14 %, not half. At 2.7 KB per `<tr>` the cost is Tailwind class strings
 repeated in every cell, which gzip hides on the wire (76 KB) but React still
 serialises and the browser still parses.
+
+## Production after the deploys (nginx `rt=`, 2026-10-16 11:00 → 2026-10-17 05:00 UTC, real use)
+
+| Set | before (11–16 Oct) | after |
+|---|---|---|
+| everything | p50 0.019 / p95 0.117 / max 18.67 s | n=1,920: p50 0.023 / p95 0.107 / max 3.56 s |
+| `/settings/users/<id>` (open + save) | p50 0.016 / p99 6.16 / max 11.36 s | n=22: **p50 0.036 / p95 0.041 / max 0.042 s** |
+| `POST /quotes/<id>` (autosaves, item edits) | p50 0.123 / p95 0.243 / max 2.72 s | n=130: **p50 0.094 / p95 0.185 / max 0.233 s** |
+| requests > 3 s | 23 in one day | 2: one `GET /` at 3.56 s (single sample, cause unknown), one `GET /clients?pageSize=all` RSC navigation |
+
+`/clients?pageSize=all` as an RSC navigation: **5,848,032 → 7,120,796 bytes**
+for 8,845 rows — the one-tree row made the payload LARGER on this page. The
+list is a server component, so every cell's class string is serialised into
+the navigation payload, and the responsive row carries longer class strings
+than the old table cell did. Fixed (next deploy): the row/cell styles are CSS
+component classes (`.list-row`, `.list-cell`, …) so each cell carries one
+short name, and the per-row decorative icon is a CSS mask instead of an
+inline SVG. Local, 401 companies: `/clients?pageSize=all` HTML 2,350,222 →
+1,679,020 B (−29 %); `/quotes` 200 rows 1,030,117 → 809,096 B (−21 %). The
+cap on "all" remains the owner's decision.

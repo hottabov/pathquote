@@ -44,7 +44,11 @@ export function TableShell({ table, cards, className }: TableShellProps) {
  * classes, which table layout ignores at md so they need no `md:` reset.
  *
  * Children: a `<table className={responsiveTableClassName}>` whose `<thead>`,
- * `<tbody>` and rows use the matching constants below.
+ * `<tbody>` and rows use the matching constants below. The constants are
+ * single component-class names defined in src/app/globals.css (`.list-*`):
+ * these lists are server components, so each cell's class string is part of
+ * every navigation's RSC payload, and a short name per cell is what keeps a
+ * thousand-row page small.
  */
 export function ResponsiveTableShell({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
@@ -57,14 +61,14 @@ export function ResponsiveTableShell({ children, className }: { children: React.
 /** The `<table>`: a plain block below md, a real table from md with the same
  * minimum width `tableClassName` gives, so wide tables scroll inside the
  * shell instead of breaking the layout. */
-export const responsiveTableClassName = "block w-full text-sm md:table md:min-w-[560px]";
+export const responsiveTableClassName = "list-table";
 
 /** The `<thead>`: a card has no column headers, so it is hidden below md.
  * Callers that need a mobile sort control put it in a toolbar instead. */
-export const responsiveTheadClassName = "hidden md:table-header-group";
+export const responsiveTheadClassName = "list-thead";
 
 /** The `<tbody>`: the card stack's gap lives here below md. */
-export const responsiveTbodyClassName = "flex flex-col gap-3 md:table-row-group";
+export const responsiveTbodyClassName = "list-tbody";
 
 /**
  * A row: below md a bordered card laid out as a three-column grid -- a
@@ -76,13 +80,12 @@ export const responsiveTbodyClassName = "flex flex-col gap-3 md:table-row-group"
  * The border is set per side at md rather than with `border-0` + `border-b`
  * so the two never depend on which of them Tailwind emits last.
  */
-export const responsiveRowClassName =
-  "grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 rounded-xl border border-slate-200 bg-white p-4 md:table-row md:rounded-none md:border-x-0 md:border-t-0 md:border-b md:border-slate-100 md:bg-transparent md:p-0 md:transition-colors md:last:border-b-0 md:hover:bg-slate-50";
+export const responsiveRowClassName = "list-row";
 
 /** A cell: a grid item below md (placed by the caller), a padded table cell
  * from md. `min-w-0` lets a `truncate` child actually truncate inside the
  * grid's flexible column. */
-export const responsiveCellClassName = "block min-w-0 md:table-cell md:px-4 md:py-3 md:align-middle";
+export const responsiveCellClassName = "list-cell";
 
 /** Shared `<table>` element classes — 14px body text per the design
  * direction, hairline row dividers, sticky-safe header. Use directly on the

@@ -291,6 +291,55 @@
 }
 
 @layer components {
+  /* The responsive list table (/quotes, /clients): one <table> that is a
+     card stack below md and a real table from md up. Component classes
+     rather than the utility strings inline, because these lists are server
+     components and every cell's class string travels in the RSC payload of
+     every navigation -- at 8,845 companies the long strings were a third of
+     a 7 MB response (audit 2026-10-17, PERF-20). The names are exported from
+     src/components/ui-kit/data-table.tsx; callers add only the grid
+     placement (col-start/row-start) per cell. */
+  .list-table {
+    @apply block w-full text-sm md:table md:min-w-[560px];
+  }
+  .list-thead {
+    @apply hidden md:table-header-group;
+  }
+  .list-tbody {
+    @apply flex flex-col gap-3 md:table-row-group;
+  }
+  .list-row {
+    @apply grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 rounded-xl border border-slate-200 bg-white p-4 md:table-row md:rounded-none md:border-x-0 md:border-t-0 md:border-b md:border-slate-100 md:bg-transparent md:p-0 md:transition-colors md:last:border-b-0 md:hover:bg-slate-50;
+  }
+  .list-cell {
+    @apply block min-w-0 md:table-cell md:px-4 md:py-3 md:align-middle;
+  }
+
+  /* Decorative row icons as CSS masks, one rule each, instead of an inline
+     <svg> per row: at 600 quotes or 8,845 companies the same five paths
+     repeated in every row were a large share of the page. `currentColor`
+     through a mask keeps the brand tint; there is no element to hide from
+     assistive technology. Paths are lucide's (building-2, file-text). */
+  .list-icon {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+    background-color: currentColor;
+    mask-repeat: no-repeat;
+    mask-size: 100% 100%;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-size: 100% 100%;
+  }
+  .list-icon-building {
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M10 12h4%22/%3E%3Cpath d=%22M10 8h4%22/%3E%3Cpath d=%22M14 21v-3a2 2 0 0 0-4 0v3%22/%3E%3Cpath d=%22M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2%22/%3E%3Cpath d=%22M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16%22/%3E%3C/svg%3E");
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M10 12h4%22/%3E%3Cpath d=%22M10 8h4%22/%3E%3Cpath d=%22M14 21v-3a2 2 0 0 0-4 0v3%22/%3E%3Cpath d=%22M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2%22/%3E%3Cpath d=%22M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16%22/%3E%3C/svg%3E");
+  }
+  .list-icon-quote {
+    mask-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z%22/%3E%3Cpath d=%22M14 2v5a1 1 0 0 0 1 1h5%22/%3E%3Cpath d=%22M10 9H8%22/%3E%3Cpath d=%22M16 13H8%22/%3E%3Cpath d=%22M16 17H8%22/%3E%3C/svg%3E");
+    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22black%22 stroke-width=%222%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22%3E%3Cpath d=%22M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z%22/%3E%3Cpath d=%22M14 2v5a1 1 0 0 0 1 1h5%22/%3E%3Cpath d=%22M10 9H8%22/%3E%3Cpath d=%22M16 13H8%22/%3E%3Cpath d=%22M16 17H8%22/%3E%3C/svg%3E");
+  }
+
   /* The per-item options side sheet (src/components/builder/side-sheet.tsx).
      Both directions are animated here rather than in React: `@starting-style`
      supplies the state to enter from, and `transition-behavior: allow-discrete`
