@@ -1,6 +1,6 @@
 // Assembling the whole legal documents a customer signs out of the
 // `ContentBlock` fragments they used to be stored as — the substance of Task
-// 10 of docs/superpowers/plans/2026-09-07-quote-documents.md, split out of
+// 10 of docs/design/2026-09-07-quote-documentation-design.md, split out of
 // `scripts/migrate-content-blocks-to-quote-documents.ts` so it could be tested
 // without the database that script needed.
 //

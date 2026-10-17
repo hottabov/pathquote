@@ -38,7 +38,7 @@ import { describeDatabase } from "../src/lib/act/cli-args";
 import { drainActOutbox, type DrainResult } from "../src/lib/act/drain";
 import { SyncAlreadyRunningError, syncContacts } from "../src/lib/act/sync";
 import { takeSyncRequest } from "../src/lib/act/sync-request";
-import { refreshActLinkListsIfStale } from "../src/lib/act/user-link-read";
+import { refreshActLinkListsIfStale } from "../src/lib/act/user-link-refresh";
 import { db } from "../src/lib/db";
 import {
   ALERT_REARM_LINE,

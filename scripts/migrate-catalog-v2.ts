@@ -14,7 +14,7 @@ import {
 
 /**
  * Applies prisma/seed-data/catalog-v2-target.json to the live catalogue --
- * phase 3 of docs/plans/2026-09-05-catalog-identity-and-cleanup.md.
+ * phase 3 of docs/reference/catalog-v2-decisions.md.
  *
  *   npx tsx scripts/migrate-catalog-v2.ts --dry-run   # print the diff, write nothing
  *   npx tsx scripts/migrate-catalog-v2.ts             # apply, in one transaction

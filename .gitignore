@@ -85,3 +85,6 @@ Claude outputs/
 # than left to chance.
 deliverables/
 output/
+
+# editor state
+.obsidian/

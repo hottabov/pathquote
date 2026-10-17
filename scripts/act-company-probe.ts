@@ -1,6 +1,6 @@
 /**
  * Probe how ACT! handles companies, before the company write-back is built
- * (docs/superpowers/specs/2026-10-15-act-write-back-companies.md, section 3,
+ * (docs/design/2026-10-15-act-write-back-companies.md, section 3,
  * "Unverified"). Prints what ACT! answers, raw, and decides nothing.
  *
  *   npm run act:company-probe                      # read-only

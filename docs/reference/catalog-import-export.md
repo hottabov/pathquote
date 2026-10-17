@@ -1,9 +1,9 @@
 # Catalogue import / export (xlsx)
 
 The catalogue as a workbook: download it, edit it in Excel, upload it back. Every change is
-previewed and nothing is written until an admin confirms. Plan and owner decisions:
-`docs/plans/2026-09-05-catalog-import-export.md`; export originally Phase 5 of
-`docs/plans/2026-09-05-catalog-identity-and-cleanup.md`.
+previewed and nothing is written until an admin confirms. The owner decisions
+that shaped it are in `catalog-v2-decisions.md`; the implementation plans were
+retired once shipped.
 
 ## Where
 

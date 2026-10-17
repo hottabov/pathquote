@@ -98,6 +98,45 @@ renders `QuotationSheet` for Gotenberg). No `server-only` markers anywhere.
 - Seed catalogue target applied by two implementations (`seed.ts` and
   `scripts/migrate-catalog-v2.ts` + `scripts/lib/catalog-v2-plan.ts`).
 
+## ACT! is a feature, not a dependency — how that is enforced
+
+The owner's rule (2026-10-16): PathQuote must keep working when ACT! is
+down, slow or unreachable; data moves between the two in the background and
+accumulates in a queue while ACT! is away.
+
+- **Writes are a queue.** Finalize, the client's signature and Accept write an
+  `ActOutbox` row inside the same transaction as the document change
+  (`enqueueActWrite*`, `src/lib/act/outbox.ts`). Nothing waits for ACT!. The
+  drain (`scripts/act-drain.ts`, `pq-act-drain.timer`, every five minutes)
+  sends due rows; a failure sets `attempts`, `lastError` and `nextAttemptAt`
+  by an exponential backoff capped at six hours (`src/lib/act/drain-rules.ts`),
+  a row ACT! refuses for a reason a person must settle is `blockedReason`,
+  and a row is never dropped or expired. Rows wait, in order, for as long as
+  ACT! is away. After a finalize the same drain also runs once in `after()`
+  (post-response, 20 s budget) so the ordinary case reaches ACT! in seconds.
+- **Reads are snapshots.** Contacts and companies come in through the nightly
+  sync (and a requested one), with a cursor so an interrupted run resumes.
+  The user page's ACT! user/Rep lists come from `Setting act.linkLists`,
+  refreshed by the drain when older than an hour. "Sync now" records
+  `Setting act.sync.requested`; the next tick runs it.
+- **The guard is a test.** `tests/act-isolation.test.ts` walks the imports of
+  every page, layout, route handler and server action and fails if one
+  reaches a module that constructs an ACT! client, except the two that do so
+  on purpose: `drain-after.ts` (post-response) and `outbox-admin-store.ts`
+  (the administrator's explicit "ACT! has this person" check, 40 s ceiling).
+- **Failure modes on the request path**: a missing `ACT_*` variable or an
+  ACT! outage is logged by the drain and shown on the Settings → ACT! page
+  from the run record; no page or action throws because of it.
+
+## Documentation structure (2026-10-17)
+
+`docs/README.md` is the index. Operational: `runbook.md`,
+`act-integration-reference.md`. Decisions behind live behaviour: `design/`
+(dated; code comments cite them). Rules and how-tos: `reference/`. Work not
+done, with reasoning: `backlog/`. This audit: `technical-audit/`. Completed
+implementation plans, pre-build analyses, mock-ups and draft copy were
+deleted (git history keeps them).
+
 ## Changes made by this audit and why (see FIX_PLAN.md for contracts)
 
 - Autosave no longer revalidates; the client refreshes once per burst (keeps
@@ -118,8 +157,8 @@ package.json scripts, Next conventions and tests checked before calling
 anything dead. Applied in this audit: the two marked **(done)**. Everything
 else is listed for the owner; none of it is a speed fix.
 
-- `delete:` one-off migration/repair scripts whose migrations shipped: `scripts/migrate-catalog-v2.ts` (286), `scripts/lib/catalog-v2-plan.ts` (575; seed needs only `type CatalogTarget`), `scripts/build-seed-data-from-target.ts`, `scripts/verify-quote-document-migration.ts` (198), `scripts/repair-z35-signing-request-drift.sql`, `scripts/sql/tax-migration-preview.sql`, `scripts/add-dmt-option.ts`, `scripts/check-production-form-enum.ts`, `scripts/act-fix-country-spellings.py` (338), `scripts/act-fix-country-usa.py` (198), `scripts/act-diagnose.py` (322) + `tests/catalog-v2-plan.test.ts`, `tests/catalog-v2-target.test.ts` + 4 package.json scripts. Nothing. [scripts/, package.json] — owner decision (two are still wired to npm scripts).
-- `delete:` `sendQuoteToClient` + `SendQuoteInput` + `cleanEmails`/`EMAIL_RE` (`signing.ts:460-757`, ≈300 lines; no caller), `src/lib/email/quote-send.ts` (280), `tests/quote-send-email.test.ts`, `EmailHistorySection` + the `emails` select in `getQuoteHistory` (reads a table nothing writes, on every builder render). Nothing. [src/lib/actions/signing.ts, src/lib/email/quote-send.ts, src/lib/queries/quote-revisions.ts] — DECISION (spec §7.5 "rich send dialog" never wired; same open item as the 2026-10 audit branch's ARCH-05).
+- `delete:` one-off migration/repair scripts whose migrations shipped: `scripts/migrate-catalog-v2.ts` (286), `scripts/lib/catalog-v2-plan.ts` (575; seed needs only `type CatalogTarget`), `scripts/build-seed-data-from-target.ts`, `scripts/verify-quote-document-migration.ts` (198), `scripts/repair-z35-signing-request-drift.sql`, `scripts/sql/tax-migration-preview.sql`, `scripts/add-dmt-option.ts`, `scripts/check-production-form-enum.ts`, `scripts/act-fix-country-spellings.py` (338), `scripts/act-fix-country-usa.py` (198), `scripts/act-diagnose.py` (322) + `tests/catalog-v2-plan.test.ts`, `tests/catalog-v2-target.test.ts` + 4 package.json scripts. Nothing. [scripts/, package.json] — **partly done 2026-10-17**: the eight with no code dependency are gone (repair SQLs, the three Python fixers, `verify-quote-document-migration`, `add-dmt-option`, `check-production-form-enum`); the catalog-v2 chain stays because `prisma/seed.ts` and the CI seed verification build on it — retiring it means re-basing the seed on `catalog.json` alone, a separate change.
+- `delete:` `sendQuoteToClient` + `SendQuoteInput` + `cleanEmails`/`EMAIL_RE` (≈300 lines; no caller), `src/lib/email/quote-send.ts` (280), its test, `EmailHistorySection` + the `emails` select in `getQuoteHistory` (reads a table nothing writes, on every builder render). **(done 2026-10-17; the `QuoteEmail` table stays until a verified-empty drop)**
 - `stdlib:` six hand-rolled argv parsers (`act/cli-args.ts` 182, `drain-args.ts` 148, `preflight-args.ts` 73, `user-map-args.ts` 100, `weekly-report-args.ts` 93, `write-preflight-args.ts` 55) + `npm-swallowed-flags.ts` (82) + 7 tests. `node:util` `parseArgs({ options, strict: true })`. [src/lib/act/*-args.ts]
 - `native:` `src/lib/phone-regions.ts` `DIAL_CODES`/`MAIN_REGION_BY_DIAL` (493 lines of typed data). `PhoneNumberUtil.getCountryCodeForRegion` / `getRegionCodeForCountryCode` / `getSupportedRegions` from `google-libphonenumber`, already a dependency. [src/lib/phone-regions.ts]
 - `shrink:` 31 document actions repeat requireSession → scoped findFirst → `$transaction(assertStillDraft, …, recalcAndEnforce)` → revalidate → `mapDraftWriteError`. One `draftWrite(documentId, user, (tx, doc) => …)` helper in `_internal.ts`. [src/lib/actions/documents/*.ts]
@@ -129,7 +168,7 @@ else is listed for the owner; none of it is a speed fix.
 - `shrink:` `SigningStatus` union (`signing/state.ts:17`) and `ROLE_VALUES` (`roles.ts:1`) mirror Prisma enums and need two parity tests (129 lines). `import { Role, SigningStatus } from "@prisma/client"`; delete both tests. [src/lib/signing/state.ts, src/lib/roles.ts]
 - `delete:` 43 never-referenced exports: `LinesField` (forms/primitives.tsx), `NO_REFERENCES` (catalog-xlsx/snapshot.ts:92), `isMarkingTool` (production-forms/marking-tools.ts), `listUsersWithHiddenCounts` (queries/catalog-visibility-admin.ts:37) and 39 `export type …Input = z.infer<…>` aliases in `src/lib/validation/*.ts`. Nothing. Plus ~260 exports used only inside their own file: drop the `export` keyword.
 - `yagni:` `renderer: "html"` discriminator + `type FormSpec = HtmlFormSpec` (one variant, `production-forms/types.ts:111-138`) and the parallel `COMPONENTS` map in `components/forms/registry.tsx`. Put `component` on each spec; `isRenderable` disappears.
-- `shrink:` two Gotenberg POST clients (`pdf.ts:224-290` with semaphore; `production-forms/render.ts:8-24` without). One `postToGotenberg(route, form)` under the semaphore.
+- `shrink:` two Gotenberg POST clients (`pdf.ts` with semaphore; `production-forms/render.ts` without). One `postToGotenberg(route, form)` under the semaphore. **(done 2026-10-17)**
 - `shrink:` duplicated client-search term/word/where builders (`client-list.ts:90-93,404-520` vs `client-search.ts:45-150`). One `companyWordClause(word, fields)`.
 - `shrink:` three `Setting` getters each a `findUnique` (`settings.ts`) → one `cache()`d loader with `findMany({ where: { key: { in } } })`. **(done — two fewer queries per builder render)**
 - `native:` `class-variance-authority` — one `cva()` call in the codebase. Two lookup objects + `cn()`. [src/components/ui/button.tsx]

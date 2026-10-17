@@ -120,3 +120,15 @@ Baseline measurements, then launch read-only diagnosis agents.
   unit renamed. All verified (VERIFICATION.md).
 - Open: read the nginx log after a day of use; owner decisions (pageSize=all
   cap, dead send-dialog code, one-off scripts); PERF-12 second pass.
+
+## 2026-10-17 — cleanup pass (owner: clean architecture, ACT! as a feature)
+
+- Docs restructured: `docs/README.md` index; `design/`, `reference/`,
+  `backlog/`; 20 stale files deleted (plans, analyses, mock-ups, draft copy,
+  `.obsidian`); code comments repointed.
+- Dead code gone: `sendQuoteToClient` + `quote-send.ts` + email history
+  section/read; eight one-off scripts and two npm entries.
+- ACT! fully off the request path: lists snapshot reader split from the
+  refresh (`user-link-refresh.ts`, drain-only); `tests/act-isolation.test.ts`
+  guards it (105 entries). Gotenberg merge now goes through pdf.ts's single
+  gated call.
