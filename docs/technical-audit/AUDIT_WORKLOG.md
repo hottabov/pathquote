@@ -132,3 +132,9 @@ Baseline measurements, then launch read-only diagnosis agents.
   refresh (`user-link-refresh.ts`, drain-only); `tests/act-isolation.test.ts`
   guards it (105 entries). Gotenberg merge now goes through pdf.ts's single
   gated call.
+- Deployed 182a642 (cleanup) — CI green. 156 test files / 3,981 tests.
+- Open for the owner: `pageSize=all` cap on /clients; retiring the catalog-v2
+  seed chain (re-base the seed on `catalog.json`); dropping the empty
+  `QuoteEmail` table; the `draftWrite` helper for the 31 document actions
+  (ponytail `shrink`, a refactor of money-bearing code best done with its own
+  review); the unported findings in docs/backlog/audit-port-triage-2026-10-15.md.
