@@ -91,7 +91,7 @@ enum TaxTreatment {
 // client's side: a drawn but unconfirmed client signature is VIEWED plus a
 // Signature(CLIENT) row. In both cases the signature exists before the act
 // that commits it, which is what gives each signer a window to change their
-// mind (see docs/superpowers/specs/2026-09-07-quote-signing-design.md, D7).
+// mind (see docs/design/2026-09-07-quote-signing-design.md, D7).
 //
 // EXPIRED and REVOKED are absent for the same reason: neither is a fact
 // about the document, only about the outstanding link, and both are already
@@ -1212,7 +1212,7 @@ model DocumentItem {
   // pointing at nothing -- which is why the catalogue import
   // (src/lib/actions/catalog-import.ts) deletes a draft's items and lines
   // itself, then recalculates, before the product row goes. See
-  // docs/plans/2026-09-05-catalog-import-export.md §1.
+  // docs/reference/catalog-import-export.md §1.
   product        Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
   sortOrder      Int            @default(0)
   code           String // snapshot
@@ -1536,7 +1536,7 @@ enum CatalogImportStatus {
 }
 
 // One row per confirmed catalogue import from Settings -> Import / Export
-// (docs/plans/2026-09-05-catalog-import-export.md §3.5): who, when, which
+// (docs/reference/catalog-import-export.md §3.5): who, when, which
 // file, the per-sheet/per-bucket counts, and the full preview diff the admin
 // confirmed. The diff is the point -- an import deletes rows and removes
 // lines from other people's drafts, and without the before/after of every
