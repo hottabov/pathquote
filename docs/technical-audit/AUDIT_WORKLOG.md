@@ -138,3 +138,9 @@ Baseline measurements, then launch read-only diagnosis agents.
   `QuoteEmail` table; the `draftWrite` helper for the 31 document actions
   (ponytail `shrink`, a refactor of money-bearing code best done with its own
   review); the unported findings in docs/backlog/audit-port-triage-2026-10-15.md.
+- Deployed 62496e5: list component classes + CSS icons (local −21 % / −29 %
+  on the two lists). Production real-use numbers after the deploys are in
+  PERFORMANCE.md ("Production after the deploys").
+- Decided NOT to hand-refactor the 16 draft-action frames in this session:
+  money-bearing code, no DB-level tests, 16 varied sites. Recipe in
+  FIX_PLAN.md Wave 4.

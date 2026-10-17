@@ -80,3 +80,38 @@ page render; switching builder tabs is instant; the quotes list opens with
 the latest 200 and offers "Show all"; the first open of a draft downloads
 ~270 KB less JavaScript and no editor until Quote setup is opened; the
 dashboard no longer fires background requests on load.
+
+## Wave 4 — structure (not started; needs its own review)
+
+The one real "spaghetti" left in the request path is the repeated frame of
+the draft-mutation actions in `src/lib/actions/documents/*` (16 sites call
+`recalcAndEnforce`): parse → scoped `findFirst` → `$transaction(assertStillDraft,
+write, recalcAndEnforce)` → `mapDraftWriteError` → `revalidateDocument` →
+`{ warning }`. The shape varies enough (combined warnings, extra return
+values, the `revalidate` flag on `writeItemOptions`, the autosave actions
+that no longer revalidate) that a regex cannot do it; it is a hand refactor.
+
+Recipe:
+1. Add to `_internal.ts`:
+   `draftWrite(documentId, role, write: (tx) => Promise<void>, { recalc = true, revalidate = true })`
+   that opens the transaction, calls `assertStillDraft`, runs `write`, runs
+   `recalcAndEnforce` when asked, maps the three draft-write errors, revalidates
+   when asked, and returns `{}` or `{ warning }`.
+2. Migrate one file at a time (`presentation.ts` first — four plain sites),
+   keeping each action's own parse and scoped pre-read; run `npm test` and
+   `npm run typecheck` after each file; commit per file.
+3. `pricing.ts` last: `setDocumentDiscount` and `setItemDiscount` combine a
+   cap warning with the recalc warning — give `draftWrite` an optional
+   `warning` to merge, or return the recalc warning and combine in the action.
+4. While there: PERF-12 — the pre-read in `setDocumentDiscount` loads
+   items+lines+product that `recalcDocument` loads again inside the
+   transaction; pass the loaded document into the recalc (or move the
+   pre-read inside the transaction) to drop ~5 statements per autosave.
+
+Also open, in order of value: cap `pageSize=all` on /clients (owner
+decision); re-base `prisma/seed.ts` on `catalog.json` alone and retire the
+catalog-v2 chain (`scripts/migrate-catalog-v2.ts`, `scripts/lib/catalog-v2-*`,
+two tests, three npm scripts); drop the empty `QuoteEmail` table with a
+verified-empty migration; the unported findings in
+`docs/backlog/audit-port-triage-2026-10-15.md` (security/correctness items
+from the abandoned branch, triaged there).
